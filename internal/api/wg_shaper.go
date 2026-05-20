@@ -49,8 +49,9 @@ func (srv *Server) syncWGPeerRates() {
 		if ip == "" {
 			continue
 		}
+		cidr := store.Host32ProfileCIDR(ip)
 		if !peerRateEnabled(p) {
-			srv.clearPeerShaper(ip)
+			srv.clearPeerProfileShaper(cidr, ip)
 			continue
 		}
 		down, up := peerRateStrings(p)
@@ -59,15 +60,17 @@ func (srv *Server) syncWGPeerRates() {
 			log.Printf("wg peer rate %s: %v", ip, err)
 			continue
 		}
-		if err := srv.bpf.UpdateHost(ip, rv); err != nil {
-			log.Printf("wg bpf host %s: %v", ip, err)
+		if err := srv.bpf.UpdateProfile(cidr, rv); err != nil {
+			log.Printf("wg bpf profile %s: %v", cidr, err)
 			continue
 		}
-		if err := srv.hosts.EnsureHost(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor); err != nil {
-			log.Printf("wg htb %s: %v", ip, err)
+		iface := st.VPN.WireGuard.Interface
+		if iface == "" {
+			iface = "wg0"
 		}
+		_ = srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, iface)
 		_ = srv.store.Update(func(s *store.State) {
-			s.Shaper.Hosts[ip] = store.HostRate{Down: down, Up: up}
+			srv.assignProfileOnAdd(s, cidr, down, up, 32, iface)
 		})
 	}
 	_ = srv.store.Save()
@@ -92,13 +95,20 @@ func peerRateStrings(p store.WGPeer) (down, up string) {
 	return down, up
 }
 
-func (srv *Server) clearPeerShaper(ip string) {
+func (srv *Server) clearPeerProfileShaper(cidr, ip string) {
 	if srv.bpf != nil && srv.bpf.Ready() {
+		_ = srv.bpf.DeleteProfile(cidr)
 		_ = srv.bpf.DeleteHost(ip)
 	}
 	_ = srv.hosts.DeleteHost(ip)
 	_ = srv.store.Update(func(s *store.State) {
-		delete(s.Shaper.Hosts, ip)
+		var out []store.ProfileEntry
+		for _, e := range s.Shaper.Profiles {
+			if e.CIDR != cidr {
+				out = append(out, e)
+			}
+		}
+		s.Shaper.Profiles = out
 	})
 	_ = srv.store.Save()
 }
@@ -106,6 +116,6 @@ func (srv *Server) clearPeerShaper(ip string) {
 func (srv *Server) removeWGPeerShaper(peer store.WGPeer) {
 	ip := wg.PeerTunnelIP(peer)
 	if ip != "" {
-		srv.clearPeerShaper(ip)
+		srv.clearPeerProfileShaper(store.Host32ProfileCIDR(ip), ip)
 	}
 }

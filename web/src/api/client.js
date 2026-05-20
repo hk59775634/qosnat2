@@ -26,13 +26,18 @@ export async function request(path, opts = {}) {
 
 export const api = {
   health: () => request('/api/v1/health'),
+  setup: {
+    status: () => request('/api/v1/setup/status'),
+    interfaces: () => request('/api/v1/setup/interfaces'),
+    complete: (body) =>
+      request('/api/v1/setup/complete', { method: 'POST', body: JSON.stringify(body) }),
+  },
   login: (user, pass) =>
     request('/api/v1/login', { method: 'POST', body: JSON.stringify({ user, pass }) }),
   session: () => request('/api/v1/session'),
   logout: () => request('/api/v1/logout', { method: 'POST' }),
 
   dashboard: () => request('/api/v1/stats/dashboard'),
-  stats: () => request('/api/v1/stats'),
 
   policyRoutes: {
     list: () => request('/api/v1/nat/policy-routes'),
@@ -42,15 +47,26 @@ export const api = {
   sharedIPs: {
     list: () => request('/api/v1/nat/shared-ips'),
     add: (ip) => request('/api/v1/nat/shared-ips', { method: 'POST', body: JSON.stringify({ ip }) }),
+    del: (ip) => request(`/api/v1/nat/shared-ips?ip=${encodeURIComponent(ip)}`, { method: 'DELETE' }),
   },
   wanForwards: {
     list: () => request('/api/v1/nat/wan-forwards'),
     add: (body) => request('/api/v1/nat/wan-forwards', { method: 'POST', body: JSON.stringify(body) }),
+    del: (id) => request(`/api/v1/nat/wan-forwards?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   staticMappings: {
     list: () => request('/api/v1/nat/static-mappings'),
     add: (inner, outer) =>
       request('/api/v1/nat/static-mappings', { method: 'POST', body: JSON.stringify({ inner, outer }) }),
+    del: (inner) =>
+      request(`/api/v1/nat/static-mappings?inner=${encodeURIComponent(inner)}`, { method: 'DELETE' }),
+  },
+  prefixMappings: {
+    list: () => request('/api/v1/nat/prefix-mappings'),
+    add: (inner, outer) =>
+      request('/api/v1/nat/prefix-mappings', { method: 'POST', body: JSON.stringify({ inner, outer }) }),
+    del: (inner) =>
+      request(`/api/v1/nat/prefix-mappings?inner=${encodeURIComponent(inner)}`, { method: 'DELETE' }),
   },
 
   shaper: {
@@ -58,16 +74,23 @@ export const api = {
     profiles: () => request('/api/v1/shaper/profiles'),
     putProfile: (body) => request('/api/v1/shaper/profiles', { method: 'PUT', body: JSON.stringify(body) }),
     delProfile: (cidr) => request(`/api/v1/shaper/profiles?cidr=${encodeURIComponent(cidr)}`, { method: 'DELETE' }),
-    hosts: () => request('/api/v1/shaper/hosts'),
-    getHost: (ip) => request(`/api/v1/shaper/hosts/${ip}`),
-    putHost: (ip, body) =>
-      request(`/api/v1/shaper/hosts/${ip}`, { method: 'PUT', body: JSON.stringify(body) }),
-    delHost: (ip) => request(`/api/v1/shaper/hosts/${ip}`, { method: 'DELETE' }),
+    reorderProfiles: (order) =>
+      request('/api/v1/shaper/profiles/order', { method: 'PUT', body: JSON.stringify({ order }) }),
     active: () => request('/api/v1/shaper/active'),
   },
   ebpfMaps: () => request('/api/v1/ebpf/maps'),
   ebpfPrograms: () => request('/api/v1/ebpf/programs'),
   markPolicy: () => request('/api/v1/system/mark-policy'),
+  system: {
+    tuning: {
+      get: () => request('/api/v1/system/tuning'),
+      put: (body) => request('/api/v1/system/tuning', { method: 'PUT', body: JSON.stringify(body) }),
+    },
+  },
+  interfaces: {
+    list: () => request('/api/v1/interfaces'),
+    update: (body) => request('/api/v1/interfaces', { method: 'PUT', body: JSON.stringify(body) }),
+  },
   ifaceQueues: () => request('/api/v1/interfaces/queues'),
   request,
   get: (path) => request(path),

@@ -6,6 +6,7 @@ import (
 
 	"github.com/hk59775634/qosnat2/internal/api"
 	"github.com/hk59775634/qosnat2/internal/ebpf"
+	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -27,11 +28,15 @@ func runApplyState() {
 	if err := st.Load(); err != nil {
 		log.Fatalf("load state: %v", err)
 	}
+	_ = netif.EnsureIFB()
 	bpfM := ebpf.New()
 	if err := bpfM.Load(); err != nil {
 		log.Printf("ebpf load: %v", err)
 	}
 	srv := api.New(env, st, bpfM)
+	if !st.Get().SetupComplete && env.DevLAN == "" {
+		log.Fatalf("apply-state: initial setup not complete (open Web UI wizard)")
+	}
 	log.Printf("apply-state: sysctl+tc+nft LAN=%s WAN=%s", env.DevLAN, env.DevWAN)
 	if err := srv.ApplyAll(); err != nil {
 		log.Fatalf("apply: %v", err)
@@ -51,9 +56,10 @@ func runServer() {
 	if err := st.Save(); err != nil {
 		log.Printf("init state file: %v", err)
 	}
+	_ = netif.EnsureIFB()
 	bpfM := ebpf.New()
 	if err := bpfM.Load(); err != nil {
-		log.Printf("ebpf load (P1): %v — Map API 不可用直至 make bpf && deploy", err)
+		log.Printf("ebpf load (P1): %v — 请确认已 make bpf 且 /usr/lib/qosnat2/classify.bpf.o 存在", err)
 	} else {
 		defer bpfM.Close()
 	}

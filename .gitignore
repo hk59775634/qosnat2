@@ -12,5 +12,9 @@ bpf/*.bpf.o
 nat-qos-bpf/build/
 nat-qos-bpf/cmd/nat-qos-bpf/nat-qos-bpf
 
-# Node (web ships dist/ for deploy)
+# Node / frontend build
 web/node_modules/
+web/dist/
+
+# Legacy reference trees (not built)
+reference/legacy/

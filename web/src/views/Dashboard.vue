@@ -1,16 +1,63 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from '@/api/client'
 import StatCard from '@/components/StatCard.vue'
+import DashboardWidget from '@/components/DashboardWidget.vue'
+import ProgressBar from '@/components/ProgressBar.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const data = ref(null)
 const health = ref(null)
+const dhcp = ref(null)
+const wg = ref(null)
 const err = ref('')
 let timer
 
+const phase = computed(() => health.value?.phase || data.value?.phase || '—')
+const uptime = computed(() => {
+  const s = data.value?.system?.uptime_sec
+  if (!s) return '—'
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return `${h}h ${m}m`
+})
+
+const cpuColor = computed(() => {
+  const v = data.value?.system?.cpu_percent ?? 0
+  if (v > 85) return 'red'
+  if (v > 60) return 'amber'
+  return 'green'
+})
+
+const memColor = computed(() => {
+  const v = data.value?.system?.mem_percent ?? 0
+  if (v > 90) return 'red'
+  if (v > 75) return 'amber'
+  return 'blue'
+})
+
+const quickLinks = [
+  { path: '/network/interfaces', label: '接口', desc: 'LAN/WAN 状态' },
+  { path: '/nat/forwards', label: '端口转发', desc: 'DNAT 规则' },
+  { path: '/shaper/profiles', label: 'QoS 模板', desc: 'profile_lpm' },
+  { path: '/network/dhcp', label: 'DHCP', desc: 'dnsmasq' },
+  { path: '/vpn/wireguard', label: 'WireGuard', desc: 'VPN 隧道' },
+  { path: '/diagnostics/capture', label: '抓包', desc: 'tcpdump' },
+]
+
 async function load() {
   try {
-    ;[data.value, health.value] = await Promise.all([api.dashboard(), api.health()])
+    const [dash, h, dhcpRes, wgRes] = await Promise.all([
+      api.dashboard(),
+      api.health(),
+      api.get('/api/v1/dhcp').catch(() => null),
+      api.get('/api/v1/vpn/wireguard').catch(() => null),
+    ])
+    data.value = dash
+    health.value = h
+    dhcp.value = dhcpRes
+    wg.value = wgRes
     err.value = ''
   } catch (e) {
     err.value = e.message
@@ -26,76 +73,146 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div>
-    <h2 class="text-xl font-semibold mb-4">仪表大厅</h2>
-    <p v-if="err" class="text-red-600 mb-4">{{ err }}</p>
+    <PageHeader
+      title="Dashboard"
+      description="系统、网络、服务与 QoS 概览。小组件可折叠，状态将保存在浏览器本地。"
+    />
+    <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
 
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <StatCard label="活跃 Per-IP" :value="data?.active_hosts ?? '—'" />
-      <StatCard label="CPU" :value="data ? `${data.system.cpu_percent.toFixed(1)}%` : '—'" />
-      <StatCard label="内存" :value="data ? `${data.system.mem_percent.toFixed(1)}%` : '—'" />
-      <StatCard label="Conntrack" :value="data?.system?.conntrack ?? '—'" />
+      <StatCard label="活跃 Per-IP" :value="data?.active_hosts ?? '—'" sub="eBPF active_host" />
+      <StatCard label="Conntrack" :value="data?.system?.conntrack ?? '—'" sub="会话表项" />
+      <StatCard label="QoS 规则" :value="data?.shaper?.profile_rules ?? '—'" sub="网段模板数" />
+      <StatCard :label="`阶段 ${phase}`" :value="health?.bpf ? 'BPF ON' : 'BPF —'" :sub="uptime" />
     </div>
 
-    <div class="grid lg:grid-cols-2 gap-4 mb-6">
-      <div class="card p-4">
-        <h3 class="font-medium mb-2">LAN ({{ health?.dev_lan }})</h3>
-        <p class="text-sm text-slate-600">
-          ↓ {{ data?.lan?.rx_mbps?.toFixed(2) ?? 0 }} Mbps · ↑ {{ data?.lan?.tx_mbps?.toFixed(2) ?? 0 }} Mbps
+    <div class="grid lg:grid-cols-2 gap-4 mb-4">
+      <DashboardWidget id="system" title="系统状态">
+        <ProgressBar
+          label="CPU"
+          :value="data?.system?.cpu_percent ?? 0"
+          :color="cpuColor"
+        />
+        <ProgressBar
+          label="内存"
+          :value="data?.system?.mem_percent ?? 0"
+          :color="memColor"
+        />
+        <p class="text-xs text-slate-500 mt-2">
+          运行时间 <span class="font-mono">{{ uptime }}</span>
+          · 控制面 <span class="font-mono">{{ health?.service || 'qosnatd' }}</span>
         </p>
-      </div>
-      <div class="card p-4">
-        <h3 class="font-medium mb-2">WAN ({{ health?.dev_wan }})</h3>
-        <p class="text-sm text-slate-600">
-          ↓ {{ data?.wan?.rx_mbps?.toFixed(2) ?? 0 }} Mbps · ↑ {{ data?.wan?.tx_mbps?.toFixed(2) ?? 0 }} Mbps
-        </p>
-      </div>
+      </DashboardWidget>
+
+      <DashboardWidget id="network" title="网络状态">
+        <div class="space-y-4">
+          <div>
+            <div class="flex justify-between text-sm mb-1">
+              <span class="font-medium">LAN <span class="font-mono text-slate-500">{{ health?.dev_lan }}</span></span>
+            </div>
+            <p class="text-sm text-slate-600">
+              ↓ <span class="font-mono">{{ data?.lan?.rx_mbps?.toFixed(2) ?? 0 }}</span> Mbps
+              · ↑ <span class="font-mono">{{ data?.lan?.tx_mbps?.toFixed(2) ?? 0 }}</span> Mbps
+            </p>
+            <p class="text-xs text-slate-400 mt-1">
+              RSS {{ data?.interfaces?.lan?.channels ?? 0 }} 队列
+            </p>
+          </div>
+          <div>
+            <div class="flex justify-between text-sm mb-1">
+              <span class="font-medium">WAN <span class="font-mono text-slate-500">{{ health?.dev_wan }}</span></span>
+            </div>
+            <p class="text-sm text-slate-600">
+              ↓ <span class="font-mono">{{ data?.wan?.rx_mbps?.toFixed(2) ?? 0 }}</span> Mbps
+              · ↑ <span class="font-mono">{{ data?.wan?.tx_mbps?.toFixed(2) ?? 0 }}</span> Mbps
+            </p>
+            <p class="text-xs text-slate-400 mt-1">
+              RSS {{ data?.interfaces?.wan?.channels ?? 0 }} 队列
+            </p>
+          </div>
+        </div>
+        <router-link to="/network/interfaces" class="text-xs text-blue-600 hover:underline mt-3 inline-block">
+          查看接口详情 →
+        </router-link>
+      </DashboardWidget>
+
+      <DashboardWidget id="services" title="服务状态">
+        <StatusBadge label="qosnatd / eBPF" :ok="!!health?.bpf" :detail="health?.tc_attach ? 'TC 已附加' : ''" />
+        <StatusBadge
+          label="DHCP (dnsmasq)"
+          :ok="!!dhcp?.status?.active"
+          :detail="dhcp?.config?.enabled ? dhcp?.config?.interface : '未启用'"
+        />
+        <StatusBadge
+          label="WireGuard"
+          :ok="!!wg?.status?.up"
+          :detail="wg?.config?.enabled ? wg?.config?.interface : '未启用'"
+        />
+        <StatusBadge
+          label="Mark 隔离审计"
+          :ok="data?.mark_policy?.rules_ok"
+          :detail="data?.mark_policy?.rules_ok ? 'nft 规则正常' : '请检查规则'"
+        />
+      </DashboardWidget>
+
+      <DashboardWidget id="qos" title="流量整形 (QoS)">
+        <dl class="grid grid-cols-2 gap-2 text-sm">
+          <dt class="text-slate-500">策略网段</dt>
+          <dd class="font-mono text-right">{{ data?.shaper?.policy_cidr || '—' }}</dd>
+          <dt class="text-slate-500">空闲超时</dt>
+          <dd class="font-mono text-right">{{ data?.shaper?.idle_timeout_sec ?? '—' }}s</dd>
+          <dt class="text-slate-500">eBPF Map</dt>
+          <dd class="text-right">{{ data?.ebpf?.loaded ? '已加载' : '—' }}</dd>
+        </dl>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <router-link to="/shaper/profiles" class="text-xs text-blue-600 hover:underline">QoS 策略</router-link>
+          <router-link to="/status/active" class="text-xs text-blue-600 hover:underline">活跃池</router-link>
+        </div>
+      </DashboardWidget>
     </div>
 
-    <div v-if="data?.mark_policy" class="card p-4 mb-6 flex items-center justify-between">
-      <span class="text-sm">Mark 隔离审计</span>
-      <span :class="data.mark_policy.rules_ok ? 'text-green-700 text-sm font-medium' : 'text-red-600 text-sm'">
-        {{ data.mark_policy.rules_ok ? '通过' : '异常' }}
-      </span>
-    </div>
+    <div class="grid lg:grid-cols-3 gap-4 mb-4">
+      <DashboardWidget id="quick" title="快捷入口" class="lg:col-span-1">
+        <div class="grid gap-2">
+          <router-link
+            v-for="link in quickLinks"
+            :key="link.path"
+            :to="link.path"
+            class="block px-3 py-2 rounded border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+          >
+            <span class="text-sm font-medium text-slate-800">{{ link.label }}</span>
+            <span class="text-xs text-slate-500 block">{{ link.desc }}</span>
+          </router-link>
+        </div>
+      </DashboardWidget>
 
-    <div v-if="data?.interfaces" class="grid lg:grid-cols-2 gap-4 mb-6">
-      <div class="card p-4 text-sm">
-        <h3 class="font-medium mb-1">LAN RSS</h3>
-        <p>{{ data.interfaces.lan?.channels || 0 }} 队列 · IRQ 行 {{ data.interfaces.lan?.irq_lines?.length || 0 }}</p>
-      </div>
-      <div class="card p-4 text-sm">
-        <h3 class="font-medium mb-1">WAN RSS</h3>
-        <p>{{ data.interfaces.wan?.channels || 0 }} 队列 · IRQ 行 {{ data.interfaces.wan?.irq_lines?.length || 0 }}</p>
-      </div>
-    </div>
-
-    <div class="card p-4">
-      <h3 class="font-medium mb-3">Top 活跃主机</h3>
-      <div class="table-wrap">
-        <table class="data w-full">
-          <thead>
-            <tr>
-              <th>IP</th>
-              <th>下行 Mbps</th>
-              <th>上行 Mbps</th>
-              <th>累计 down</th>
-              <th>累计 up</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="h in data?.top_hosts || []" :key="h.ip">
-              <td class="font-mono">{{ h.ip }}</td>
-              <td>{{ h.down_mbps?.toFixed(2) ?? '—' }}</td>
-              <td>{{ h.up_mbps?.toFixed(2) ?? '—' }}</td>
-              <td>{{ (h.bytes_down / 1024 / 1024).toFixed(2) }} MB</td>
-              <td>{{ (h.bytes_up / 1024 / 1024).toFixed(2) }} MB</td>
-            </tr>
-            <tr v-if="!(data?.top_hosts?.length)">
-              <td colspan="5" class="text-slate-400 py-4 text-center">暂无活跃流量</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <DashboardWidget id="top_hosts" title="Top 活跃主机" class="lg:col-span-2">
+        <div class="table-wrap">
+          <table class="data w-full text-sm">
+            <thead>
+              <tr>
+                <th>IP</th>
+                <th>下行 Mbps</th>
+                <th>上行 Mbps</th>
+                <th>累计</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="h in data?.top_hosts || []" :key="h.ip">
+                <td class="font-mono">{{ h.ip }}</td>
+                <td>{{ h.down_mbps?.toFixed(2) ?? '—' }}</td>
+                <td>{{ h.up_mbps?.toFixed(2) ?? '—' }}</td>
+                <td class="text-xs text-slate-500">
+                  ↓{{ (h.bytes_down / 1024 / 1024).toFixed(1) }}M ↑{{ (h.bytes_up / 1024 / 1024).toFixed(1) }}M
+                </td>
+              </tr>
+              <tr v-if="!(data?.top_hosts?.length)">
+                <td colspan="4" class="text-slate-400 py-4 text-center">暂无活跃流量</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </DashboardWidget>
     </div>
   </div>
 </template>

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/hk59775634/qosnat2/internal/ebpf"
+	"github.com/hk59775634/qosnat2/internal/route"
 )
 
 // HostShaper 每 /32 动态 HTB 类（LAN egress 下行 + ifb 上行；extraDev 如 wg0 用于 VPN 隧道）
@@ -68,6 +69,62 @@ func bpsToTC(bps uint64) string {
 	return fmt.Sprintf("%dbit", bits)
 }
 
+// EnsureHostOnDevice 在指定网卡 egress + ifb 上建 HTB 类（单设备策略）
+func (h *HostShaper) EnsureHostOnDevice(ip string, downBPS, upBPS uint64, minor uint32, dev string) error {
+	if dev == "" {
+		dev = h.lan
+	}
+	if minor == 0 {
+		var err error
+		minor, err = MinorForIP(ip)
+		if err != nil {
+			return err
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	down := bpsToTC(downBPS)
+	up := bpsToTC(upBPS)
+	cid := fmt.Sprintf("1:%x", minor)
+
+	if err := h.ensureClass(dev, cid, down, down); err != nil {
+		return fmt.Errorf("%s %s: %w", dev, ip, err)
+	}
+	if dev != IFBDev {
+		if err := h.ensureClass(IFBDev, cid, up, up); err != nil {
+			return fmt.Errorf("ifb %s: %w", ip, err)
+		}
+	}
+	h.known[ip] = minor
+	return nil
+}
+
+// DeleteHostOnDevice 删除指定网卡上的 HTB 类（及 ifb 上行类）
+func (h *HostShaper) DeleteHostOnDevice(ip string, dev string) error {
+	if dev == "" {
+		dev = h.lan
+	}
+	h.mu.Lock()
+	minor, ok := h.known[ip]
+	if !ok {
+		var err error
+		minor, err = MinorForIP(ip)
+		if err != nil {
+			return err
+		}
+	}
+	delete(h.known, ip)
+	h.mu.Unlock()
+
+	cid := fmt.Sprintf("1:%x", minor)
+	_ = h.delClass(dev, cid)
+	if dev != IFBDev {
+		_ = h.delClass(IFBDev, cid)
+	}
+	return nil
+}
+
 func (h *HostShaper) EnsureHost(ip string, downBPS, upBPS uint64, minor uint32) error {
 	if minor == 0 {
 		var err error
@@ -86,7 +143,7 @@ func (h *HostShaper) EnsureHost(ip string, downBPS, upBPS uint64, minor uint32) 
 	if err := h.ensureClass(h.lan, cid, down, down); err != nil {
 		return fmt.Errorf("lan %s: %w", ip, err)
 	}
-	if h.extraDev != "" && linkExists(h.extraDev) {
+	if h.extraDev != "" && route.LinkExists(h.extraDev) {
 		if err := h.ensureClass(h.extraDev, cid, down, down); err != nil {
 			return fmt.Errorf("%s %s: %w", h.extraDev, ip, err)
 		}

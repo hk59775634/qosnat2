@@ -19,15 +19,9 @@ var Defaults = map[string]string{
 
 const confPath = "/etc/sysctl.d/99-qosnat2.conf"
 
-// Apply 写入 sysctl.d 并 sysctl --system
-func Apply(extra map[string]string) error {
-	merged := make(map[string]string, len(Defaults)+len(extra))
-	for k, v := range Defaults {
-		merged[k] = v
-	}
-	for k, v := range extra {
-		merged[k] = v
-	}
+// Apply 写入 sysctl.d 并 sysctl -p（extra 为用户覆盖，usePerformance 合并高性能预设）
+func Apply(extra map[string]string, usePerformance bool) error {
+	merged := Merge(extra, usePerformance)
 	var b strings.Builder
 	b.WriteString("# qosnat2 — generated\n")
 	for k, v := range merged {
@@ -48,11 +42,8 @@ func Apply(extra map[string]string) error {
 }
 
 // ApplyFast 仅 -w 热应用（启动时）
-func ApplyFast(extra map[string]string) {
-	for k, v := range Defaults {
-		_ = exec.Command("sysctl", "-w", k+"="+v).Run()
-	}
-	for k, v := range extra {
+func ApplyFast(extra map[string]string, usePerformance bool) {
+	for k, v := range Merge(extra, usePerformance) {
 		_ = exec.Command("sysctl", "-w", k+"="+v).Run()
 	}
 }

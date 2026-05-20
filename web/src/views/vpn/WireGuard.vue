@@ -146,7 +146,8 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
     <p class="text-sm text-slate-600 mb-4">
-      Peer 限速按隧道 IP（AllowedIPs 中第一个 IPv4）写入 <code class="text-xs">host_exact</code>，在
+      Peer 限速按隧道 IP（AllowedIPs 中第一个 IPv4）写入网段模板
+      <code class="text-xs">x.x.x.x/32</code>，在
       <code class="text-xs">wg0</code> + IFB 上 HTB 整形；下行/上行相对服务端视角。
     </p>
 

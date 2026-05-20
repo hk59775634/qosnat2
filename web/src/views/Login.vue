@@ -1,10 +1,19 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '@/api/client'
 
 const router = useRouter()
 const route = useRoute()
+
+onMounted(async () => {
+  try {
+    const h = await api.health()
+    if (h.setup_required) router.replace({ name: 'setup' })
+  } catch {
+    /* ignore */
+  }
+})
 const user = ref('admin')
 const pass = ref('')
 const err = ref('')

@@ -48,7 +48,7 @@ qosnat2/
 └── README.md
 
 # 可从 reference/ 迁移的思路（需重写而非复制）
-- /opt/qosnat2/nat-admin/、nat-qos-bpf/：仅参考 NAT state 模型、鉴权；**不要**复制 netns、flowtable、policer SHOT 逻辑
+- /opt/qosnat2/reference/legacy/nat-admin/、nat-qos-bpf/：仅参考 NAT state 模型、鉴权；**不要**复制 netns、flowtable、policer SHOT 逻辑
 
 # 本阶段交付（P0，必须可验收）
 1. 初始化 Go module，创建 cmd/qosnatd 与 internal 包骨架。

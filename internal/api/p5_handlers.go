@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/stats"
 )
@@ -48,6 +47,7 @@ func (srv *Server) handleEbpfReload(w http.ResponseWriter, r *http.Request) {
 	}
 	st := srv.store.Get()
 	_ = srv.bpf.ReplayState(st)
-	ebpf.ReplayHostClasses(st, srv.hosts)
+	srv.syncShaperDevices()
+	srv.replayProfileHosts()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

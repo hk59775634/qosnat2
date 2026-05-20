@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/cilium/ebpf"
+	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -64,6 +65,9 @@ func (m *Manager) Load() error {
 	}
 	if _, err := os.Stat(m.objPath); err != nil {
 		return fmt.Errorf("bpf object %s: %w (run: make bpf && deploy)", m.objPath, err)
+	}
+	if err := netif.EnsureIFB(); err != nil {
+		return err
 	}
 	spec, err := ebpf.LoadCollectionSpec(m.objPath)
 	if err != nil {
@@ -220,21 +224,12 @@ func (m *Manager) ReplayState(st store.State) error {
 			return err
 		}
 	}
-	for _, p := range st.Shaper.Profiles {
+	for _, p := range store.SortProfilesByID(st.Shaper.Profiles) {
 		rv, err := rateFromProfile(p.Down, p.Up)
 		if err != nil {
 			return err
 		}
 		if err := m.UpdateProfile(p.CIDR, rv); err != nil {
-			return err
-		}
-	}
-	for ip, h := range st.Shaper.Hosts {
-		rv, err := rateFromProfile(h.Down, h.Up)
-		if err != nil {
-			return err
-		}
-		if err := m.UpdateHost(ip, rv); err != nil {
 			return err
 		}
 	}

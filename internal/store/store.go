@@ -25,41 +25,42 @@ type HostRate struct {
 
 // ShaperState 流量整形持久化（P1 起同步 BPF Map）
 type ShaperState struct {
+	Device          string                 `json:"device,omitempty"` // 默认绑定网卡，空则 DEV_LAN
 	PolicyCIDR      string                 `json:"policy_cidr"`
 	DefaultProfile  RateProfile            `json:"default_profile"`
 	Profiles        []ProfileEntry         `json:"profiles"`
-	Hosts           map[string]HostRate    `json:"hosts"`
+	Hosts           map[string]HostRate    `json:"hosts,omitempty"` // 已废弃，启动时迁入 profiles
 	Leaf            string                 `json:"leaf"`
 	IdleTimeoutSec  int                    `json:"idle_timeout_sec"`
 }
 
-// ProfileEntry LPM 网段模板
+// ProfileEntry LPM 网段模板（ID 越小优先级越高，仅影响管理排序；数据面仍 LPM 最长前缀优先）
 type ProfileEntry struct {
-	CIDR string      `json:"cidr"`
-	Down string      `json:"down"`
-	Up   string      `json:"up"`
-	Mask int         `json:"mask,omitempty"`
-}
-
-// WanPortForward 公网端口转发
-type WanPortForward struct {
-	Proto    string `json:"proto"`
-	WanPort  int    `json:"wan_port"`
-	HostIP   string `json:"host_ip"`
-	HostPort int    `json:"host_port"`
-	Comment  string `json:"comment,omitempty"`
+	CIDR     string `json:"cidr"`
+	Down     string `json:"down"`
+	Up       string `json:"up"`
+	Mask     int    `json:"mask,omitempty"`
+	ID       int    `json:"id"`
+	Priority int    `json:"priority,omitempty"` // 已废弃，启动时迁入 id
+	Device   string `json:"device,omitempty"`   // 绑定网卡，空则用 Shaper.Device 或 DEV_LAN
 }
 
 // FirewallState 防火墙/NAT 扩展
 type FirewallState struct {
 	WanPortForwards []WanPortForward `json:"wan_port_forwards"`
-	Rules           []any          `json:"rules,omitempty"`
 }
 
 // SystemState 系统可调项
 type SystemState struct {
-	Sysctl   map[string]string `json:"sysctl"`
-	Hostname string            `json:"hostname,omitempty"`
+	Sysctl        map[string]string `json:"sysctl"`
+	Hostname      string            `json:"hostname,omitempty"`
+	TxQueueLenLAN int               `json:"txqueuelen_lan,omitempty"`
+	TxQueueLenWAN int               `json:"txqueuelen_wan,omitempty"`
+	RpsLAN             bool   `json:"rps_lan,omitempty"`
+	RpsWAN             bool   `json:"rps_wan,omitempty"`
+	PerfPreset         bool   `json:"perf_preset,omitempty"`
+	TuningAutoApplied  bool   `json:"tuning_auto_applied,omitempty"`
+	TuningTier         string `json:"tuning_tier,omitempty"`
 }
 
 // APIKey 持久化 API Key
@@ -72,13 +73,18 @@ type APIKey struct {
 
 // State 完整持久化（/var/lib/qosnat2/state.json）
 type State struct {
+	SetupComplete  bool              `json:"setup_complete"`
+	AdminUser      string            `json:"admin_user,omitempty"`
+	AdminPassHash  string            `json:"admin_pass_hash,omitempty"`
 	PolicyRoutes   []string          `json:"policy_routes"`
+	Routes         []RouteEntry      `json:"routes"`
 	SharedIPs      []string          `json:"shared_ips"`
 	StaticMappings map[string]string `json:"static_mappings"`
 	PrefixMappings map[string]string `json:"prefix_mappings"`
 	Shaper         ShaperState       `json:"shaper"`
 	Firewall       FirewallState     `json:"firewall"`
 	System         SystemState       `json:"system"`
+	DHCP           DHCPState         `json:"dhcp"`
 	VPN            VPNState          `json:"vpn"`
 	APIKeys        []APIKey          `json:"api_keys"`
 }
@@ -93,7 +99,9 @@ type Store struct {
 // DefaultState 空状态默认值
 func DefaultState() State {
 	return State{
+		SetupComplete:  false,
 		PolicyRoutes:   []string{"10.0.0.0/8"},
+		Routes:         []RouteEntry{},
 		SharedIPs:      nil,
 		StaticMappings: map[string]string{},
 		PrefixMappings: map[string]string{},
@@ -109,11 +117,11 @@ func DefaultState() State {
 		},
 		Firewall: FirewallState{
 			WanPortForwards: []WanPortForward{},
-			Rules:           []any{},
 		},
 		System: SystemState{
 			Sysctl: map[string]string{},
 		},
+		DHCP: DefaultDHCP(),
 		VPN: VPNState{
 			WireGuard: WireGuardState{
 				Enabled:    false,
@@ -187,6 +195,9 @@ func (s *Store) ensureDefaults() {
 }
 
 func (s *Store) ensureDefaultsLocked() {
+	if s.State.SharedIPs == nil {
+		s.State.SharedIPs = []string{}
+	}
 	if s.State.StaticMappings == nil {
 		s.State.StaticMappings = map[string]string{}
 	}
@@ -202,12 +213,41 @@ func (s *Store) ensureDefaultsLocked() {
 	if s.State.Shaper.IdleTimeoutSec == 0 {
 		s.State.Shaper.IdleTimeoutSec = 300
 	}
+	if s.State.Routes == nil {
+		s.State.Routes = []RouteEntry{}
+	}
 	if s.State.Shaper.PolicyCIDR == "" {
 		s.State.Shaper.PolicyCIDR = "10.0.0.0/8"
 	}
 	if s.State.Shaper.DefaultProfile.Down == "" {
 		s.State.Shaper.DefaultProfile = RateProfile{Down: "8mbit", Up: "8mbit", HostMask: 32}
 	}
+	def := DefaultDHCP()
+	if s.State.DHCP.StaticLeases == nil {
+		s.State.DHCP.StaticLeases = []DHCPStaticLease{}
+	}
+	if s.State.DHCP.DNSServers == nil {
+		s.State.DHCP.DNSServers = def.DNSServers
+	}
+	if s.State.DHCP.LeaseTimeSec == 0 {
+		s.State.DHCP.LeaseTimeSec = def.LeaseTimeSec
+	}
+	if s.State.DHCP.RangeStart == "" {
+		s.State.DHCP.RangeStart = def.RangeStart
+	}
+	if s.State.DHCP.RangeEnd == "" {
+		s.State.DHCP.RangeEnd = def.RangeEnd
+	}
+	if s.State.DHCP.Router == "" {
+		s.State.DHCP.Router = def.Router
+	}
+	if s.State.DHCP.Netmask == "" {
+		s.State.DHCP.Netmask = def.Netmask
+	}
+	if s.State.Firewall.WanPortForwards == nil {
+		s.State.Firewall.WanPortForwards = []WanPortForward{}
+	}
+	MigrateWanForwards(&s.State.Firewall.WanPortForwards)
 	if s.State.VPN.WireGuard.Interface == "" {
 		s.State.VPN.WireGuard.Interface = "wg0"
 	}
@@ -219,6 +259,15 @@ func (s *Store) ensureDefaultsLocked() {
 	}
 	if s.State.VPN.WireGuard.Peers == nil {
 		s.State.VPN.WireGuard.Peers = []WGPeer{}
+	}
+	MigrateHostsToProfiles(&s.State.Shaper.Profiles, s.State.Shaper.Hosts)
+	s.State.Shaper.Hosts = nil
+	NormalizeProfileIDs(&s.State.Shaper.Profiles)
+	// 旧部署：env 已配置网卡但 state 无 setup_complete
+	if !s.State.SetupComplete {
+		if lan, wan := os.Getenv("DEV_LAN"), os.Getenv("DEV_WAN"); lan != "" && wan != "" {
+			s.State.SetupComplete = true
+		}
 	}
 }
 

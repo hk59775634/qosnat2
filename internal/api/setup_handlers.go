@@ -1,0 +1,216 @@
+package api
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/exec"
+	"strings"
+
+	"github.com/hk59775634/qosnat2/internal/dnsmasq"
+	"github.com/hk59775634/qosnat2/internal/nft"
+	"github.com/hk59775634/qosnat2/internal/route"
+	"github.com/hk59775634/qosnat2/internal/shaper"
+	"github.com/hk59775634/qosnat2/internal/store"
+)
+
+func (srv *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	complete := srv.setupComplete()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"setup_required": !complete,
+		"setup_complete": complete,
+		"dev_lan":        srv.env.DevLAN,
+		"dev_wan":        srv.env.DevWAN,
+		"has_admin":      srv.store.Get().AdminPassHash != "" || srv.env.AdminPass != "",
+	})
+}
+
+func (srv *Server) handleSetupInterfaces(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if srv.setupComplete() {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "setup already complete"})
+		return
+	}
+	ifaces, err := dnsmasq.ListInterfaces()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"interfaces": ifaces})
+}
+
+func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if srv.setupComplete() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "setup already complete"})
+		return
+	}
+	var body struct {
+		AdminUser     string   `json:"admin_user"`
+		AdminPass     string   `json:"admin_pass"`
+		DevLAN        string   `json:"dev_lan"`
+		DevWAN        string   `json:"dev_wan"`
+		PolicyRoutes  []string `json:"policy_routes"`
+		SharedIPs     []string `json:"shared_ips"`
+		Hostname      string   `json:"hostname"`
+		EnableDHCP    bool     `json:"enable_dhcp"`
+		ApplyDataplane bool    `json:"apply_dataplane"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		return
+	}
+	body.AdminUser = strings.TrimSpace(body.AdminUser)
+	body.DevLAN = strings.TrimSpace(body.DevLAN)
+	body.DevWAN = strings.TrimSpace(body.DevWAN)
+	if body.AdminUser == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "admin_user required"})
+		return
+	}
+	if len(body.AdminPass) < 8 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "admin_pass must be at least 8 characters"})
+		return
+	}
+	if body.DevLAN == "" || body.DevWAN == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_lan and dev_wan required"})
+		return
+	}
+	if body.DevLAN == body.DevWAN {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_lan and dev_wan must differ"})
+		return
+	}
+	if !route.LinkExists(body.DevLAN) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_lan: interface %q not found", body.DevLAN)})
+		return
+	}
+	if !route.LinkExists(body.DevWAN) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_wan: interface %q not found", body.DevWAN)})
+		return
+	}
+	hash, err := hashPassword(body.AdminPass)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if len(body.PolicyRoutes) == 0 {
+		body.PolicyRoutes = []string{"10.0.0.0/8"}
+	}
+	for _, ip := range body.SharedIPs {
+		ip = strings.TrimSpace(ip)
+		if ip == "" {
+			continue
+		}
+		tmp := store.DefaultState()
+		if err := nft.AddSharedIP(&tmp, ip); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "shared_ips: " + err.Error()})
+			return
+		}
+	}
+
+	passHash := string(hash)
+	_ = srv.store.Update(func(st *store.State) {
+		st.SetupComplete = true
+		st.AdminUser = body.AdminUser
+		st.AdminPassHash = passHash
+		st.PolicyRoutes = body.PolicyRoutes
+		if body.SharedIPs != nil {
+			st.SharedIPs = body.SharedIPs
+		}
+		if body.Hostname != "" {
+			st.System.Hostname = body.Hostname
+		}
+		st.Shaper.PolicyCIDR = body.PolicyRoutes[0]
+		st.DHCP.Interface = body.DevLAN
+		if body.EnableDHCP {
+			st.DHCP.Enabled = true
+		}
+	})
+	if err := srv.store.Save(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	autoRec := srv.applyAutoTuningOnSetup(false)
+	_ = srv.store.Save()
+
+	srv.env.AdminUser = body.AdminUser
+	srv.env.DevLAN = body.DevLAN
+	srv.env.DevWAN = body.DevWAN
+	envWrite := srv.env
+	envWrite.AdminPass = "" // 口令仅存 state bcrypt，不写明文到 env
+	if err := WriteRuntimeEnv(envWrite); err != nil {
+		log.Printf("write env: %v", err)
+	}
+	srv.reloadEnv()
+
+	var applyErr string
+	if body.ApplyDataplane {
+		_ = srv.applyAutoTuningOnSetup(true)
+		_ = srv.setupPrepareTC()
+		if err := srv.ApplyAll(); err != nil {
+			applyErr = err.Error()
+			log.Printf("setup apply: %v", err)
+		}
+	}
+	_ = enableDataplaneOneshot()
+
+	tok, err := srv.sessions.create()
+	if err == nil {
+		http.SetCookie(w, &http.Cookie{
+			Name:     sessionCookie,
+			Value:    tok,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   int(sessionTTL.Seconds()),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":             true,
+		"setup_complete": true,
+		"dev_lan":        body.DevLAN,
+		"dev_wan":        body.DevWAN,
+		"tuning_tier":    autoRec.Tier,
+		"tuning_applied": true,
+		"apply_error":    applyErr,
+		"nft_skipped": func() bool {
+			ips, _ := nft.ResolveSharedIPs(nft.Config{DevLAN: body.DevLAN, DevWAN: body.DevWAN}, srv.store.Get())
+			return len(ips) == 0
+		}(),
+	})
+}
+
+func enableDataplaneOneshot() error {
+	if os.Getuid() != 0 {
+		return nil
+	}
+	_ = exec.Command("systemctl", "daemon-reload").Run()
+	if out, err := exec.Command("systemctl", "enable", "qos-nat.service").CombinedOutput(); err != nil {
+		log.Printf("enable qos-nat: %s %v", strings.TrimSpace(string(out)), err)
+	}
+	if out, err := exec.Command("systemctl", "start", "qos-nat.service").CombinedOutput(); err != nil {
+		log.Printf("start qos-nat: %s %v", strings.TrimSpace(string(out)), err)
+		return err
+	}
+	return nil
+}
+
+// setupPrepareTC 引导时预置 ifb/HTB（复用 shaper.SetupP0）
+func (srv *Server) setupPrepareTC() error {
+	if os.Getuid() != 0 || srv.env.DevLAN == "" {
+		return nil
+	}
+	return shaper.SetupP0(shaper.Config{DevLAN: srv.env.DevLAN, Leaf: srv.store.Get().Shaper.Leaf})
+}

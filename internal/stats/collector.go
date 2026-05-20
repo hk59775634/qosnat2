@@ -25,14 +25,13 @@ type System struct {
 
 // Collector 采样 /proc 与网卡计数
 type Collector struct {
-	mu      sync.Mutex
-	last    time.Time
-	lastLAN [2]uint64
-	lastWAN [2]uint64
-	prevCPU [2]uint64
+	mu       sync.Mutex
+	last     time.Time
+	prev     map[string][2]uint64 // dev -> rx, tx bytes
+	prevCPU  [2]uint64
 }
 
-func New() *Collector { return &Collector{} }
+func New() *Collector { return &Collector{prev: map[string][2]uint64{}} }
 
 func (c *Collector) System() System {
 	return System{
@@ -43,29 +42,25 @@ func (c *Collector) System() System {
 	}
 }
 
-func (c *Collector) IfaceMbps(dev string, slot int) IfaceRates {
+func (c *Collector) IfaceMbps(dev string) IfaceRates {
+	if dev == "" {
+		return IfaceRates{}
+	}
 	rx, tx := readIfaceBytes(dev)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.prev == nil {
+		c.prev = map[string][2]uint64{}
+	}
 	now := time.Now()
 	dt := now.Sub(c.last).Seconds()
-	if dt < 0.2 || c.last.IsZero() {
+	prev, ok := c.prev[dev]
+	if dt < 0.2 || c.last.IsZero() || !ok {
 		c.last = now
-		if slot == 0 {
-			c.lastLAN = [2]uint64{rx, tx}
-		} else {
-			c.lastWAN = [2]uint64{rx, tx}
-		}
+		c.prev[dev] = [2]uint64{rx, tx}
 		return IfaceRates{}
 	}
-	var prev [2]uint64
-	if slot == 0 {
-		prev = c.lastLAN
-		c.lastLAN = [2]uint64{rx, tx}
-	} else {
-		prev = c.lastWAN
-		c.lastWAN = [2]uint64{rx, tx}
-	}
+	c.prev[dev] = [2]uint64{rx, tx}
 	c.last = now
 	rxMbps := float64(rx-prev[0]) * 8 / dt / 1e6
 	txMbps := float64(tx-prev[1]) * 8 / dt / 1e6

@@ -1,10 +1,13 @@
 module github.com/hk59775634/qosnat2
 
-go 1.22
+go 1.25.0
 
-require github.com/cilium/ebpf v0.16.0
+require (
+	github.com/cilium/ebpf v0.16.0
+	golang.org/x/crypto v0.28.0
+)
 
 require (
 	golang.org/x/exp v0.0.0-20230224173230-c95f2b4c22f2 // indirect
-	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 )

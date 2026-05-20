@@ -70,14 +70,18 @@ func ReplayHostClasses(st store.State, hs HostEnsurer) {
 	if hs == nil {
 		return
 	}
-	for ip, h := range st.Shaper.Hosts {
-		d, err := rateFromProfile(h.Down, h.Up)
+	for _, p := range store.SortProfilesByID(st.Shaper.Profiles) {
+		ip, ok := store.ProfileHostIP(p.CIDR)
+		if !ok {
+			continue
+		}
+		d, err := rateFromProfile(p.Down, p.Up)
 		if err != nil {
-			log.Printf("replay host %s: %v", ip, err)
+			log.Printf("replay profile %s: %v", p.CIDR, err)
 			continue
 		}
 		if err := hs.EnsureHost(ip, d.DownBPS, d.UpBPS, 0); err != nil {
-			log.Printf("replay host %s: %v", ip, err)
+			log.Printf("replay profile %s: %v", p.CIDR, err)
 		}
 	}
 }

@@ -31,8 +31,20 @@ async function stop(id) {
   await load()
 }
 
-function download(id) {
-  window.open(`/api/v1/diagnostics/captures/${id}/download`, '_blank')
+async function download(id) {
+  err.value = ''
+  try {
+    const res = await fetch(`/api/v1/diagnostics/captures/${id}/download`, { credentials: 'include' })
+    if (!res.ok) throw new Error(res.statusText)
+    const blob = await res.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `capture-${id.slice(-8)}.pcap`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  } catch (e) {
+    err.value = e.message
+  }
 }
 
 function fmtSize(n) {

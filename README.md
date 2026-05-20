@@ -4,17 +4,34 @@
 
 **与旧 qosnat 差异**：无 netns / ipvlan / flowtable；WAN 留在宿主机；整形为 Shaping（禁止 `TC_ACT_SHOT` policer）。
 
+## 功能概览
+
+| 模块 | 说明 |
+|------|------|
+| **初始设置向导** | 安装后仅启动 Web；浏览器完成管理员、LAN/WAN、策略路由等后再加载数据面（类似 AdGuard Home） |
+| **高级设置 · 系统优化** | sysctl / conntrack / TCP / 网卡 txqueuelen & RPS / QoS 叶子队列；按 **CPU+内存** 自动推荐，可手动覆盖 |
+| **NAT** | Outbound SNAT 池、1:1、前缀映射、WAN 端口转发、策略路由 |
+| **QoS** | Per-IP HTB + eBPF `profile_lpm`；策略模板与向导合一页 |
+| **网络** | 接口实时速率、IPv4 编辑、托管路由、dnsmasq DHCP |
+| **可观测** | Dashboard、eBPF Maps、Mark 审计、conntrack、tcpdump 抓包 |
+| **VPN** | WireGuard 密钥 / Peer / `wg-quick` 应用 |
+
 ## 仓库结构
 
 ```
-cmd/qosnatd/          # 守护进程
-internal/             # api, ebpf, shaper, nft, store, sysctl
-bpf/classify.bpf.c    # TC clsact（P2 attach）
-api/openapi.yaml      # REST 契约
-deploy-qos-nat.sh     # 部署
-web/                  # P0 最小静态页（P4 Vue）
-docs/                 # 开发说明
-reference/            # 旧项目对照，禁止部署
+cmd/qosnatd/              # 守护进程（REST + 静态 Web）
+internal/
+  api/                    # HTTP 处理器（setup、nat、shaper、tuning…）
+  ebpf/ shaper/ nft/      # 数据面
+  store/ sysctl/ tuning/  # 持久化与内核调优
+  netif/ route/ dnsmasq/  # 网卡、路由、DHCP
+bpf/classify.bpf.c        # TC clsact
+api/openapi.yaml          # REST 契约
+deploy-qos-nat.sh         # 部署脚本
+web/                      # Vue 3 + Vite + Tailwind（构建产物 web/dist）
+scripts/test-ui-api.sh    # API 冒烟测试
+docs/                     # 开发说明、UI 规划
+reference/                # 旧项目对照（勿部署）
 ```
 
 ## 构建
@@ -23,83 +40,97 @@ reference/            # 旧项目对照，禁止部署
 cd /opt/qosnat2
 go mod tidy
 go build -o bin/qosnatd ./cmd/qosnatd
-make bpf                               # 需 clang + libbpf
+make bpf                               # 需 clang + libbpf → bpf/classify.bpf.o
 
-# Web UI (P4)
-cd web && npm install && npm run build # 产出 web/dist
+cd web && npm install && npm run build # 产出 web/dist（部署前必须）
 ```
 
-浏览器访问 `http://<host>:8080/`（Vue3 + hash 路由）。
+浏览器访问 `http://<host>:8080/`（Vue 3 + hash 路由）。
 
-## 部署（P0）
-
-**必须**显式指定网卡（禁止写死 ens18/ens19）：
+## 部署
 
 ```bash
-cd /opt/qosnat2
-sudo DEV_LAN=vlan.3003 DEV_WAN=vlan.907 SHARED_IP_1=203.0.113.1 ./deploy-qos-nat.sh start
+sudo ./deploy-qos-nat.sh start
+# 打开 http://<host>:8080/ → 自动进入 /#/setup
 ```
 
-- 安装路径：`readlink -f` → `/usr/local/bin/qosnatd`
-- 状态：`/var/lib/qosnat2/state.json`
-- 配置：`/etc/qosnat2/env`
-- systemd：`qosnatd.service`（常驻）、`qos-nat.service`（oneshot apply-state）
+| 路径 | 说明 |
+|------|------|
+| `/usr/local/bin/qosnatd` | 控制面二进制 |
+| `/var/lib/qosnat2/state.json` | 持久化（`setup_complete`、NAT/QoS/调优） |
+| `/etc/qosnat2/env` | 运行时 LAN/WAN（向导写入） |
+| `/etc/sysctl.d/99-qosnat2.conf` | 系统优化 sysctl |
+| `qosnatd.service` | 常驻 Web/API |
+| `qos-nat.service` | 向导完成后 enable，回放 TC/nft |
+
+安装后**不**自动加载 TC/nft；完成向导并应用数据面后生效。
+
+预置网卡（可选）：
+
+```bash
+DEV_LAN=ens19 DEV_WAN=ens18 ADMIN_USER=admin ADMIN_PASS='your-pass' \
+  sudo ./deploy-qos-nat.sh start
+```
+
+健康检查：
 
 ```bash
 curl -s http://127.0.0.1:8080/api/v1/health
-sudo nft list ruleset | head -50   # 表 inet qosnat，无 flowtable
+curl -s http://127.0.0.1:8080/api/v1/setup/status
 ```
 
-首次若 `shared_ips` 为空，nft 会跳过直至 API 配置：
+## Web UI 菜单
 
-```bash
-curl -s -c /tmp/c -X POST http://127.0.0.1:8080/api/v1/login \
-  -H 'Content-Type: application/json' -d '{"user":"admin","pass":"QosNat@2026"}'
-curl -s -b /tmp/c -X POST http://127.0.0.1:8080/api/v1/nat/shared-ips \
-  -H 'Content-Type: application/json' -d '{"ip":"203.0.113.1"}'
-```
+- **Dashboard** — 吞吐、会话、WAN/LAN 速率
+- **Network** — 接口、路由、DHCP、RSS/多队列
+- **Security** — Outbound NAT、端口转发
+- **Traffic** — QoS 策略、活跃 Per-IP
+- **System** — **高级设置**（系统优化）、API 文档（Scalar）
+- **Observability / VPN / Diagnostics** — eBPF、Mark、conntrack、抓包、WireGuard
+
+### 系统优化（高级设置）
+
+- 首次引导或首次打开页面时，按宿主机 **CPU 核数 + 内存** 写入推荐档位（低 / 中 / 高）。
+- 可调：`nf_conntrack_*`、TCP/backlog、邻居表、RPS、`txqueuelen`、HTB 叶子（`fq_codel` / `fq`）、Per-IP 空闲回收等。
+- API：`GET/PUT /api/v1/system/tuning`（`apply_recommended` 按当前硬件重算）。
+
+## API 与测试
+
+- OpenAPI：`api/openapi.yaml`，运行时 `GET /openapi.yaml`
+- 鉴权：Session Cookie `qosnat_sess` 或 `X-API-Key`（实验性）
+- 冒烟：`scripts/test-ui-api.sh`（需已登录或设置 `QOSNAT_API_KEY`）
 
 ## 最小验收环境
 
-1. 宿主机双网卡：`DEV_LAN` 接内网（10.0.0.0/8 经 ASA/VPN），`DEV_WAN` 接公网且 **在宿主机**（非 netns）。
-2. 内网路由：`10.0.0.0/8` → ASA；默认路由 → `DEV_WAN` 网关。
-3. `SHARED_IP_1` 为本机 WAN 真实公网 IP；`policy_routes` 含 `10.0.0.0/8`。
-4. 内网客户端 `ping 8.8.8.8` / `curl` 经 NAT 出网；`nft list chain inet qosnat forward` 可见非对称 drop 规则。
+1. 宿主机双网卡：`DEV_LAN` 内网（如 `10.0.0.0/8`），`DEV_WAN` 公网且在宿主机。
+2. 内网默认经 ASA/VPN；默认路由走 WAN 网关。
+3. 完成向导并应用数据面；内网客户端可 `ping` / `curl` 出网。
+4. `nft list chain inet qosnat forward` 可见非对称 drop 规则；Dashboard 有速率。
 
-## P0/P1 状态
+## 实现阶段（已完成）
 
-| 项 | P0 | P1（当前） |
-|----|-----|------------|
-| NAT nft | ✅ | ✅ |
-| BPF Pin + Map | — | ✅ |
-| TC classify + IFB redirect | — | ✅ P2 |
-| 动态 HTB（ringbuf/API） | — | ✅ P2 |
-| active_host Iterate | — | ✅ |
-| Dashboard / GC | — | ✅ P3 |
-
-## 已知限制
-- 鉴权仅 HTTP + Cookie / `X-API-Key`
-
-## 后续待办
-
-- **P1** ✅ bpffs Pin、Map CRUD
-- **P2** ✅ classify attach + ifb redirect + 动态 HTB + ringbuf
-- **P3** ✅ Dashboard + idle GC
-- **P4** ✅ Vue3 + Vite + Tailwind pfSense 风格 UI
-- **P5** ✅ mark 审计 + RSS/队列监控 + `POST /ebpf/reload`
-- **P6** ✅ WireGuard（密钥/Peer/应用/客户端 conf）+ tcpdump 抓包 + conntrack 列表
-- **文档** ✅ `api/openapi.yaml` 全量同步；Web **开发 → API (Scalar)**；**状态 → 连接状态**
+| 阶段 | 内容 |
+|------|------|
+| P0–P1 | nft NAT、bpffs、eBPF Map |
+| P2 | TC classify + IFB + 动态 HTB |
+| P3 | Dashboard、idle GC |
+| P4 | Vue 3 Web UI |
+| P5 | Mark 审计、RSS、ebpf reload |
+| P6 | WireGuard、抓包、conntrack |
+| — | 引导向导、接口/DHCP/路由 API、系统优化与硬件推荐 |
 
 ## 环境变量
 
 | 变量 | 含义 |
 |------|------|
-| `DEV_LAN` | 内网接口（必填） |
-| `DEV_WAN` | 外网接口（必填，宿主机） |
+| `DEV_LAN` | 内网接口 |
+| `DEV_WAN` | 外网接口（宿主机） |
 | `ADMIN_PORT` | API 端口，默认 8080 |
 | `STATE_FILE` | 默认 `/var/lib/qosnat2/state.json` |
+| `ADMIN_USER` / `ADMIN_PASS` | 可选，部署时预置管理员 |
 
 ## 参考
 
-- `reference/`：旧 netns + policer，**勿部署**
-- 模块路径：`github.com/hk59775634/qosnat2`
+- `reference/`：旧 netns + policer 实现，**仅对照，勿部署**
+- Go 模块：`github.com/hk59775634/qosnat2`
+- 上游：<https://github.com/hk59775634/qosnat2>

@@ -6,6 +6,9 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/hk59775634/qosnat2/internal/netif"
+	"github.com/hk59775634/qosnat2/internal/route"
 )
 
 // Config TC/IFB 拓扑参数
@@ -31,7 +34,7 @@ func SetupP0(cfg Config) error {
 		_ = exec.CommandContext(ctx, "modprobe", m).Run()
 		cancel()
 	}
-	if err := ensureIFB(); err != nil {
+	if err := EnsureIFB(); err != nil {
 		return err
 	}
 	if err := setupHTBRoot(cfg.DevLAN, leaf); err != nil {
@@ -46,17 +49,9 @@ func SetupP0(cfg Config) error {
 	return nil
 }
 
-func ensureIFB() error {
-	if linkExists(IFBDev) {
-		return nil
-	}
-	if out, err := exec.Command("ip", "link", "add", IFBDev, "type", "ifb").CombinedOutput(); err != nil {
-		return fmt.Errorf("ip link add ifb0: %s %w", strings.TrimSpace(string(out)), err)
-	}
-	if out, err := exec.Command("ip", "link", "set", IFBDev, "up").CombinedOutput(); err != nil {
-		return fmt.Errorf("ip link set ifb0 up: %s %w", strings.TrimSpace(string(out)), err)
-	}
-	return nil
+// EnsureIFB 确保 ifb0 存在（eBPF Load 与 TC 拓扑均依赖）
+func EnsureIFB() error {
+	return netif.EnsureIFB()
 }
 
 func setupHTBRoot(dev, leaf string) error {
@@ -95,17 +90,12 @@ func ensureClsact(dev string) error {
 	return nil
 }
 
-func linkExists(name string) bool {
-	_, err := exec.Command("ip", "link", "show", name).Output()
-	return err == nil
-}
-
 // EnsureDevice HTB 根 + clsact（WireGuard 等附加接口）
 func EnsureDevice(dev, leaf string) error {
 	if dev == "" {
 		return fmt.Errorf("device required")
 	}
-	if !linkExists(dev) {
+	if !route.LinkExists(dev) {
 		return fmt.Errorf("interface %s not found", dev)
 	}
 	if leaf == "" {

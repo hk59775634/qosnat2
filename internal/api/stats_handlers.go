@@ -8,6 +8,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/stats"
+	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 func (srv *Server) collector() *stats.Collector {
@@ -17,26 +18,11 @@ func (srv *Server) collector() *stats.Collector {
 	return srv.metrics
 }
 
-func (srv *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	st := srv.store.Get()
-	sys := srv.collector().System()
-	writeJSON(w, http.StatusOK, map[string]any{
-		"phase":         "P5",
-		"policy_routes": len(st.PolicyRoutes),
-		"shared_ips":    len(st.SharedIPs),
-		"static_maps":   len(st.StaticMappings),
-		"cpu_percent":   sys.CPUPercent,
-		"mem_percent":   sys.MemPercent,
-		"conntrack":     sys.Conntrack,
-		"uptime_sec":    sys.UptimeSec,
-	})
-}
-
 func (srv *Server) handleStatsDashboard(w http.ResponseWriter, r *http.Request) {
 	c := srv.collector()
 	st := srv.store.Get()
-	lan := c.IfaceMbps(srv.env.DevLAN, 0)
-	wan := c.IfaceMbps(srv.env.DevWAN, 1)
+	lan := c.IfaceMbps(srv.env.DevLAN)
+	wan := c.IfaceMbps(srv.env.DevWAN)
 	sys := c.System()
 
 	var active []ebpf.ActiveEntry
@@ -62,7 +48,7 @@ func (srv *Server) handleStatsDashboard(w http.ResponseWriter, r *http.Request) 
 		"shaper": map[string]any{
 			"policy_cidr":      st.Shaper.PolicyCIDR,
 			"idle_timeout_sec": st.Shaper.IdleTimeoutSec,
-			"vip_hosts":        len(st.Shaper.Hosts),
+			"profile_rules":    len(st.Shaper.Profiles),
 		},
 		"mark_policy": mark,
 		"interfaces": map[string]any{
@@ -113,29 +99,8 @@ func topActive(list []ebpf.ActiveEntry, n int) []topHost {
 	return out
 }
 
-func (srv *Server) handleShaperHostsList(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	list, err := srv.bpf.ListHosts()
-	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
-		return
-	}
-	if list == nil {
-		list = []ebpf.HostEntry{}
-	}
-	writeJSON(w, http.StatusOK, list)
-}
-
-func (srv *Server) gcKeepVIP() map[string]bool {
-	st := srv.store.Get()
-	m := make(map[string]bool, len(st.Shaper.Hosts))
-	for ip := range st.Shaper.Hosts {
-		m[ip] = true
-	}
-	return m
+func (srv *Server) gcKeepProfiles() map[string]bool {
+	return store.ProfileHost32IPs(srv.store.Get().Shaper.Profiles)
 }
 
 func (srv *Server) idleTimeout() time.Duration {
