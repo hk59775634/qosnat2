@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NAT-QoS API — Swagger UI</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css">
+  <style>
+    html { box-sizing: border-box; overflow-y: scroll; }
+    *, *:before, *:after { box-sizing: inherit; }
+    body { margin: 0; background: #fafafa; }
+    .topbar {
+      background: #1a2332; color: #e2e8f0; padding: .6rem 1.2rem;
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+      border-bottom: 1px solid #334155;
+      font-family: system-ui, sans-serif; font-size: .9rem;
+    }
+    .topbar a { color: #93c5fd; text-decoration: none; }
+    .topbar a:hover { text-decoration: underline; }
+    .topbar .active { color: #fff; font-weight: 600; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <strong>NAT-QoS API</strong>
+    <span class="active">Swagger UI</span>
+    <a href="/redoc.html">ReDoc</a>
+    <a href="/scalar.html">Scalar</a>
+    <a href="/">← 控制台</a>
+    <a href="/openapi.yaml" target="_blank">OpenAPI YAML</a>
+  </div>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-bundle.js" crossorigin></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui-standalone-preset.js" crossorigin></script>
+  <script>
+    window.onload = function() {
+      window.ui = SwaggerUIBundle({
+        url: '/openapi.yaml',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        layout: 'StandaloneLayout',
+        persistAuthorization: true,
+        tryItOutEnabled: true,
+        requestInterceptor: function(req) {
+          req.credentials = 'include';
+          return req;
+        }
+      });
+    };
+  </script>
+</body>
+</html>

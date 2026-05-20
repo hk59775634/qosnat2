@@ -1,0 +1,16 @@
+.specstory/
+.vscode/
+.cursorindexingignore
+.DS_Store
+/bin/
+/qosnatd
+*.o
+*.tar.gz
+
+# BPF build artifacts
+bpf/*.bpf.o
+nat-qos-bpf/build/
+nat-qos-bpf/cmd/nat-qos-bpf/nat-qos-bpf
+
+# Node (web ships dist/ for deploy)
+web/node_modules/

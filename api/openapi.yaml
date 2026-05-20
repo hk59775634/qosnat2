@@ -1,0 +1,754 @@
+openapi: 3.0.3
+info:
+  title: qosnat2 API
+  description: |
+    单机双网卡 QoS（HTB + eBPF + IFB）+ NAT（nftables）控制面。
+
+    **鉴权**：除 `GET /api/v1/health` 与 `POST /api/v1/login` 外，需 Session Cookie `qosnat_sess` 或请求头 `X-API-Key`。
+
+    **交互文档**：Web UI → 开发 → API (Scalar)，或 `GET /openapi.yaml`。
+  version: 1.0.0
+  contact:
+    name: qosnat2
+
+servers:
+  - url: /
+    description: 当前 qosnatd 实例
+
+tags:
+  - name: health
+  - name: auth
+  - name: nat
+  - name: shaper
+  - name: stats
+  - name: ebpf
+  - name: system
+  - name: vpn
+  - name: diagnostics
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: qosnat_sess
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    Ok:
+      type: object
+      properties:
+        ok:
+          type: boolean
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    RateLimit:
+      type: object
+      properties:
+        down:
+          type: string
+          example: 8mbit
+        up:
+          type: string
+          example: 8mbit
+    HostRate:
+      allOf:
+        - $ref: '#/components/schemas/RateLimit'
+    Health:
+      type: object
+      properties:
+        ok: { type: boolean }
+        service: { type: string }
+        phase: { type: string }
+        dev_lan: { type: string }
+        dev_wan: { type: string }
+        bpf: { type: boolean }
+        tc_attach: { type: boolean }
+    WGPeer:
+      type: object
+      required: [name, public_key]
+      properties:
+        name: { type: string }
+        public_key: { type: string }
+        private_key: { type: string, description: 客户端私钥，导出 conf 用 }
+        allowed_ips:
+          type: array
+          items: { type: string }
+        endpoint: { type: string }
+        persistent_keepalive: { type: integer }
+        preshared_key: { type: string }
+        rate:
+          $ref: '#/components/schemas/HostRate'
+    WireGuardConfig:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        interface: { type: string, example: wg0 }
+        listen_port: { type: integer }
+        address: { type: string }
+        private_key: { type: string }
+        public_key: { type: string }
+        dns:
+          type: array
+          items: { type: string }
+        server_endpoint: { type: string }
+        peers:
+          type: array
+          items:
+            $ref: '#/components/schemas/WGPeer'
+    ConntrackEntry:
+      type: object
+      properties:
+        l3_proto: { type: string }
+        protocol: { type: string }
+        timeout_sec: { type: integer }
+        state: { type: string }
+        src: { type: string }
+        dst: { type: string }
+        sport: { type: integer }
+        dport: { type: integer }
+        reply_src: { type: string }
+        reply_dst: { type: string }
+        reply_sport: { type: integer }
+        reply_dport: { type: integer }
+        mark: { type: integer }
+        flags: { type: string }
+    ConntrackList:
+      type: object
+      properties:
+        count: { type: integer, description: nf_conntrack_count }
+        limit: { type: integer }
+        truncated: { type: boolean }
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConntrackEntry'
+
+security:
+  - sessionAuth: []
+  - apiKeyAuth: []
+
+paths:
+  /openapi.yaml:
+    get:
+      tags: [health]
+      summary: OpenAPI 规范（YAML）
+      security: []
+      responses:
+        '200':
+          description: YAML
+          content:
+            application/yaml: {}
+
+  /api/v1/health:
+    get:
+      tags: [health]
+      summary: 健康检查
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /api/v1/login:
+    post:
+      tags: [auth]
+      summary: 登录（Set-Cookie qosnat_sess）
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user, pass]
+              properties:
+                user: { type: string }
+                pass: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/session:
+    get:
+      tags: [auth]
+      summary: 当前会话
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  user: { type: string }
+
+  /api/v1/logout:
+    post:
+      tags: [auth]
+      summary: 登出
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/nat/policy-routes:
+    get:
+      tags: [nat]
+      summary: SNAT 策略网段列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+    post:
+      tags: [nat]
+      summary: 添加策略网段
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cidr]
+              properties:
+                cidr: { type: string, example: 10.0.0.0/8 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [nat]
+      summary: 删除策略网段
+      parameters:
+        - name: cidr
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/nat/shared-ips:
+    get:
+      tags: [nat]
+      summary: 共享 SNAT 公网 IP 池
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+    post:
+      tags: [nat]
+      summary: 添加共享 IP
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ip]
+              properties:
+                ip: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/nat/static-mappings:
+    get:
+      tags: [nat]
+      summary: 1:1 静态映射 inner→outer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: string }
+    post:
+      tags: [nat]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inner: { type: string }
+                outer: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/nat/prefix-mappings:
+    get:
+      tags: [nat]
+      summary: 网段 prefix SNAT
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: { type: string }
+    post:
+      tags: [nat]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inner: { type: string }
+                outer: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/nat/wan-forwards:
+    get:
+      tags: [nat]
+      summary: WAN 端口转发列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    proto: { type: string }
+                    wan_port: { type: integer }
+                    host_ip: { type: string }
+                    host_port: { type: integer }
+                    comment: { type: string }
+    post:
+      tags: [nat]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                proto: { type: string, enum: [tcp, udp] }
+                wan_port: { type: integer }
+                host_ip: { type: string }
+                host_port: { type: integer }
+                comment: { type: string }
+      responses:
+        '200':
+          description: 更新后列表
+
+  /api/v1/shaper/wizard:
+    post:
+      tags: [shaper]
+      summary: PCQ 向导（添加/更新 profile_lpm 条目，不覆盖已有 PolicyCIDR）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cidr: { type: string }
+                down: { type: string }
+                up: { type: string }
+                mask: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/shaper/profiles:
+    get:
+      tags: [shaper]
+      summary: 网段模板列表（state + bpf）
+    put:
+      tags: [shaper]
+      summary: 更新网段模板
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cidr: { type: string }
+                down: { type: string }
+                up: { type: string }
+                mask: { type: integer }
+    delete:
+      tags: [shaper]
+      parameters:
+        - name: cidr
+          in: query
+          required: true
+          schema: { type: string }
+
+  /api/v1/shaper/hosts:
+    get:
+      tags: [shaper]
+      summary: host_exact 条目列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /api/v1/shaper/hosts/{ip}:
+    parameters:
+      - name: ip
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [shaper]
+      summary: 查询 VIP /32
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HostRate'
+    put:
+      tags: [shaper]
+      summary: 添加/更新 VIP（host_exact + HTB）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HostRate'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [shaper]
+      summary: 删除 VIP
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/shaper/active:
+    get:
+      tags: [shaper]
+      summary: Iterate active_host
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    ip: { type: string }
+                    down_bps: { type: integer }
+                    up_bps: { type: integer }
+                    bytes_down: { type: integer }
+                    bytes_up: { type: integer }
+                    class_minor: { type: integer }
+
+  /api/v1/stats:
+    get:
+      tags: [stats]
+      summary: 基础统计
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/stats/dashboard:
+    get:
+      tags: [stats]
+      summary: 仪表大厅聚合
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/ebpf/maps:
+    get:
+      tags: [ebpf]
+      summary: BPF Map / attach 状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/ebpf/programs:
+    get:
+      tags: [ebpf]
+      summary: TC 挂载的 pinned 程序
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /api/v1/ebpf/reload:
+    post:
+      tags: [ebpf]
+      summary: 重载 BPF 对象并回放 state
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/system/mark-policy:
+    get:
+      tags: [system]
+      summary: nft mark 与 QoS 隔离审计
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/interfaces/queues:
+    get:
+      tags: [system]
+      summary: RSS / 多队列 / softirq
+      parameters:
+        - name: dev
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/vpn/wireguard:
+    get:
+      tags: [vpn]
+      summary: WireGuard 配置与状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config:
+                    $ref: '#/components/schemas/WireGuardConfig'
+                  status:
+                    type: object
+    put:
+      tags: [vpn]
+      summary: 保存 WireGuard 配置
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WireGuardConfig'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/vpn/wireguard/keys:
+    post:
+      tags: [vpn]
+      summary: 生成 WireGuard 密钥对
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  private_key: { type: string }
+                  public_key: { type: string }
+
+  /api/v1/vpn/wireguard/apply:
+    post:
+      tags: [vpn]
+      summary: wg-quick up/down
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  up: { type: boolean }
+
+  /api/v1/vpn/wireguard/peers:
+    get:
+      tags: [vpn]
+      summary: Peer 列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WGPeer'
+    post:
+      tags: [vpn]
+      summary: 添加/更新 Peer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WGPeer'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [vpn]
+      summary: 删除 Peer
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/vpn/wireguard/peers/{name}/conf:
+    get:
+      tags: [vpn]
+      summary: 下载客户端配置
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: WireGuard client conf
+          content:
+            text/plain: {}
+
+  /api/v1/diagnostics/captures:
+    get:
+      tags: [diagnostics]
+      summary: 抓包会话列表
+    post:
+      tags: [diagnostics]
+      summary: 启动 tcpdump
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                device: { type: string }
+                filter: { type: string }
+                duration_sec: { type: integer }
+    delete:
+      tags: [diagnostics]
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+
+  /api/v1/diagnostics/captures/{id}/download:
+    get:
+      tags: [diagnostics]
+      summary: 下载 pcap
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/vnd.tcpdump.pcap: {}
+
+  /api/v1/diagnostics/conntrack:
+    get:
+      tags: [diagnostics]
+      summary: conntrack 连接列表
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 200, maximum: 2000 }
+        - name: filter
+          in: query
+          description: 匹配 src/dst 子串
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConntrackList'
+        '503':
+          description: conntrack-tools 未安装或执行失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

@@ -1,0 +1,895 @@
+#!/usr/bin/env bash
+#===============================================================================
+# 高性能分层解耦 VPN NAT + 每IP限速 一键部署脚本
+# 适用: Ubuntu 22.04/24.04
+# 架构: 宿主机 eBPF 每IP限速 + natns 命名空间 Nftables Fastpath NAT (ipvlan l3s 互联)
+#===============================================================================
+set -euo pipefail
+
+# ======================== 可迁移配置变量 ========================
+DEV_LAN="${DEV_LAN:-ens19}"                    # 内网网卡（接收 VPN 流量）；非 ens* 时请显式设置，如 vlan.3003
+DEV_WAN="${DEV_WAN:-ens18}"                    # 外网网卡（移入 natns）；非 ens* 时请显式设置，如 vlan.907
+VPN_NET="${VPN_NET:-10.0.0.0/8}"               # 默认策略路由网段（可与 POLICY_ROUTES 并用）
+POLICY_ROUTES="${POLICY_ROUTES:-${VPN_NET}}"   # 逗号分隔多个 CIDR，如 10.0.0.0/8,172.16.0.0/24
+NS_NAME="${NS_NAME:-natns}"                    # NAT 命名空间名称
+IPVLAN_IF="${IPVLAN_IF:-ipvl0}"                # ipvlan 子接口名
+HOST_GW_IP="${HOST_GW_IP:-172.16.99.1}"        # ipvlan 侧（历史）
+NS_GW_IP="${NS_GW_IP:-172.16.99.2}"            # ipvlan 侧（历史）
+INTERLINK_PREFIX="${INTERLINK_PREFIX:-30}"     # 互联子网掩码
+VETH_HOST="${VETH_HOST:-veth-nat0}"            # host↔natns veth（实际互通）
+VETH_NS="${VETH_NS:-veth-nat1}"
+VETH_HOST_IP="${VETH_HOST_IP:-172.16.100.1}"
+VETH_NS_IP="${VETH_NS_IP:-172.16.100.2}"
+VETH_PREFIX="${VETH_PREFIX:-30}"
+
+# 共享 IP 池（轮询 SNAT）— 仅填写本机真实持有的公网 IP
+SHARED_IPS=(
+    "${SHARED_IP_1:-157.15.107.249}"
+)
+# 额外 IP 可通过管理后台动态添加；取消下行注释并设置 FORCE 后启用
+# SHARED_IPS+=( "${SHARED_IP_2:-}" "${SHARED_IP_3:-}" )
+
+# 独立 IP 1:1 映射示例（内网:外网）
+STATIC_NAT_IN="${STATIC_NAT_IN:-10.8.0.100}"
+STATIC_NAT_OUT="${STATIC_NAT_OUT:-157.15.107.252}"
+
+# 默认每 IP 限速（可被管理后台动态覆盖）
+DEFAULT_DOWN_RATE="${DEFAULT_DOWN_RATE:-10mbit}"
+DEFAULT_DOWN_CEIL="${DEFAULT_DOWN_CEIL:-12mbit}"
+DEFAULT_UP_RATE="${DEFAULT_UP_RATE:-4mbit}"
+
+# eBPF 限速
+BPF_SRC="/opt/nat-qos-bpf"
+BPF_OBJ="/usr/lib/nat-qos/ratelimit.bpf.o"
+BPF_CTL="/usr/local/bin/nat-qos-bpf"
+
+# 管理后台（由本脚本安装 nat-admin 时使用）
+ADMIN_USER="${ADMIN_USER:-admin}"
+ADMIN_PASS="${ADMIN_PASS:-NatAdmin@2026}"
+ADMIN_PORT="${ADMIN_PORT:-8080}"
+WAN_SSH_DNAT="${WAN_SSH_DNAT:-1}"           # 1=公网 22 → 宿主机 SSH
+WAN_ADMIN_DNAT="${WAN_ADMIN_DNAT:-1}"       # 1=公网管理端口 → 宿主机 nat-admin
+
+# 路径
+NFT_BOOT="/etc/nat-qos/nftables-natns.nft"
+SYSCTL_CONF="/etc/sysctl.d/99-nat-qos.conf"
+STATE_DIR="/var/lib/nat-admin"
+ADMIN_BIN="/usr/local/bin/nat-admin"
+ADMIN_SRC="/opt/nat-admin"
+
+# 根据脚本所在目录解析源码路径（支持 git clone 到任意目录）
+resolve_src_paths() {
+    local root
+    root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -f "${root}/nat-admin/main.go" && -f "${root}/nat-qos-bpf/Makefile" ]]; then
+        ADMIN_SRC="${root}/nat-admin"
+        BPF_SRC="${root}/nat-qos-bpf"
+        log "源码目录: ${root}"
+    elif [[ -d /opt/nat-admin && -d /opt/nat-qos-bpf ]]; then
+        ADMIN_SRC="/opt/nat-admin"
+        BPF_SRC="/opt/nat-qos-bpf"
+    fi
+}
+
+# 安全开关：设为 1 才允许将 WAN 移入 netns（防止误操作断连）
+FORCE_DEPLOY="${FORCE_DEPLOY:-0}"
+
+DEPLOY_STATE="/run/nat-qos-deploy.state"
+ROLLBACK_NEEDED=0
+
+# 上次部署写入的网卡名（新机器/改名后优先于脚本默认 ens18/ens19）
+if [[ -f /etc/nat-qos/deploy.env ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source /etc/nat-qos/deploy.env
+    set +a
+fi
+
+# 虚拟/互联接口，不能作为 DEV_LAN 或 DEV_WAN
+is_virtual_dev() {
+    local d="${1%%@*}"
+    [[ -z "${d}" ]] && return 0
+    [[ "${d}" == "lo" ]] && return 0
+    [[ "${d}" == "${VETH_HOST}" || "${d}" == "${VETH_NS}" || "${d}" == "${IPVLAN_IF}" ]] && return 0
+    [[ "${d}" == veth* || "${d}" == ipvl* ]] && return 0
+    return 1
+}
+
+sanitize_nic_vars() {
+    if is_virtual_dev "${DEV_LAN}"; then
+        warn "忽略无效的 DEV_LAN=${DEV_LAN}（虚拟接口）"
+        DEV_LAN="ens19"
+    fi
+    if is_virtual_dev "${DEV_WAN}"; then
+        warn "忽略无效的 DEV_WAN=${DEV_WAN}（虚拟接口）"
+        DEV_WAN="ens18"
+    fi
+}
+sanitize_nic_vars
+
+# ======================== 日志与工具函数 ========================
+log()  { echo "[$(date '+%F %T')] [INFO]  $*"; }
+warn() { echo "[$(date '+%F %T')] [WARN]  $*" >&2; }
+die()  { echo "[$(date '+%F %T')] [ERROR] $*" >&2; exit 1; }
+
+ns_exec() { ip netns exec "${NS_NAME}" "$@"; }
+
+wan_in_host() { ip link show "${DEV_WAN}" &>/dev/null; }
+wan_in_netns() { ip netns exec "${NS_NAME}" ip link show "${DEV_WAN}" &>/dev/null; }
+
+# 将 WAN 从 netns 安全移回宿主机（禁止直接 ip netns del，否则会销毁网卡）
+recover_wan_to_host() {
+    if ! ip netns list 2>/dev/null | grep -q "^${NS_NAME} "; then
+        ip link del "${IPVLAN_IF}" 2>/dev/null || true
+        return 0
+    fi
+    log "正在将 ${DEV_WAN} 从 ${NS_NAME} 移回宿主机..."
+    if wan_in_netns; then
+        ip netns exec "${NS_NAME}" ip link set "${DEV_WAN}" down 2>/dev/null || true
+        ip netns exec "${NS_NAME}" ip link set "${DEV_WAN}" netns 1 2>/dev/null || \
+            die "无法将 ${DEV_WAN} 移回宿主机，请运行: /usr/local/bin/nat-qos-recover.sh"
+    fi
+    if ip netns exec "${NS_NAME}" ip link show "${IPVLAN_IF}" &>/dev/null; then
+        ip netns exec "${NS_NAME}" ip link set "${IPVLAN_IF}" netns 1 2>/dev/null || true
+    fi
+    ip link del "${IPVLAN_IF}" 2>/dev/null || true
+    ip netns del "${NS_NAME}" 2>/dev/null || true
+    restore_wan_addrs_on_host
+}
+
+restore_wan_addrs_on_host() {
+    [[ -f /etc/nat-qos/wan-addrs.env ]] || return 0
+    WAN_DEFAULT_GW=$(grep '^WAN_DEFAULT_GW=' /etc/nat-qos/wan-addrs.env 2>/dev/null | cut -d= -f2-)
+    ip link set "${DEV_WAN}" up 2>/dev/null || true
+    grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/' /etc/nat-qos/wan-addrs.env | while read -r cidr; do
+        ip addr show dev "${DEV_WAN}" | grep -q "${cidr%%/*}" || \
+            ip addr add "${cidr}" dev "${DEV_WAN}" 2>/dev/null || true
+    done
+    if [[ -n "${WAN_DEFAULT_GW:-}" ]] && ! ip route | grep -q "^default.*${DEV_WAN}"; then
+        ip route replace default via "${WAN_DEFAULT_GW}" dev "${DEV_WAN}" 2>/dev/null || true
+    fi
+}
+
+deploy_rollback() {
+    [[ "${ROLLBACK_NEEDED}" -eq 1 ]] || return 0
+    warn "部署失败，正在自动回滚..."
+    recover_wan_to_host
+    "${BPF_CTL}" detach "${DEV_LAN}" 2>/dev/null || true
+    tc qdisc del dev "${DEV_LAN}" clsact 2>/dev/null || true
+    del_all_policy_routes
+    ip route flush table 100 2>/dev/null || true
+    ip addr del "${HOST_GW_IP}/${INTERLINK_PREFIX}" dev "${DEV_LAN}" 2>/dev/null || true
+    rm -f "${DEPLOY_STATE}"
+    warn "回滚完成，${DEV_WAN} 应已恢复在宿主机"
+}
+
+preflight_checks() {
+    log "部署前检查..."
+
+    # 若上次部署残留 netns，先安全回收网卡（须在 detect_nics 之前）
+    # 已有成功部署标记时跳过回收，避免 systemd 重启时误拆架构
+    if [[ ! -f "${DEPLOY_STATE}" ]] && ip netns list 2>/dev/null | grep -q "^${NS_NAME} "; then
+        warn "检测到残留命名空间 ${NS_NAME}，先回收网卡"
+        recover_wan_to_host
+    fi
+
+    detect_nics
+
+    if ! wan_in_host; then
+        if wan_in_netns && [[ -f "${DEPLOY_STATE}" ]]; then
+            log "架构已部署 (${DEV_WAN} 位于 ${NS_NAME})，跳过重复创建"
+            return 0
+        fi
+        die "${DEV_WAN} 不在宿主机且无法回收。请从控制台执行: nat-qos-recover.sh"
+    fi
+
+    # 检测默认路由是否依赖 WAN
+    if ip -4 route show default 2>/dev/null | grep -q "dev ${DEV_WAN}"; then
+        warn "宿主机默认路由在 ${DEV_WAN} 上；移入 netns 后 SSH/公网管理将断开"
+        warn "请确保可通过 ${DEV_LAN} 或控制台访问，并设置 FORCE_DEPLOY=1"
+        [[ "${FORCE_DEPLOY}" == "1" ]] || die "未设置 FORCE_DEPLOY=1，部署已中止"
+    fi
+
+    save_wan_addrs
+    log "预检通过"
+}
+
+# 从策略路由 / 默认路由推断物理网卡（勿用 veth 路由，会误判为 veth-nat0）
+detect_lan_from_routes() {
+    local cidr dev
+    for cidr in ${POLICY_ROUTES//,/ }; do
+        cidr="${cidr// /}"
+        [[ -z "${cidr}" ]] && continue
+        dev=$(ip -4 route show "${cidr}" 2>/dev/null | awk '{
+            for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit }
+        }')
+        dev="${dev%%@*}"
+        if [[ -n "${dev}" ]] && ! is_virtual_dev "${dev}" && [[ -d "/sys/class/net/${dev}" ]]; then
+            echo "${dev}"
+            return 0
+        fi
+    done
+    dev=$(ip route show table 100 2>/dev/null | awk '{
+        for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit }
+    }')
+    dev="${dev%%@*}"
+    if [[ -n "${dev}" ]] && ! is_virtual_dev "${dev}" && [[ -d "/sys/class/net/${dev}" ]]; then
+        echo "${dev}"
+    fi
+}
+
+detect_wan_on_host() {
+    local line dev
+    while IFS= read -r line; do
+        dev=$(sed -n 's/.* dev \([^ ]*\).*/\1/p' <<<"${line}")
+        dev="${dev%%@*}"
+        if [[ -n "${dev}" ]] && ! is_virtual_dev "${dev}" && [[ "${dev}" != "${DEV_LAN}" ]] \
+            && [[ -d "/sys/class/net/${dev}" ]]; then
+            echo "${dev}"
+            return 0
+        fi
+    done < <(ip -4 route show default 2>/dev/null)
+}
+
+guess_nics_from_routes() {
+    local guessed_lan guessed_wan
+    guessed_lan=$(detect_lan_from_routes)
+    if [[ -n "${guessed_lan}" ]] && [[ "${guessed_lan}" != "${DEV_LAN}" ]]; then
+        warn "从策略路由检测 DEV_LAN: ${DEV_LAN} → ${guessed_lan}"
+        DEV_LAN="${guessed_lan}"
+    fi
+    if ! wan_in_netns; then
+        guessed_wan=$(detect_wan_on_host)
+        if [[ -n "${guessed_wan}" ]] && [[ "${guessed_wan}" != "${DEV_WAN}" ]]; then
+            warn "从宿主机默认路由检测 DEV_WAN: ${DEV_WAN} → ${guessed_wan}"
+            DEV_WAN="${guessed_wan}"
+        fi
+    fi
+}
+
+# 从已部署拓扑推断 WAN（natns 内默认路由）
+sync_nics_from_topology() {
+    if ! ip netns list 2>/dev/null | grep -q "^${NS_NAME} "; then
+        return 0
+    fi
+    local detected_wan
+    detected_wan=$(ip netns exec "${NS_NAME}" ip -4 route show default 2>/dev/null | awk '{print $5; exit}')
+    detected_wan="${detected_wan%%@*}"
+    if [[ -n "${detected_wan}" ]] && ! is_virtual_dev "${detected_wan}" \
+        && ip netns exec "${NS_NAME}" ip link show "${detected_wan}" &>/dev/null; then
+        if [[ "${detected_wan}" != "${DEV_WAN}" ]]; then
+            warn "从 ${NS_NAME} 默认路由同步 DEV_WAN: ${DEV_WAN} → ${detected_wan}"
+            DEV_WAN="${detected_wan}"
+        fi
+    fi
+    guess_nics_from_routes
+}
+
+# 检测网卡是否存在，不存在则尝试常见命名（仅兜底，vlan.* 等须显式设置 DEV_*）
+detect_nics() {
+    sync_nics_from_topology
+    guess_nics_from_routes
+    if [[ ! -d "/sys/class/net/${DEV_LAN}" ]]; then
+        for cand in ens19 ens3 eth1; do
+            [[ -d "/sys/class/net/${cand}" ]] && { warn "DEV_LAN=${DEV_LAN} 不存在，自动切换为 ${cand}"; DEV_LAN="${cand}"; break; }
+        done
+    fi
+    if [[ ! -d "/sys/class/net/${DEV_WAN}" ]]; then
+        if wan_in_netns; then
+            : # WAN 已在 natns，sysfs 可能仍可见
+        else
+            for cand in ens18 ens4 eth0; do
+                [[ -d "/sys/class/net/${cand}" ]] && { warn "DEV_WAN=${DEV_WAN} 不存在，自动切换为 ${cand}"; DEV_WAN="${cand}"; break; }
+            done
+        fi
+    fi
+    [[ -d "/sys/class/net/${DEV_LAN}" ]] || die "内网网卡 ${DEV_LAN} 不存在（请设置 DEV_LAN=实际接口名）"
+    if [[ ! -d "/sys/class/net/${DEV_WAN}" ]]; then
+        if wan_in_netns; then
+            : # WAN 已在 natns 内，部署/恢复流程中属正常
+        else
+            die "外网网卡 ${DEV_WAN} 不存在（请设置 DEV_WAN=实际接口名）"
+        fi
+    fi
+    [[ "${DEV_LAN}" != "${DEV_WAN}" ]]    || die "DEV_LAN 与 DEV_WAN 不能相同"
+}
+
+# 计算 RPS CPU 掩码（根据在线核心数）
+rps_mask() {
+    local ncpu
+    ncpu=$(nproc)
+    local mask=0
+    local i=0
+    while (( i < ncpu && i < 32 )); do
+        mask=$(( mask | (1 << i) ))
+        (( i++ )) || true
+    done
+    printf '%x' "${mask}"
+}
+
+apply_rps() {
+    local dev="$1" mask
+    mask=$(rps_mask)
+    log "为 ${dev} 配置 RPS 掩码 0x${mask}"
+    for rx in /sys/class/net/"${dev}"/queues/rx-*/rps_cpus; do
+        [[ -f "${rx}" ]] && echo "${mask}" > "${rx}" 2>/dev/null || true
+    done
+    local rfs=32768
+    [[ -f /proc/sys/net/core/rps_sock_flow_entries ]] && \
+        echo "${rfs}" > /proc/sys/net/core/rps_sock_flow_entries 2>/dev/null || true
+    for rx in /sys/class/net/"${dev}"/queues/rx-*/rps_flow_cnt; do
+        [[ -f "${rx}" ]] && echo $(( rfs / $(nproc) )) > "${rx}" 2>/dev/null || true
+    done
+}
+
+tune_nic() {
+    local dev="$1"
+    if wan_in_netns && [[ "${dev}" == "${DEV_WAN}" ]]; then
+        ns_exec ip link set "${dev}" txqueuelen 5000 2>/dev/null || true
+        ns_exec ethtool -G "${dev}" rx 4096 tx 4096 2>/dev/null || true
+    else
+        ip link set "${dev}" txqueuelen 5000 2>/dev/null || true
+        ethtool -G "${dev}" rx 4096 tx 4096 2>/dev/null || true
+    fi
+}
+
+# ======================== 构建依赖（必须在 WAN 移入 netns 之前） ========================
+install_dependencies() {
+    log "安装构建依赖（此阶段 ${DEV_WAN} 仍在宿主机，需能访问外网 apt）"
+    export DEBIAN_FRONTEND=noninteractive
+    if ! apt-get update -qq; then
+        die "apt-get update 失败：请确认 ${DEV_WAN} 可上网后再部署，或先手动 apt update"
+    fi
+    local pkgs=(
+        clang llvm libbpf-dev libbpf1 make gcc
+        golang-go nftables iproute2 ethtool python3
+        curl ca-certificates
+    )
+    if ! apt-get install -y -qq "${pkgs[@]}"; then
+        die "apt-get install 失败，请检查网络与软件源"
+    fi
+    log "构建依赖安装完成"
+}
+
+# ======================== 内核调优 ========================
+setup_sysctl() {
+    log "写入内核调优参数"
+    mkdir -p /etc/sysctl.d
+    cat > "${SYSCTL_CONF}" <<EOF
+# NAT-QoS 高性能调优
+net.ipv4.ip_forward = 1
+net.ipv4.conf.all.rp_filter = 0
+net.ipv4.conf.default.rp_filter = 0
+net.netfilter.nf_conntrack_max = 1048576
+net.netfilter.nf_conntrack_tcp_timeout_established = 7200
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_tw_reuse = 1
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 250000
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+fs.file-max = 2097152
+EOF
+    sysctl --system >/dev/null 2>&1 || sysctl -p "${SYSCTL_CONF}" 2>/dev/null || true
+    modprobe nf_conntrack 2>/dev/null || true
+    echo 1048576 > /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || true
+}
+
+# ======================== 保存 WAN 地址（移入 netns 前） ========================
+save_wan_addrs() {
+    WAN_ADDRS_FILE="/etc/nat-qos/wan-addrs.env"
+    mkdir -p /etc/nat-qos
+    ip -4 -o addr show dev "${DEV_WAN}" | awk '{print $4}' > "${WAN_ADDRS_FILE}" || true
+    WAN_DEFAULT_GW=$(ip -4 route show dev "${DEV_WAN}" 2>/dev/null | awk '/^default/ {print $3; exit}')
+    WAN_DEFAULT_GW="${WAN_DEFAULT_GW:-$(ip -4 route | awk '/^default/ {print $3; exit}')}"
+    echo "WAN_DEFAULT_GW=${WAN_DEFAULT_GW}" >> "${WAN_ADDRS_FILE}"
+}
+
+# ======================== 命名空间与 ipvlan ========================
+setup_namespace() {
+    log "创建命名空间 ${NS_NAME} 与 ipvlan 互联"
+    mkdir -p /etc/nat-qos
+
+    # 安全清理：必须先将网卡移回宿主机，禁止直接 netns del
+    recover_wan_to_host
+
+    ip netns add "${NS_NAME}"
+
+    # 创建 ipvlan l3s 子接口并移入命名空间
+    ip link add link "${DEV_LAN}" name "${IPVLAN_IF}" type ipvlan mode l3s
+    ip link set "${IPVLAN_IF}" netns "${NS_NAME}"
+
+    # 将外网网卡移入命名空间（移入前在宿主机完成 RPS 无效，改在 netns 内配置）
+    ip link set "${DEV_WAN}" netns "${NS_NAME}"
+
+    # 宿主机互联地址
+    ip addr add "${HOST_GW_IP}/${INTERLINK_PREFIX}" dev "${DEV_LAN}" 2>/dev/null || true
+
+    # 命名空间内初始化
+    ns_exec ip link set lo up
+    ns_exec ip link set "${IPVLAN_IF}" up
+    ns_exec ip addr add "${NS_GW_IP}/${INTERLINK_PREFIX}" dev "${IPVLAN_IF}"
+    ns_exec ip link set "${DEV_WAN}" up
+
+    # 恢复 WAN 地址
+    if [[ -f /etc/nat-qos/wan-addrs.env ]]; then
+        WAN_DEFAULT_GW=$(grep '^WAN_DEFAULT_GW=' /etc/nat-qos/wan-addrs.env 2>/dev/null | cut -d= -f2-)
+        grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/' /etc/nat-qos/wan-addrs.env | while read -r cidr; do
+            ns_exec ip addr add "${cidr}" dev "${DEV_WAN}" 2>/dev/null || true
+        done
+    fi
+
+    if [[ -n "${WAN_DEFAULT_GW:-}" ]]; then
+        ns_exec ip route replace default via "${WAN_DEFAULT_GW}" dev "${DEV_WAN}"
+    fi
+    setup_veth_interlink
+    setup_policy_routes
+    ns_exec sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+}
+
+# veth 互联（ipvlan l3s 在本机无法双向转发，SSH DNAT / 策略路由依赖 veth）
+setup_veth_interlink() {
+  if ip link show "${VETH_HOST}" &>/dev/null; then
+    ip link set "${VETH_HOST}" up 2>/dev/null || true
+    ns_exec ip link set "${VETH_NS}" up 2>/dev/null || true
+    ip route replace table 100 default via "${VETH_NS_IP}" dev "${VETH_HOST}" 2>/dev/null || true
+    return 0
+  fi
+  log "创建 veth 互联 ${VETH_HOST_IP} <-> ${VETH_NS_IP}"
+  ip link add "${VETH_HOST}" type veth peer name "${VETH_NS}-tmp"
+  ip link set "${VETH_NS}-tmp" netns "${NS_NAME}"
+  ns_exec ip link set "${VETH_NS}-tmp" name "${VETH_NS}"
+  ip addr add "${VETH_HOST_IP}/${VETH_PREFIX}" dev "${VETH_HOST}" 2>/dev/null || true
+  ip link set "${VETH_HOST}" up
+  ns_exec ip addr add "${VETH_NS_IP}/${VETH_PREFIX}" dev "${VETH_NS}" 2>/dev/null || true
+  ns_exec ip link set "${VETH_NS}" up
+  ip route replace table 100 default via "${VETH_NS_IP}" dev "${VETH_HOST}"
+}
+
+# 宿主机策略路由 + natns 回程（支持多 CIDR，与 nat-admin policy_routes 一致）
+setup_policy_routes() {
+    setup_veth_interlink
+    local cidr
+    IFS=',' read -ra _policy_routes <<< "${POLICY_ROUTES}"
+    for cidr in "${_policy_routes[@]}"; do
+        cidr="${cidr// /}"
+        [[ -z "${cidr}" ]] && continue
+        ns_exec ip route replace "${cidr}" via "${VETH_HOST_IP}" dev "${VETH_NS}" 2>/dev/null || true
+        ip rule del to "${cidr}" lookup main priority 50 2>/dev/null || true
+        ip rule add to "${cidr}" lookup main priority 50 2>/dev/null || true
+        ip rule del from "${cidr}" lookup 100 2>/dev/null || true
+        ip rule add from "${cidr}" lookup 100 priority 100
+        log "策略路由: from ${cidr} lookup 100 → natns"
+    done
+    ip route flush cache
+}
+
+del_all_policy_routes() {
+    local cidr
+    IFS=',' read -ra _policy_routes <<< "${POLICY_ROUTES}"
+    for cidr in "${_policy_routes[@]}"; do
+        cidr="${cidr// /}"
+        [[ -z "${cidr}" ]] && continue
+        ip rule del from "${cidr}" lookup 100 2>/dev/null || true
+        ip rule del to "${cidr}" lookup main priority 50 2>/dev/null || true
+    done
+    if [[ -f "${STATE_DIR}/state.json" ]]; then
+        while IFS= read -r cidr; do
+            [[ -z "${cidr}" ]] && continue
+            ip rule del from "${cidr}" lookup 100 2>/dev/null || true
+            ip rule del to "${cidr}" lookup main priority 50 2>/dev/null || true
+        done < <(python3 -c "import json; r=json.load(open('${STATE_DIR}/state.json')).get('policy_routes') or []; print('\n'.join(r))" 2>/dev/null || true)
+    fi
+}
+
+# ======================== 宿主机 eBPF 每 IP 限速（TC clsact + BPF maps） ========================
+install_ebpf_qos() {
+    log "编译安装 eBPF 限速组件"
+    command -v clang >/dev/null 2>&1 || die "未找到 clang，请先成功执行 install_dependencies"
+    command -v go >/dev/null 2>&1    || die "未找到 go，请先成功执行 install_dependencies"
+
+    [[ -d "${BPF_SRC}" ]] || die "eBPF 源码目录 ${BPF_SRC} 不存在（请从仓库根目录运行本脚本）"
+    make -C "${BPF_SRC}" install
+
+    cd "${BPF_SRC}/cmd/nat-qos-bpf"
+    go mod tidy 2>/dev/null || true
+    CGO_ENABLED=0 go build -ldflags="-s -w" -o "${BPF_CTL}" .
+    chmod 755 "${BPF_CTL}"
+}
+
+setup_ebpf_qos() {
+    log "在 ${DEV_LAN} 挂接 eBPF 每 IP 限速 (ingress=上行, egress=下行)"
+    [[ -x "${BPF_CTL}" ]] || install_ebpf_qos
+
+    "${BPF_CTL}" detach "${DEV_LAN}" 2>/dev/null || true
+
+    "${BPF_CTL}" attach "${DEV_LAN}" "${DEFAULT_DOWN_RATE}" "${DEFAULT_UP_RATE}" \
+        || die "eBPF 限速 attach 失败"
+
+    log "eBPF 限速部署完成：下行 ${DEFAULT_DOWN_RATE} (ceil ${DEFAULT_DOWN_CEIL})，上行 ${DEFAULT_UP_RATE}"
+}
+
+# ======================== 宿主机防火墙（由 nat-admin 按 state 生成 hostfilter.nft） ========================
+setup_host_nft() {
+    log "宿主机防火墙将由 nat-admin 根据 WAN 端口映射生成"
+}
+
+# ======================== 生成 natns Nftables 配置 ========================
+generate_nft_config() {
+    log "生成 natns Nftables 配置"
+    mkdir -p /etc/nat-qos
+
+    local shared_inline="" i idx=0
+    for ip in "${SHARED_IPS[@]}"; do
+        [[ -n "${ip}" ]] || continue
+        shared_inline+=" ${idx} : ${ip},"
+        (( idx++ )) || true
+    done
+    shared_inline="${shared_inline%,}"
+
+    local pool_size=${#SHARED_IPS[@]}
+    [[ "${pool_size}" -gt 0 ]] || die "SHARED_IPS 不能为空"
+
+    # 静态 1:1 规则（nft 1.0.x 兼容：逐条规则，管理 API 可增删）
+    local static_pre="" static_post=""
+    static_pre="ip daddr ${STATIC_NAT_OUT} dnat to ${STATIC_NAT_IN}"
+    static_post="ip saddr ${STATIC_NAT_IN} snat to ${STATIC_NAT_OUT}"
+
+    cat > "${NFT_BOOT}" <<EOF
+#!/usr/sbin/nft -f
+# NAT-QoS natns 空间配置 — 由 deploy-nat-qos.sh 生成
+
+flush ruleset
+
+table ip natqos {
+    flowtable fwd_fastpath {
+        hook ingress priority filter
+        devices = { ${DEV_WAN} }
+    }
+
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        iifname "${DEV_WAN}" ${static_pre}
+    }
+
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        ${static_post}
+        ip saddr ${VPN_NET} snat to numgen inc mod ${pool_size} map { ${shared_inline} }
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+        ct state established,related counter flow add @fwd_fastpath
+        ct state established,related accept
+        iifname "${IPVLAN_IF}" accept
+        oifname "${DEV_WAN}" accept
+        iifname "${DEV_WAN}" accept
+    }
+}
+EOF
+}
+
+apply_nft_natns() {
+    generate_nft_config
+    ns_exec nft -c -f "${NFT_BOOT}" || die "Nftables 配置语法检查失败: ${NFT_BOOT}"
+    log "在 ${NS_NAME} 内加载 Nftables"
+    ns_exec nft -f "${NFT_BOOT}"
+}
+
+# 从持久化 state.json 恢复 Nftables + eBPF（重启后不丢配置）
+apply_nft_from_state() {
+    if [[ -x "${ADMIN_BIN}" ]] && [[ -f "${STATE_DIR}/state.json" ]]; then
+        log "从 ${STATE_DIR}/state.json 恢复业务配置"
+        # apply-state 须与 systemd 一致读取 /etc/nat-admin/env（DEV_WAN 等）
+        if [[ -f /etc/nat-admin/env ]]; then
+            set -a
+            # shellcheck disable=SC1091
+            source /etc/nat-admin/env
+            set +a
+        fi
+        HOME=/root "${ADMIN_BIN}" apply-state || die "nat-admin apply-state 失败"
+    else
+        log "无 state.json，使用部署脚本默认 Nftables"
+        apply_nft_natns
+    fi
+}
+
+# ======================== RPS（宿主机 LAN + netns WAN） ========================
+setup_rps() {
+    apply_rps "${DEV_LAN}"
+    if wan_in_netns; then
+        local mask
+        mask=$(rps_mask)
+        log "为 netns:${DEV_WAN} 配置 RPS 掩码 0x${mask}"
+        for rx in /sys/class/net/"${DEV_WAN}"/queues/rx-*/rps_cpus; do
+            [[ -f "${rx}" ]] && ns_exec sh -c "echo ${mask} > ${rx}" 2>/dev/null || true
+        done
+    fi
+}
+
+# ======================== 安装管理后台 ========================
+ensure_admin_env() {
+    mkdir -p /etc/nat-admin "${STATE_DIR}"
+    cat > /etc/nat-admin/env <<EOF
+# NAT-QoS 管理后台环境（由 deploy-nat-qos.sh 生成）
+ADMIN_USER=${ADMIN_USER}
+ADMIN_PASS=${ADMIN_PASS}
+ADMIN_PORT=${ADMIN_PORT}
+WAN_SSH_DNAT=${WAN_SSH_DNAT}
+WAN_ADMIN_DNAT=${WAN_ADMIN_DNAT}
+VETH_HOST=${VETH_HOST}
+VETH_NS=${VETH_NS}
+VETH_HOST_IP=${VETH_HOST_IP}
+VETH_NS_IP=${VETH_NS_IP}
+VETH_PREFIX=${VETH_PREFIX}
+HOST_GW_IP=${HOST_GW_IP}
+NS_GW_IP=${NS_GW_IP}
+DEV_LAN=${DEV_LAN}
+DEV_WAN=${DEV_WAN}
+VPN_NET=${VPN_NET}
+NS_NAME=${NS_NAME}
+STATE_FILE=${STATE_DIR}/state.json
+SESSION_FILE=${STATE_DIR}/sessions.json
+EOF
+    chmod 600 /etc/nat-admin/env
+    log "已写入 /etc/nat-admin/env"
+}
+
+init_state_json() {
+    if [[ -f "${STATE_DIR}/state.json" ]]; then
+        return 0
+    fi
+    log "初始化 ${STATE_DIR}/state.json"
+        python3 - <<PY
+import json, os
+ips = """${SHARED_IPS[*]}""".split()
+wan_forwards = []
+if "${WAN_SSH_DNAT}" == "1":
+    wan_forwards.append({"proto": "tcp", "wan_port": 22, "host_ip": "${VETH_HOST_IP}", "host_port": 22, "comment": "SSH"})
+if "${WAN_ADMIN_DNAT}" == "1":
+    wan_forwards.append({"proto": "tcp", "wan_port": int("${ADMIN_PORT}"), "host_ip": "${VETH_HOST_IP}", "host_port": int("${ADMIN_PORT}"), "comment": "nat-admin"})
+data = {
+    "policy_routes": ["${VPN_NET}"],
+    "shared_ips": ips,
+    "static_mappings": {},
+    "prefix_mappings": {},
+    "default_rate": {},
+    "cidr_limits": {},
+    "rate_limits": {},
+    "wan_port_forwards": wan_forwards,
+    "api_keys": []
+}
+os.makedirs("${STATE_DIR}", exist_ok=True)
+with open("${STATE_DIR}/state.json", "w") as f:
+    json.dump(data, f, indent=2)
+PY
+}
+
+install_admin() {
+    ensure_admin_env
+    init_state_json
+
+    if [[ -x "${ADMIN_BIN}" ]]; then
+        log "nat-admin 二进制已存在，跳过编译"
+        return 0
+    fi
+
+    log "编译安装 nat-admin 管理后台"
+    command -v go >/dev/null 2>&1 || die "未找到 go，请先成功执行 install_dependencies"
+    [[ -d "${ADMIN_SRC}" ]] || die "管理后台源码目录 ${ADMIN_SRC} 不存在（请从仓库根目录运行本脚本）"
+
+    cd "${ADMIN_SRC}"
+    go mod tidy 2>/dev/null || true
+    CGO_ENABLED=0 go build -ldflags="-s -w" -o "${ADMIN_BIN}" .
+    chmod 755 "${ADMIN_BIN}"
+}
+
+# systemd 从 /usr/local/bin 调用本脚本，需安装可执行入口
+install_deploy_script() {
+    local src="${BASH_SOURCE[0]}"
+    [[ "${src}" != /* ]] && src="$(cd "$(dirname "${src}")" && pwd)/$(basename "${src}")"
+    src="$(readlink -f "${src}")"
+    install -d /usr/local/bin
+    ln -sf "${src}" /usr/local/bin/deploy-nat-qos.sh
+    chmod +x "${src}"
+    log "已安装 /usr/local/bin/deploy-nat-qos.sh -> ${src}"
+}
+
+# ======================== systemd 服务 ========================
+install_systemd() {
+    log "注册 systemd 服务"
+    install_deploy_script
+    mkdir -p /etc/nat-qos
+    cat > /etc/nat-qos/deploy.env <<EOF
+# NAT-QoS 服务环境（systemd 加载）
+FORCE_DEPLOY=1
+DEV_LAN=${DEV_LAN}
+DEV_WAN=${DEV_WAN}
+VPN_NET=${VPN_NET}
+NS_NAME=${NS_NAME}
+EOF
+
+    cat > /etc/systemd/system/nat-qos.service <<EOF
+[Unit]
+Description=NAT-QoS 高性能分层 NAT 与 eBPF 限速
+After=network-online.target
+Wants=network-online.target
+Before=nat-admin.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/root
+Environment=NAT_QOS_SYSTEMD=1
+EnvironmentFile=-/etc/nat-qos/deploy.env
+ExecStart=/usr/local/bin/deploy-nat-qos.sh start
+ExecStop=/usr/local/bin/deploy-nat-qos.sh stop
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    cat > /etc/systemd/system/nat-admin.service <<EOF
+[Unit]
+Description=NAT-QoS Web 管理后台
+After=network-online.target nat-qos.service
+Wants=nat-qos.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/nat-admin/env
+ExecStart=${ADMIN_BIN}
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable nat-qos.service nat-admin.service
+}
+
+# 由 nat-qos.service 调用时勿在脚本内 restart nat-admin（会与 Requires 死锁）
+restart_nat_admin_service() {
+    if [[ "${NAT_QOS_SYSTEMD:-}" == "1" ]]; then
+        log "NAT_QOS_SYSTEMD=1，nat-admin 由 systemd 在 nat-qos 完成后启动"
+        return 0
+    fi
+    systemctl restart nat-admin.service 2>/dev/null || \
+        warn "nat-admin 启动失败，请检查 journalctl -u nat-admin"
+}
+
+# ======================== 停止/清理 ========================
+do_stop() {
+    log "停止 NAT-QoS 服务并清理"
+    systemctl stop nat-admin.service 2>/dev/null || true
+
+    "${BPF_CTL}" detach "${DEV_LAN}" 2>/dev/null || true
+    tc qdisc del dev "${DEV_LAN}" clsact 2>/dev/null || true
+
+    del_all_policy_routes
+    ip route flush table 100 2>/dev/null || true
+    ip addr del "${HOST_GW_IP}/${INTERLINK_PREFIX}" dev "${DEV_LAN}" 2>/dev/null || true
+
+    recover_wan_to_host
+    rm -f "${DEPLOY_STATE}"
+    log "清理完成"
+}
+
+do_recover() {
+    log "紧急恢复：将 ${DEV_WAN} 归还宿主机"
+    if ip netns list 2>/dev/null | grep -q "^${NS_NAME} "; then
+        recover_wan_to_host
+    fi
+    detect_nics
+    "${BPF_CTL}" detach "${DEV_LAN}" 2>/dev/null || true
+    tc qdisc del dev "${DEV_LAN}" clsact 2>/dev/null || true
+    del_all_policy_routes
+    ip route flush table 100 2>/dev/null || true
+    if wan_in_host; then
+        log "恢复成功: ${DEV_WAN} 已在宿主机"
+        ip -br addr show "${DEV_WAN}"
+    else
+        die "恢复失败: 仍找不到 ${DEV_WAN}，可能需要 reboot 或检查 PCI 设备"
+    fi
+}
+
+# ======================== 主流程 ========================
+is_deployed() {
+    if [[ ! -f "${DEPLOY_STATE}" ]] || ! ip netns list 2>/dev/null | grep -q "^${NS_NAME} "; then
+        return 1
+    fi
+    sync_nics_from_topology
+    wan_in_netns
+}
+
+do_start() {
+    trap 'deploy_rollback' ERR
+    resolve_src_paths
+    preflight_checks
+    if is_deployed; then
+        log "========== NAT-QoS 已运行，从 state.json 恢复配置 =========="
+        install_admin
+        apply_nft_from_state
+        install_systemd
+        systemctl daemon-reload 2>/dev/null || true
+        systemctl enable nat-admin.service nat-qos.service 2>/dev/null || true
+        restart_nat_admin_service
+        show_status
+        return 0
+    fi
+    log "========== NAT-QoS 部署开始 =========="
+    log "LAN=${DEV_LAN} WAN=${DEV_WAN} VPN=${VPN_NET} NS=${NS_NAME}"
+
+    # ① 仍在宿主机、WAN 有网时：装包 + 编译
+    setup_sysctl
+    install_dependencies
+    install_ebpf_qos
+    install_admin
+
+    # ② 再移 WAN 进 netns，配置网络与业务
+    tune_nic "${DEV_LAN}"
+    setup_namespace
+    ROLLBACK_NEEDED=1
+    echo "namespace" > "${DEPLOY_STATE}"
+
+    ns_exec ip link set "${DEV_WAN}" up
+    tune_nic "${DEV_WAN}"  # 在 netns 内通过 ns_exec 调优
+    setup_rps
+    setup_ebpf_qos
+    setup_host_nft
+    apply_nft_from_state
+    install_systemd
+
+    ROLLBACK_NEEDED=0
+    trap - ERR
+
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable nat-admin.service nat-qos.service 2>/dev/null || true
+    restart_nat_admin_service
+
+    log "========== NAT-QoS 部署完成 =========="
+    warn "注意: ${DEV_WAN} 现位于 ${NS_NAME}，宿主机 ip link 中不可见属正常现象"
+    warn "SSH/管理请使用 ${DEV_LAN} 或 http://<LAN_IP>:${ADMIN_PORT}"
+    show_status
+}
+
+show_status() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║              NAT-QoS 虚拟拓扑状态                            ║"
+    echo "╠══════════════════════════════════════════════════════════════╣"
+    echo "║ 宿主机                                                       ║"
+    echo "║   ${DEV_LAN} (LAN) ── eBPF 每IP限速 ──► ipvlan ──► ${NS_NAME}       ║"
+    echo "║   互联: ${HOST_GW_IP} ◄──► ${NS_GW_IP}                               ║"
+    echo "║ ${NS_NAME} 命名空间                                            ║"
+    echo "║   ${IPVLAN_IF} ◄──► ${DEV_WAN} (WAN) ── Nftables NAT + Fastpath    ║"
+    echo "║ 管理后台: http://$(hostname -I | awk '{print $1}'):${ADMIN_PORT}              ║"
+    echo "║ 账号: ${ADMIN_USER}                                           ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    ip netns list 2>/dev/null || true
+    echo "--- 命名空间路由 ---"
+    ns_exec ip route 2>/dev/null || true
+    echo "--- eBPF 限速 ---"
+    "${BPF_CTL}" status 2>/dev/null || true
+    tc qdisc show dev "${DEV_LAN}" 2>/dev/null | head -3 || true
+}
+
+# ======================== 入口 ========================
+case "${1:-start}" in
+    start)   do_start ;;
+    stop)    detect_nics; do_stop ;;
+    restart) detect_nics; do_stop; FORCE_DEPLOY=1 do_start ;;
+    recover) do_recover ;;
+    status)  detect_nics; show_status ;;
+    *)
+        echo "用法: $0 {start|stop|restart|recover|status}"
+        echo "  首次部署需: FORCE_DEPLOY=1 $0 start"
+        exit 1
+        ;;
+esac

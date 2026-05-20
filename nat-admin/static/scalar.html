@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NAT-QoS API — Scalar</title>
+  <style>
+    body { margin: 0; }
+    .topbar {
+      position: sticky; top: 0; z-index: 1000;
+      background: #1a2332; color: #e2e8f0; padding: .6rem 1.2rem;
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+      border-bottom: 1px solid #334155;
+      font-family: system-ui, sans-serif; font-size: .9rem;
+    }
+    .topbar a { color: #93c5fd; text-decoration: none; }
+    .topbar a:hover { text-decoration: underline; }
+    .topbar .active { color: #fff; font-weight: 600; }
+    #app { min-height: calc(100vh - 42px); }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <strong>NAT-QoS API</strong>
+    <span class="active">Scalar</span>
+    <a href="/redoc.html">ReDoc</a>
+    <a href="/swagger.html">Swagger UI</a>
+    <a href="/">← 控制台</a>
+    <a href="/openapi.yaml" target="_blank">OpenAPI YAML</a>
+  </div>
+  <div id="app"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script>
+    Scalar.createApiReference('#app', {
+      url: '/openapi.yaml',
+      theme: 'deepSpace',
+      metaData: { title: 'NAT-QoS API' },
+      hideDownloadButton: false,
+      hideModels: false,
+      darkMode: true,
+    })
+  </script>
+</body>
+</html>

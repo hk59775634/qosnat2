@@ -1,0 +1,663 @@
+openapi: 3.0.3
+info:
+  title: NAT-QoS 管理 API
+  description: |
+    高性能 NAT + eBPF 每 IP 限速管理接口。
+
+    除 POST /api/login 外，其余接口需满足以下任一鉴权方式：
+    - 浏览器 Session：先调用登录接口，后续请求携带 Cookie
+    - API Key：请求头 X-API-Key
+  version: 1.0.0
+servers:
+  - url: /
+    description: 当前主机
+
+tags:
+  - name: auth
+    description: 登录鉴权
+  - name: monitor
+    description: 监控
+  - name: nat
+    description: NAT 出口
+  - name: qos
+    description: eBPF 限速
+  - name: keys
+    description: API Key
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: nat_admin_sess
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Ok:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+    RateLimit:
+      type: object
+      properties:
+        down:
+          type: string
+          example: 10mbit
+          description: 下行速率
+        up:
+          type: string
+          example: 4mbit
+          description: 上行速率
+    WanPortForward:
+      type: object
+      properties:
+        proto:
+          type: string
+          enum: [tcp, udp]
+        wan_port:
+          type: integer
+          example: 22
+        host_ip:
+          type: string
+          example: 172.16.99.1
+        host_port:
+          type: integer
+          example: 22
+        comment:
+          type: string
+    Stats:
+      type: object
+      properties:
+        cpu_percent:
+          type: number
+        mem_percent:
+          type: number
+        conntrack:
+          type: integer
+        lan:
+          type: object
+          properties:
+            rx_mbps:
+              type: number
+            tx_mbps:
+              type: number
+        wan:
+          type: object
+          properties:
+            rx_mbps:
+              type: number
+            tx_mbps:
+              type: number
+        shared_ips:
+          type: integer
+        static_mappings:
+          type: integer
+    APIKey:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        key:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+security:
+  - sessionAuth: []
+  - apiKeyAuth: []
+
+paths:
+  /api/login:
+    post:
+      tags: [auth]
+      summary: 登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user, pass]
+              properties:
+                user:
+                  type: string
+                pass:
+                  type: string
+      responses:
+        '200':
+          description: 成功，Set-Cookie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '401':
+          description: 凭据错误
+
+  /api/session:
+    get:
+      tags: [auth]
+      summary: 检查当前会话是否有效（用于页面刷新恢复登录）
+      security: []
+      responses:
+        '200':
+          description: ok 为 true 表示已登录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/logout:
+    post:
+      tags: [auth]
+      summary: 退出登录
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/stats:
+    get:
+      tags: [monitor]
+      summary: 系统与流量监控
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+
+  /api/policy-routes:
+    get:
+      tags: [nat]
+      summary: 列出策略路由网段（共享池 SNAT 兜底 + ip rule lookup 100）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["10.0.0.0/8", "172.16.0.0/24"]
+    post:
+      tags: [nat]
+      summary: 添加策略路由网段
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cidr]
+              properties:
+                cidr:
+                  type: string
+                  example: 172.16.0.0/24
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+    delete:
+      tags: [nat]
+      summary: 删除策略路由网段（至少保留一条）
+      parameters:
+        - name: cidr
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /api/wan-forwards:
+    get:
+      tags: [nat]
+      summary: 列出 WAN→宿主机 端口映射（DNAT）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WanPortForward'
+    post:
+      tags: [nat]
+      summary: 添加/更新端口映射
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WanPortForward'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WanPortForward'
+    delete:
+      tags: [nat]
+      summary: 删除端口映射
+      parameters:
+        - name: proto
+          in: query
+          schema:
+            type: string
+            default: tcp
+        - name: wan_port
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WanPortForward'
+
+  /api/shared-ips:
+    get:
+      tags: [nat]
+      summary: 列出共享 IP 池
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+    post:
+      tags: [nat]
+      summary: 添加共享 IP
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ip]
+              properties:
+                ip:
+                  type: string
+                  example: 157.15.107.250
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [nat]
+      summary: 删除共享 IP
+      parameters:
+        - name: ip
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/static-mappings:
+    get:
+      tags: [nat]
+      summary: 列出单 IP 出口映射
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                example:
+                  10.8.0.100: 157.15.107.252
+    post:
+      tags: [nat]
+      summary: 添加单 IP 出口（出站 SNAT）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inner, outer]
+              properties:
+                inner:
+                  type: string
+                  description: 内网 IP
+                outer:
+                  type: string
+                  description: 出口公网 IP
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [nat]
+      summary: 删除单 IP 映射
+      parameters:
+        - name: inner
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/prefix-mappings:
+    get:
+      tags: [nat]
+      summary: 列出网段出口映射 (prefix SNAT)
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                example:
+                  172.16.4.0/24: 38.22.74.0/24
+    post:
+      tags: [nat]
+      summary: 添加网段出口映射
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inner_cidr, outer_cidr]
+              properties:
+                inner_cidr:
+                  type: string
+                  example: 172.16.4.0/24
+                outer_cidr:
+                  type: string
+                  example: 38.22.74.0/24
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    put:
+      tags: [nat]
+      summary: 更新网段出口映射（同 POST）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [inner_cidr, outer_cidr]
+              properties:
+                inner_cidr:
+                  type: string
+                outer_cidr:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [nat]
+      summary: 删除网段映射
+      parameters:
+        - name: inner_cidr
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/rate-default:
+    get:
+      tags: [qos]
+      summary: 获取全局默认限速
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateLimit'
+    post:
+      tags: [qos]
+      summary: 设置全局默认限速（LAN 口每 IP，未单独配置时生效）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateLimit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    put:
+      tags: [qos]
+      summary: 更新全局默认限速（同 POST）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateLimit'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/rate-cidrs:
+    get:
+      tags: [qos]
+      summary: 列出网段限速规则
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/RateLimit'
+    post:
+      tags: [qos]
+      summary: 添加网段限速
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cidr, down, up]
+              properties:
+                cidr:
+                  type: string
+                  example: 10.100.0.0/16
+                down:
+                  type: string
+                up:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [qos]
+      summary: 删除网段限速
+      parameters:
+        - name: cidr
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/rate-limits:
+    get:
+      tags: [qos]
+      summary: 列出单 IP 限速覆盖
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/RateLimit'
+    post:
+      tags: [qos]
+      summary: 设置单 IP 限速
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ip, down, up]
+              properties:
+                ip:
+                  type: string
+                down:
+                  type: string
+                up:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    put:
+      tags: [qos]
+      summary: 更新单 IP 限速（同 POST）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ip, down, up]
+              properties:
+                ip:
+                  type: string
+                down:
+                  type: string
+                up:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [qos]
+      summary: 删除单 IP 限速
+      parameters:
+        - name: ip
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/keys:
+    get:
+      tags: [keys]
+      summary: 列出 API Key（需会话认证，返回完整 Key）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/APIKey'
+    post:
+      tags: [keys]
+      summary: 创建 API Key
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIKey'
+    delete:
+      tags: [keys]
+      summary: 撤销 API Key
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
