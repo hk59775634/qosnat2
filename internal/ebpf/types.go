@@ -65,6 +65,7 @@ func (r RateVal) Marshal() []byte {
 func (k LPMKey) Marshal() []byte {
 	b := make([]byte, 8)
 	binary.LittleEndian.PutUint32(b[0:], k.Prefixlen)
-	binary.LittleEndian.PutUint32(b[4:], k.Addr)
+	// data 与 skb 源地址相同：按网络序四字节写入（勿 LittleEndian）
+	binary.BigEndian.PutUint32(b[4:], k.Addr)
 	return b
 }

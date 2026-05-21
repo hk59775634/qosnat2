@@ -96,11 +96,7 @@ func peerRateStrings(p store.WGPeer) (down, up string) {
 }
 
 func (srv *Server) clearPeerProfileShaper(cidr, ip string) {
-	if srv.bpf != nil && srv.bpf.Ready() {
-		_ = srv.bpf.DeleteProfile(cidr)
-		_ = srv.bpf.DeleteHost(ip)
-	}
-	_ = srv.hosts.DeleteHost(ip)
+	srv.teardownProfileShaper(cidr)
 	_ = srv.store.Update(func(s *store.State) {
 		var out []store.ProfileEntry
 		for _, e := range s.Shaper.Profiles {
@@ -111,6 +107,10 @@ func (srv *Server) clearPeerProfileShaper(cidr, ip string) {
 		s.Shaper.Profiles = out
 	})
 	_ = srv.store.Save()
+	if srv.bpf != nil && srv.bpf.Ready() {
+		_ = srv.bpf.ReplayState(srv.store.Get())
+	}
+	srv.refreshShaperAfterChange()
 }
 
 func (srv *Server) removeWGPeerShaper(peer store.WGPeer) {

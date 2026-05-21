@@ -49,10 +49,10 @@ watch(() => props.id, loadState)
   <section class="card overflow-hidden">
     <button
       type="button"
-      class="w-full flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200 hover:bg-slate-100 text-left"
+      class="w-full flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200 hover:bg-slate-100 text-left"
       @click="toggle"
     >
-      <h3 class="font-medium text-slate-800">{{ title }}</h3>
+      <h3 class="font-medium text-sm text-slate-800">{{ title }}</h3>
       <span class="flex items-center gap-2 shrink-0">
         <span v-if="reorderable" class="flex gap-1" @click.stop>
           <button
@@ -77,7 +77,7 @@ watch(() => props.id, loadState)
         <span class="text-slate-400 text-xs">{{ open ? '收起' : '展开' }}</span>
       </span>
     </button>
-    <div v-show="open" class="p-4">
+    <div v-show="open" class="p-3 text-sm">
       <slot />
     </div>
   </section>

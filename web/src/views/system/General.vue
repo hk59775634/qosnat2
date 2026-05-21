@@ -35,11 +35,11 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader title="常规设置" description="主机名与管理员密码（需输入当前密码才能修改口令）" />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
-    <div v-if="cfg" class="card p-4 max-w-lg space-y-4">
+    <div v-if="cfg" class="card card-body space-y-4">
       <p class="text-sm text-slate-600">
         管理员 <span class="font-mono">{{ cfg.admin_user }}</span> · LAN
         <span class="font-mono">{{ cfg.dev_lan }}</span> · WAN

@@ -54,7 +54,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="GeoIP 阻断"
       description="按国家码阻断从 WAN 进入的流量。CIDR 列表放在数据目录下的 ISO2.cidr 文件，或在规则中填写自定义 CIDR。"
@@ -66,7 +66,7 @@ onMounted(load)
       · WAN 入方向 <span class="font-mono">{{ devWan }}</span>
     </p>
 
-    <div class="card p-4 mb-6 max-w-3xl space-y-3 text-sm">
+    <div class="card card-body mb-0 space-y-3 text-sm">
       <h3 class="font-medium">添加规则</h3>
       <div class="grid sm:grid-cols-2 gap-3">
         <div>
@@ -114,7 +114,7 @@ onMounted(load)
             <td><button type="button" class="text-red-600 text-xs" @click="remove(r.id)">删除</button></td>
           </tr>
           <tr v-if="!rules.length">
-            <td colspan="5" class="text-center text-slate-400 py-6">暂无规则</td>
+            <td colspan="5" class="text-center text-slate-400 py-3">暂无规则</td>
           </tr>
         </tbody>
       </table>

@@ -191,19 +191,11 @@ func (srv *Server) applyEBPF(st store.State) {
 	}
 	srv.purgeLegacyHostExact(st)
 	srv.syncShaperDevices()
-	if err := srv.bpf.AttachTC(srv.env.DevLAN); err != nil {
-		log.Printf("ebpf attach %s: %v", srv.env.DevLAN, err)
-	} else {
-		cidrs := srv.shaperMirredCIDRs(st)
-		if err := ebpf.ApplyIFBMirred(srv.env.DevLAN, cidrs); err != nil {
-			log.Printf("ifb mirred %s: %v", srv.env.DevLAN, err)
-		}
-		srv.replayProfileHosts()
-		if err := srv.bpf.AttachLANEgressBPF(srv.env.DevLAN); err != nil {
-			log.Printf("ebpf lan egress %s: %v", srv.env.DevLAN, err)
-		}
-		srv.StartBackground()
-	}
+	srv.replayProfileHosts()
+	srv.reattachShaperDataPath()
+	srv.replayProfileSubnets()
+	srv.syncActiveHostHTB()
+	srv.StartBackground()
 	srv.setupWGShaper()
 }
 
@@ -244,6 +236,18 @@ func (srv *Server) StartBackground() {
 		interval = time.Minute
 	}
 	go shaper.StartLoop(ctx.Done(), interval, gc)
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				srv.syncActiveHostHTB()
+			}
+		}
+	}()
 }
 
 func (srv *Server) reloadNft() error {

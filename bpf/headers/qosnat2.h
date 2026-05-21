@@ -27,6 +27,7 @@ struct active_val {
 /* ringbuf → Go 动态建 HTB 类 */
 struct new_host_event {
 	__u32 ip_be;
+	__u32 _pad_ip;
 	__u64 down_bps;
 	__u64 up_bps;
 	__u32 class_minor;

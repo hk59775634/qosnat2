@@ -68,6 +68,33 @@ func MigrateProfilePriorityToID(profiles *[]ProfileEntry) {
 	}
 }
 
+// SortProfilesByPrefixLen 掩码越长（越具体）越靠前，供 ifb/ingress u32 安装顺序
+func SortProfilesByPrefixLen(profiles []ProfileEntry) []ProfileEntry {
+	out := make([]ProfileEntry, len(profiles))
+	copy(out, profiles)
+	sort.Slice(out, func(i, j int) bool {
+		oi, _ := cidrOnes(out[i].CIDR)
+		oj, _ := cidrOnes(out[j].CIDR)
+		if oi != oj {
+			return oi > oj
+		}
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CIDR < out[j].CIDR
+	})
+	return out
+}
+
+func cidrOnes(cidr string) (int, bool) {
+	_, n, err := net.ParseCIDR(cidr)
+	if err != nil || n == nil {
+		return 0, false
+	}
+	ones, _ := n.Mask.Size()
+	return ones, true
+}
+
 // SortProfilesByID id 越小优先级越高（排在前）
 func SortProfilesByID(profiles []ProfileEntry) []ProfileEntry {
 	out := make([]ProfileEntry, len(profiles))

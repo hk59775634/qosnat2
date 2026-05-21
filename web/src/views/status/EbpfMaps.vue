@@ -40,7 +40,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="eBPF"
       description="Map 状态与 TC 程序挂载。需要已编译并 pin classify.bpf.o。"

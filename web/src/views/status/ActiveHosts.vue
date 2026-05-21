@@ -23,7 +23,7 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <h2 class="text-xl font-semibold mb-4">eBPF 活跃池 (active_host)</h2>
     <p class="text-sm text-slate-500 mb-4">每 3 秒刷新 · Iterate Map</p>
     <p v-if="err" class="text-red-600 mb-2">{{ err }}</p>

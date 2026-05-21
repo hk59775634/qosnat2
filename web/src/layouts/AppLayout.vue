@@ -135,7 +135,7 @@ function isActive(path) {
         :class="
           isApiDocs
             ? 'flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2 lg:p-3'
-            : 'flex-1 p-4 lg:p-6 overflow-auto'
+            : 'flex-1 p-3 lg:p-4 overflow-auto'
         "
       >
         <router-view />

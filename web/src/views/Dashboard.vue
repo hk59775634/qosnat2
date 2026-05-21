@@ -103,21 +103,21 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="Dashboard"
       description="系统、网络、服务与 QoS 概览。小组件可折叠；标题栏 ↑↓ 调整顺序（保存在浏览器）。"
     />
     <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
 
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
       <StatCard label="活跃 Per-IP" :value="data?.active_hosts ?? '—'" sub="eBPF active_host" />
       <StatCard label="Conntrack" :value="data?.system?.conntrack ?? '—'" sub="会话表项" />
       <StatCard label="QoS 规则" :value="data?.shaper?.profile_rules ?? '—'" sub="网段模板数" />
       <StatCard :label="`阶段 ${phase}`" :value="health?.bpf ? 'BPF ON' : 'BPF —'" :sub="uptime" />
     </div>
 
-    <div class="grid lg:grid-cols-2 gap-4 mb-4">
+    <div class="grid lg:grid-cols-2 gap-3">
       <template v-for="wid in mainOrder" :key="wid">
       <DashboardWidget
         v-if="wid === 'system'"
@@ -169,7 +169,7 @@ onUnmounted(() => clearInterval(timer))
             color="bg-sky-400"
           />
         </div>
-        <div class="space-y-4">
+        <div class="space-y-3">
           <div>
             <div class="flex justify-between text-sm mb-1">
               <span class="font-medium">LAN <span class="font-mono text-slate-500">{{ health?.dev_lan }}</span></span>

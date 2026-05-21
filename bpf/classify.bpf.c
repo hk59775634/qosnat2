@@ -43,6 +43,12 @@ struct {
 	__uint(max_entries, 1 << 22);
 } events SEC(".maps");
 
+/* skb 读出的 saddr 在 LE 上需 ntohl 才与 Go IPToHostKey 一致 */
+static __always_inline __u32 ip_host_key(__u32 addr_be)
+{
+	return bpf_ntohl(addr_be);
+}
+
 static __always_inline __u32 class_minor_for(__u32 ip_key, struct rate_val *rv)
 {
 	if (rv && rv->class_minor)
@@ -54,9 +60,8 @@ static __always_inline __u32 class_minor_for(__u32 ip_key, struct rate_val *rv)
 }
 
 /*
- * Map 键与 Go 一致：host_exact 用 BigEndian.PutUint32(IPToHostKey(ip))，
- * 即 skb 内 saddr/daddr 四字节（网络序）作为 __u32 键。
- * LPM trie 的 addr 字段与 Go IPToLPMKey 相同，用 bpf_ntohl(addr_be)。
+ * Map 键与 Go 一致：host_exact / profile_lpm 的 addr 均为 IPv4 四字节
+ * 按大端组成的 __u32（与 skb saddr 网络序一致），勿 bpf_ntohl。
  */
 static __always_inline struct rate_val *lookup_rate(__u32 addr_be)
 {
@@ -66,14 +71,8 @@ static __always_inline struct rate_val *lookup_rate(__u32 addr_be)
 
 	struct lpm_v4_key key = {
 		.prefixlen = 32,
-		.addr = bpf_ntohl(addr_be),
+		.addr = addr_be,
 	};
-	rv = bpf_map_lookup_elem(&profile_lpm, &key);
-	if (rv)
-		return rv;
-
-	key.prefixlen = 0;
-	key.addr = 0;
 	return bpf_map_lookup_elem(&profile_lpm, &key);
 }
 
@@ -86,8 +85,8 @@ static __always_inline int handle_l3(struct __sk_buff *skb, __u32 addr_be, int i
 	if (!rv)
 		return TC_ACT_OK;
 
-	__u32 ip_host = bpf_ntohl(addr_be);
-	__u32 minor = class_minor_for(ip_host, rv);
+	__u32 ip_key = ip_host_key(addr_be);
+	__u32 minor = class_minor_for(ip_key, rv);
 	/* direct-action：仅低 16 位生效，major 由 tc filter classid 1:0 提供 */
 	skb->tc_classid = minor;
 
@@ -113,7 +112,7 @@ static __always_inline int handle_l3(struct __sk_buff *skb, __u32 addr_be, int i
 	if (is_new) {
 		struct new_host_event *ev = bpf_ringbuf_reserve(&events, sizeof(*ev), 0);
 		if (ev) {
-			ev->ip_be = ip_host;
+			ev->ip_be = ip_key;
 			ev->down_bps = rv->down_bps;
 			ev->up_bps = rv->up_bps;
 			ev->class_minor = minor;
@@ -121,7 +120,7 @@ static __always_inline int handle_l3(struct __sk_buff *skb, __u32 addr_be, int i
 		}
 	}
 
-	/* 上行整形由 TC mirred 将 ingress 流量导入 ifb（见 internal/ebpf/attach.go） */
+	/* 上行 redirect 由 LAN ingress u32+mirred 完成（见 internal/ebpf/ifb_mirred.go） */
 	(void)ifb_ifindex;
 	return TC_ACT_OK;
 }

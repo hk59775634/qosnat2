@@ -106,7 +106,7 @@ async function finish() {
 <template>
   <div class="min-h-screen bg-gradient-to-br from-slate-800 to-pfsense-nav flex items-center justify-center p-4">
     <div class="card w-full max-w-xl p-8 shadow-xl">
-      <div class="mb-6">
+      <div class="mb-3">
         <h1 class="text-2xl font-semibold text-pfsense-nav">qosnat2 初始设置</h1>
         <p class="text-sm text-slate-500 mt-1">完成引导后才会加载 NAT、QoS 与防火墙规则</p>
         <div class="mt-4 h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -125,7 +125,7 @@ async function finish() {
         <p class="text-xs text-slate-400">流程参考 AdGuard Home 首次安装向导。</p>
       </div>
 
-      <div v-else-if="step === 1" class="space-y-4">
+      <div v-else-if="step === 1" class="space-y-3">
         <div>
           <label class="block text-sm mb-1">管理员用户名</label>
           <input v-model="form.admin_user" class="input-field" autocomplete="username" />
@@ -140,7 +140,7 @@ async function finish() {
         </div>
       </div>
 
-      <div v-else-if="step === 2" class="space-y-4">
+      <div v-else-if="step === 2" class="space-y-3">
         <div>
           <label class="block text-sm mb-1">内网接口 (LAN)</label>
           <select v-model="form.dev_lan" class="input-field">
@@ -169,7 +169,7 @@ async function finish() {
         </label>
       </div>
 
-      <div v-else-if="step === 3" class="space-y-4">
+      <div v-else-if="step === 3" class="space-y-3">
         <div>
           <label class="block text-sm mb-1">策略路由网段（逗号或换行，默认 10.0.0.0/8）</label>
           <textarea v-model="form.policy_routes" class="input-field h-20" />

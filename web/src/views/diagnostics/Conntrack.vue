@@ -33,14 +33,14 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <h2 class="text-xl font-semibold mb-4">连接状态 (conntrack)</h2>
     <p class="text-sm text-slate-600 mb-4">
       来自 <code class="text-xs">conntrack -L</code>；总数取自
       <code class="text-xs">nf_conntrack_count</code>。大量连接时仅返回前 N 条。
     </p>
 
-    <div class="card p-4 mb-4 flex flex-wrap gap-3 items-end max-w-2xl">
+    <div class="card card-body mb-4 flex flex-wrap gap-3 items-end">
       <div>
         <label class="text-xs text-slate-500">条数上限</label>
         <input v-model.number="limit" type="number" min="10" max="2000" class="input-field w-28" />
@@ -56,7 +56,7 @@ onMounted(load)
 
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div v-if="data" class="card p-4 mb-4 text-sm flex flex-wrap gap-4">
+    <div v-if="data" class="card card-body mb-4 text-sm flex flex-wrap gap-4">
       <span>表内总数: <strong>{{ data.count }}</strong></span>
       <span>本页: {{ data.entries?.length ?? 0 }} / limit {{ data.limit }}</span>
       <span v-if="data.truncated" class="text-amber-700">已截断</span>

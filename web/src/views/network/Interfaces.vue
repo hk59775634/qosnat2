@@ -151,7 +151,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="接口"
       description="查看网卡实时速率；IPv4 通过 netplan（/etc/netplan/99-qosnat2.yaml）写入并 netplan apply。LAN/WAN 由 DEV_LAN / DEV_WAN 标识。"
@@ -159,7 +159,7 @@ onUnmounted(() => {
     <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
     <p v-if="ok" class="text-green-700 text-sm mb-4">{{ ok }}</p>
 
-    <div class="grid md:grid-cols-2 gap-4 mb-6">
+    <div class="grid md:grid-cols-2 gap-4 mb-3">
       <div
         v-for="iface in ifaces"
         :key="iface.name"
@@ -225,12 +225,12 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <DashboardWidget v-if="editDev" id="iface-ethtool" title="ethtool 环缓冲" class="mb-6">
+    <DashboardWidget v-if="editDev" id="iface-ethtool" title="ethtool 环缓冲" class="mb-3">
       <p class="text-sm text-slate-600 mb-3">
         设备 <span class="font-mono">{{ editDev }}</span>
         <span v-if="eth?.ring"> · 当前 RX {{ eth.ring.rx_current }} / TX {{ eth.ring.tx_current }}</span>
       </p>
-      <div class="flex flex-wrap gap-3 items-end text-sm max-w-lg">
+      <div class="flex flex-wrap gap-3 items-end text-sm">
         <div>
           <label class="text-xs text-slate-500">RX ring</label>
           <input v-model.number="ringRx" type="number" class="input-field mt-1 w-28" />
@@ -281,12 +281,12 @@ onUnmounted(() => {
       </div>
     </DashboardWidget>
 
-    <DashboardWidget id="iface-edit" title="修改 IP 地址" class="mb-6">
+    <DashboardWidget id="iface-edit" title="修改 IP 地址" class="mb-3">
       <p class="text-sm text-slate-600 mb-4">
         点击上方网卡选择接口。保存后写入 <code class="text-xs bg-slate-100 px-1 rounded">99-qosnat2.yaml</code>
         并执行 <code class="text-xs">netplan apply</code>（每行一个 CIDR，如 <code class="text-xs">192.168.1.10/24</code>）。
       </p>
-      <form class="max-w-lg space-y-4" @submit.prevent="saveIP">
+      <form class="max-w-lg space-y-3" @submit.prevent="saveIP">
         <div>
           <label class="text-sm">网卡</label>
           <input v-model="editDev" class="input-field mt-1 font-mono" readonly placeholder="点击卡片选择" />

@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -27,11 +28,12 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 			return
 		}
-		leaf := shaper.NormalizeLeaf(body.Leaf)
-		if body.Leaf != "" && !shaper.ValidLeaf(body.Leaf) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid leaf"})
+		rawLeaf := strings.ToLower(strings.TrimSpace(body.Leaf))
+		if rawLeaf != "" && rawLeaf != "fq_codel" && rawLeaf != "cake" && rawLeaf != "fq" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid leaf (fq_codel or cake)"})
 			return
 		}
+		leaf := shaper.NormalizeLeaf(body.Leaf)
 		_ = srv.store.Update(func(st *store.State) {
 			st.Shaper.Leaf = leaf
 			if body.FQFlows >= 0 {
@@ -54,6 +56,8 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			srv.syncShaperDevices()
+			srv.replayProfileHosts()
+			srv.reattachShaperDataPath()
 		}
 		srv.auditLog(r, "shaper.tc", leaf)
 		st := srv.store.Get()

@@ -63,12 +63,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <h2 class="text-xl font-semibold mb-4">抓包 (tcpdump)</h2>
     <p class="text-sm text-slate-600 mb-4">文件保存在 /var/lib/qosnat2/captures/，最长 300 秒。</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div class="card p-4 mb-6 max-w-xl grid gap-3">
+    <div class="card card-body mb-0 grid gap-3">
       <input v-model="dev" class="input-field font-mono" placeholder="接口 ens19" />
       <input v-model="filter" class="input-field font-mono" placeholder="bpf 过滤，如 host 10.0.0.1" />
       <input v-model.number="duration" type="number" class="input-field w-32" placeholder="秒" />

@@ -76,9 +76,13 @@ func (m *Manager) Load() error {
 	if err := m.rewriteIFBIndex(spec); err != nil {
 		return err
 	}
+	opts := &ebpf.CollectionOptions{MapReplacements: loadPinnedMapReplacements(spec)}
 	var objs bpfObjects
-	if err := spec.LoadAndAssign(&objs, nil); err != nil {
+	if err := spec.LoadAndAssign(&objs, opts); err != nil {
 		return err
+	}
+	for _, pm := range opts.MapReplacements {
+		pm.Close()
 	}
 	if err := m.pinAll(&objs); err != nil {
 		objs.close()
@@ -91,6 +95,20 @@ func (m *Manager) Load() error {
 	m.objs = &objs
 	m.loaded = true
 	return nil
+}
+
+// loadPinnedMapReplacements 复用已 pin 的 map，使 TC 程序与 Go 更新同一套 map
+func loadPinnedMapReplacements(spec *ebpf.CollectionSpec) map[string]*ebpf.Map {
+	reps := make(map[string]*ebpf.Map)
+	for name := range spec.Maps {
+		path := filepath.Join(PinDir, name)
+		pm, err := ebpf.LoadPinnedMap(path, nil)
+		if err != nil {
+			continue
+		}
+		reps[name] = pm
+	}
+	return reps
 }
 
 func (m *Manager) pinAll(objs *bpfObjects) error {
@@ -107,8 +125,12 @@ func (m *Manager) pinAll(objs *bpfObjects) error {
 		{mapClassID, objs.ClassidMap.Pin},
 	}
 	for _, p := range pins {
-		_ = os.Remove(filepath.Join(PinDir, p.name))
-		if err := p.pin(filepath.Join(PinDir, p.name)); err != nil {
+		path := filepath.Join(PinDir, p.name)
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		_ = os.Remove(path)
+		if err := p.pin(path); err != nil {
 			return fmt.Errorf("pin %s: %w", p.name, err)
 		}
 	}
@@ -199,9 +221,24 @@ func rateFromProfile(down, up string) (RateVal, error) {
 	return RateVal{DownBPS: d, UpBPS: u}, nil
 }
 
+func (m *Manager) flushProfileLpm() error {
+	if !m.loaded || m.objs == nil {
+		return nil
+	}
+	iter := m.objs.ProfileLpm.Iterate()
+	var kbuf, vbuf []byte
+	for iter.Next(&kbuf, &vbuf) {
+		_ = m.objs.ProfileLpm.Delete(kbuf)
+	}
+	return iter.Err()
+}
+
 // ReplayState 启动时把 state 写入 Map
 func (m *Manager) ReplayState(st store.State) error {
 	if err := m.Load(); err != nil {
+		return err
+	}
+	if err := m.flushProfileLpm(); err != nil {
 		return err
 	}
 	// 默认 profile
@@ -345,23 +382,6 @@ func (m *Manager) ListActive() ([]ActiveEntry, error) {
 	return out, iter.Err()
 }
 
-func (m *Manager) lookupRatesLocked(ipBE uint32) (down, up uint64, ok bool) {
-	key := make([]byte, 4)
-	binary.BigEndian.PutUint32(key, ipBE)
-	var rv []byte
-	if err := m.objs.HostExact.Lookup(key, &rv); err == nil && len(rv) >= 16 {
-		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
-	}
-	lpmKey := LPMKey{Prefixlen: 32, Addr: ipBE}.Marshal()
-	if err := m.objs.ProfileLpm.Lookup(lpmKey, &rv); err == nil && len(rv) >= 16 {
-		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
-	}
-	lpm0 := LPMKey{Prefixlen: 0, Addr: 0}.Marshal()
-	if err := m.objs.ProfileLpm.Lookup(lpm0, &rv); err == nil && len(rv) >= 16 {
-		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
-	}
-	return 0, 0, false
-}
 
 // ProfileEntry API 列表项
 type ProfileEntry struct {
@@ -391,7 +411,7 @@ func (m *Manager) ListProfiles() ([]ProfileEntry, error) {
 			continue
 		}
 		prefix := binary.LittleEndian.Uint32(kbuf[0:4])
-		addr := binary.LittleEndian.Uint32(kbuf[4:8])
+		addr := binary.BigEndian.Uint32(kbuf[4:8])
 		down := binary.LittleEndian.Uint64(vbuf[0:8])
 		up := binary.LittleEndian.Uint64(vbuf[8:16])
 		ip := make(net.IP, 4)
@@ -441,7 +461,7 @@ func (m *Manager) PurgeActive(ip string) error {
 	return m.objs.ActiveHost.Delete(key)
 }
 
-// LookupRates 查 host_exact 再 profile_lpm
+// LookupRates 查 host_exact 再 profile_lpm（最长前缀，与 BPF trie 一致）
 func (m *Manager) LookupRates(ip string) (down, up uint64, ok bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -452,21 +472,56 @@ func (m *Manager) LookupRates(ip string) (down, up uint64, ok bool) {
 	if err != nil {
 		return 0, 0, false
 	}
+	return m.lookupRatesLocked(k)
+}
+
+func ipv4PrefixAddr(addr uint32, prefix int) uint32 {
+	if prefix <= 0 {
+		return 0
+	}
+	mask := ^uint32(0) << (32 - prefix)
+	return addr & mask
+}
+
+func (m *Manager) lookupRatesLocked(hostKey uint32) (down, up uint64, ok bool) {
 	key := make([]byte, 4)
-	binary.BigEndian.PutUint32(key, k)
+	binary.BigEndian.PutUint32(key, hostKey)
 	var rv []byte
 	if err := m.objs.HostExact.Lookup(key, &rv); err == nil && len(rv) >= 16 {
 		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
 	}
-	lpmKey := LPMKey{Prefixlen: 32, Addr: k}.Marshal()
-	if err := m.objs.ProfileLpm.Lookup(lpmKey, &rv); err == nil && len(rv) >= 16 {
-		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
-	}
-	lpm0 := LPMKey{Prefixlen: 0, Addr: 0}.Marshal()
-	if err := m.objs.ProfileLpm.Lookup(lpm0, &rv); err == nil && len(rv) >= 16 {
-		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
+	for prefix := 32; prefix >= 0; prefix-- {
+		lpmKey := LPMKey{Prefixlen: uint32(prefix), Addr: ipv4PrefixAddr(hostKey, prefix)}.Marshal()
+		if err := m.objs.ProfileLpm.Lookup(lpmKey, &rv); err == nil && len(rv) >= 16 {
+			return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
+		}
 	}
 	return 0, 0, false
+}
+
+// EachClassid 遍历 classid_map 中已分类主机
+func (m *Manager) EachClassid(fn func(ip string, minor uint32) error) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.loaded {
+		return errors.New("ebpf not loaded")
+	}
+	iter := m.objs.ClassidMap.Iterate()
+	var kbuf, vbuf []byte
+	for iter.Next(&kbuf, &vbuf) {
+		if len(kbuf) < 4 {
+			continue
+		}
+		ipBE := binary.BigEndian.Uint32(kbuf[0:4])
+		minor := uint32(0)
+		if len(vbuf) >= 4 {
+			minor = binary.LittleEndian.Uint32(vbuf[0:4])
+		}
+		if err := fn(HostKeyToIP(ipBE), minor); err != nil {
+			return err
+		}
+	}
+	return iter.Err()
 }
 
 // DeleteHostExact 兼容旧名

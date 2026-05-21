@@ -54,7 +54,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="防火墙规则"
       description="自定义 forward/input 过滤规则（插入 established 之后）。复杂场景请直接编辑生成的 nft 文件。"
@@ -62,7 +62,7 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div class="card p-4 mb-6 max-w-3xl space-y-3 text-sm">
+    <div class="card card-body mb-0 space-y-3 text-sm">
       <h3 class="font-medium">添加规则</h3>
       <div class="grid sm:grid-cols-2 gap-3">
         <div>

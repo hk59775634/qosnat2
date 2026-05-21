@@ -10,7 +10,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <h2 class="text-xl font-semibold mb-4">Mark 隔离策略</h2>
     <p class="text-sm text-slate-600 mb-4">
       nft 仅可使用 mark 低 30 位；QoS 使用 tc_classid + IFB bpf_redirect，不用 skb->mark 分流。

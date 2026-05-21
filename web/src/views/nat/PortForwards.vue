@@ -117,7 +117,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="端口转发"
       description="DNAT · 可选接口、协议版本、源/目标与重定向"
@@ -129,7 +129,7 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div class="card p-4 mb-6 max-w-4xl">
+    <div class="card card-body mb-0">
       <h3 class="font-medium mb-3">添加规则</h3>
       <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
         <div>
@@ -193,7 +193,7 @@ onMounted(load)
       <button type="button" class="btn-primary mt-3" @click="add">添加</button>
     </div>
 
-    <div class="card p-4 table-wrap">
+    <div class="card card-body table-wrap">
       <table class="data w-full text-sm">
         <thead>
           <tr>
@@ -221,7 +221,7 @@ onMounted(load)
             </td>
           </tr>
           <tr v-if="!list.length">
-            <td colspan="7" class="text-center text-slate-400 py-6">暂无规则</td>
+            <td colspan="7" class="text-center text-slate-400 py-3">暂无规则</td>
           </tr>
         </tbody>
       </table>

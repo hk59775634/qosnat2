@@ -39,13 +39,13 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="防火墙 Aliases"
       description="nft 地址对象组，可在防火墙规则中通过 src_alias / dst_alias 引用（@alias_名称）。"
     />
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
-    <div class="card p-4 mb-6 max-w-xl space-y-3 text-sm">
+    <div class="card card-body mb-0 space-y-3 text-sm">
       <input v-model="form.name" class="input-field font-mono" placeholder="名称 lan_hosts" />
       <textarea
         v-model="form.membersText"

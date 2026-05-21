@@ -35,17 +35,17 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="API 密钥"
       description="用于 X-API-Key 请求头鉴权（自动化/CI）。创建后请立即复制，不会再次显示完整密钥。"
     />
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
-    <div v-if="created?.key" class="card p-4 mb-4 bg-amber-50 border-amber-200">
+    <div v-if="created?.key" class="card card-body mb-4 bg-amber-50 border-amber-200">
       <p class="text-sm font-medium text-amber-900 mb-1">新密钥（仅显示一次）</p>
       <code class="text-xs break-all">{{ created.key }}</code>
     </div>
-    <div class="card p-4 mb-6 max-w-xl flex gap-2">
+    <div class="card card-body mb-0 flex gap-2">
       <input v-model="name" class="input-field flex-1" placeholder="名称，如 ci-deploy" />
       <button type="button" class="btn-primary shrink-0" @click="add">创建</button>
     </div>

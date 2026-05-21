@@ -141,7 +141,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <h2 class="text-xl font-semibold mb-4">WireGuard</h2>
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>

@@ -46,15 +46,15 @@ func (m *Manager) StartRingbuf(ctx context.Context, hs HostEnsurer) error {
 				log.Printf("ringbuf: %v", err)
 				continue
 			}
-			if len(rec.RawSample) < 24 {
+			if len(rec.RawSample) < 28 {
 				continue
 			}
 			b := rec.RawSample
-			/* ringbuf 与 host_exact 键一致：Go 写入的是 IPToHostKey（主机序整数） */
+			/* BPF 写入 ip_host_key（与 IPToHostKey 相同，在 LE 上为 LittleEndian 存储） */
 			ipBE := binary.LittleEndian.Uint32(b[0:4])
-			down := binary.LittleEndian.Uint64(b[4:12])
-			up := binary.LittleEndian.Uint64(b[12:20])
-			minor := binary.LittleEndian.Uint32(b[20:24])
+			down := binary.LittleEndian.Uint64(b[8:16])
+			up := binary.LittleEndian.Uint64(b[16:24])
+			minor := binary.LittleEndian.Uint32(b[24:28])
 			ip := HostKeyToIP(ipBE)
 			if hs != nil {
 				if err := hs.EnsureHost(ip, down, up, minor); err != nil {

@@ -45,7 +45,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="多 WAN"
       description="Tier 越小越优先；Metric 用于 ip route。启用项会同步为 default 路由（comment qosnat-wan:…）。"
@@ -53,7 +53,7 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div class="card p-4 mb-6 max-w-2xl space-y-3 text-sm">
+    <div class="card card-body mb-0 space-y-3 text-sm">
       <div class="grid sm:grid-cols-2 gap-3">
         <div>
           <label class="text-xs text-slate-500">名称</label>
@@ -110,7 +110,7 @@ onMounted(load)
             <td><button type="button" class="text-red-600 text-xs" @click="remove(w.id)">删除</button></td>
           </tr>
           <tr v-if="!links.length">
-            <td colspan="7" class="text-center text-slate-400 py-6">未配置额外 WAN</td>
+            <td colspan="7" class="text-center text-slate-400 py-3">未配置额外 WAN</td>
           </tr>
         </tbody>
       </table>

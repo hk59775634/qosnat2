@@ -79,7 +79,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <h2 class="text-xl font-semibold mb-4">路由管理</h2>
     <p class="text-sm text-slate-600 mb-4">
       管理宿主机 <code class="text-xs bg-slate-100 px-1 rounded">main</code> 表静态路由（<code class="text-xs">ip route</code>）。
@@ -89,7 +89,7 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div class="card p-4 mb-6 max-w-2xl">
+    <div class="card card-body mb-0">
       <h3 class="font-medium mb-3">添加静态路由</h3>
       <div class="grid sm:grid-cols-2 gap-3 text-sm">
         <div>
@@ -122,7 +122,7 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="grid lg:grid-cols-2 gap-6">
+    <div class="grid lg:grid-cols-2 gap-3">
       <section class="card table-wrap p-4">
         <h3 class="font-medium mb-3">托管路由</h3>
         <table class="data w-full text-sm">

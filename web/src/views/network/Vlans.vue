@@ -43,7 +43,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="VLAN"
       description="802.1Q 子接口由 netplan 定义（vlans: link/id/addresses），写入 99-qosnat2.yaml 后 netplan apply。"
@@ -51,7 +51,7 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div class="card p-4 mb-6 max-w-lg space-y-3 text-sm">
+    <div class="card card-body mb-0 space-y-3 text-sm">
       <div class="grid sm:grid-cols-2 gap-3">
         <div>
           <label class="text-xs text-slate-500">父接口</label>
@@ -86,7 +86,7 @@ onMounted(load)
             <td><button type="button" class="text-red-600 text-xs" @click="remove(v.id)">删除</button></td>
           </tr>
           <tr v-if="!vlans.length">
-            <td colspan="5" class="text-center text-slate-400 py-6">无 VLAN</td>
+            <td colspan="5" class="text-center text-slate-400 py-3">无 VLAN</td>
           </tr>
         </tbody>
       </table>

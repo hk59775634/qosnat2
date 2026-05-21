@@ -110,7 +110,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="Outbound NAT"
       description="策略网段 SNAT 池、1:1 映射、网段映射。修改后自动 reload nftables。"

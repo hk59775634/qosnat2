@@ -37,7 +37,7 @@ async function submit() {
   <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-700 to-pfsense-nav">
     <form class="card w-full max-w-md p-8" @submit.prevent="submit">
       <h1 class="text-xl font-semibold text-pfsense-nav mb-1">qosnat2 登录</h1>
-      <p class="text-sm text-slate-500 mb-6">管理控制台</p>
+      <p class="text-sm text-slate-500 mb-3">管理控制台</p>
       <label class="block text-sm mb-1">用户名</label>
       <input v-model="user" class="input-field mb-4" autocomplete="username" />
       <label class="block text-sm mb-1">密码</label>

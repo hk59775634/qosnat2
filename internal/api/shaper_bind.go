@@ -1,9 +1,12 @@
 package api
 
 import (
+	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/dnsmasq"
+	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -69,6 +72,97 @@ func (srv *Server) syncShaperDevices() {
 	}
 }
 
+// syncActiveHostHTB 按 BPF 活跃/classid 表在 ifb/LAN 上补建 HTB 类（/24 等网段模板依赖此路径）
+func (srv *Server) syncActiveHostHTB() {
+	if srv.hosts == nil || srv.bpf == nil || !srv.bpf.Ready() {
+		return
+	}
+	st := srv.store.Get()
+	dev := srv.shaperDefaultDevice(st)
+	seen := map[string]struct{}{}
+	entries, err := srv.bpf.ListActive()
+	if err == nil {
+		for _, e := range entries {
+			seen[e.IP] = struct{}{}
+			down, up, ok := srv.bpf.LookupRates(e.IP)
+			if !ok {
+				_ = srv.hosts.DeleteHostOnDevice(e.IP, dev)
+				_ = srv.bpf.PurgeActive(e.IP)
+				continue
+			}
+			_ = srv.hosts.EnsureHostOnDevice(e.IP, down, up, e.ClassMinor, dev)
+		}
+	}
+	_ = srv.bpf.EachClassid(func(ip string, minor uint32) error {
+		if _, ok := seen[ip]; ok {
+			return nil
+		}
+		down, up, ok := srv.bpf.LookupRates(ip)
+		if !ok {
+			return nil
+		}
+		_ = srv.hosts.EnsureHostOnDevice(ip, down, up, minor, dev)
+		return nil
+	})
+}
+
+// reattachShaperDataPath 在 setupHTBRoot 重建 HTB 后恢复 u32 mirred 与 BPF（parent 1:）
+func (srv *Server) reattachShaperDataPath() {
+	if srv.bpf == nil || !srv.bpf.Ready() || srv.env.DevLAN == "" {
+		return
+	}
+	st := srv.store.Get()
+	if err := srv.bpf.AttachTC(srv.env.DevLAN); err != nil {
+		log.Printf("reattach AttachTC %s: %v", srv.env.DevLAN, err)
+		return
+	}
+	ingressPin := filepath.Join(ebpf.PinDir, "classify_ingress")
+	cidrs := srv.shaperMirredCIDRs(st)
+	// ens19 ingress 仅 u32+mirred；勿挂 BPF direct-action（会截断 mirred，导致上行不限速）
+	ebpf.RemoveLANIngressBPF(srv.env.DevLAN)
+	if err := ebpf.ResetIFBMirred(srv.env.DevLAN, cidrs); err != nil {
+		log.Printf("reattach ifb mirred %s: %v", srv.env.DevLAN, err)
+	}
+	if err := ebpf.ApplyIFBIngressBPF(ingressPin); err != nil {
+		log.Printf("reattach ifb ingress bpf: %v", err)
+	}
+	if err := srv.bpf.AttachLANEgressBPF(srv.env.DevLAN); err != nil {
+		log.Printf("reattach lan egress %s: %v", srv.env.DevLAN, err)
+	}
+	srv.replayProfileUploadHTB()
+	srv.syncActiveHostHTB()
+	if err := srv.verifyUploadPath(cidrs); err != nil {
+		log.Printf("shaper upload path: %v", err)
+	}
+}
+
+// replayProfileUploadHTB 恢复 ifb 上行 u32+HTB（/32 主机优先，网段按前缀最长优先）
+func (srv *Server) replayProfileUploadHTB() {
+	if srv.hosts == nil {
+		return
+	}
+	shaper.FlushIFBUploadU32()
+	st := srv.store.Get()
+	for _, p := range store.SortProfilesByPrefixLen(st.Shaper.Profiles) {
+		if _, ok := store.ProfileHostIP(p.CIDR); ok {
+			continue
+		}
+		rv, err := srv.rateVal(p.Down, p.Up)
+		if err != nil {
+			continue
+		}
+		if err := srv.hosts.EnsureProfileSubnetOnIFB(p.CIDR, p.ID, rv.UpBPS); err != nil {
+			log.Printf("replay subnet ifb %s: %v", p.CIDR, err)
+		}
+	}
+	srv.replayProfileHosts()
+}
+
+// replayProfileSubnets 兼容旧调用
+func (srv *Server) replayProfileSubnets() {
+	srv.replayProfileUploadHTB()
+}
+
 func (srv *Server) shaperProfilesPayload(list []ProfileListItem) map[string]any {
 	st := srv.store.Get()
 	ifaces, _ := dnsmasq.ListInterfaces()
@@ -115,7 +209,8 @@ func (srv *Server) replayProfileHosts() {
 			continue
 		}
 		dev := srv.profileDevice(p, st)
-		srv.ensureShaperDevice(dev)
-		_ = srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, dev)
+		if err := srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, dev); err != nil {
+			log.Printf("replay host htb %s: %v", ip, err)
+		}
 	}
 }

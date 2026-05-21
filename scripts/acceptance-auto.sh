@@ -44,19 +44,27 @@ fi
 
 # --- 3) TC / BPF / IFB mirred 拓扑 ---
 if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -q 'mirred.*ifb0'; then
-  ok "TC flower mirred ingress on $DEV_LAN → ifb0"
+  ok "TC mirred ingress on $DEV_LAN → ifb0"
 else
-  bad "TC flower mirred ingress on $DEV_LAN"
+  bad "TC mirred ingress on $DEV_LAN"
+fi
+if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -q 'pref 10 u32'; then
+  ok "TC u32 mirred prio 10 on $DEV_LAN"
+else
+  bad "TC u32 mirred prio 10 on $DEV_LAN (flower legacy not acceptable)"
+fi
+if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -q flower; then
+  bad "legacy flower mirred still on $DEV_LAN"
 fi
 if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -q classify_ingress; then
-  bad "TC bpf ingress on $DEV_LAN (should be flower only)"
+  bad "TC bpf on $DEV_LAN ingress (blocks u32 mirred)"
 else
-  ok "no bpf ingress on $DEV_LAN"
+  ok "no bpf on $DEV_LAN ingress (mirred only)"
 fi
-if tc filter show dev ifb0 parent 1: 2>/dev/null | grep -q classify_ingress; then
-  ok "TC bpf on ifb0 parent 1: (upload classify)"
+if tc filter show dev ifb0 ingress 2>/dev/null | grep -q classify_ingress; then
+  ok "TC bpf ingress on ifb0 (after mirred)"
 else
-  bad "TC bpf on ifb0 parent 1:"
+  bad "TC bpf ingress on ifb0"
 fi
 if tc filter show dev "$DEV_LAN" parent 1: 2>/dev/null | grep -q classify_egress; then
   ok "TC bpf on $DEV_LAN parent 1: (download classify)"
@@ -195,12 +203,40 @@ if command -v iperf3 >/dev/null && [ -n "$TEST_IPERF_DST" ]; then
     else
       bad "iperf upload parse failed"
     fi
+    down_mbps=$(ssh -o BatchMode=yes "root@${TEST_CLIENT}" \
+      "iperf3 -c ${TEST_IPERF_DST} -t 8 -f m -R 2>/dev/null" | awk '/Mbits\/sec/ && /receiver/ {for(i=1;i<=NF;i++) if($i=="Mbits/sec"){print $(i-1); exit}}')
+    if [ -n "$down_mbps" ]; then
+      down_int=${down_mbps%.*}
+      if [ -n "$down_int" ] && [ "$down_int" -ge 6 ] && [ "$down_int" -le 11 ]; then
+        ok "iperf download -R ~${down_mbps} Mbit/s (expect ~8)"
+      else
+        bad "iperf download -R ${down_mbps} Mbit/s (expect 6-11)"
+      fi
+    else
+      bad "iperf download -R parse failed"
+    fi
     pkill -f "iperf3 -s -B ${TEST_IPERF_DST}" 2>/dev/null || true
   else
     skip "iperf (SSH root@${TEST_CLIENT} unavailable)"
   fi
 else
   skip "iperf3 or TEST_IPERF_DST missing"
+fi
+# 上行：ens19 ingress u32 mirred → ifb0 ingress BPF + egress HTB
+if tc filter show dev "${DEV_LAN:-ens19}" ingress 2>/dev/null | grep -q 'pref 1 bpf'; then
+  bad "LAN ingress BPF blocks mirred (must be on ifb0 only)"
+else
+  ok "LAN ingress has no BPF (mirred not blocked)"
+fi
+if tc filter show dev "${DEV_LAN:-ens19}" ingress 2>/dev/null | grep -q 'mirred.*ifb0'; then
+  ok "LAN ingress u32 mirred -> ifb0"
+else
+  bad "LAN ingress missing mirred -> ifb0"
+fi
+if tc filter show dev ifb0 parent 1: 2>/dev/null | grep -q u32; then
+  ok "ifb0 upload u32 filters"
+else
+  bad "ifb0 missing u32 upload filters"
 fi
 
 # --- 9) 重启 qosnatd 后 Map 回放 ---
@@ -222,15 +258,15 @@ if systemctl restart qosnatd; then
   else
     bad "health bpf after restart"
   fi
-  if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -q 'mirred.*ifb0'; then
-    ok "after restart: flower mirred on $DEV_LAN"
+  if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -q 'pref 10 u32'; then
+    ok "after restart: u32 mirred on $DEV_LAN"
   else
-    bad "after restart: flower mirred missing"
+    bad "after restart: u32 mirred missing on $DEV_LAN"
   fi
-  if tc filter show dev ifb0 parent 1: 2>/dev/null | grep -q classify_ingress; then
-    ok "after restart: bpf on ifb0 parent 1:"
+  if tc filter show dev ifb0 ingress 2>/dev/null | grep -q classify_ingress; then
+    ok "after restart: bpf on ifb0 ingress"
   else
-    bad "after restart: ifb0 bpf missing"
+    bad "after restart: ifb0 ingress bpf missing"
   fi
 else
   bad "systemctl restart qosnatd"

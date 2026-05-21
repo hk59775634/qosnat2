@@ -17,7 +17,7 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <h2 class="text-xl font-semibold mb-4">接口 / RSS 队列</h2>
     <p class="text-sm text-slate-500 mb-4">ethtool -l · /proc/interrupts · softirq（5s 刷新）</p>
 

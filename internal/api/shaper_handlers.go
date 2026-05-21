@@ -5,11 +5,26 @@ import (
 	"net/http"
 
 	"github.com/hk59775634/qosnat2/internal/ebpf"
+	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 func (srv *Server) bpfReady() bool {
 	return srv.bpf != nil && srv.bpf.Ready()
+}
+
+// syncProfileBPFMaps profile_lpm + /32 写入 host_exact（与 BPF lookup_rate 一致）
+func (srv *Server) syncProfileBPFMaps(cidr string, rv ebpf.RateVal) error {
+	if err := srv.bpf.UpdateProfile(cidr, rv); err != nil {
+		return err
+	}
+	if ip, ok := store.ProfileHostIP(cidr); ok {
+		if minor, err := shaper.MinorForIP(ip); err == nil {
+			rv.ClassMinor = minor
+		}
+		return srv.bpf.UpdateHost(ip, rv)
+	}
+	return nil
 }
 
 func (srv *Server) rateVal(down, up string) (ebpf.RateVal, error) {
@@ -37,11 +52,7 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 	if err != nil {
 		return false, err
 	}
-	if err := srv.bpf.UpdateProfile(cidr, rv); err != nil {
-		return false, err
-	}
-	entry := store.ProfileEntry{CIDR: cidr, Down: down, Up: up, Device: dev}
-	srv.applyProfileHTBProfile(entry, rv)
+	// 必须先写入 state，再装 TC：reattach 依赖 shaperMirredCIDRs(st) 含新网段
 	_ = srv.store.Update(func(st *store.State) {
 		existed := false
 		for _, p := range st.Shaper.Profiles {
@@ -70,6 +81,12 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 		}
 	})
 	_ = srv.store.Save()
+	if err := srv.syncProfileBPFMaps(cidr, rv); err != nil {
+		return false, err
+	}
+	if p, ok := srv.profileEntryByCIDR(cidr); ok {
+		srv.applyProfileHTBProfile(p, rv)
+	}
 	return added, nil
 }
 
@@ -112,11 +129,7 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errEbpfNotLoaded.Error()})
 			return
 		}
-		if err := srv.bpf.DeleteProfile(cidr); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		srv.removeProfileHTB(cidr)
+		srv.teardownProfileShaper(cidr)
 		_ = srv.store.Update(func(st *store.State) {
 			var out []store.ProfileEntry
 			for _, p := range st.Shaper.Profiles {
@@ -127,6 +140,13 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			st.Shaper.Profiles = out
 		})
 		_ = srv.store.Save()
+		if err := srv.bpf.DeleteProfile(cidr); err != nil {
+			log.Printf("delete profile bpf %s: %v", cidr, err)
+		}
+		if ip, ok := store.ProfileHostIP(cidr); ok {
+			_ = srv.bpf.DeleteHost(ip)
+		}
+		srv.refreshShaperAfterChange()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

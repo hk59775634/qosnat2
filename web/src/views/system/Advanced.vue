@@ -155,9 +155,9 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
-    <h2 class="text-xl font-semibold mb-2">高级设置 · 系统优化</h2>
-    <p class="text-sm text-slate-600 mb-4 max-w-3xl">
+  <div class="page-stack">
+    <h2 class="text-lg font-semibold mb-1">高级设置 · 系统优化</h2>
+    <p class="page-hint mb-2">
       QoS/NAT 网关相关的内核 sysctl、连接跟踪、TCP、网卡队列与 HTB 叶子队列等。「按硬件重新推荐」将总内存的
       <strong>50%</strong> 划为优化专用预算，其中约 <strong>75%</strong> 用于 conntrack（按约 384 字节/连接估算
       <code class="text-xs">max</code> 与 <code class="text-xs">buckets=max/4</code>，2 的幂）。16GB 内存示例：
@@ -168,13 +168,13 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div v-if="!loading && !data && err" class="card p-4 max-w-xl">
+    <div v-if="!loading && !data && err" class="card card-body max-w-xl">
       <p class="text-sm text-slate-700 mb-3">无法加载配置。若刚升级代码，请执行部署脚本重启服务。</p>
       <button type="button" class="btn-primary text-sm" @click="load">重试</button>
     </div>
 
-    <div v-if="data" class="space-y-6 max-w-5xl">
-      <div class="card p-4 bg-blue-50/80 border-blue-100">
+    <div v-if="data" class="space-y-3">
+      <div class="card card-body bg-blue-50/80 border-blue-100">
         <h3 class="font-medium text-slate-800 mb-2">本机硬件与推荐档位</h3>
         <p class="text-sm text-slate-700">
           CPU <strong>{{ data.hardware?.cpus ?? '—' }}</strong> 核 · 内存
@@ -252,7 +252,7 @@ onMounted(load)
         </div>
       </div>
 
-      <div v-for="cat in sysctlCategories" :key="cat" class="card p-4 overflow-x-auto">
+      <div v-for="cat in sysctlCategories" :key="cat" class="card card-body overflow-x-auto">
         <h3 class="font-medium text-slate-800 mb-1">{{ cat }}</h3>
         <p class="text-xs text-slate-500 mb-3">sysctl · 留空「手动覆盖」则使用默认 + 高性能预设合并结果</p>
         <table class="w-full text-sm min-w-[640px]">

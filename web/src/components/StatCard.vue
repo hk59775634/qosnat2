@@ -7,9 +7,9 @@ defineProps({
 </script>
 
 <template>
-  <div class="card p-4">
-    <div class="text-xs text-slate-500 uppercase tracking-wide">{{ label }}</div>
-    <div class="text-2xl font-semibold text-slate-800 mt-1">{{ value }}</div>
-    <div v-if="sub" class="text-xs text-slate-400 mt-1">{{ sub }}</div>
+  <div class="card p-3">
+    <div class="text-[10px] text-slate-500 uppercase tracking-wide">{{ label }}</div>
+    <div class="text-xl font-semibold text-slate-800 mt-0.5 leading-tight">{{ value }}</div>
+    <div v-if="sub" class="text-[10px] text-slate-400 mt-0.5">{{ sub }}</div>
   </div>
 </template>

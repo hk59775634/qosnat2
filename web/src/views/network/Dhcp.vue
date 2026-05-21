@@ -79,7 +79,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <h2 class="text-xl font-semibold mb-4">DHCP 服务</h2>
     <p class="text-sm text-slate-600 mb-4">
       通过 <strong>dnsmasq</strong> 在指定网卡提供 DHCP，通常绑定内网口
@@ -90,7 +90,7 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
-    <div v-if="cfg" class="card p-4 mb-6 max-w-3xl space-y-4">
+    <div v-if="cfg" class="card card-body mb-0 space-y-3">
       <label class="flex items-center gap-2 text-sm font-medium">
         <input v-model="cfg.enabled" type="checkbox" /> 启用 DHCP
       </label>
@@ -182,7 +182,7 @@ onMounted(load)
       </p>
     </div>
 
-    <div v-if="cfg" class="grid lg:grid-cols-2 gap-6">
+    <div v-if="cfg" class="grid lg:grid-cols-2 gap-3">
       <section class="card p-4">
         <h3 class="font-medium mb-3">静态租约</h3>
         <div class="grid sm:grid-cols-2 gap-2 text-sm mb-3">

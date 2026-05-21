@@ -74,23 +74,15 @@ func (m *Manager) pinPrograms(objs *bpfObjects) error {
 	return nil
 }
 
-// AttachTC：LAN egress 下行分类；ifb0 ingress 上行分类（ens19 ingress 由 flower mirred 导入 ifb）
+// AttachTC：仅重装 LAN egress 下行 BPF；勿 flush ifb0 parent 1:（会删掉上行 per-IP u32）
 func (m *Manager) AttachTC(devLAN string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.loaded || m.objs == nil {
 		return fmt.Errorf("ebpf not loaded")
 	}
-	_ = m.detachLocked()
-	// 清理历史 AttachTCDevice 留在 LAN ingress 上的 BPF，避免挡住 flower mirred
-	_ = exec.Command("tc", "filter", "del", "dev", devLAN, "ingress").Run()
-	ingressPin := filepath.Join(PinDir, progIngress)
 	egressPin := filepath.Join(PinDir, progEgress)
-	// HTB root 上分类（clsact+direct-action 的 classid 不会进 HTB 子类）
 	if err := m.attachBPFFilterHTB(devLAN, egressPin); err != nil {
-		return err
-	}
-	if err := m.attachBPFFilterHTB(ifbDev, ingressPin); err != nil {
 		return err
 	}
 	if m.attached == nil {
@@ -141,8 +133,21 @@ func (m *Manager) AttachTCDevice(dev string) error {
 	return nil
 }
 
+// flushHTBBPFOnly 仅移除 HTB 上的 BPF 分类器，保留 u32/flower 等整形规则
+func flushHTBBPFOnly(dev string) {
+	const bpfPrio = "49152"
+	for i := 0; i < 8; i++ {
+		out, _ := exec.Command("tc", "filter", "del", "dev", dev, "parent", "1:",
+			"protocol", "all", "prio", bpfPrio).CombinedOutput()
+		msg := string(out)
+		if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") {
+			break
+		}
+	}
+}
+
 func (m *Manager) attachBPFFilterHTB(dev, pin string) error {
-	_ = exec.Command("tc", "filter", "del", "dev", dev, "parent", "1:", "protocol", "all").Run()
+	flushHTBBPFOnly(dev)
 	out, err := exec.Command("tc", "filter", "add", "dev", dev, "parent", "1:",
 		"protocol", "all", "prio", "49152", "bpf",
 		"direct-action", "object-pinned", pin, "classid", "1:0").CombinedOutput()

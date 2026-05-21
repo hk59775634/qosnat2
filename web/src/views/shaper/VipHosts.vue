@@ -35,34 +35,40 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader
       title="VIP 主机 (/32)"
-      description="单 IP 覆盖 profile_lpm 网段模板，写入 host_exact Map + HTB 类（最长匹配优先）。"
+      description="单 IP 覆盖网段模板 · host_exact + HTB · 最长前缀优先"
     />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <p v-if="ok" class="text-green-700 text-xs">{{ ok }}</p>
+    <p v-if="err" class="text-red-600 text-xs">{{ err }}</p>
 
-    <div class="card p-4 mb-6 max-w-xl flex flex-wrap gap-2 items-end text-sm">
+    <div class="card card-body flex flex-wrap gap-2 items-end">
       <div class="flex-1 min-w-[8rem]">
-        <label class="text-xs text-slate-500">内网 IP</label>
-        <input v-model="form.ip" class="input-field mt-1 font-mono" placeholder="10.0.0.100" />
+        <label class="text-xs text-slate-600">内网 IP</label>
+        <input v-model="form.ip" class="input-field mt-0.5 font-mono" placeholder="10.0.0.100" />
       </div>
       <div>
-        <label class="text-xs text-slate-500">下行</label>
-        <input v-model="form.down" class="input-field mt-1 w-24" />
+        <label class="text-xs text-slate-600">下行</label>
+        <input v-model="form.down" class="input-field mt-0.5 w-24" />
       </div>
       <div>
-        <label class="text-xs text-slate-500">上行</label>
-        <input v-model="form.up" class="input-field mt-1 w-24" />
+        <label class="text-xs text-slate-600">上行</label>
+        <input v-model="form.up" class="input-field mt-0.5 w-24" />
       </div>
       <button type="button" class="btn-primary" @click="add">添加 / 更新</button>
     </div>
 
-    <div class="card overflow-x-auto">
-      <table class="data w-full text-sm">
+    <div class="card table-wrap card-body !p-2">
+      <table class="data w-full">
         <thead>
-          <tr><th>IP</th><th>下行</th><th>上行</th><th>速率</th><th></th></tr>
+          <tr>
+            <th>IP</th>
+            <th>下行</th>
+            <th>上行</th>
+            <th>速率</th>
+            <th class="w-24 text-right">操作</th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="h in hosts" :key="h.ip">
@@ -72,12 +78,12 @@ onMounted(load)
             <td class="text-xs text-slate-500">
               {{ bpsLabel(h.down_bps) }} / {{ bpsLabel(h.up_bps) }}
             </td>
-            <td>
-              <button type="button" class="text-red-600 text-xs" @click="remove(h.ip)">删除</button>
+            <td class="text-right">
+              <button type="button" class="btn-danger" @click="remove(h.ip)">删除</button>
             </td>
           </tr>
           <tr v-if="!hosts.length">
-            <td colspan="5" class="text-slate-500 py-4">暂无 VIP 主机</td>
+            <td colspan="5" class="text-slate-500 py-3 text-center">暂无 VIP 主机</td>
           </tr>
         </tbody>
       </table>

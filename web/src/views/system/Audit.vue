@@ -13,7 +13,7 @@ onMounted(load)
 </script>
 
 <template>
-  <div>
+  <div class="page-stack">
     <PageHeader title="审计日志" description="记录配置变更操作（写入 audit.log）" />
     <p v-if="data" class="text-xs text-slate-500 mb-3 font-mono">{{ data.path }}</p>
     <div class="card overflow-x-auto">

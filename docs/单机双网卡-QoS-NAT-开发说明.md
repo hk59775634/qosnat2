@@ -250,7 +250,7 @@ API 存储:  state.json 保留字符串
 - Go 在 `bpf_map_update_elem` 之后，**同步或异步** 调用 netlink：  
   - `tc class add/change/del dev DEV_LAN`  
   - `tc class add/change/del dev ifb0`  
-  - leaf：`fq_codel`（默认）或 `fq`  
+  - leaf：`fq_codel`（默认）或 `cake`  
 - **idle_timeout**（如 300s）：GC 线程删除无流量 HTB 类，并 `bpf_map_delete_elem(active_host)`（保留 `host_exact` 配置）。  
 - 规模：活跃 /32 数千～数万；**不** 预建全 10/8。
 

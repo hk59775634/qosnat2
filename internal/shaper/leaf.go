@@ -8,7 +8,7 @@ import (
 // ValidLeaf 支持的 HTB 叶子 qdisc
 func ValidLeaf(leaf string) bool {
 	switch strings.ToLower(strings.TrimSpace(leaf)) {
-	case "", "fq_codel", "fq", "cake":
+	case "", "fq_codel", "cake":
 		return true
 	default:
 		return false
@@ -19,6 +19,9 @@ func ValidLeaf(leaf string) bool {
 func NormalizeLeaf(leaf string) string {
 	leaf = strings.ToLower(strings.TrimSpace(leaf))
 	if leaf == "" {
+		return "fq_codel"
+	}
+	if leaf == "fq" {
 		return "fq_codel"
 	}
 	if ValidLeaf(leaf) {
@@ -32,8 +35,6 @@ func LeafModules(leaf string) []string {
 	base := []string{"ifb", "sch_htb", "cls_bpf", "act_bpf", "act_mirred"}
 	leaf = NormalizeLeaf(leaf)
 	switch leaf {
-	case "fq":
-		return append(base, "sch_fq")
 	case "cake":
 		return append(base, "sch_cake")
 	default:
@@ -41,7 +42,7 @@ func LeafModules(leaf string) []string {
 	}
 }
 
-// FQOpts fq / fq_codel 可选 flows、quantum（0 表示默认）
+// FQOpts fq_codel 可选 flows、quantum（0 表示默认；cake 忽略）
 type FQOpts struct {
 	Flows   int
 	Quantum int
@@ -53,9 +54,6 @@ func LeafTCArgs(leaf string, fq FQOpts) []string {
 	switch leaf {
 	case "fq_codel":
 		args := []string{leaf, "limit", "10240"}
-		return appendFQOpts(args, fq)
-	case "fq":
-		args := []string{leaf}
 		return appendFQOpts(args, fq)
 	case "cake":
 		return []string{leaf, "besteffort"}

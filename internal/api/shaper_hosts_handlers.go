@@ -170,11 +170,13 @@ func (srv *Server) upsertShaperHost(ip, down, up, device string) error {
 	}
 	srv.ensureShaperDevice(dev)
 	_ = srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, dev)
+	srv.reattachShaperDataPath()
 	cidr := store.Host32ProfileCIDR(ip)
 	_ = srv.store.Update(func(st *store.State) {
 		srv.assignProfileOnAdd(st, cidr, down, up, 32, dev)
 	})
 	_ = srv.store.Save()
+	srv.refreshShaperAfterChange()
 	return nil
 }
 
@@ -202,5 +204,9 @@ func (srv *Server) removeShaperHost(ip string) error {
 		st.Shaper.Profiles = out
 	})
 	_ = srv.store.Save()
+	if srv.bpfReady() {
+		_ = srv.bpf.ReplayState(srv.store.Get())
+	}
+	srv.refreshShaperAfterChange()
 	return nil
 }

@@ -86,22 +86,29 @@ func (srv *Server) handleShaperProfilesOrder(w http.ResponseWriter, r *http.Requ
 			if e != nil {
 				continue
 			}
-			_ = srv.bpf.UpdateProfile(p.CIDR, rv)
-			srv.applyProfileHTBProfile(p, rv)
+			_ = srv.syncProfileBPFMaps(p.CIDR, rv)
 		}
+		srv.rebuildShaperDataPlane()
 	}
 	_ = srv.store.Save()
 	list, _ := srv.listProfileItems()
 	writeJSON(w, http.StatusOK, srv.shaperProfilesPayload(list))
 }
 
-func (srv *Server) applyProfileHTBProfile(p store.ProfileEntry, rv ebpf.RateVal) {
+func (srv *Server) profileEntryByCIDR(cidr string) (store.ProfileEntry, bool) {
 	st := srv.store.Get()
-	dev := srv.profileDevice(p, st)
-	srv.ensureShaperDevice(dev)
-	if ip, ok := store.ProfileHostIP(p.CIDR); ok {
-		_ = srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, dev)
+	for _, p := range st.Shaper.Profiles {
+		if p.CIDR == cidr {
+			return p, true
+		}
 	}
+	return store.ProfileEntry{}, false
+}
+
+func (srv *Server) applyProfileHTBProfile(p store.ProfileEntry, rv ebpf.RateVal) {
+	_ = p
+	_ = rv
+	srv.rebuildShaperDataPlane()
 }
 
 func (srv *Server) purgeLegacyHostExact(st store.State) {
@@ -134,6 +141,13 @@ func (srv *Server) removeProfileHTB(cidr string) {
 		_ = srv.hosts.DeleteHostOnDevice(ip, dev)
 		if srv.bpf != nil && srv.bpf.Ready() {
 			_ = srv.bpf.DeleteHost(ip)
+		}
+		return
+	}
+	for _, p := range st.Shaper.Profiles {
+		if p.CIDR == cidr && srv.hosts != nil {
+			srv.hosts.RemoveProfileSubnetFromIFB(cidr, p.ID)
+			break
 		}
 	}
 }

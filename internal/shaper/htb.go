@@ -31,6 +31,13 @@ func NewHostShaper(devLAN, leaf string) *HostShaper {
 	}
 }
 
+// ResetKnown 重建 HTB 根后清空内存中的 ip→minor（避免以为 u32 仍存在）
+func (h *HostShaper) ResetKnown() {
+	h.mu.Lock()
+	h.known = map[string]uint32{}
+	h.mu.Unlock()
+}
+
 // SetExtraDev 设置附加整形接口（WireGuard wg0 等）
 func (h *HostShaper) SetExtraDev(dev string) {
 	h.mu.Lock()
@@ -95,6 +102,9 @@ func (h *HostShaper) EnsureHostOnDevice(ip string, downBPS, upBPS uint64, minor 
 		if err := h.ensureClass(IFBDev, cid, up, up); err != nil {
 			return fmt.Errorf("ifb %s: %w", ip, err)
 		}
+		if err := installIFBUploadFilter(ip, minor); err != nil {
+			return fmt.Errorf("ifb u32 %s: %w", ip, err)
+		}
 	}
 	h.known[ip] = minor
 	return nil
@@ -118,6 +128,7 @@ func (h *HostShaper) DeleteHostOnDevice(ip string, dev string) error {
 	h.mu.Unlock()
 
 	cid := fmt.Sprintf("1:%x", minor)
+	_ = removeIFBUploadFilter(ip)
 	_ = h.delClass(dev, cid)
 	if dev != IFBDev {
 		_ = h.delClass(IFBDev, cid)
@@ -151,6 +162,9 @@ func (h *HostShaper) EnsureHost(ip string, downBPS, upBPS uint64, minor uint32) 
 	if err := h.ensureClass(IFBDev, cid, up, up); err != nil {
 		return fmt.Errorf("ifb %s: %w", ip, err)
 	}
+	if err := installIFBUploadFilter(ip, minor); err != nil {
+		return fmt.Errorf("ifb u32 %s: %w", ip, err)
+	}
 	h.known[ip] = minor
 	return nil
 }
@@ -169,6 +183,7 @@ func (h *HostShaper) DeleteHost(ip string) error {
 	h.mu.Unlock()
 
 	cid := fmt.Sprintf("1:%x", minor)
+	_ = removeIFBUploadFilter(ip)
 	_ = h.delClass(h.lan, cid)
 	if h.extraDev != "" {
 		_ = h.delClass(h.extraDev, cid)
