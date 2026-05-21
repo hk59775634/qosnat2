@@ -154,16 +154,6 @@ func (m *Manager) Close() error {
 	return nil
 }
 
-func (m *Manager) detachLocked() error {
-	for dev := range m.attached {
-		_ = osExec("tc", "filter", "del", "dev", dev, "ingress")
-		_ = osExec("tc", "filter", "del", "dev", dev, "egress")
-	}
-	m.attached = map[string]struct{}{}
-	m.attachedDev = ""
-	return nil
-}
-
 func (m *Manager) attachedList() []string {
 	out := make([]string, 0, len(m.attached))
 	for d := range m.attached {

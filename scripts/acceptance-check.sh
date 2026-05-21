@@ -53,14 +53,12 @@ else
   bad "bpf object missing (make bpf)"
 fi
 
-if command -v bpftool >/dev/null; then
-  if bpftool map show 2>/dev/null | grep -q profile_lpm; then
-    ok "bpftool profile_lpm map"
-  else
-    bad "profile_lpm map not pinned"
-  fi
+if [ -f /sys/fs/bpf/qosnat2/profile_lpm ]; then
+  ok "pinned profile_lpm (/sys/fs/bpf/qosnat2)"
+elif command -v bpftool >/dev/null && bpftool map show 2>/dev/null | grep -q profile_lpm; then
+  ok "bpftool profile_lpm map"
 else
-  echo "SKIP bpftool not installed"
+  bad "profile_lpm map not pinned"
 fi
 
 echo ""

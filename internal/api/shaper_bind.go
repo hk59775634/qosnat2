@@ -43,7 +43,8 @@ func (srv *Server) ensureShaperDevice(dev string) {
 	if err := shaper.EnsureDevice(dev, leaf); err != nil {
 		return
 	}
-	if srv.bpf != nil && srv.bpf.Ready() {
+	// DEV_LAN 由 applyEBPF→AttachTC（egress BPF + ifb ingress）与 ApplyIFBMirred 处理，勿再 AttachTCDevice 覆盖 ingress
+	if srv.bpf != nil && srv.bpf.Ready() && dev != srv.env.DevLAN {
 		_ = srv.bpf.AttachTCDevice(dev)
 	}
 }

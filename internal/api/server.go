@@ -190,14 +190,34 @@ func (srv *Server) applyEBPF(st store.State) {
 		log.Printf("ebpf replay: %v", err)
 	}
 	srv.purgeLegacyHostExact(st)
+	srv.syncShaperDevices()
 	if err := srv.bpf.AttachTC(srv.env.DevLAN); err != nil {
 		log.Printf("ebpf attach %s: %v", srv.env.DevLAN, err)
 	} else {
-		srv.syncShaperDevices()
+		cidrs := srv.shaperMirredCIDRs(st)
+		if err := ebpf.ApplyIFBMirred(srv.env.DevLAN, cidrs); err != nil {
+			log.Printf("ifb mirred %s: %v", srv.env.DevLAN, err)
+		}
 		srv.replayProfileHosts()
+		if err := srv.bpf.AttachLANEgressBPF(srv.env.DevLAN); err != nil {
+			log.Printf("ebpf lan egress %s: %v", srv.env.DevLAN, err)
+		}
 		srv.StartBackground()
 	}
 	srv.setupWGShaper()
+}
+
+func (srv *Server) shaperMirredCIDRs(st store.State) []string {
+	var out []string
+	if c := strings.TrimSpace(st.Shaper.PolicyCIDR); c != "" {
+		out = append(out, c)
+	}
+	for _, p := range st.Shaper.Profiles {
+		if c := strings.TrimSpace(p.CIDR); c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // StartBackground ringbuf + 空闲 GC

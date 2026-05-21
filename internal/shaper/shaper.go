@@ -46,6 +46,9 @@ func SetupP0(cfg Config) error {
 	if err := ensureClsact(cfg.DevLAN); err != nil {
 		return err
 	}
+	if err := ensureClsact(IFBDev); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -50,6 +50,7 @@ func (m *Manager) StartRingbuf(ctx context.Context, hs HostEnsurer) error {
 				continue
 			}
 			b := rec.RawSample
+			/* ringbuf 与 host_exact 键一致：Go 写入的是 IPToHostKey（主机序整数） */
 			ipBE := binary.LittleEndian.Uint32(b[0:4])
 			down := binary.LittleEndian.Uint64(b[4:12])
 			up := binary.LittleEndian.Uint64(b[12:20])

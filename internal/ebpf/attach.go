@@ -2,6 +2,7 @@ package ebpf
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/cilium/ebpf"
 )
+
+const ifbDev = "ifb0"
 
 const (
 	progIngress = "classify_ingress"
@@ -71,17 +74,49 @@ func (m *Manager) pinPrograms(objs *bpfObjects) error {
 	return nil
 }
 
-// AttachTC 将 pinned 程序挂到 LAN clsact（direct-action）
+// AttachTC：LAN egress 下行分类；ifb0 ingress 上行分类（ens19 ingress 由 flower mirred 导入 ifb）
 func (m *Manager) AttachTC(devLAN string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.loaded || m.objs == nil {
 		return fmt.Errorf("ebpf not loaded")
 	}
-	return m.attachDeviceLocked(devLAN)
+	_ = m.detachLocked()
+	// 清理历史 AttachTCDevice 留在 LAN ingress 上的 BPF，避免挡住 flower mirred
+	_ = exec.Command("tc", "filter", "del", "dev", devLAN, "ingress").Run()
+	ingressPin := filepath.Join(PinDir, progIngress)
+	egressPin := filepath.Join(PinDir, progEgress)
+	// HTB root 上分类（clsact+direct-action 的 classid 不会进 HTB 子类）
+	if err := m.attachBPFFilterHTB(devLAN, egressPin); err != nil {
+		return err
+	}
+	if err := m.attachBPFFilterHTB(ifbDev, ingressPin); err != nil {
+		return err
+	}
+	if m.attached == nil {
+		m.attached = map[string]struct{}{}
+	}
+	m.attached[devLAN] = struct{}{}
+	m.attached[ifbDev] = struct{}{}
+	m.attachedDev = devLAN
+	return nil
 }
 
-// AttachTCDevice 附加接口（如 wg0）复用同一套 classify 程序
+// AttachLANEgressBPF 在 LAN HTB 上挂下行 classify_egress（replay 动态类后补挂）
+func (m *Manager) AttachLANEgressBPF(devLAN string) error {
+	if devLAN == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.loaded || m.objs == nil {
+		return fmt.Errorf("ebpf not loaded")
+	}
+	egressPin := filepath.Join(PinDir, progEgress)
+	return m.attachBPFFilterHTB(devLAN, egressPin)
+}
+
+// AttachTCDevice 附加接口（如 wg0）ingress+egress
 func (m *Manager) AttachTCDevice(dev string) error {
 	if dev == "" {
 		return nil
@@ -91,36 +126,45 @@ func (m *Manager) AttachTCDevice(dev string) error {
 	if !m.loaded || m.objs == nil {
 		return fmt.Errorf("ebpf not loaded")
 	}
-	return m.attachDeviceLocked(dev)
-}
-
-func (m *Manager) attachDeviceLocked(dev string) error {
-	if _, ok := m.attached[dev]; ok {
-		return nil
-	}
-	_ = exec.Command("tc", "filter", "del", "dev", dev, "ingress").Run()
-	_ = exec.Command("tc", "filter", "del", "dev", dev, "egress").Run()
-
 	ingressPin := filepath.Join(PinDir, progIngress)
 	egressPin := filepath.Join(PinDir, progEgress)
-	for _, spec := range []struct {
-		dir, pin string
-	}{
-		{"ingress", ingressPin},
-		{"egress", egressPin},
-	} {
-		out, err := exec.Command("tc", "filter", "add", "dev", dev, spec.dir, "bpf",
-			"direct-action", "object-pinned", spec.pin).CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("tc filter %s %s: %s %w", dev, spec.dir, strings.TrimSpace(string(out)), err)
-		}
+	if err := m.attachBPFFilterLocked(dev, "ingress", ingressPin); err != nil {
+		return err
+	}
+	if err := m.attachBPFFilterLocked(dev, "egress", egressPin); err != nil {
+		return err
 	}
 	if m.attached == nil {
 		m.attached = map[string]struct{}{}
 	}
 	m.attached[dev] = struct{}{}
-	if m.attachedDev == "" {
-		m.attachedDev = dev
+	return nil
+}
+
+func (m *Manager) attachBPFFilterHTB(dev, pin string) error {
+	_ = exec.Command("tc", "filter", "del", "dev", dev, "parent", "1:", "protocol", "all").Run()
+	out, err := exec.Command("tc", "filter", "add", "dev", dev, "parent", "1:",
+		"protocol", "all", "prio", "49152", "bpf",
+		"direct-action", "object-pinned", pin, "classid", "1:0").CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if !strings.Contains(msg, "File exists") {
+			log.Printf("tc bpf %s parent 1: pin=%s: %s", dev, pin, msg)
+			return fmt.Errorf("tc filter %s parent 1: %s %w", dev, msg, err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) attachBPFFilterLocked(dev, dir, pin string) error {
+	_ = exec.Command("tc", "filter", "del", "dev", dev, dir).Run()
+	out, err := exec.Command("tc", "filter", "add", "dev", dev, dir, "bpf",
+		"direct-action", "object-pinned", pin, "classid", "1:0").CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if !strings.Contains(msg, "File exists") {
+			return fmt.Errorf("tc filter %s %s: %s %w", dev, dir, msg, err)
+		}
 	}
 	return nil
 }
@@ -151,6 +195,17 @@ func (m *Manager) DetachTCDevice(dev string) error {
 			break
 		}
 	}
+	return nil
+}
+
+func (m *Manager) detachLocked() error {
+	for dev := range m.attached {
+		_ = exec.Command("tc", "filter", "del", "dev", dev, "ingress").Run()
+		_ = exec.Command("tc", "filter", "del", "dev", dev, "egress").Run()
+		_ = exec.Command("tc", "filter", "del", "dev", dev, "parent", "1:", "protocol", "all").Run()
+	}
+	m.attached = map[string]struct{}{}
+	m.attachedDev = ""
 	return nil
 }
 
