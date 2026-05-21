@@ -58,6 +58,8 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("# mark 隔离: 禁止 meta mark set / flowtable；QoS 用 tc_classid，IFB 用 bpf_redirect\n")
 	b.WriteString("flush ruleset\n\n")
 	b.WriteString(fmt.Sprintf("table inet %s {\n", TableName))
+	writeAliasSets(&b, st.Firewall.Aliases)
+	writeGeoIPSets(&b, st.Firewall.GeoIP)
 
 	// prerouting DNAT
 	b.WriteString("    chain prerouting {\n")
@@ -105,6 +107,8 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("    chain forward {\n")
 	b.WriteString("        type filter hook forward priority filter; policy accept;\n")
 	b.WriteString("        ct state established,related accept\n")
+	writeFilterRules(&b, "forward", st.Firewall.FilterRules)
+	writeGeoIPRules(&b, "forward", cfg.DevWAN, st.Firewall.GeoIP)
 	b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevLAN, cfg.DevWAN))
 	b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevWAN, cfg.DevLAN))
 	// 非对称回程：公网源直达 LAN 内网段丢弃
@@ -121,6 +125,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        type filter hook input priority filter; policy accept;\n")
 	b.WriteString("        iifname \"lo\" accept\n")
 	b.WriteString("        ct state established,related accept\n")
+	writeFilterRules(&b, "input", st.Firewall.FilterRules)
 	b.WriteString(fmt.Sprintf("        iifname \"%s\" accept\n", cfg.DevLAN))
 	b.WriteString("    }\n}\n")
 	return b.String(), nil

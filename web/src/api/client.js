@@ -69,6 +69,71 @@ export const api = {
       request(`/api/v1/nat/prefix-mappings?inner=${encodeURIComponent(inner)}`, { method: 'DELETE' }),
   },
 
+  ebpfMaps: () => request('/api/v1/ebpf/maps'),
+  ebpfPrograms: () => request('/api/v1/ebpf/programs'),
+  markPolicy: () => request('/api/v1/system/mark-policy'),
+  system: {
+    general: {
+      get: () => request('/api/v1/system/general'),
+      put: (body) => request('/api/v1/system/general', { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    tuning: {
+      get: () => request('/api/v1/system/tuning'),
+      put: (body) => request('/api/v1/system/tuning', { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    audit: {
+      list: () => request('/api/v1/system/audit'),
+    },
+    apiKeys: {
+      list: () => request('/api/v1/api-keys'),
+      create: (name) => request('/api/v1/api-keys', { method: 'POST', body: JSON.stringify({ name }) }),
+      del: (id) => request(`/api/v1/api-keys?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
+  },
+  firewall: {
+    rules: {
+      list: () => request('/api/v1/firewall/rules'),
+      add: (body) => request('/api/v1/firewall/rules', { method: 'POST', body: JSON.stringify(body) }),
+      del: (id) => request(`/api/v1/firewall/rules?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
+    aliases: {
+      list: () => request('/api/v1/firewall/aliases'),
+      add: (body) => request('/api/v1/firewall/aliases', { method: 'POST', body: JSON.stringify(body) }),
+      del: (name) => request(`/api/v1/firewall/aliases?name=${encodeURIComponent(name)}`, { method: 'DELETE' }),
+    },
+    geoip: {
+      list: () => request('/api/v1/firewall/geoip'),
+      add: (body) => request('/api/v1/firewall/geoip', { method: 'POST', body: JSON.stringify(body) }),
+      del: (id) => request(`/api/v1/firewall/geoip?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
+  },
+  network: {
+    vlans: {
+      list: () => request('/api/v1/network/vlans'),
+      add: (body) => request('/api/v1/network/vlans', { method: 'POST', body: JSON.stringify(body) }),
+      del: (id) => request(`/api/v1/network/vlans?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
+    wanLinks: {
+      list: () => request('/api/v1/network/wan-links'),
+      add: (body) => request('/api/v1/network/wan-links', { method: 'POST', body: JSON.stringify(body) }),
+      del: (id) => request(`/api/v1/network/wan-links?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
+    netplan: {
+      get: () => request('/api/v1/network/netplan'),
+      apply: () => request('/api/v1/network/netplan/apply', { method: 'POST', body: '{}' }),
+    },
+  },
+  interfacesEthtool: (device) => request(`/api/v1/interfaces/ethtool?device=${encodeURIComponent(device)}`),
+  setEthtool: (device, body) =>
+    request(`/api/v1/interfaces/ethtool?device=${encodeURIComponent(device)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  setRing: (device, body) =>
+    request(`/api/v1/interfaces/ethtool?device=${encodeURIComponent(device)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
   shaper: {
     wizard: (body) => request('/api/v1/shaper/wizard', { method: 'POST', body: JSON.stringify(body) }),
     profiles: () => request('/api/v1/shaper/profiles'),
@@ -77,14 +142,15 @@ export const api = {
     reorderProfiles: (order) =>
       request('/api/v1/shaper/profiles/order', { method: 'PUT', body: JSON.stringify({ order }) }),
     active: () => request('/api/v1/shaper/active'),
-  },
-  ebpfMaps: () => request('/api/v1/ebpf/maps'),
-  ebpfPrograms: () => request('/api/v1/ebpf/programs'),
-  markPolicy: () => request('/api/v1/system/mark-policy'),
-  system: {
-    tuning: {
-      get: () => request('/api/v1/system/tuning'),
-      put: (body) => request('/api/v1/system/tuning', { method: 'PUT', body: JSON.stringify(body) }),
+    hosts: {
+      list: () => request('/api/v1/shaper/hosts'),
+      put: (ip, body) =>
+        request(`/api/v1/shaper/hosts/${encodeURIComponent(ip)}`, { method: 'PUT', body: JSON.stringify(body) }),
+      del: (ip) => request(`/api/v1/shaper/hosts/${encodeURIComponent(ip)}`, { method: 'DELETE' }),
+    },
+    tc: {
+      get: () => request('/api/v1/shaper/tc'),
+      put: (body) => request('/api/v1/shaper/tc', { method: 'PUT', body: JSON.stringify(body) }),
     },
   },
   interfaces: {

@@ -212,5 +212,11 @@ func (srv *Server) setupPrepareTC() error {
 	if os.Getuid() != 0 || srv.env.DevLAN == "" {
 		return nil
 	}
-	return shaper.SetupP0(shaper.Config{DevLAN: srv.env.DevLAN, Leaf: srv.store.Get().Shaper.Leaf})
+	st := srv.store.Get()
+	return shaper.SetupP0(shaper.Config{
+		DevLAN:    srv.env.DevLAN,
+		Leaf:      st.Shaper.Leaf,
+		FQFlows:   st.Shaper.FQFlows,
+		FQQuantum: st.Shaper.FQQuantum,
+	})
 }

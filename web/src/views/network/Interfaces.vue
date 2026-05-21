@@ -16,6 +16,13 @@ const pollTimer = ref(null)
 const editDev = ref('')
 const editIPv4 = ref('')
 const editUp = ref(true)
+const eth = ref(null)
+const ringRx = ref(0)
+const ringTx = ref(0)
+const offGRO = ref('')
+const offGSO = ref('')
+const offTx = ref('')
+const offRx = ref('')
 
 async function loadRates() {
   try {
@@ -29,11 +36,68 @@ async function loadRates() {
   }
 }
 
+async function loadEthtool(dev) {
+  if (!dev) {
+    eth.value = null
+    return
+  }
+  try {
+    eth.value = await api.interfacesEthtool(dev)
+    ringRx.value = eth.value?.ring?.rx_current || eth.value?.ring?.rx_max || 0
+    ringTx.value = eth.value?.ring?.tx_current || eth.value?.ring?.tx_max || 0
+    const o = eth.value?.offloads || {}
+    offGRO.value = o.gro || ''
+    offGSO.value = o.gso || ''
+    offTx.value = o.tx_checksum || ''
+    offRx.value = o.rx_checksum || ''
+  } catch {
+    eth.value = null
+  }
+}
+
 function selectEdit(iface) {
   editDev.value = iface.name
   editUp.value = iface.up
   const v4 = (iface.addrs || []).filter((a) => a.family === 'inet').map((a) => a.cidr)
   editIPv4.value = v4.join('\n')
+  loadEthtool(iface.name)
+}
+
+async function saveRing() {
+  if (!editDev.value) return
+  saving.value = true
+  err.value = ''
+  try {
+    await api.setEthtool(editDev.value, { rx_ring: ringRx.value, tx_ring: ringTx.value })
+    ok.value = 'Ring 缓冲已更新'
+    await loadEthtool(editDev.value)
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    saving.value = false
+  }
+}
+
+async function saveOffloads() {
+  if (!editDev.value) return
+  saving.value = true
+  err.value = ''
+  try {
+    await api.setEthtool(editDev.value, {
+      offloads: {
+        gro: offGRO.value,
+        gso: offGSO.value,
+        tx_checksum: offTx.value,
+        rx_checksum: offRx.value,
+      },
+    })
+    ok.value = 'Offload 已更新'
+    await loadEthtool(editDev.value)
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    saving.value = false
+  }
 }
 
 async function saveIP() {
@@ -90,7 +154,7 @@ onUnmounted(() => {
   <div>
     <PageHeader
       title="接口"
-      description="查看网卡实时速率，修改 IPv4 地址。LAN/WAN 由初始设置或环境变量 DEV_LAN / DEV_WAN 标识。"
+      description="查看网卡实时速率；IPv4 通过 netplan（/etc/netplan/99-qosnat2.yaml）写入并 netplan apply。LAN/WAN 由 DEV_LAN / DEV_WAN 标识。"
     />
     <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
     <p v-if="ok" class="text-green-700 text-sm mb-4">{{ ok }}</p>
@@ -161,10 +225,66 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <DashboardWidget v-if="editDev" id="iface-ethtool" title="ethtool 环缓冲" class="mb-6">
+      <p class="text-sm text-slate-600 mb-3">
+        设备 <span class="font-mono">{{ editDev }}</span>
+        <span v-if="eth?.ring"> · 当前 RX {{ eth.ring.rx_current }} / TX {{ eth.ring.tx_current }}</span>
+      </p>
+      <div class="flex flex-wrap gap-3 items-end text-sm max-w-lg">
+        <div>
+          <label class="text-xs text-slate-500">RX ring</label>
+          <input v-model.number="ringRx" type="number" class="input-field mt-1 w-28" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">TX ring</label>
+          <input v-model.number="ringTx" type="number" class="input-field mt-1 w-28" />
+        </div>
+        <button type="button" class="btn-secondary" :disabled="saving" @click="saveRing">应用 ring</button>
+      </div>
+      <div class="mt-4 pt-3 border-t border-slate-200">
+        <p class="text-xs text-slate-500 mb-2">Offload（ethtool -K，选 on / off）</p>
+        <div class="flex flex-wrap gap-3 items-end text-sm">
+          <div>
+            <label class="text-xs text-slate-500">GRO</label>
+            <select v-model="offGRO" class="input-field mt-1 w-24">
+              <option value="">—</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">GSO</label>
+            <select v-model="offGSO" class="input-field mt-1 w-24">
+              <option value="">—</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">TX csum</label>
+            <select v-model="offTx" class="input-field mt-1 w-24">
+              <option value="">—</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">RX csum</label>
+            <select v-model="offRx" class="input-field mt-1 w-24">
+              <option value="">—</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </select>
+          </div>
+          <button type="button" class="btn-secondary" :disabled="saving" @click="saveOffloads">应用 offload</button>
+        </div>
+      </div>
+    </DashboardWidget>
+
     <DashboardWidget id="iface-edit" title="修改 IP 地址" class="mb-6">
       <p class="text-sm text-slate-600 mb-4">
-        点击上方网卡卡片选择要编辑的接口。保存后将执行 <code class="text-xs bg-slate-100 px-1 rounded">ip addr flush</code>
-        并写入新的 IPv4（每行一个 CIDR，如 <code class="text-xs">192.168.1.10/24</code>）。
+        点击上方网卡选择接口。保存后写入 <code class="text-xs bg-slate-100 px-1 rounded">99-qosnat2.yaml</code>
+        并执行 <code class="text-xs">netplan apply</code>（每行一个 CIDR，如 <code class="text-xs">192.168.1.10/24</code>）。
       </p>
       <form class="max-w-lg space-y-4" @submit.prevent="saveIP">
         <div>
@@ -181,7 +301,7 @@ onUnmounted(() => {
         </div>
         <label class="flex items-center gap-2 text-sm">
           <input v-model="editUp" type="checkbox" />
-          接口 UP（<code class="text-xs">ip link set up</code>）
+          接口 UP（netplan 应用后由 networkd 拉起；取消勾选则 apply 后 <code class="text-xs">ip link set down</code>）
         </label>
         <button type="submit" class="btn-primary" :disabled="!editDev || saving">
           {{ saving ? '保存中…' : '保存 IP 配置' }}

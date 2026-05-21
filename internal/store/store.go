@@ -32,6 +32,8 @@ type ShaperState struct {
 	Hosts           map[string]HostRate    `json:"hosts,omitempty"` // 已废弃，启动时迁入 profiles
 	Leaf            string                 `json:"leaf"`
 	IdleTimeoutSec  int                    `json:"idle_timeout_sec"`
+	FQFlows         int                    `json:"fq_flows,omitempty"`
+	FQQuantum       int                    `json:"fq_quantum,omitempty"`
 }
 
 // ProfileEntry LPM 网段模板（ID 越小优先级越高，仅影响管理排序；数据面仍 LPM 最长前缀优先）
@@ -48,6 +50,9 @@ type ProfileEntry struct {
 // FirewallState 防火墙/NAT 扩展
 type FirewallState struct {
 	WanPortForwards []WanPortForward `json:"wan_port_forwards"`
+	FilterRules     []FilterRule     `json:"filter_rules"`
+	Aliases         []AliasSet       `json:"aliases"`
+	GeoIP           []GeoIPRule      `json:"geoip"`
 }
 
 // SystemState 系统可调项
@@ -85,6 +90,7 @@ type State struct {
 	Firewall       FirewallState     `json:"firewall"`
 	System         SystemState       `json:"system"`
 	DHCP           DHCPState         `json:"dhcp"`
+	Network        NetworkState      `json:"network"`
 	VPN            VPNState          `json:"vpn"`
 	APIKeys        []APIKey          `json:"api_keys"`
 }
@@ -117,11 +123,15 @@ func DefaultState() State {
 		},
 		Firewall: FirewallState{
 			WanPortForwards: []WanPortForward{},
+			FilterRules:     []FilterRule{},
+			Aliases:         []AliasSet{},
+			GeoIP:           []GeoIPRule{},
 		},
 		System: SystemState{
 			Sysctl: map[string]string{},
 		},
-		DHCP: DefaultDHCP(),
+		DHCP:    DefaultDHCP(),
+		Network: NetworkState{Ifaces: []IfaceConfig{}, VLANs: []VLANIface{}, WanLinks: []WanLink{}},
 		VPN: VPNState{
 			WireGuard: WireGuardState{
 				Enabled:    false,
@@ -246,6 +256,24 @@ func (s *Store) ensureDefaultsLocked() {
 	}
 	if s.State.Firewall.WanPortForwards == nil {
 		s.State.Firewall.WanPortForwards = []WanPortForward{}
+	}
+	if s.State.Firewall.FilterRules == nil {
+		s.State.Firewall.FilterRules = []FilterRule{}
+	}
+	if s.State.Firewall.Aliases == nil {
+		s.State.Firewall.Aliases = []AliasSet{}
+	}
+	if s.State.Firewall.GeoIP == nil {
+		s.State.Firewall.GeoIP = []GeoIPRule{}
+	}
+	if s.State.Network.Ifaces == nil {
+		s.State.Network.Ifaces = []IfaceConfig{}
+	}
+	if s.State.Network.VLANs == nil {
+		s.State.Network.VLANs = []VLANIface{}
+	}
+	if s.State.Network.WanLinks == nil {
+		s.State.Network.WanLinks = []WanLink{}
 	}
 	MigrateWanForwards(&s.State.Firewall.WanPortForwards)
 	if s.State.VPN.WireGuard.Interface == "" {

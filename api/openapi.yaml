@@ -836,6 +836,48 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ok'
 
+  /api/v1/system/general:
+    get:
+      tags: [system]
+      summary: 常规设置（hostname、管理员）
+    put:
+      tags: [system]
+      summary: 更新 hostname 或管理员密码
+
+  /api/v1/system/audit:
+    get:
+      tags: [system]
+      summary: 审计日志最近条目
+
+  /api/v1/firewall/rules:
+    get:
+      tags: [nat]
+      summary: 防火墙自定义规则列表
+    post:
+      tags: [nat]
+      summary: 添加规则并 reload nft
+    put:
+      tags: [nat]
+      summary: 更新规则（query id）
+    delete:
+      tags: [nat]
+      summary: 删除规则（query id）
+
+  /api/v1/shaper/hosts:
+    get:
+      tags: [shaper]
+      summary: VIP /32 主机列表（host_exact）
+  /api/v1/shaper/hosts/{ip}:
+    get:
+      tags: [shaper]
+      summary: 查询单主机速率
+    put:
+      tags: [shaper]
+      summary: 设置 VIP 主机 down/up
+    delete:
+      tags: [shaper]
+      summary: 删除 VIP 主机
+
   /api/v1/system/mark-policy:
     get:
       tags: [system]

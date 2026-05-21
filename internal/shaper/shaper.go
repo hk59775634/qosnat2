@@ -13,8 +13,10 @@ import (
 
 // Config TC/IFB 拓扑参数
 type Config struct {
-	DevLAN string
-	Leaf   string // fq_codel | fq
+	DevLAN    string
+	Leaf      string // fq_codel | fq | cake
+	FQFlows   int
+	FQQuantum int
 }
 
 const IFBDev = "ifb0"
@@ -24,11 +26,8 @@ func SetupP0(cfg Config) error {
 	if cfg.DevLAN == "" {
 		return fmt.Errorf("DEV_LAN required")
 	}
-	leaf := cfg.Leaf
-	if leaf == "" {
-		leaf = "fq_codel"
-	}
-	mods := []string{"ifb", "sch_htb", "sch_fq_codel", "sch_fq", "cls_bpf", "act_bpf", "act_mirred"}
+	leaf := NormalizeLeaf(cfg.Leaf)
+	mods := LeafModules(leaf)
 	for _, m := range mods {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		_ = exec.CommandContext(ctx, "modprobe", m).Run()
@@ -37,10 +36,11 @@ func SetupP0(cfg Config) error {
 	if err := EnsureIFB(); err != nil {
 		return err
 	}
-	if err := setupHTBRoot(cfg.DevLAN, leaf); err != nil {
+	fq := FQOpts{Flows: cfg.FQFlows, Quantum: cfg.FQQuantum}
+	if err := setupHTBRoot(cfg.DevLAN, leaf, fq); err != nil {
 		return err
 	}
-	if err := setupHTBRoot(IFBDev, leaf); err != nil {
+	if err := setupHTBRoot(IFBDev, leaf, fq); err != nil {
 		return err
 	}
 	if err := ensureClsact(cfg.DevLAN); err != nil {
@@ -54,7 +54,7 @@ func EnsureIFB() error {
 	return netif.EnsureIFB()
 }
 
-func setupHTBRoot(dev, leaf string) error {
+func setupHTBRoot(dev, leaf string, fq FQOpts) error {
 	_ = exec.Command("tc", "qdisc", "del", "dev", dev, "root").Run()
 	if out, err := exec.Command("tc", "qdisc", "add", "dev", dev, "root", "handle", "1:", "htb", "default", "1").CombinedOutput(); err != nil {
 		if !strings.Contains(string(out), "File exists") {
@@ -67,10 +67,7 @@ func setupHTBRoot(dev, leaf string) error {
 		}
 	}
 	_ = exec.Command("tc", "qdisc", "del", "dev", dev, "parent", "1:1").Run()
-	args := []string{"tc", "qdisc", "add", "dev", dev, "parent", "1:1", leaf}
-	if leaf == "fq_codel" {
-		args = append(args, "limit", "10240")
-	}
+	args := append([]string{"tc", "qdisc", "add", "dev", dev, "parent", "1:1"}, LeafTCArgs(leaf, fq)...)
 	if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
 		if !strings.Contains(string(out), "File exists") {
 			return fmt.Errorf("tc leaf %s on %s: %s %w", leaf, dev, strings.TrimSpace(string(out)), err)
@@ -101,7 +98,21 @@ func EnsureDevice(dev, leaf string) error {
 	if leaf == "" {
 		leaf = "fq_codel"
 	}
-	if err := setupHTBRoot(dev, leaf); err != nil {
+	return EnsureDeviceWithFQ(dev, leaf, FQOpts{})
+}
+
+// EnsureDeviceWithFQ HTB 根 + clsact，可指定 fq 参数
+func EnsureDeviceWithFQ(dev, leaf string, fq FQOpts) error {
+	if dev == "" {
+		return fmt.Errorf("device required")
+	}
+	if !route.LinkExists(dev) {
+		return fmt.Errorf("interface %s not found", dev)
+	}
+	if leaf == "" {
+		leaf = "fq_codel"
+	}
+	if err := setupHTBRoot(dev, leaf, fq); err != nil {
 		return err
 	}
 	return ensureClsact(dev)

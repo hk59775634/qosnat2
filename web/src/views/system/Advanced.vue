@@ -122,7 +122,11 @@ async function applyHardwareRecommend() {
   saving.value = true
   try {
     const res = await api.system.tuning.put({ ...buildBody(true), apply_recommended: true })
-    ok.value = `已按当前硬件（${data.value?.hardware_tier_label || res.tier || ''}）填入推荐值并应用`
+    const b = data.value?.recommended?.memory_budget
+    const extra = b
+      ? `；conntrack max ${b.conntrack_max?.toLocaleString()} / buckets ${b.conntrack_buckets?.toLocaleString()}（优化内存 ${b.optimization_mb}MB）`
+      : ''
+    ok.value = `已按当前硬件（${data.value?.hardware_tier_label || res.tier || ''}）填入推荐值并应用${extra}`
     await load()
   } catch (e) {
     err.value = e.message
@@ -154,8 +158,10 @@ onMounted(load)
   <div>
     <h2 class="text-xl font-semibold mb-2">高级设置 · 系统优化</h2>
     <p class="text-sm text-slate-600 mb-4 max-w-3xl">
-      QoS/NAT 网关相关的内核 sysctl、连接跟踪、TCP、网卡队列与 HTB 叶子队列等。初次部署会根据
-      <strong>CPU / 内存</strong> 自动写入推荐值；此处可查看、对比并手动覆盖。
+      QoS/NAT 网关相关的内核 sysctl、连接跟踪、TCP、网卡队列与 HTB 叶子队列等。「按硬件重新推荐」将总内存的
+      <strong>50%</strong> 划为优化专用预算，其中约 <strong>75%</strong> 用于 conntrack（按约 384 字节/连接估算
+      <code class="text-xs">max</code> 与 <code class="text-xs">buckets=max/4</code>，2 的幂）。16GB 内存示例：
+      max≈1677 万、buckets≈419 万。
     </p>
 
     <p v-if="loading" class="text-sm text-slate-500">加载中…</p>
@@ -176,6 +182,16 @@ onMounted(load)
           <strong>{{ data.hardware_tier_label }}</strong>
           <span v-if="data.tuning_auto_applied" class="text-green-700 ml-2">（已自动应用推荐）</span>
           <span v-if="data.tuning_tier" class="text-slate-500 ml-1">保存档位: {{ data.tuning_tier }}</span>
+        </p>
+        <p
+          v-if="data.recommended?.memory_budget"
+          class="text-xs text-slate-600 mt-2 font-mono bg-white/80 rounded px-2 py-1.5"
+        >
+          优化专用 {{ data.recommended.memory_budget.optimization_mb }} MB（总内存 50%）· conntrack 预算
+          {{ data.recommended.memory_budget.conntrack_mem_mb }} MB → max
+          {{ data.recommended.memory_budget.conntrack_max?.toLocaleString() }} · buckets
+          {{ data.recommended.memory_budget.conntrack_buckets?.toLocaleString() }}
+          （≈{{ data.recommended.memory_budget.bytes_per_entry }} B/连接）
         </p>
         <p class="text-xs text-slate-500 mt-2">
           LAN <span class="font-mono">{{ data.dev_lan || '—' }}</span> · WAN

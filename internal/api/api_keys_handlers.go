@@ -59,6 +59,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			st.APIKeys = append(st.APIKeys, ak)
 		})
 		_ = srv.store.Save()
+		srv.auditLog(r, "apikey.create", ak.Name)
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"id": ak.ID, "name": ak.Name, "key": key, "created_at": ak.CreatedAt,
 		})
@@ -85,8 +86,11 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = srv.store.Save()
+		srv.auditLog(r, "apikey.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
+
+// API Key 管理注释已移除：见 Web System → API 密钥

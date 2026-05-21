@@ -29,9 +29,14 @@ type Collector struct {
 	last     time.Time
 	prev     map[string][2]uint64 // dev -> rx, tx bytes
 	prevCPU  [2]uint64
+	history  []TrafficPoint
 }
 
-func New() *Collector { return &Collector{prev: map[string][2]uint64{}} }
+func New() *Collector {
+	c := &Collector{prev: map[string][2]uint64{}}
+	c.initHistory()
+	return c
+}
 
 func (c *Collector) System() System {
 	return System{

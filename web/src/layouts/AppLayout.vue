@@ -1,11 +1,12 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { api } from '@/api/client'
 
 const router = useRouter()
 const route = useRoute()
 const open = ref(true)
+const isApiDocs = computed(() => route.name === 'docs-api')
 
 /** 对齐 UI开发建议 第十五节：现代 SDN/QoS 控制台菜单 */
 const menu = [
@@ -19,6 +20,8 @@ const menu = [
       { path: '/network/interfaces', label: '接口' },
       { path: '/network/routes', label: '路由' },
       { path: '/network/dhcp', label: 'DHCP' },
+      { path: '/network/vlans', label: 'VLAN' },
+      { path: '/network/wan-links', label: '多 WAN' },
       { path: '/interfaces/queues', label: 'RSS / 多队列' },
     ],
   },
@@ -27,12 +30,16 @@ const menu = [
     items: [
       { path: '/nat/outbound', label: 'Outbound NAT' },
       { path: '/nat/forwards', label: '端口转发' },
+      { path: '/firewall/rules', label: '防火墙规则' },
+      { path: '/firewall/aliases', label: 'Aliases' },
+      { path: '/firewall/geoip', label: 'GeoIP' },
     ],
   },
   {
     title: 'Traffic',
     items: [
       { path: '/shaper/profiles', label: 'QoS 策略' },
+      { path: '/shaper/vip', label: 'VIP 主机' },
       { path: '/status/active', label: '活跃 Per-IP' },
     ],
   },
@@ -52,7 +59,10 @@ const menu = [
   {
     title: 'System',
     items: [
+      { path: '/system/general', label: '常规设置' },
       { path: '/system/advanced', label: '高级设置' },
+      { path: '/system/api-keys', label: 'API 密钥' },
+      { path: '/system/audit', label: '审计日志' },
       { path: '/docs/api', label: 'API / OpenAPI' },
     ],
   },
@@ -93,6 +103,7 @@ function isActive(path) {
 
     <div class="flex flex-1 min-h-0">
       <aside
+        v-if="!isApiDocs"
         :class="[
           'bg-slate-800 text-slate-200 w-56 shrink-0 overflow-y-auto transition-all',
           open ? 'block' : 'hidden lg:block',
@@ -120,7 +131,13 @@ function isActive(path) {
         </nav>
       </aside>
 
-      <main class="flex-1 p-4 lg:p-6 overflow-auto">
+      <main
+        :class="
+          isApiDocs
+            ? 'flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2 lg:p-3'
+            : 'flex-1 p-4 lg:p-6 overflow-auto'
+        "
+      >
         <router-view />
       </main>
     </div>

@@ -3,7 +3,7 @@
 set -euo pipefail
 BASE="${BASE:-http://127.0.0.1:8080}"
 USER="${ADMIN_USER:-admin}"
-PASS="${ADMIN_PASS:-QosNat@2026}"
+PASS="${ADMIN_PASS:-${QOSNAT_PASS:-QosNat@2026}}"
 COOKIE=$(mktemp)
 trap 'rm -f "$COOKIE"' EXIT
 
@@ -44,6 +44,25 @@ fi
 echo "=== login ==="
 code=$(req POST /api/v1/login "{\"user\":\"$USER\",\"pass\":\"$PASS\"}")
 check login 200 "$code"
+if [ "$code" != "200" ]; then
+  if [ -n "${QOSNAT_API_KEY:-}" ]; then
+    echo "WARN login failed — 使用 QOSNAT_API_KEY 请求头继续"
+    req() {
+      local method="$1" path="$2" data="${3:-}"
+      if [ "$method" = GET ]; then
+        curl -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" "$BASE$path"
+      elif [ "$method" = DELETE ]; then
+        curl -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" -X DELETE "$BASE$path"
+      else
+        curl -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" \
+          -X "$method" -H 'Content-Type: application/json' -d "$data" "$BASE$path"
+      fi
+    }
+  else
+    echo "提示: 设置 ADMIN_PASS / QOSNAT_PASS，或创建 API Key 后 export QOSNAT_API_KEY=..."
+    exit 1
+  fi
+fi
 
 echo "=== read APIs (UI pages) ==="
 for ep in \
@@ -66,7 +85,17 @@ for ep in \
   GET:/api/v1/ebpf/programs:200 \
   GET:/api/v1/system/mark-policy:200 \
   GET:/api/v1/system/tuning:200 \
-  GET:/api/v1/interfaces/queues:200
+  GET:/api/v1/interfaces/queues:200 \
+  GET:/api/v1/interfaces:200 \
+  GET:/api/v1/shaper/hosts:200 \
+  GET:/api/v1/system/general:200 \
+  GET:/api/v1/system/audit:200 \
+  GET:/api/v1/firewall/rules:200 \
+  GET:/api/v1/firewall/geoip:200 \
+  GET:/api/v1/network/vlans:200 \
+  GET:/api/v1/network/wan-links:200 \
+  GET:/api/v1/shaper/tc:200 \
+  GET:/api/v1/api-keys:200
 do
   IFS=: read -r method path expect <<< "$ep"
   code=$(req "$method" "$path")

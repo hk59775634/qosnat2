@@ -28,6 +28,12 @@ type DHCPState struct {
 	LeaseTimeSec   int               `json:"lease_time_sec"`  // 默认 86400
 	Authoritative  bool              `json:"authoritative"`
 	StaticLeases   []DHCPStaticLease `json:"static_leases"`
+	IPv6Enabled    bool              `json:"ipv6_enabled"`
+	IPv6Prefix     string            `json:"ipv6_prefix,omitempty"`
+	IPv6Start      string            `json:"ipv6_start,omitempty"`
+	IPv6End        string            `json:"ipv6_end,omitempty"`
+	RAEnabled      bool              `json:"ra_enabled"`
+	RAIntervalSec  int               `json:"ra_interval_sec,omitempty"`
 }
 
 var macRE = regexp.MustCompile(`^([0-9a-f]{2}:){5}[0-9a-f]{2}$`)

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/hk59775634/qosnat2/internal/audit"
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/sysctl"
@@ -156,6 +157,7 @@ func (srv *Server) putSystemTuning(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"ok": true, "applied": false}
 	if appliedRec != nil {
 		resp["tier"] = appliedRec.Tier
+		resp["memory_budget"] = appliedRec.MemoryBudget
 	}
 	if body.Apply {
 		st := srv.store.Get()
@@ -165,6 +167,7 @@ func (srv *Server) putSystemTuning(w http.ResponseWriter, r *http.Request) {
 		}
 		resp["applied"] = true
 	}
+	srv.auditLog(r, "system.tuning.put", audit.FormatDetail("apply=", body.Apply, "recommended=", body.ApplyRecommended))
 	writeJSON(w, http.StatusOK, resp)
 }
 

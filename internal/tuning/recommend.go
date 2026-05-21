@@ -23,12 +23,18 @@ type Result struct {
 	RpsLAN         bool              `json:"rps_lan"`
 	RpsWAN         bool              `json:"rps_wan"`
 	QoS            QoSParams         `json:"qos"`
+	MemoryBudget   MemoryBudget      `json:"memory_budget"`
 }
 
 // Recommend 根据宿主机容量生成 QoS/NAT 推荐值
 func Recommend(h HostInfo) Result {
 	tier := ClassifyTier(h)
-	r := Result{Tier: tier, Sysctl: map[string]string{}}
+	budget := ConntrackBudget(h)
+	r := Result{
+		Tier:         tier,
+		Sysctl:       map[string]string{},
+		MemoryBudget: budget,
+	}
 	switch tier {
 	case TierLow:
 		r.PerfPreset = false
@@ -37,7 +43,7 @@ func Recommend(h HostInfo) Result {
 		r.RpsLAN = false
 		r.RpsWAN = false
 		r.QoS = QoSParams{Leaf: "fq_codel", IdleTimeoutSec: 180}
-		r.Sysctl = lowSysctl(h)
+		r.Sysctl = lowSysctl(h, budget)
 	case TierMedium:
 		r.PerfPreset = true
 		r.TxQueueLenLAN = 2500
@@ -45,7 +51,7 @@ func Recommend(h HostInfo) Result {
 		r.RpsLAN = true
 		r.RpsWAN = false
 		r.QoS = QoSParams{Leaf: "fq_codel", IdleTimeoutSec: 300}
-		r.Sysctl = mediumSysctl(h)
+		r.Sysctl = mediumSysctl(h, budget)
 	default:
 		r.PerfPreset = true
 		r.TxQueueLenLAN = 5000
@@ -53,86 +59,95 @@ func Recommend(h HostInfo) Result {
 		r.RpsLAN = true
 		r.RpsWAN = true
 		r.QoS = QoSParams{Leaf: "fq_codel", IdleTimeoutSec: 300}
-		r.Sysctl = highSysctl(h)
+		r.Sysctl = highSysctl(h, budget)
 	}
 	return r
 }
 
-func lowSysctl(h HostInfo) map[string]string {
-	ct := conntrackMax(h, 262144)
-	return map[string]string{
+func lowSysctl(h HostInfo, budget MemoryBudget) map[string]string {
+	m := map[string]string{
 		"net.core.netdev_max_backlog":                        "65536",
 		"net.core.somaxconn":                                 "8192",
 		"net.core.netdev_budget":                             "300",
-		"net.netfilter.nf_conntrack_max":                     strconv.Itoa(ct),
 		"net.netfilter.nf_conntrack_tcp_timeout_established": "3600",
 		"net.netfilter.nf_conntrack_tcp_timeout_time_wait":   "60",
 		"net.ipv4.tcp_fin_timeout":                           "45",
 		"net.ipv4.tcp_max_syn_backlog":                       "4096",
-		"net.ipv4.neigh.default.gc_thresh1":                  "1024",
-		"net.ipv4.neigh.default.gc_thresh2":                  "2048",
-		"net.ipv4.neigh.default.gc_thresh3":                  "4096",
-		"fs.file-max":                                        "524288",
 	}
+	applyConntrackSysctl(m, budget)
+	scaleNeigh(m, budget.ConntrackMax)
+	return m
 }
 
-func mediumSysctl(h HostInfo) map[string]string {
-	ct := conntrackMax(h, 1048576)
-	return map[string]string{
+func mediumSysctl(h HostInfo, budget MemoryBudget) map[string]string {
+	m := map[string]string{
 		"net.core.netdev_max_backlog":                        "100000",
 		"net.core.somaxconn":                                 "32768",
 		"net.core.netdev_budget":                             "450",
 		"net.core.rps_sock_flow_entries":                     "16384",
-		"net.netfilter.nf_conntrack_max":                     strconv.Itoa(ct),
 		"net.netfilter.nf_conntrack_tcp_timeout_established": "14400",
 		"net.netfilter.nf_conntrack_tcp_timeout_time_wait":   "45",
 		"net.ipv4.tcp_fin_timeout":                           "30",
 		"net.ipv4.tcp_tw_reuse":                              "1",
 		"net.ipv4.tcp_max_syn_backlog":                       "8192",
 		"net.ipv4.ip_local_port_range":                       "1024 65535",
-		"net.ipv4.neigh.default.gc_thresh1":                  "2048",
-		"net.ipv4.neigh.default.gc_thresh2":                  "4096",
-		"net.ipv4.neigh.default.gc_thresh3":                  "8192",
-		"fs.file-max":                                        "1048576",
 	}
+	applyConntrackSysctl(m, budget)
+	scaleNeigh(m, budget.ConntrackMax)
+	return m
 }
 
-func highSysctl(h HostInfo) map[string]string {
-	ct := conntrackMax(h, 2097152)
+func highSysctl(h HostInfo, budget MemoryBudget) map[string]string {
 	m := map[string]string{
 		"net.core.netdev_max_backlog":                        "250000",
 		"net.core.somaxconn":                                 "65535",
 		"net.core.netdev_budget":                             "600",
-		"net.core.rps_sock_flow_entries":                     "32768",
-		"net.netfilter.nf_conntrack_max":                     strconv.Itoa(ct),
+		"net.core.rmem_max":                                  scaleSocketBuf(h.MemMB, 134217728),
+		"net.core.wmem_max":                                  scaleSocketBuf(h.MemMB, 134217728),
+		"net.core.rmem_default":                              "1048576",
+		"net.core.wmem_default":                              "1048576",
+		"net.core.rps_sock_flow_entries":                     scaleRPSFlow(h.MemMB),
 		"net.netfilter.nf_conntrack_tcp_timeout_established": "7200",
-		"net.netfilter.nf_conntrack_tcp_timeout_time_wait":   "30",
+		"net.netfilter.nf_conntrack_tcp_timeout_time_wait":     "30",
 		"net.ipv4.tcp_fin_timeout":                           "30",
 		"net.ipv4.tcp_tw_reuse":                              "1",
-		"net.ipv4.tcp_max_syn_backlog":                       "16384",
+		"net.ipv4.tcp_max_syn_backlog":                       scaleSynBacklog(h.MemMB),
 		"net.ipv4.tcp_slow_start_after_idle":                 "0",
 		"net.ipv4.ip_local_port_range":                       "1024 65535",
-		"net.ipv4.neigh.default.gc_thresh1":                  "4096",
-		"net.ipv4.neigh.default.gc_thresh2":                  "8192",
-		"net.ipv4.neigh.default.gc_thresh3":                  "16384",
-		"fs.file-max":                                        "2097152",
 	}
-	if ct >= 65536 {
-		m["net.netfilter.nf_conntrack_buckets"] = strconv.Itoa(ct / 4)
-	}
+	applyConntrackSysctl(m, budget)
+	scaleNeigh(m, budget.ConntrackMax)
 	return m
 }
 
-func conntrackMax(h HostInfo, cap int) int {
-	// 约每连接 300B，预留 40% 给系统与其它服务
-	budget := int(h.MemMB * 1024 * 1024 / 300 * 6 / 10)
-	if budget < 65536 {
-		budget = 65536
+func scaleSocketBuf(memMB int64, def int) string {
+	if memMB >= 16384 {
+		return strconv.Itoa(268435456)
 	}
-	if budget > cap {
-		budget = cap
+	if memMB >= 8192 {
+		return strconv.Itoa(134217728)
 	}
-	return budget
+	return strconv.Itoa(def)
+}
+
+func scaleRPSFlow(memMB int64) string {
+	if memMB >= 16384 {
+		return "32768"
+	}
+	if memMB >= 4096 {
+		return "16384"
+	}
+	return "8192"
+}
+
+func scaleSynBacklog(memMB int64) string {
+	if memMB >= 16384 {
+		return "32768"
+	}
+	if memMB >= 8192 {
+		return "16384"
+	}
+	return "8192"
 }
 
 // ApplyResult 将推荐写入 state（不覆盖用户已手动保存的 sysctl 时由 onlyIfEmpty 控制）

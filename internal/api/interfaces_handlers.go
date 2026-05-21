@@ -6,6 +6,7 @@ import (
 
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/stats"
+	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 func (srv *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
@@ -49,9 +50,10 @@ func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"dev_lan":    srv.env.DevLAN,
-		"dev_wan":    srv.env.DevWAN,
-		"interfaces": out,
+		"dev_lan":      srv.env.DevLAN,
+		"dev_wan":      srv.env.DevWAN,
+		"netplan_path": netif.NetplanConfigPathForAPI(),
+		"interfaces":   out,
 	})
 }
 
@@ -70,10 +72,19 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ipv4 or up required"})
 		return
 	}
-	if err := netif.SetConfig(dev, body.IPv4, body.Up); err != nil {
+	if !netif.IsNetplanManagedDevice(dev) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface cannot be managed via netplan"})
+		return
+	}
+	_ = srv.store.Update(func(st *store.State) {
+		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, nil)
+	})
+	_ = srv.store.Save()
+	if err := srv.applyNetplan(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	srv.auditLog(r, "iface.netplan", dev)
 	list, _ := netif.ListDetails()
 	var updated *netif.Detail
 	for i := range list {

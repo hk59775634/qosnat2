@@ -17,7 +17,7 @@ type AppParam struct {
 var AppCatalog = []AppParam{
 	{
 		Key: "shaper.leaf", Category: "QoS 整形", Description: "HTB 叶子队列调度器（下行/IFB 根）",
-		Type: "select", Options: []string{"fq_codel", "fq"},
+		Type: "select", Options: []string{"fq_codel", "fq", "cake"},
 	},
 	{
 		Key: "shaper.idle_timeout_sec", Category: "QoS 整形", Description: "Per-IP 动态队列空闲回收时间（秒）",

@@ -16,6 +16,10 @@ const err = ref('')
 const ok = ref('')
 const dragIdx = ref(null)
 const savingOrder = ref(false)
+const tcLeaf = ref('fq_codel')
+const tcFlows = ref(0)
+const tcQuantum = ref(0)
+const tcSaving = ref(false)
 
 async function load() {
   const d = await api.shaper.profiles()
@@ -25,6 +29,28 @@ async function load() {
   devLan.value = d.dev_lan || ''
   devWan.value = d.dev_wan || ''
   attached.value = d.attached_devices || []
+  tcLeaf.value = d.leaf || 'fq_codel'
+  tcFlows.value = d.fq_flows || 0
+  tcQuantum.value = d.fq_quantum || 0
+}
+
+async function saveTC() {
+  tcSaving.value = true
+  err.value = ''
+  try {
+    await api.shaper.tc.put({
+      leaf: tcLeaf.value,
+      fq_flows: tcFlows.value,
+      fq_quantum: tcQuantum.value,
+      apply: true,
+    })
+    ok.value = 'TC 叶子 qdisc 已应用'
+    await load()
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    tcSaving.value = false
+  }
 }
 
 async function submit() {
@@ -94,6 +120,31 @@ onMounted(load)
       :dev-wan="devWan"
       :attached="attached"
     />
+
+    <div class="card p-4 mb-6 max-w-2xl text-sm">
+      <h3 class="font-medium mb-3">全局 TC（HTB 叶子）</h3>
+      <div class="flex flex-wrap gap-3 items-end">
+        <div>
+          <label class="text-xs text-slate-500">叶子 qdisc</label>
+          <select v-model="tcLeaf" class="input-field mt-1">
+            <option value="fq_codel">fq_codel</option>
+            <option value="fq">fq</option>
+            <option value="cake">cake</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">fq flows（0=默认）</label>
+          <input v-model.number="tcFlows" type="number" min="0" class="input-field mt-1 w-28" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">fq quantum</label>
+          <input v-model.number="tcQuantum" type="number" min="0" class="input-field mt-1 w-28" />
+        </div>
+        <button type="button" class="btn-secondary" :disabled="tcSaving" @click="saveTC">
+          {{ tcSaving ? '应用中…' : '保存并重建根 qdisc' }}
+        </button>
+      </div>
+    </div>
     <p class="text-sm text-slate-600 mb-4">
       向网段模板 <strong>添加</strong>规则（不覆盖已有策略网段与默认 profile）。单主机请填
       <code class="text-xs bg-slate-100 px-1 rounded">10.0.18.83/32</code>；相同 CIDR 再次提交则更新速率。

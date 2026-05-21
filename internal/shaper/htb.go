@@ -199,10 +199,7 @@ func (h *HostShaper) ensureClass(dev, classid, rate, ceil string) error {
 
 func (h *HostShaper) ensureLeaf(dev, classid string) error {
 	_ = exec.Command("tc", "qdisc", "del", "dev", dev, "parent", classid).Run()
-	args := []string{"tc", "qdisc", "add", "dev", dev, "parent", classid, h.leaf}
-	if h.leaf == "fq_codel" {
-		args = append(args, "limit", "10240")
-	}
+	args := append([]string{"tc", "qdisc", "add", "dev", dev, "parent", classid}, LeafTCArgs(h.leaf, FQOpts{})...)
 	if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
 		msg := string(out)
 		if strings.Contains(msg, "File exists") {

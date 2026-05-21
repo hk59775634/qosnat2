@@ -10,9 +10,12 @@
 |------|------|
 | **初始设置向导** | 安装后仅启动 Web；浏览器完成管理员、LAN/WAN、策略路由等后再加载数据面（类似 AdGuard Home） |
 | **高级设置 · 系统优化** | sysctl / conntrack / TCP / 网卡 txqueuelen & RPS / QoS 叶子队列；按 **CPU+内存** 自动推荐，可手动覆盖 |
+| **VIP 主机** | `PUT/DELETE /api/v1/shaper/hosts/{ip}` → host_exact + /32 HTB |
+| **防火墙规则** | 自定义 forward/input nft 规则（Web 编辑） |
+| **常规设置 / 审计** | 改 hostname/密码、审计日志、API 密钥管理页 |
 | **NAT** | Outbound SNAT 池、1:1、前缀映射、WAN 端口转发、策略路由 |
 | **QoS** | Per-IP HTB + eBPF `profile_lpm`；策略模板与向导合一页 |
-| **网络** | 接口实时速率、IPv4 编辑、托管路由、dnsmasq DHCP |
+| **网络** | 接口实时速率、**netplan** 配置 IPv4/VLAN、托管路由、dnsmasq DHCP |
 | **可观测** | Dashboard、eBPF Maps、Mark 审计、conntrack、tcpdump 抓包 |
 | **VPN** | WireGuard 密钥 / Peer / `wg-quick` 应用 |
 
@@ -82,10 +85,12 @@ curl -s http://127.0.0.1:8080/api/v1/setup/status
 ## Web UI 菜单
 
 - **Dashboard** — 吞吐、会话、WAN/LAN 速率
-- **Network** — 接口、路由、DHCP、RSS/多队列
+- **Network** — 接口（netplan）、VLAN、多 WAN、路由、DHCP、RSS/多队列
 - **Security** — Outbound NAT、端口转发
 - **Traffic** — QoS 策略、活跃 Per-IP
-- **System** — **高级设置**（系统优化）、API 文档（Scalar）
+- **System** — 常规设置、高级设置、API 密钥、审计日志、OpenAPI
+- **Security** — 防火墙规则（forward/input）
+- **Traffic** — VIP 主机（/32 覆盖）
 - **Observability / VPN / Diagnostics** — eBPF、Mark、conntrack、抓包、WireGuard
 
 ### 系统优化（高级设置）

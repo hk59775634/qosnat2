@@ -5,7 +5,11 @@ const props = defineProps({
   id: { type: String, required: true },
   title: { type: String, required: true },
   defaultOpen: { type: Boolean, default: true },
+  reorderable: { type: Boolean, default: false },
+  canMoveUp: { type: Boolean, default: false },
+  canMoveDown: { type: Boolean, default: false },
 })
+const emit = defineEmits(['move-up', 'move-down'])
 
 const open = ref(props.defaultOpen)
 const storageKey = 'qosnat2-widget-collapsed'
@@ -49,7 +53,29 @@ watch(() => props.id, loadState)
       @click="toggle"
     >
       <h3 class="font-medium text-slate-800">{{ title }}</h3>
-      <span class="text-slate-400 text-xs">{{ open ? '收起' : '展开' }}</span>
+      <span class="flex items-center gap-2 shrink-0">
+        <span v-if="reorderable" class="flex gap-1" @click.stop>
+          <button
+            type="button"
+            class="text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-30"
+            :disabled="!canMoveUp"
+            title="上移"
+            @click="emit('move-up')"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            class="text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-30"
+            :disabled="!canMoveDown"
+            title="下移"
+            @click="emit('move-down')"
+          >
+            ↓
+          </button>
+        </span>
+        <span class="text-slate-400 text-xs">{{ open ? '收起' : '展开' }}</span>
+      </span>
     </button>
     <div v-show="open" class="p-4">
       <slot />

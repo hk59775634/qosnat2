@@ -1,0 +1,76 @@
+package shaper
+
+import (
+	"strconv"
+	"strings"
+)
+
+// ValidLeaf 支持的 HTB 叶子 qdisc
+func ValidLeaf(leaf string) bool {
+	switch strings.ToLower(strings.TrimSpace(leaf)) {
+	case "", "fq_codel", "fq", "cake":
+		return true
+	default:
+		return false
+	}
+}
+
+// NormalizeLeaf 默认 fq_codel
+func NormalizeLeaf(leaf string) string {
+	leaf = strings.ToLower(strings.TrimSpace(leaf))
+	if leaf == "" {
+		return "fq_codel"
+	}
+	if ValidLeaf(leaf) {
+		return leaf
+	}
+	return "fq_codel"
+}
+
+// LeafModules 需要 modprobe 的模块
+func LeafModules(leaf string) []string {
+	base := []string{"ifb", "sch_htb", "cls_bpf", "act_bpf", "act_mirred"}
+	leaf = NormalizeLeaf(leaf)
+	switch leaf {
+	case "fq":
+		return append(base, "sch_fq")
+	case "cake":
+		return append(base, "sch_cake")
+	default:
+		return append(base, "sch_fq_codel")
+	}
+}
+
+// FQOpts fq / fq_codel 可选 flows、quantum（0 表示默认）
+type FQOpts struct {
+	Flows   int
+	Quantum int
+}
+
+// LeafTCArgs tc qdisc add 在 parent 之后的参数（不含 tc/qdisc/add/dev/parent）
+func LeafTCArgs(leaf string, fq FQOpts) []string {
+	leaf = NormalizeLeaf(leaf)
+	switch leaf {
+	case "fq_codel":
+		args := []string{leaf, "limit", "10240"}
+		return appendFQOpts(args, fq)
+	case "fq":
+		args := []string{leaf}
+		return appendFQOpts(args, fq)
+	case "cake":
+		return []string{leaf, "besteffort"}
+	default:
+		args := []string{"fq_codel", "limit", "10240"}
+		return appendFQOpts(args, fq)
+	}
+}
+
+func appendFQOpts(args []string, fq FQOpts) []string {
+	if fq.Flows > 0 {
+		args = append(args, "flows", strconv.Itoa(fq.Flows))
+	}
+	if fq.Quantum > 0 {
+		args = append(args, "quantum", strconv.Itoa(fq.Quantum))
+	}
+	return args
+}

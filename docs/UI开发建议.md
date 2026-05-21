@@ -20,9 +20,7 @@ PPS/BPS
 服务状态
 DHCP
 DNS
-IPsec
-OpenVPN
-WireGuard
+WireGuard（仅此 VPN；不支持 IPsec / OpenVPN）
 HAProxy
 Captive Portal
 日志摘要
@@ -179,35 +177,16 @@ eBPF
 elephant flow
 per-user bandwidth
 五、VPN ⭐⭐⭐
-1. IPsec
-Phase1
-IKEv1/v2
-auth
-cert
-DH group
-Phase2
-subnet
-encryption
-状态
-SA
-DPD
-rekey
-2. OpenVPN
-服务端
-server mode
-TLS auth
-CCD
-客户端
-export bundle
-用户
-在线用户
-kill session
-3. WireGuard（新版才有）
+
+> **qosnat2 范围**：仅 **WireGuard**。不支持 IPsec、OpenVPN（勿在 UI/API 中规划）。
+
+1. WireGuard
 Tunnel
 Peer
 Allowed IPs
 Keepalive
-4. 你建议新增（重点）
+Per-tunnel QoS（host_exact）
+2. 远期参考（非本仓库）
 
 你自己的平台建议：
 
@@ -322,7 +301,7 @@ RTT
 Loss
 CARP
 DHCP leases
-IPsec/OpenVPN/WG status
+WireGuard status
 System logs
 
 分类：

@@ -140,6 +140,34 @@ onMounted(load)
         </label>
       </div>
 
+      <div class="border-t border-slate-200 pt-4 space-y-3">
+        <h3 class="font-medium text-sm">IPv6 / RA（dnsmasq）</h3>
+        <label class="flex items-center gap-2 text-sm">
+          <input v-model="cfg.ipv6_enabled" type="checkbox" /> 启用 DHCPv6 地址池
+        </label>
+        <div v-if="cfg.ipv6_enabled" class="grid sm:grid-cols-2 gap-3 text-sm">
+          <div class="sm:col-span-2">
+            <label class="text-xs text-slate-500">前缀（如 2001:db8::/64）</label>
+            <input v-model="cfg.ipv6_prefix" class="input-field mt-1 font-mono" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">起始</label>
+            <input v-model="cfg.ipv6_start" class="input-field mt-1 font-mono" placeholder="2001:db8::100" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">结束</label>
+            <input v-model="cfg.ipv6_end" class="input-field mt-1 font-mono" placeholder="2001:db8::200" />
+          </div>
+        </div>
+        <label class="flex items-center gap-2 text-sm">
+          <input v-model="cfg.ra_enabled" type="checkbox" /> 路由器通告 (RA)
+        </label>
+        <div v-if="cfg.ra_enabled" class="text-sm max-w-xs">
+          <label class="text-xs text-slate-500">RA 间隔（秒，可选）</label>
+          <input v-model.number="cfg.ra_interval_sec" type="number" class="input-field mt-1" />
+        </div>
+      </div>
+
       <div class="flex flex-wrap gap-2">
         <button type="button" class="btn-primary" @click="save(true)">保存并应用</button>
         <button type="button" class="btn-secondary" @click="save(false)">仅保存</button>

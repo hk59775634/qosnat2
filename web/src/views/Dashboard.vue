@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from '@/api/client'
+import { useWidgetOrder } from '@/composables/useWidgetOrder'
 import StatCard from '@/components/StatCard.vue'
 import DashboardWidget from '@/components/DashboardWidget.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import TrafficSparkline from '@/components/TrafficSparkline.vue'
 
 const data = ref(null)
 const health = ref(null)
@@ -36,6 +38,35 @@ const memColor = computed(() => {
   if (v > 75) return 'amber'
   return 'blue'
 })
+
+const MAIN_WIDGETS = ['system', 'network', 'services', 'qos']
+const BOTTOM_WIDGETS = ['quick', 'top_hosts']
+const { order: mainOrder, moveUp: mainUp, moveDown: mainDown } = useWidgetOrder(
+  MAIN_WIDGETS,
+  'qosnat2-dash-main',
+)
+const { order: bottomOrder, moveUp: bottomUp, moveDown: bottomDown } = useWidgetOrder(
+  BOTTOM_WIDGETS,
+  'qosnat2-dash-bottom',
+)
+
+function mainIdx(id) {
+  return mainOrder.value.indexOf(id)
+}
+function canUpMain(id) {
+  return mainIdx(id) > 0
+}
+function canDownMain(id) {
+  const i = mainIdx(id)
+  return i >= 0 && i < mainOrder.value.length - 1
+}
+function canUpBottom(id) {
+  return bottomOrder.value.indexOf(id) > 0
+}
+function canDownBottom(id) {
+  const i = bottomOrder.value.indexOf(id)
+  return i >= 0 && i < bottomOrder.value.length - 1
+}
 
 const quickLinks = [
   { path: '/network/interfaces', label: '接口', desc: 'LAN/WAN 状态' },
@@ -75,7 +106,7 @@ onUnmounted(() => clearInterval(timer))
   <div>
     <PageHeader
       title="Dashboard"
-      description="系统、网络、服务与 QoS 概览。小组件可折叠，状态将保存在浏览器本地。"
+      description="系统、网络、服务与 QoS 概览。小组件可折叠；标题栏 ↑↓ 调整顺序（保存在浏览器）。"
     />
     <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
 
@@ -87,7 +118,17 @@ onUnmounted(() => clearInterval(timer))
     </div>
 
     <div class="grid lg:grid-cols-2 gap-4 mb-4">
-      <DashboardWidget id="system" title="系统状态">
+      <template v-for="wid in mainOrder" :key="wid">
+      <DashboardWidget
+        v-if="wid === 'system'"
+        id="system"
+        title="系统状态"
+        reorderable
+        :can-move-up="canUpMain('system')"
+        :can-move-down="canDownMain('system')"
+        @move-up="mainUp('system')"
+        @move-down="mainDown('system')"
+      >
         <ProgressBar
           label="CPU"
           :value="data?.system?.cpu_percent ?? 0"
@@ -104,7 +145,30 @@ onUnmounted(() => clearInterval(timer))
         </p>
       </DashboardWidget>
 
-      <DashboardWidget id="network" title="网络状态">
+      <DashboardWidget
+        v-else-if="wid === 'network'"
+        id="network"
+        title="网络状态"
+        reorderable
+        :can-move-up="canUpMain('network')"
+        :can-move-down="canDownMain('network')"
+        @move-up="mainUp('network')"
+        @move-down="mainDown('network')"
+      >
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <TrafficSparkline
+            :history="data?.traffic_history"
+            field="lan_rx_mbps"
+            label="LAN 下行"
+            color="bg-emerald-400"
+          />
+          <TrafficSparkline
+            :history="data?.traffic_history"
+            field="wan_tx_mbps"
+            label="WAN 上行"
+            color="bg-sky-400"
+          />
+        </div>
         <div class="space-y-4">
           <div>
             <div class="flex justify-between text-sm mb-1">
@@ -136,7 +200,16 @@ onUnmounted(() => clearInterval(timer))
         </router-link>
       </DashboardWidget>
 
-      <DashboardWidget id="services" title="服务状态">
+      <DashboardWidget
+        v-else-if="wid === 'services'"
+        id="services"
+        title="服务状态"
+        reorderable
+        :can-move-up="canUpMain('services')"
+        :can-move-down="canDownMain('services')"
+        @move-up="mainUp('services')"
+        @move-down="mainDown('services')"
+      >
         <StatusBadge label="qosnatd / eBPF" :ok="!!health?.bpf" :detail="health?.tc_attach ? 'TC 已附加' : ''" />
         <StatusBadge
           label="DHCP (dnsmasq)"
@@ -155,7 +228,16 @@ onUnmounted(() => clearInterval(timer))
         />
       </DashboardWidget>
 
-      <DashboardWidget id="qos" title="流量整形 (QoS)">
+      <DashboardWidget
+        v-else-if="wid === 'qos'"
+        id="qos"
+        title="流量整形 (QoS)"
+        reorderable
+        :can-move-up="canUpMain('qos')"
+        :can-move-down="canDownMain('qos')"
+        @move-up="mainUp('qos')"
+        @move-down="mainDown('qos')"
+      >
         <dl class="grid grid-cols-2 gap-2 text-sm">
           <dt class="text-slate-500">策略网段</dt>
           <dd class="font-mono text-right">{{ data?.shaper?.policy_cidr || '—' }}</dd>
@@ -169,10 +251,22 @@ onUnmounted(() => clearInterval(timer))
           <router-link to="/status/active" class="text-xs text-blue-600 hover:underline">活跃池</router-link>
         </div>
       </DashboardWidget>
+      </template>
     </div>
 
     <div class="grid lg:grid-cols-3 gap-4 mb-4">
-      <DashboardWidget id="quick" title="快捷入口" class="lg:col-span-1">
+      <template v-for="wid in bottomOrder" :key="'b-' + wid">
+      <DashboardWidget
+        v-if="wid === 'quick'"
+        id="quick"
+        title="快捷入口"
+        class="lg:col-span-1"
+        reorderable
+        :can-move-up="canUpBottom('quick')"
+        :can-move-down="canDownBottom('quick')"
+        @move-up="bottomUp('quick')"
+        @move-down="bottomDown('quick')"
+      >
         <div class="grid gap-2">
           <router-link
             v-for="link in quickLinks"
@@ -186,7 +280,17 @@ onUnmounted(() => clearInterval(timer))
         </div>
       </DashboardWidget>
 
-      <DashboardWidget id="top_hosts" title="Top 活跃主机" class="lg:col-span-2">
+      <DashboardWidget
+        v-else-if="wid === 'top_hosts'"
+        id="top_hosts"
+        title="Top 活跃主机"
+        class="lg:col-span-2"
+        reorderable
+        :can-move-up="canUpBottom('top_hosts')"
+        :can-move-down="canDownBottom('top_hosts')"
+        @move-up="bottomUp('top_hosts')"
+        @move-down="bottomDown('top_hosts')"
+      >
         <div class="table-wrap">
           <table class="data w-full text-sm">
             <thead>
@@ -213,6 +317,7 @@ onUnmounted(() => clearInterval(timer))
           </table>
         </div>
       </DashboardWidget>
+      </template>
     </div>
   </div>
 </template>

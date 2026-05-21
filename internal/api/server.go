@@ -31,6 +31,8 @@ type Env struct {
 	SessionFile  string
 	OpenAPIPath  string
 	WebRoot      string
+	TLSCert      string
+	TLSKey       string
 }
 
 // Server HTTP API + 控制面编排
@@ -42,8 +44,9 @@ type Server struct {
 	hosts      *shaper.HostShaper
 	metrics    *stats.Collector
 	pcap       *capture.Manager
-	ringCancel context.CancelFunc
-	mux        *http.ServeMux
+	ringCancel      context.CancelFunc
+	metricsCancel   context.CancelFunc
+	mux             *http.ServeMux
 }
 
 func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
@@ -101,8 +104,21 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/ebpf/reload", srv.requireAuth(srv.handleEbpfReload))
 	m.HandleFunc("/api/v1/system/mark-policy", srv.requireAuth(srv.handleMarkPolicy))
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
+	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
+	m.HandleFunc("/api/v1/system/audit", srv.requireAuth(srv.handleSystemAudit))
+	m.HandleFunc("/api/v1/firewall/rules", srv.requireAuth(srv.handleFirewallRules))
+	m.HandleFunc("/api/v1/shaper/hosts/", srv.requireAuth(srv.handleShaperHosts))
+	m.HandleFunc("/api/v1/shaper/hosts", srv.requireAuth(srv.handleShaperHosts))
 	m.HandleFunc("/api/v1/interfaces/queues", srv.requireAuth(srv.handleIfaceQueues))
+	m.HandleFunc("/api/v1/interfaces/ethtool", srv.requireAuth(srv.handleInterfacesEthtool))
 	m.HandleFunc("/api/v1/interfaces", srv.requireAuth(srv.handleInterfaces))
+	m.HandleFunc("/api/v1/firewall/aliases", srv.requireAuth(srv.handleFirewallAliases))
+	m.HandleFunc("/api/v1/firewall/geoip", srv.requireAuth(srv.handleFirewallGeoIP))
+	m.HandleFunc("/api/v1/network/vlans", srv.requireAuth(srv.handleNetworkVLANs))
+	m.HandleFunc("/api/v1/network/wan-links", srv.requireAuth(srv.handleNetworkWanLinks))
+	m.HandleFunc("/api/v1/network/netplan", srv.requireAuth(srv.handleNetworkNetplan))
+	m.HandleFunc("/api/v1/network/netplan/apply", srv.requireAuth(srv.handleNetworkNetplanApply))
+	m.HandleFunc("/api/v1/shaper/tc", srv.requireAuth(srv.handleShaperTC))
 
 	m.HandleFunc("/api/v1/vpn/wireguard/keys", srv.requireAuth(srv.handleWireGuardKeys))
 	m.HandleFunc("/api/v1/vpn/wireguard/apply", srv.requireAuth(srv.handleWireGuardApply))
@@ -133,7 +149,12 @@ func (srv *Server) ApplyAll() error {
 	if err := srv.applySystemTuning(st); err != nil {
 		log.Printf("system tuning: %v", err)
 	}
-	if err := shaper.SetupP0(shaper.Config{DevLAN: srv.env.DevLAN, Leaf: st.Shaper.Leaf}); err != nil {
+	if err := shaper.SetupP0(shaper.Config{
+		DevLAN:    srv.env.DevLAN,
+		Leaf:      st.Shaper.Leaf,
+		FQFlows:   st.Shaper.FQFlows,
+		FQQuantum: st.Shaper.FQQuantum,
+	}); err != nil {
 		return fmt.Errorf("shaper: %w", err)
 	}
 	cfg := nft.Config{DevLAN: srv.env.DevLAN, DevWAN: srv.env.DevWAN}
@@ -145,6 +166,8 @@ func (srv *Server) ApplyAll() error {
 	if err := nft.Apply(cfg, st); err != nil {
 		return fmt.Errorf("nft: %w", err)
 	}
+	srv.replayWanLinksOnBoot()
+	srv.applyNetworkVLANs()
 	srv.applyManagedRoutes()
 	srv.applyManagedDHCP()
 	srv.applyEBPF(st)
@@ -373,9 +396,38 @@ func isDir(p string) bool {
 // Listen 启动 HTTP
 func (srv *Server) Listen() error {
 	_ = srv.sessions.load()
+	srv.startMetricsSampler()
 	addr := ":" + srv.env.AdminPort
+	h := srv.Handler()
+	if srv.env.TLSCert != "" && srv.env.TLSKey != "" {
+		log.Printf("qosnatd listening HTTPS on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
+		return http.ListenAndServeTLS(addr, srv.env.TLSCert, srv.env.TLSKey, h)
+	}
 	log.Printf("qosnatd listening on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
-	return http.ListenAndServe(addr, srv.Handler())
+	return http.ListenAndServe(addr, h)
+}
+
+func (srv *Server) startMetricsSampler() {
+	if srv.metricsCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	srv.metricsCancel = cancel
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		c := srv.collector()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if srv.env.DevLAN != "" || srv.env.DevWAN != "" {
+					c.RecordTraffic(srv.env.DevLAN, srv.env.DevWAN)
+				}
+			}
+		}
+	}()
 }
 
 // PersistState 保存 state
@@ -425,6 +477,8 @@ func LoadEnv() Env {
 		SessionFile: EnvOr("SESSION_FILE", "/var/lib/qosnat2/sessions.json"),
 		OpenAPIPath: EnvOr("OPENAPI_PATH", "/opt/qosnat2/api/openapi.yaml"),
 		WebRoot:     EnvOr("WEB_ROOT", "/opt/qosnat2/web"),
+		TLSCert:     EnvOr("TLS_CERT", ""),
+		TLSKey:      EnvOr("TLS_KEY", ""),
 	}
 }
 

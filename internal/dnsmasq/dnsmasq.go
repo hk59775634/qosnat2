@@ -112,6 +112,26 @@ func RenderConf(dhcp store.DHCPState, exceptWAN string) string {
 		}
 		b.WriteString(line + "\n")
 	}
+	if dhcp.IPv6Enabled {
+		prefix := strings.TrimSpace(dhcp.IPv6Prefix)
+		start := strings.TrimSpace(dhcp.IPv6Start)
+		end := strings.TrimSpace(dhcp.IPv6End)
+		if prefix != "" && start != "" && end != "" {
+			ra := ""
+			if dhcp.RAEnabled {
+				ra = ",ra-names"
+				if dhcp.RAIntervalSec > 0 {
+					ra += fmt.Sprintf(",ra-interval=%d", dhcp.RAIntervalSec)
+				}
+			}
+			b.WriteString(fmt.Sprintf("dhcp-range=%s,%s,%s,64%s\n", prefix, start, end, ra))
+		}
+	} else if dhcp.RAEnabled {
+		prefix := strings.TrimSpace(dhcp.IPv6Prefix)
+		if prefix != "" {
+			b.WriteString(fmt.Sprintf("dhcp-range=%s,::,128,ra-only\n", prefix))
+		}
+	}
 	return b.String()
 }
 
