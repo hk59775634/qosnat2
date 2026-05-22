@@ -1,15 +1,15 @@
 # API 鉴权与冒烟测试
 
-## 安全策略（2026-05）
+## 安全策略
 
-- **未完成 TLS**：`qosnatd` 仅监听 `127.0.0.1:ADMIN_PORT`；请 SSH 隧道或本机访问 Web/API。
-- **初始设置**：`GET /api/v1/setup/status` 在本机返回一次性 `setup_token`；`setup/interfaces` 与 `setup/complete` 需头 `X-Setup-Token` 或 body `setup_token`。
-- **管理员口令**：仅存 `state.json` 的 bcrypt；无 env 明文回退。
-- **API Key**：`state.json` 仅存 `key_hash`；创建响应中的 `key` 仅显示一次。
+- **初始账号**（未完成引导且 `state` 无 `admin_pass_hash`）：`admin` / `password`（可用 `ADMIN_USER` / `ADMIN_PASS` 覆盖 env）
+- **引导完成后**：仅 `state.json` 中 bcrypt 口令；初始口令失效
+- **API Key**：仅存 `key_hash`；创建时明文仅返回一次
+- **监听**：默认 `0.0.0.0:ADMIN_PORT`（HTTP）；启用 TLS 后为 HTTPS
 
 ## Session Cookie（浏览器）
 
-1. `POST /api/v1/login` body `{"user":"admin","pass":"..."}`
+1. `POST /api/v1/login` body `{"user":"admin","pass":"password"}`（或已设置的管理员）
 2. 响应 `Set-Cookie: qosnat_sess=...`
 3. 后续请求带 `credentials: include`（Web UI 已默认）
 
@@ -20,7 +20,7 @@
 
 ```bash
 export QOSNAT_API_KEY='qk_xxxxxxxx'
-curl -s -H "X-API-Key: $QOSNAT_API_KEY" http://127.0.0.1:8080/api/v1/shaper/profiles
+curl -s -H "X-API-Key: $QOSNAT_API_KEY" http://<host>:8080/api/v1/shaper/profiles
 ```
 
 与 Cookie **二选一**；未鉴权返回 `401`。
@@ -29,25 +29,19 @@ curl -s -H "X-API-Key: $QOSNAT_API_KEY" http://127.0.0.1:8080/api/v1/shaper/prof
 
 | 变量 | 用途 |
 |------|------|
-| `ADMIN_PASS` 或 `QOSNAT_PASS` | `acceptance-auto.sh` / `test-ui-api.sh` 登录 |
+| `ADMIN_USER` / `ADMIN_PASS` | 初始登录（默认 `admin` / `password`）；引导后写入 state 的账号 |
 | `QOSNAT_API_KEY` | 跳过登录，所有请求带 `X-API-Key` |
 
 ```bash
-# 读取部署 env 后跑完整验收
-sudo bash -c 'set -a; source /etc/qosnat2/env; set +a; export QOSNAT_PASS="$ADMIN_PASS"; /opt/qosnat2/scripts/acceptance-auto.sh'
-
-# 仅 API 冒烟（需已 setup_complete）
 set -a; source /etc/qosnat2/env; set +a
-export QOSNAT_PASS="$ADMIN_PASS"   # 或 export QOSNAT_API_KEY=...
+export QOSNAT_PASS="${ADMIN_PASS:-password}"
 /opt/qosnat2/scripts/test-ui-api.sh
 ```
 
 ## HTTPS
 
-启用后 API 基址改为 `https://<host>:8080`（默认端口不变）。自签证书：
+启用后 API 基址改为 `https://<host>:8080`。自签证书：
 
 ```bash
-curl -sk -H "X-API-Key: $QOSNAT_API_KEY" https://127.0.0.1:8080/api/v1/health
+curl -sk -H "X-API-Key: $QOSNAT_API_KEY" https://<host>:8080/api/v1/health
 ```
-
-验收脚本：`scripts/acceptance-https.sh`（需 root、已 setup_complete、已知管理员密码）。

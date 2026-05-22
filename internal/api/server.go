@@ -310,8 +310,11 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !srv.setupComplete() {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "complete initial setup first"})
-		return
+		st := srv.store.Get()
+		if st.AdminPassHash != "" || !srv.verifyAdmin(body.User, body.Pass) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "complete initial setup first (or use initial admin/password)"})
+			return
+		}
 	}
 	ip := clientIP(r)
 	if !srv.loginLim.allow(ip) {
@@ -434,7 +437,7 @@ func (srv *Server) Listen() error {
 		log.Printf("qosnatd listening HTTPS on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
 		return http.ListenAndServeTLS(addr, srv.env.TLSCert, srv.env.TLSKey, h)
 	}
-	log.Printf("qosnatd listening on %s only (enable TLS in UI to expose LAN) (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
+	log.Printf("qosnatd listening on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
 	return http.ListenAndServe(addr, h)
 }
 
@@ -501,7 +504,7 @@ func LoadEnv() Env {
 	InitFromEnvFile("/etc/qosnat2/env")
 	return Env{
 		AdminUser:   EnvOr("ADMIN_USER", "admin"),
-		AdminPass:   EnvOr("ADMIN_PASS", ""),
+		AdminPass:   EnvOr("ADMIN_PASS", defaultAdminPass),
 		AdminPort:   EnvOr("ADMIN_PORT", "8080"),
 		DevLAN:      EnvOr("DEV_LAN", ""),
 		DevWAN:      EnvOr("DEV_WAN", ""),

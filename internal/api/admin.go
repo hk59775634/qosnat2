@@ -1,9 +1,16 @@
 package api
 
 import (
+	"strings"
+
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/hk59775634/qosnat2/internal/shaper"
+)
+
+const (
+	defaultAdminUser = "admin"
+	defaultAdminPass = "password"
 )
 
 func hashPassword(pass string) (string, error) {
@@ -21,16 +28,31 @@ func checkPassword(hash, pass string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) == nil
 }
 
+func (srv *Server) initialAdminCredentials() (user, pass string) {
+	user = strings.TrimSpace(srv.env.AdminUser)
+	if user == "" {
+		user = defaultAdminUser
+	}
+	pass = srv.env.AdminPass
+	if pass == "" {
+		pass = defaultAdminPass
+	}
+	return user, pass
+}
+
 func (srv *Server) setupComplete() bool {
 	return srv.store.Get().SetupComplete
 }
 
+// verifyAdmin 已设置 bcrypt 时用 state；否则使用初始账号（默认 admin/password，可由 env 覆盖）
 func (srv *Server) verifyAdmin(user, pass string) bool {
+	user = strings.TrimSpace(user)
 	st := srv.store.Get()
-	if st.AdminPassHash == "" || st.AdminUser == "" {
-		return false
+	if st.AdminPassHash != "" && st.AdminUser != "" {
+		return user == st.AdminUser && checkPassword(st.AdminPassHash, pass)
 	}
-	return user == st.AdminUser && checkPassword(st.AdminPassHash, pass)
+	iu, ip := srv.initialAdminCredentials()
+	return user == iu && pass == ip
 }
 
 func (srv *Server) reloadEnv() {

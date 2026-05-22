@@ -64,12 +64,6 @@ func runServer() {
 		defer bpfM.Close()
 	}
 	srv := api.New(env, st, bpfM)
-	if err := srv.EnsureSetupToken(); err != nil {
-		log.Printf("setup token: %v", err)
-	}
-	if err := srv.PersistState(); err != nil {
-		log.Printf("save setup token: %v", err)
-	}
 	if err := srv.ApplyAll(); err != nil {
 		log.Printf("apply on start: %v", err)
 	}

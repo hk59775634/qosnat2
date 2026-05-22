@@ -1,9 +1,6 @@
 package api
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,7 +11,6 @@ import (
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
-	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 var safeFilenameRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
@@ -25,11 +21,6 @@ func clientIP(r *http.Request) string {
 		return strings.TrimSpace(r.RemoteAddr)
 	}
 	return host
-}
-
-func isLoopback(r *http.Request) bool {
-	ip := net.ParseIP(clientIP(r))
-	return ip != nil && ip.IsLoopback()
 }
 
 func (srv *Server) tlsActive() bool {
@@ -48,11 +39,7 @@ func (srv *Server) tlsActive() bool {
 }
 
 func (srv *Server) listenAddr() string {
-	port := srv.env.AdminPort
-	if srv.tlsActive() {
-		return ":" + port
-	}
-	return "127.0.0.1:" + port
+	return ":" + srv.env.AdminPort
 }
 
 func (srv *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, tok string) {
@@ -78,60 +65,6 @@ func safeAttachmentFilename(name string) (string, error) {
 		return "", fmt.Errorf("invalid filename")
 	}
 	return name, nil
-}
-
-func setupTokenFromRequest(r *http.Request, bodyToken string) string {
-	if h := strings.TrimSpace(r.Header.Get("X-Setup-Token")); h != "" {
-		return h
-	}
-	return strings.TrimSpace(bodyToken)
-}
-
-func (srv *Server) verifySetupToken(tok string) bool {
-	tok = strings.TrimSpace(tok)
-	if tok == "" {
-		return false
-	}
-	st := srv.store.Get()
-	if st.SetupComplete || st.SetupToken == "" {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(tok), []byte(st.SetupToken)) == 1
-}
-
-func (srv *Server) requireSetupAccess(w http.ResponseWriter, r *http.Request, bodyToken string) bool {
-	if srv.setupComplete() {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "setup already complete"})
-		return false
-	}
-	if !isLoopback(r) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "setup only allowed from localhost"})
-		return false
-	}
-	if !srv.verifySetupToken(setupTokenFromRequest(r, bodyToken)) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid or missing setup token"})
-		return false
-	}
-	return true
-}
-
-// EnsureSetupToken 未完成引导时生成一次性 token 并持久化
-func (srv *Server) EnsureSetupToken() error {
-	if srv.setupComplete() {
-		return nil
-	}
-	st := srv.store.Get()
-	if st.SetupToken != "" {
-		return nil
-	}
-	var b [24]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return err
-	}
-	tok := hex.EncodeToString(b[:])
-	return srv.store.Update(func(s *store.State) {
-		s.SetupToken = tok
-	})
 }
 
 func newLoginLimiter() *loginLimiter {

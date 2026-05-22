@@ -83,7 +83,6 @@ type APIKey struct {
 // State 完整持久化（/var/lib/qosnat2/state.json）
 type State struct {
 	SetupComplete  bool              `json:"setup_complete"`
-	SetupToken     string            `json:"setup_token,omitempty"` // 一次性引导 token，完成后清空
 	AdminUser     string `json:"admin_user,omitempty"`
 	AdminPassHash string `json:"admin_pass_hash,omitempty"`
 	PolicyRoutes   []string          `json:"policy_routes"`

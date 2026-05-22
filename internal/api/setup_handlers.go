@@ -21,21 +21,16 @@ func (srv *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	complete := srv.setupComplete()
-	resp := map[string]any{
-		"setup_required": !complete,
-		"setup_complete": complete,
-		"dev_lan":        srv.env.DevLAN,
-		"dev_wan":        srv.env.DevWAN,
-		"has_admin":      srv.store.Get().AdminPassHash != "",
-		"local_only":     !srv.tlsActive(),
-	}
-	if !complete && isLoopback(r) {
-		st := srv.store.Get()
-		if st.SetupToken != "" {
-			resp["setup_token"] = st.SetupToken
-		}
-	}
-	writeJSON(w, http.StatusOK, resp)
+	st := srv.store.Get()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"setup_required":  !complete,
+		"setup_complete":  complete,
+		"dev_lan":         srv.env.DevLAN,
+		"dev_wan":         srv.env.DevWAN,
+		"has_admin":       st.AdminPassHash != "",
+		"initial_login":   st.AdminPassHash == "",
+		"initial_user":    defaultAdminUser,
+	})
 }
 
 func (srv *Server) handleSetupInterfaces(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +38,8 @@ func (srv *Server) handleSetupInterfaces(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !srv.requireSetupAccess(w, r, "") {
+	if srv.setupComplete() {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "setup already complete"})
 		return
 	}
 	ifaces, err := dnsmasq.ListInterfaces()
@@ -59,8 +55,11 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if srv.setupComplete() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "setup already complete"})
+		return
+	}
 	var body struct {
-		SetupToken     string   `json:"setup_token"`
 		AdminUser      string   `json:"admin_user"`
 		AdminPass      string   `json:"admin_pass"`
 		DevLAN         string   `json:"dev_lan"`
@@ -73,9 +72,6 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
-		return
-	}
-	if !srv.requireSetupAccess(w, r, body.SetupToken) {
 		return
 	}
 	body.AdminUser = strings.TrimSpace(body.AdminUser)
@@ -174,7 +170,6 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	if dataplaneOK {
 		_ = srv.store.Update(func(st *store.State) {
 			st.SetupComplete = true
-			st.SetupToken = ""
 		})
 		_ = srv.store.Save()
 		_ = enableDataplaneOneshot()
