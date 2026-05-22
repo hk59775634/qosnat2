@@ -13,6 +13,10 @@ func (srv *Server) handleInterfacesEthtool(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "device query required"})
 		return
 	}
+	if err := netif.ValidateIfaceName(dev); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		info, err := netif.GetEthtool(dev)

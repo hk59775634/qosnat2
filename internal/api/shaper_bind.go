@@ -7,6 +7,7 @@ import (
 
 	"github.com/hk59775634/qosnat2/internal/dnsmasq"
 	"github.com/hk59775634/qosnat2/internal/ebpf"
+	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -30,6 +31,9 @@ func (srv *Server) normalizeProfileDevice(device string) (string, error) {
 	dev := strings.TrimSpace(device)
 	if dev == "" {
 		dev = srv.shaperDefaultDevice(srv.store.Get())
+	}
+	if err := netif.ValidateIfaceName(dev); err != nil {
+		return "", err
 	}
 	if !route.LinkExists(dev) {
 		return "", errDeviceNotFound(dev)

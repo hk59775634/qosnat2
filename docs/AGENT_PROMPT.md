@@ -19,7 +19,7 @@
 
 ## eBPF Map（控制面真相源，API 必须操作 Map）
 - profile_lpm（LPM trie）：网段模板，如 10.0.0.0/8 → 默认 8mbit
-- host_exact（hash）：/32 VIP 覆盖（如 50mbit），最长匹配优先于 profile
+- host_exact（hash）：/32 单 IP 覆盖（首包或 profile `/32`），最长匹配优先于 profile
 - active_host（LRU hash）：活跃主机，供状态页 **Iterate** 导出
 - 速率 Value：**字节/秒**（API 接收 mbit 后换算 bps = mbit * 125000）
 

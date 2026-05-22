@@ -14,7 +14,7 @@
 | **常规设置 / 审计** | 改 hostname/密码、审计日志、API 密钥管理页 |
 | **NAT** | Outbound SNAT 池、1:1、前缀映射、WAN 端口转发、策略路由 |
 | **QoS** | Per-IP HTB + eBPF `profile_lpm`；网段与单 IP（`/32`）均在 QoS 策略页，`POST /shaper/wizard` |
-| **网络** | 接口实时速率、**netplan** 配置 IPv4/VLAN、托管路由、dnsmasq DHCP |
+| **网络** | 接口 4h 流量、实时速率（线速占比/手动基准）、ethtool、**netplan** IPv4/VLAN、路由、DHCP |
 | **可观测** | Dashboard、eBPF Maps、Mark 审计、conntrack、tcpdump 抓包 |
 | **VPN** | WireGuard 密钥 / Peer / `wg-quick` 应用 |
 
@@ -89,8 +89,9 @@ curl -s http://127.0.0.1:8080/api/v1/setup/status
 - **Traffic** — QoS 策略、活跃 Per-IP
 - **System** — 常规设置、高级设置、API 密钥、审计日志、OpenAPI
 - **Security** — 防火墙规则（forward/input）
-- **Traffic** — VIP 主机（/32 覆盖）
 - **Observability / VPN / Diagnostics** — eBPF、Mark、conntrack、抓包、WireGuard
+
+> GeoIP 页与 `shaper/hosts` API 已移除（2026-05-22）；`/32` 在 **QoS 策略** 配置。
 
 ### 系统优化（高级设置）
 

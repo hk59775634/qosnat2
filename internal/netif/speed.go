@@ -9,7 +9,7 @@ import (
 
 // LinkSpeedMbps 读取网卡协商速率（Mbps）；未知或虚拟口返回 0
 func LinkSpeedMbps(dev string) int {
-	if dev == "" {
+	if err := ValidateIfaceName(dev); err != nil {
 		return 0
 	}
 	if v := linkSpeedFromSysfs(dev); v > 0 {

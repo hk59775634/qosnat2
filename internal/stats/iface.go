@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/hk59775634/qosnat2/internal/netif"
 )
 
 // QueueInfo 网卡多队列 / RSS
@@ -36,6 +38,9 @@ type SoftnetStat struct {
 // IfaceQueues 采集指定网卡队列与中断信息
 func IfaceQueues(dev string) QueueInfo {
 	q := QueueInfo{Device: dev}
+	if netif.ValidateIfaceName(dev) != nil {
+		return q
+	}
 	parseEthtoolChannels(dev, &q)
 	q.IRQLines = parseInterrupts(dev)
 	q.Softnet = parseSoftnet()

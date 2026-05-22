@@ -11,6 +11,13 @@ import (
 	"github.com/hk59775634/qosnat2/internal/netif"
 )
 
+func safeIfaceBytes(dev string) (rx, tx uint64) {
+	if netif.ValidateIfaceName(dev) != nil {
+		return 0, 0
+	}
+	return readIfaceBytes(dev)
+}
+
 // IfaceRates 接口吞吐（Mbps）
 type IfaceRates struct {
 	RxMbps float64 `json:"rx_mbps"`
@@ -57,7 +64,7 @@ func (c *Collector) IfaceMbps(dev string) IfaceRates {
 	if dev == "" {
 		return IfaceRates{}
 	}
-	rx, tx := readIfaceBytes(dev)
+	rx, tx := safeIfaceBytes(dev)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.iface == nil {

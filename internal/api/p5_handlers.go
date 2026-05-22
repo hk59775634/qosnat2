@@ -2,7 +2,9 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
+	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/stats"
 )
@@ -12,9 +14,13 @@ func (srv *Server) handleMarkPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *Server) handleIfaceQueues(w http.ResponseWriter, r *http.Request) {
-	dev := r.URL.Query().Get("dev")
+	dev := strings.TrimSpace(r.URL.Query().Get("dev"))
 	if dev == "" {
 		dev = srv.env.DevLAN
+	}
+	if err := netif.ValidateIfaceName(dev); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"queues":   stats.IfaceQueues(dev),

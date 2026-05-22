@@ -34,8 +34,8 @@ type EthtoolInfo struct {
 
 // GetEthtool 读取 ethtool -g / -k
 func GetEthtool(dev string) (EthtoolInfo, error) {
-	if dev == "" {
-		return EthtoolInfo{}, fmt.Errorf("empty device")
+	if err := ValidateIfaceName(dev); err != nil {
+		return EthtoolInfo{}, err
 	}
 	info := EthtoolInfo{Device: dev}
 	out, err := exec.Command("ethtool", "-g", dev).CombinedOutput()
@@ -54,8 +54,8 @@ func GetEthtool(dev string) (EthtoolInfo, error) {
 
 // SetRing 设置 RX/TX ring（0 表示跳过该项）
 func SetRing(dev string, rx, tx int) error {
-	if dev == "" {
-		return fmt.Errorf("empty device")
+	if err := ValidateIfaceName(dev); err != nil {
+		return err
 	}
 	args := []string{"ethtool", "-G", dev}
 	if rx > 0 {
@@ -84,8 +84,8 @@ type OffloadSetRequest struct {
 
 // SetOffloads 通过 ethtool -K 设置 offload
 func SetOffloads(dev string, req OffloadSetRequest) error {
-	if dev == "" {
-		return fmt.Errorf("empty device")
+	if err := ValidateIfaceName(dev); err != nil {
+		return err
 	}
 	type kv struct {
 		flag string

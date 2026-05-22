@@ -863,7 +863,7 @@ paths:
   /api/v1/interfaces:
     get:
       tags: [network]
-      summary: 网卡列表与实时速率（每 2s 轮询）
+      summary: 网卡列表、link_speed_mbps（sysfs/ethtool）、traffic 与 traffic_history（约 4h）
       responses:
         '200':
           content:
@@ -880,7 +880,9 @@ paths:
               type: object
               required: [device]
               properties:
-                device: { type: string }
+                device:
+                  type: string
+                  description: Linux 网卡名（1–15 字符，字母数字与 `._-`，禁止 `/`）
                 ipv4: { type: array, items: { type: string } }
                 up: { type: boolean }
       responses:

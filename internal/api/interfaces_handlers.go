@@ -69,6 +69,10 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dev := strings.TrimSpace(body.Device)
+	if err := netif.ValidateIfaceName(dev); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	if body.IPv4 == nil && body.Up == nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ipv4 or up required"})
 		return
