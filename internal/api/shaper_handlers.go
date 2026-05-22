@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/shaper"
@@ -84,9 +85,7 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 	if err := srv.syncProfileBPFMaps(cidr, rv); err != nil {
 		return false, err
 	}
-	if p, ok := srv.profileEntryByCIDR(cidr); ok {
-		srv.applyProfileHTBProfile(p, rv)
-	}
+	srv.refreshShaperAfterChange()
 	return added, nil
 }
 
@@ -99,6 +98,51 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		writeJSON(w, http.StatusOK, srv.shaperProfilesPayload(list))
+	case http.MethodPut:
+		var body struct {
+			CIDR   string `json:"cidr"`
+			Down   string `json:"down"`
+			Up     string `json:"up"`
+			Mask   int    `json:"mask"`
+			Device string `json:"device"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			return
+		}
+		if strings.TrimSpace(body.CIDR) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr required"})
+			return
+		}
+		if body.Down == "" {
+			body.Down = "8mbit"
+		}
+		if body.Up == "" {
+			body.Up = "8mbit"
+		}
+		if body.Mask == 0 {
+			body.Mask = 32
+		}
+		if !srv.bpfReady() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errEbpfNotLoaded.Error()})
+			return
+		}
+		added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, false)
+		if err != nil {
+			if err == errEbpfNotLoaded {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		st := srv.store.Get()
+		cidrs := srv.shaperMirredCIDRs(st)
+		resp := map[string]any{"ok": true, "added": added, "cidr": body.CIDR, "mirred_cidrs": cidrs}
+		if vErr := srv.verifyUploadPath(cidrs); vErr != nil {
+			resp["upload_path_warning"] = vErr.Error()
+		}
+		writeJSON(w, http.StatusOK, resp)
 	case http.MethodDelete:
 		cidr := r.URL.Query().Get("cidr")
 		if cidr == "" {
@@ -173,7 +217,13 @@ func (srv *Server) handleShaperWizard(w http.ResponseWriter, r *http.Request) {
 	if err := srv.reloadNft(); err != nil {
 		log.Printf("wizard nft: %v", err)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "added": added, "cidr": body.CIDR})
+	st := srv.store.Get()
+	cidrs := srv.shaperMirredCIDRs(st)
+	resp := map[string]any{"ok": true, "added": added, "cidr": body.CIDR, "mirred_cidrs": cidrs}
+	if vErr := srv.verifyUploadPath(cidrs); vErr != nil {
+		resp["upload_path_warning"] = vErr.Error()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (srv *Server) handleShaperActive(w http.ResponseWriter, r *http.Request) {

@@ -94,6 +94,13 @@ export const api = {
     rules: {
       list: () => request('/api/v1/firewall/rules'),
       add: (body) => request('/api/v1/firewall/rules', { method: 'POST', body: JSON.stringify(body) }),
+      put: (id, body) =>
+        request(`/api/v1/firewall/rules?id=${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        }),
+      reorder: (order) =>
+        request('/api/v1/firewall/rules/order', { method: 'PUT', body: JSON.stringify({ order }) }),
       del: (id) => request(`/api/v1/firewall/rules?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
     aliases: {
@@ -122,6 +129,8 @@ export const api = {
     }),
   shaper: {
     wizard: (body) => request('/api/v1/shaper/wizard', { method: 'POST', body: JSON.stringify(body) }),
+    putProfile: (body) =>
+      request('/api/v1/shaper/profiles', { method: 'PUT', body: JSON.stringify(body) }),
     profiles: () => request('/api/v1/shaper/profiles'),
     delProfile: (cidr) => request(`/api/v1/shaper/profiles?cidr=${encodeURIComponent(cidr)}`, { method: 'DELETE' }),
     reorderProfiles: (order) =>

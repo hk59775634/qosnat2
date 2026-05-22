@@ -135,11 +135,26 @@ func buildReplaceArgs(r store.RouteEntry) ([]string, error) {
 		return nil, err
 	}
 	args := []string{"route", "replace", dest}
-	if g := strings.TrimSpace(r.Gateway); g != "" {
-		args = append(args, "via", g)
-	}
-	if d := strings.TrimSpace(r.Device); d != "" {
-		args = append(args, "dev", d)
+	if len(r.Nexthops) > 0 {
+		for _, nh := range r.Nexthops {
+			args = append(args, "nexthop")
+			if g := strings.TrimSpace(nh.Gateway); g != "" {
+				args = append(args, "via", g)
+			}
+			if d := strings.TrimSpace(nh.Device); d != "" {
+				args = append(args, "dev", d)
+			}
+			if nh.Weight > 1 {
+				args = append(args, "weight", strconv.Itoa(nh.Weight))
+			}
+		}
+	} else {
+		if g := strings.TrimSpace(r.Gateway); g != "" {
+			args = append(args, "via", g)
+		}
+		if d := strings.TrimSpace(r.Device); d != "" {
+			args = append(args, "dev", d)
+		}
 	}
 	if r.Metric > 0 {
 		args = append(args, "metric", strconv.Itoa(r.Metric))

@@ -108,6 +108,43 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (srv *Server) handleFirewallRulesOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Order []string `json:"order"`
+	}
+	if err := readJSON(r, &body); err != nil || len(body.Order) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "order[] required"})
+		return
+	}
+	var reordered []store.FilterRule
+	var err error
+	_ = srv.store.Update(func(st *store.State) {
+		reordered, err = store.ReorderFirewallRules(st.Firewall.FilterRules, body.Order)
+		if err != nil {
+			return
+		}
+		st.Firewall.FilterRules = reordered
+	})
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	_ = srv.store.Save()
+	if err := srv.reloadNft(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	srv.auditLog(r, "firewall.rule.order", "reordered")
+	if reordered == nil {
+		reordered = []store.FilterRule{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "rules": reordered})
+}
+
 func (srv *Server) firewallRendered() string {
 	st := srv.store.Get()
 	body, err := nft.Render(nft.Config{DevLAN: srv.env.DevLAN, DevWAN: srv.env.DevWAN}, st)

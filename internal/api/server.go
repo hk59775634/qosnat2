@@ -106,6 +106,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
 	m.HandleFunc("/api/v1/system/audit", srv.requireAuth(srv.handleSystemAudit))
+	m.HandleFunc("/api/v1/firewall/rules/order", srv.requireAuth(srv.handleFirewallRulesOrder))
 	m.HandleFunc("/api/v1/firewall/rules", srv.requireAuth(srv.handleFirewallRules))
 	m.HandleFunc("/api/v1/interfaces/queues", srv.requireAuth(srv.handleIfaceQueues))
 	m.HandleFunc("/api/v1/interfaces/ethtool", srv.requireAuth(srv.handleInterfacesEthtool))
@@ -195,16 +196,7 @@ func (srv *Server) applyEBPF(st store.State) {
 }
 
 func (srv *Server) shaperMirredCIDRs(st store.State) []string {
-	var out []string
-	if c := strings.TrimSpace(st.Shaper.PolicyCIDR); c != "" {
-		out = append(out, c)
-	}
-	for _, p := range st.Shaper.Profiles {
-		if c := strings.TrimSpace(p.CIDR); c != "" {
-			out = append(out, c)
-		}
-	}
-	return out
+	return store.CollectMirredCIDRs(st.Shaper)
 }
 
 // StartBackground ringbuf + 空闲 GC

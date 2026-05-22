@@ -10,7 +10,25 @@ const showRendered = ref(false)
 const rendered = ref('')
 const err = ref('')
 const ok = ref('')
+const dragIdx = ref(null)
+const savingOrder = ref(false)
+const editing = ref(null)
 const form = ref({
+  chain: 'forward',
+  action: 'drop',
+  iif: '',
+  oif: '',
+  proto: '',
+  src_addr: '',
+  dst_addr: '',
+  src_alias: '',
+  dst_alias: '',
+  dst_port: 0,
+  comment: '',
+  enabled: true,
+})
+
+const emptyForm = () => ({
   chain: 'forward',
   action: 'drop',
   iif: '',
@@ -38,6 +56,43 @@ async function add() {
   try {
     await api.firewall.rules.add({ ...form.value })
     ok.value = '规则已添加并应用 nft'
+    form.value = emptyForm()
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+function startEdit(r) {
+  editing.value = r.id
+  form.value = {
+    chain: r.chain,
+    action: r.action,
+    iif: r.iif || '',
+    oif: r.oif || '',
+    proto: r.proto || '',
+    src_addr: r.src_addr || '',
+    dst_addr: r.dst_addr || '',
+    src_alias: r.src_alias || '',
+    dst_alias: r.dst_alias || '',
+    dst_port: r.dst_port || 0,
+    comment: r.comment || '',
+    enabled: r.enabled !== false,
+  }
+}
+
+function cancelEdit() {
+  editing.value = null
+  form.value = emptyForm()
+}
+
+async function saveEdit() {
+  if (!editing.value) return
+  err.value = ''
+  try {
+    await api.firewall.rules.put(editing.value, { ...form.value, id: editing.value })
+    ok.value = '规则已更新'
+    cancelEdit()
     await load()
   } catch (e) {
     err.value = e.message
@@ -47,7 +102,56 @@ async function add() {
 async function remove(id) {
   if (!confirm('删除规则？')) return
   await api.firewall.rules.del(id)
+  if (editing.value === id) cancelEdit()
   await load()
+}
+
+function onDragStart(idx) {
+  dragIdx.value = idx
+}
+
+function onDragOver(e) {
+  e.preventDefault()
+}
+
+async function onDrop(targetIdx) {
+  if (dragIdx.value === null || dragIdx.value === targetIdx) {
+    dragIdx.value = null
+    return
+  }
+  const arr = [...rules.value]
+  const [item] = arr.splice(dragIdx.value, 1)
+  arr.splice(targetIdx, 0, item)
+  dragIdx.value = null
+  savingOrder.value = true
+  err.value = ''
+  try {
+    const res = await api.firewall.rules.reorder(arr.map((r) => r.id))
+    rules.value = res.rules || arr
+    ok.value = '规则顺序已保存'
+  } catch (e) {
+    err.value = e.message
+    await load()
+  } finally {
+    savingOrder.value = false
+  }
+}
+
+async function moveRule(idx, dir) {
+  const j = idx + dir
+  if (j < 0 || j >= rules.value.length) return
+  const arr = [...rules.value]
+  ;[arr[idx], arr[j]] = [arr[j], arr[idx]]
+  savingOrder.value = true
+  try {
+    const res = await api.firewall.rules.reorder(arr.map((r) => r.id))
+    rules.value = res.rules || arr
+    ok.value = '顺序已更新'
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    savingOrder.value = false
+  }
 }
 
 onMounted(load)
@@ -57,13 +161,14 @@ onMounted(load)
   <div class="page-stack">
     <PageHeader
       title="防火墙规则"
-      description="自定义 forward/input 过滤规则（插入 established 之后）。复杂场景请直接编辑生成的 nft 文件。"
+      description="自定义 forward/input 过滤规则（插入 established 之后）。拖动 ⋮⋮ 或 ↑↓ 排序。"
     />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <p v-if="savingOrder" class="text-xs text-slate-500">正在保存顺序…</p>
 
     <div class="card card-body mb-0 space-y-3 text-sm">
-      <h3 class="font-medium">添加规则</h3>
+      <h3 class="font-medium">{{ editing ? `编辑规则 ${editing}` : '添加规则' }}</h3>
       <div class="grid sm:grid-cols-2 gap-3">
         <div>
           <label class="text-xs text-slate-500">链</label>
@@ -108,29 +213,57 @@ onMounted(load)
           <label class="text-xs text-slate-500">目标地址 CIDR</label>
           <input v-model="form.dst_addr" class="input-field mt-1 font-mono" />
         </div>
+        <div class="sm:col-span-2">
+          <label class="text-xs text-slate-500">备注</label>
+          <input v-model="form.comment" class="input-field mt-1" />
+        </div>
       </div>
       <label class="flex items-center gap-2">
         <input v-model="form.enabled" type="checkbox" /> 启用
       </label>
-      <button type="button" class="btn-primary" @click="add">添加并应用</button>
+      <div class="flex flex-wrap gap-2">
+        <button v-if="!editing" type="button" class="btn-primary" @click="add">添加并应用</button>
+        <template v-else>
+          <button type="button" class="btn-primary" @click="saveEdit">保存修改</button>
+          <button type="button" class="btn-secondary" @click="cancelEdit">取消</button>
+        </template>
+      </div>
     </div>
 
     <div class="card overflow-x-auto mb-4">
       <table class="data w-full text-sm">
         <thead>
           <tr>
-            <th>链</th><th>动作</th><th>匹配</th><th>备注</th><th></th>
+            <th class="w-7"></th>
+            <th>链</th>
+            <th>动作</th>
+            <th>匹配</th>
+            <th>备注</th>
+            <th class="w-32"></th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in rules" :key="r.id">
+          <tr
+            v-for="(r, idx) in rules"
+            :key="r.id"
+            draggable="true"
+            class="cursor-grab active:cursor-grabbing hover:bg-slate-50"
+            :class="{ 'opacity-50': dragIdx === idx, 'bg-blue-50': editing === r.id }"
+            @dragstart="onDragStart(idx)"
+            @dragover="onDragOver"
+            @drop="onDrop(idx)"
+          >
+            <td class="text-slate-400 text-center select-none text-xs" title="拖动排序">⋮⋮</td>
             <td>{{ r.chain }}</td>
             <td>{{ r.action }}</td>
             <td class="font-mono text-xs">
               {{ [r.iif, r.oif, r.proto, r.src_addr, r.dst_addr, r.dst_port || ''].filter(Boolean).join(' ') }}
             </td>
             <td class="text-xs">{{ r.comment || r.id }}</td>
-            <td>
+            <td class="text-right whitespace-nowrap space-x-1">
+              <button type="button" class="text-xs text-slate-600" title="上移" @click="moveRule(idx, -1)">↑</button>
+              <button type="button" class="text-xs text-slate-600" title="下移" @click="moveRule(idx, 1)">↓</button>
+              <button type="button" class="text-xs text-blue-600" @click="startEdit(r)">编辑</button>
               <button type="button" class="text-red-600 text-xs" @click="remove(r.id)">删除</button>
             </td>
           </tr>

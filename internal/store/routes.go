@@ -6,17 +6,25 @@ import (
 	"fmt"
 )
 
+// RouteNexthop 多路径 default 的一跳（ip route replace default nexthop … weight …）
+type RouteNexthop struct {
+	Gateway string `json:"gateway"`
+	Device  string `json:"device,omitempty"`
+	Weight  int    `json:"weight,omitempty"`
+}
+
 // RouteEntry 由 qosnatd 管理的静态路由（ip route replace）
 type RouteEntry struct {
-	ID      string `json:"id"`
-	Dest    string `json:"dest"` // CIDR 或 default
-	Gateway string `json:"gateway,omitempty"`
-	Device  string `json:"device,omitempty"`
-	Table   int    `json:"table,omitempty"` // 0/254 = main
-	Metric  int    `json:"metric,omitempty"`
-	Scope   string `json:"scope,omitempty"`
-	Comment string `json:"comment,omitempty"`
-	Enabled bool   `json:"enabled"`
+	ID       string         `json:"id"`
+	Dest     string         `json:"dest"` // CIDR 或 default
+	Gateway  string         `json:"gateway,omitempty"`
+	Device   string         `json:"device,omitempty"`
+	Nexthops []RouteNexthop `json:"nexthops,omitempty"`
+	Table    int            `json:"table,omitempty"` // 0/254 = main
+	Metric   int            `json:"metric,omitempty"`
+	Scope    string         `json:"scope,omitempty"`
+	Comment  string         `json:"comment,omitempty"`
+	Enabled  bool           `json:"enabled"`
 }
 
 // NewRouteID 生成路由条目 ID
