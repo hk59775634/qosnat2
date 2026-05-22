@@ -201,8 +201,8 @@ func (h *HostShaper) ensureClass(dev, classid, rate, ceil string) error {
 	if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
 		msg := string(out)
 		if !strings.Contains(msg, "File exists") {
-			chg := append([]string{"tc", "class", "change", "dev", dev, "parent", parent,
-				"classid", classid, "htb", "rate", rate, "ceil", ceil}, )
+			chg := []string{"tc", "class", "change", "dev", dev, "parent", parent,
+				"classid", classid, "htb", "rate", rate, "ceil", ceil}
 			if out2, err2 := exec.Command(chg[0], chg[1:]...).CombinedOutput(); err2 != nil {
 				return fmt.Errorf("%s %w", strings.TrimSpace(string(out2)), err2)
 			}

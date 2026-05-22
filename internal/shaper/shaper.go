@@ -14,7 +14,7 @@ import (
 // Config TC/IFB 拓扑参数
 type Config struct {
 	DevLAN    string
-	Leaf      string // fq_codel | fq | cake
+	Leaf      string // fq_codel | cake
 	FQFlows   int
 	FQQuantum int
 }

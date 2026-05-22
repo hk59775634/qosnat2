@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -28,8 +27,7 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 			return
 		}
-		rawLeaf := strings.ToLower(strings.TrimSpace(body.Leaf))
-		if rawLeaf != "" && rawLeaf != "fq_codel" && rawLeaf != "cake" && rawLeaf != "fq" {
+		if !shaper.AllowedLeafInput(body.Leaf) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid leaf (fq_codel or cake)"})
 			return
 		}

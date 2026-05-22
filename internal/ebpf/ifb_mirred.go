@@ -166,25 +166,6 @@ func RemoveLANIngressBPF(devLAN string) {
 		"protocol", "all", "prio", "1").Run()
 }
 
-// ApplyLANIngressBPF 已弃用：分类改在 ifb0 ingress（mirred 之后）
-func ApplyLANIngressBPF(devLAN, ingressPin string) error {
-	if devLAN == "" || ingressPin == "" {
-		return nil
-	}
-	_ = exec.Command("tc", "filter", "del", "dev", devLAN, "ingress",
-		"protocol", "all", "prio", "1").Run()
-	out, err := exec.Command("tc", "filter", "add", "dev", devLAN, "ingress",
-		"protocol", "all", "prio", "1", "bpf",
-		"direct-action", "object-pinned", ingressPin, "classid", "1:0").CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if !strings.Contains(msg, "File exists") {
-			return fmt.Errorf("lan ingress bpf %s: %s %w", devLAN, msg, err)
-		}
-	}
-	return nil
-}
-
 // ClearIFBMirred 删除 mirred 规则
 func ClearIFBMirred(devLAN string, cidrs []string) {
 	if devLAN == "" {

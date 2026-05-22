@@ -10,11 +10,10 @@
 |------|------|
 | **初始设置向导** | 安装后仅启动 Web；浏览器完成管理员、LAN/WAN、策略路由等后再加载数据面（类似 AdGuard Home） |
 | **高级设置 · 系统优化** | sysctl / conntrack / TCP / 网卡 txqueuelen & RPS / QoS 叶子队列；按 **CPU+内存** 自动推荐，可手动覆盖 |
-| **VIP 主机** | `PUT/DELETE /api/v1/shaper/hosts/{ip}` → host_exact + /32 HTB |
 | **防火墙规则** | 自定义 forward/input nft 规则（Web 编辑） |
 | **常规设置 / 审计** | 改 hostname/密码、审计日志、API 密钥管理页 |
 | **NAT** | Outbound SNAT 池、1:1、前缀映射、WAN 端口转发、策略路由 |
-| **QoS** | Per-IP HTB + eBPF `profile_lpm`；策略模板与向导合一页 |
+| **QoS** | Per-IP HTB + eBPF `profile_lpm`；网段与单 IP（`/32`）均在 QoS 策略页，`POST /shaper/wizard` |
 | **网络** | 接口实时速率、**netplan** 配置 IPv4/VLAN、托管路由、dnsmasq DHCP |
 | **可观测** | Dashboard、eBPF Maps、Mark 审计、conntrack、tcpdump 抓包 |
 | **VPN** | WireGuard 密钥 / Peer / `wg-quick` 应用 |

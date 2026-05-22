@@ -87,11 +87,9 @@ for ep in \
   GET:/api/v1/system/tuning:200 \
   GET:/api/v1/interfaces/queues:200 \
   GET:/api/v1/interfaces:200 \
-  GET:/api/v1/shaper/hosts:200 \
   GET:/api/v1/system/general:200 \
   GET:/api/v1/system/audit:200 \
   GET:/api/v1/firewall/rules:200 \
-  GET:/api/v1/firewall/geoip:200 \
   GET:/api/v1/network/vlans:200 \
   GET:/api/v1/network/wan-links:200 \
   GET:/api/v1/shaper/tc:200 \

@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const data = ref(null)
 let timer
@@ -18,8 +19,7 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div class="page-stack">
-    <h2 class="text-xl font-semibold mb-4">接口 / RSS 队列</h2>
-    <p class="text-sm text-slate-500 mb-4">ethtool -l · /proc/interrupts · softirq（5s 刷新）</p>
+    <PageHeader title="接口 / RSS 队列" description="ethtool -l · /proc/interrupts · softirq（5s 刷新）" />
 
     <div v-if="data" class="grid lg:grid-cols-2 gap-4">
       <section v-for="(iface, key) in { lan: data.lan, wan: data.wan }" :key="key" class="card p-4">

@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { api, bpsLabel } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const list = ref([])
 const err = ref('')
@@ -24,8 +25,7 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div class="page-stack">
-    <h2 class="text-xl font-semibold mb-4">eBPF 活跃池 (active_host)</h2>
-    <p class="text-sm text-slate-500 mb-4">每 3 秒刷新 · Iterate Map</p>
+    <PageHeader title="eBPF 活跃池 (active_host)" description="每 3 秒刷新 · Iterate Map" />
     <p v-if="err" class="text-red-600 mb-2">{{ err }}</p>
 
     <div class="card table-wrap p-4">

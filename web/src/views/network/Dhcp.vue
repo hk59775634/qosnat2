@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const cfg = ref(null)
 const status = ref(null)
@@ -80,13 +81,14 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <h2 class="text-xl font-semibold mb-4">DHCP 服务</h2>
-    <p class="text-sm text-slate-600 mb-4">
-      通过 <strong>dnsmasq</strong> 在指定网卡提供 DHCP，通常绑定内网口
-      <span class="font-mono">{{ devLan }}</span>，并排除 WAN
-      <span class="font-mono">{{ devWan }}</span>。
-      请确保该网卡已配置静态 IP，且 LAN 上无其它 DHCP 服务冲突。
-    </p>
+    <PageHeader title="DHCP 服务">
+      <template #description>
+        通过 <strong>dnsmasq</strong> 在指定网卡提供 DHCP，通常绑定内网口
+        <span class="font-mono">{{ devLan }}</span>，并排除 WAN
+        <span class="font-mono">{{ devWan }}</span>。
+        请确保该网卡已配置静态 IP，且 LAN 上无其它 DHCP 服务冲突。
+      </template>
+    </PageHeader>
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 

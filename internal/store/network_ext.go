@@ -88,16 +88,6 @@ func RemoveIfaceConfig(st *State, device string) {
 	st.Network.Ifaces = out
 }
 
-// GeoIPRule 国家/地区 Geo 阻断（CIDR 来自文件或自定义）
-type GeoIPRule struct {
-	ID          string   `json:"id"`
-	Country     string   `json:"country"`
-	Action      string   `json:"action"`
-	CustomCIDRs []string `json:"custom_cidrs,omitempty"`
-	Enabled     bool     `json:"enabled"`
-	Comment     string   `json:"comment,omitempty"`
-}
-
 func NewVLANID() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])
@@ -108,33 +98,6 @@ func NewWanLinkID() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])
 	return "wan-" + hex.EncodeToString(b[:])
-}
-
-func NewGeoIPID() string {
-	var b [6]byte
-	_, _ = rand.Read(b[:])
-	return "geo-" + hex.EncodeToString(b[:])
-}
-
-// NormalizeGeoIP 校验 Geo 规则
-func NormalizeGeoIP(g *GeoIPRule) error {
-	if g == nil {
-		return fmt.Errorf("geo rule nil")
-	}
-	if g.ID == "" {
-		g.ID = NewGeoIPID()
-	}
-	cc := strings.ToUpper(strings.TrimSpace(g.Country))
-	if len(cc) != 2 {
-		return fmt.Errorf("country must be ISO 3166-1 alpha-2")
-	}
-	g.Country = cc
-	act := strings.ToLower(strings.TrimSpace(g.Action))
-	if act != "drop" && act != "accept" {
-		return fmt.Errorf("action must be drop or accept")
-	}
-	g.Action = act
-	return nil
 }
 
 // NormalizeWanLink 校验多 WAN 项

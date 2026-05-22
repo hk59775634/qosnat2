@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/hk59775634/qosnat2/internal/netif"
 )
 
 // IfaceRates 接口吞吐（Mbps）
@@ -23,17 +25,21 @@ type System struct {
 	UptimeSec   float64 `json:"uptime_sec"`
 }
 
+type ifaceSample struct {
+	bytes [2]uint64
+	at    time.Time
+}
+
 // Collector 采样 /proc 与网卡计数
 type Collector struct {
-	mu       sync.Mutex
-	last     time.Time
-	prev     map[string][2]uint64 // dev -> rx, tx bytes
-	prevCPU  [2]uint64
-	history  []TrafficPoint
+	mu      sync.Mutex
+	iface   map[string]ifaceSample // 每网卡独立上次采样，避免多口同时查询时仅最后一个有速率
+	prevCPU [2]uint64
+	history []TrafficPoint
 }
 
 func New() *Collector {
-	c := &Collector{prev: map[string][2]uint64{}}
+	c := &Collector{iface: map[string]ifaceSample{}}
 	c.initHistory()
 	return c
 }
@@ -54,21 +60,19 @@ func (c *Collector) IfaceMbps(dev string) IfaceRates {
 	rx, tx := readIfaceBytes(dev)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.prev == nil {
-		c.prev = map[string][2]uint64{}
+	if c.iface == nil {
+		c.iface = map[string]ifaceSample{}
 	}
 	now := time.Now()
-	dt := now.Sub(c.last).Seconds()
-	prev, ok := c.prev[dev]
-	if dt < 0.2 || c.last.IsZero() || !ok {
-		c.last = now
-		c.prev[dev] = [2]uint64{rx, tx}
+	s, ok := c.iface[dev]
+	if !ok || s.at.IsZero() || now.Sub(s.at).Seconds() < 0.2 {
+		c.iface[dev] = ifaceSample{bytes: [2]uint64{rx, tx}, at: now}
 		return IfaceRates{}
 	}
-	c.prev[dev] = [2]uint64{rx, tx}
-	c.last = now
-	rxMbps := float64(rx-prev[0]) * 8 / dt / 1e6
-	txMbps := float64(tx-prev[1]) * 8 / dt / 1e6
+	dt := now.Sub(s.at).Seconds()
+	c.iface[dev] = ifaceSample{bytes: [2]uint64{rx, tx}, at: now}
+	rxMbps := float64(rx-s.bytes[0]) * 8 / dt / 1e6
+	txMbps := float64(tx-s.bytes[1]) * 8 / dt / 1e6
 	if rxMbps < 0 {
 		rxMbps = 0
 	}
@@ -76,6 +80,20 @@ func (c *Collector) IfaceMbps(dev string) IfaceRates {
 		txMbps = 0
 	}
 	return IfaceRates{RxMbps: rxMbps, TxMbps: txMbps}
+}
+
+// SampleAllInterfaceRates 为所有非 lo 网卡更新速率基线（后台定时调用）
+func (c *Collector) SampleAllInterfaceRates() {
+	list, err := netif.ListDetails()
+	if err != nil {
+		return
+	}
+	for _, d := range list {
+		if d.Name == "" || d.Name == "lo" {
+			continue
+		}
+		c.IfaceMbps(d.Name)
+	}
 }
 
 func readIfaceBytes(dev string) (rx, tx uint64) {

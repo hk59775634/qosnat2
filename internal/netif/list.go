@@ -15,11 +15,12 @@ type Addr struct {
 
 // Detail 网卡详情
 type Detail struct {
-	Name      string `json:"name"`
-	Up        bool   `json:"up"`
-	OperState string `json:"operstate"`
-	MAC       string `json:"mac,omitempty"`
-	Addrs     []Addr `json:"addrs"`
+	Name          string `json:"name"`
+	Up            bool   `json:"up"`
+	OperState     string `json:"operstate"`
+	MAC           string `json:"mac,omitempty"`
+	Addrs         []Addr `json:"addrs"`
+	LinkSpeedMbps int    `json:"link_speed_mbps,omitempty"` // 协商线速 Mbps，0=未知
 }
 
 // ListDetails 列出宿主机网卡（不含 lo）
@@ -48,10 +49,11 @@ func ListDetails() ([]Detail, error) {
 			continue
 		}
 		d := Detail{
-			Name:      l.Ifname,
-			OperState: l.OperState,
-			Up:        l.OperState == "UP" || l.OperState == "UNKNOWN",
-			MAC:       l.Address,
+			Name:          l.Ifname,
+			OperState:     l.OperState,
+			Up:            l.OperState == "UP" || l.OperState == "UNKNOWN",
+			MAC:           l.Address,
+			LinkSpeedMbps: LinkSpeedMbps(l.Ifname),
 		}
 		for _, a := range l.AddrInfo {
 			if a.Family != "inet" && a.Family != "inet6" {

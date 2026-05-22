@@ -50,5 +50,5 @@ export function useWidgetOrder(defaultIds, storageKey = DEFAULT_KEY) {
 
   watch(order, saveOrder, { deep: true })
 
-  return { order, moveUp, moveDown, reset: () => { order.value = [...defaultIds]; saveOrder() } }
+  return { order, moveUp, moveDown }
 }

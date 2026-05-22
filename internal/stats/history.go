@@ -2,7 +2,7 @@ package stats
 
 import "time"
 
-const maxHistoryPoints = 120 // 约 10 分钟 @ 5s
+const maxHistoryPoints = 2880 // 约 4 小时 @ 5s
 
 // TrafficPoint 单点采样
 type TrafficPoint struct {

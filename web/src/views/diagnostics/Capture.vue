@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const list = ref([])
 const dev = ref('')
@@ -64,8 +65,7 @@ onMounted(async () => {
 
 <template>
   <div class="page-stack">
-    <h2 class="text-xl font-semibold mb-4">抓包 (tcpdump)</h2>
-    <p class="text-sm text-slate-600 mb-4">文件保存在 /var/lib/qosnat2/captures/，最长 300 秒。</p>
+    <PageHeader title="抓包 (tcpdump)" description="文件保存在 /var/lib/qosnat2/captures/，最长 300 秒。" />
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div class="card card-body mb-0 grid gap-3">

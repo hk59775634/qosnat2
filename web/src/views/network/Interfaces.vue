@@ -4,18 +4,17 @@ import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import DashboardWidget from '@/components/DashboardWidget.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
+import TrafficSparkline from '@/components/TrafficSparkline.vue'
 
 const devLan = ref('')
 const devWan = ref('')
 const ifaces = ref([])
+const trafficHistory = ref([])
 const err = ref('')
 const ok = ref('')
 const saving = ref(false)
-const pollTimer = ref(null)
 
 const editDev = ref('')
-const editIPv4 = ref('')
-const editUp = ref(true)
 const eth = ref(null)
 const ringRx = ref(0)
 const ringTx = ref(0)
@@ -24,15 +23,97 @@ const offGSO = ref('')
 const offTx = ref('')
 const offRx = ref('')
 
-async function loadRates() {
+const ratesModal = ref(null)
+/** 进度条基准：'auto' 或 Mbps 数字（字符串绑定 select） */
+const ratesCapChoice = ref('auto')
+let ratesPollTimer = null
+
+const RATES_CAP_STORAGE = 'qosnat2.iface_rates_cap'
+const RATES_CAP_OPTIONS = [
+  { value: 'auto', label: '自动（协商线速）' },
+  { value: '10', label: '10 Mbps' },
+  { value: '100', label: '100 Mbps' },
+  { value: '1000', label: '1 Gbps (1000 Mbps)' },
+  { value: '2500', label: '2.5 Gbps (2500 Mbps)' },
+  { value: '10000', label: '10 Gbps (10000 Mbps)' },
+  { value: '25000', label: '25 Gbps (25000 Mbps)' },
+  { value: '40000', label: '40 Gbps (40000 Mbps)' },
+  { value: '100000', label: '100 Gbps (100000 Mbps)' },
+]
+
+function loadRatesCapPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(RATES_CAP_STORAGE) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function saveRatesCapPref(dev, choice) {
+  const prefs = loadRatesCapPrefs()
+  if (!dev) return
+  if (choice === 'auto') {
+    delete prefs[dev]
+  } else {
+    prefs[dev] = choice
+  }
+  localStorage.setItem(RATES_CAP_STORAGE, JSON.stringify(prefs))
+}
+
+function initRatesCapChoice(iface) {
+  const saved = loadRatesCapPrefs()[iface?.name]
+  if (saved && saved !== 'auto') {
+    ratesCapChoice.value = String(saved)
+    return
+  }
+  ratesCapChoice.value = 'auto'
+}
+
+function onRatesCapChange() {
+  if (ratesModal.value?.name) {
+    saveRatesCapPref(ratesModal.value.name, ratesCapChoice.value)
+  }
+}
+
+async function loadInterfaces() {
   try {
     const d = await api.interfaces.list()
     devLan.value = d.dev_lan || ''
     devWan.value = d.dev_wan || ''
     ifaces.value = d.interfaces || []
+    trafficHistory.value = d.traffic_history || []
     err.value = ''
   } catch (e) {
     err.value = e.message
+  }
+}
+
+async function refreshModalIface() {
+  if (!ratesModal.value?.name) return
+  try {
+    const d = await api.interfaces.list()
+    const found = (d.interfaces || []).find((i) => i.name === ratesModal.value.name)
+    if (found) ratesModal.value = found
+    trafficHistory.value = d.traffic_history || trafficHistory.value
+  } catch {
+    /* ignore poll errors in modal */
+  }
+}
+
+function openRatesModal(iface, e) {
+  e?.stopPropagation?.()
+  ratesModal.value = { ...iface }
+  initRatesCapChoice(iface)
+  refreshModalIface()
+  if (ratesPollTimer) clearInterval(ratesPollTimer)
+  ratesPollTimer = setInterval(refreshModalIface, 2000)
+}
+
+function closeRatesModal() {
+  ratesModal.value = null
+  if (ratesPollTimer) {
+    clearInterval(ratesPollTimer)
+    ratesPollTimer = null
   }
 }
 
@@ -57,9 +138,6 @@ async function loadEthtool(dev) {
 
 function selectEdit(iface) {
   editDev.value = iface.name
-  editUp.value = iface.up
-  const v4 = (iface.addrs || []).filter((a) => a.family === 'inet').map((a) => a.cidr)
-  editIPv4.value = v4.join('\n')
   loadEthtool(iface.name)
 }
 
@@ -100,32 +178,6 @@ async function saveOffloads() {
   }
 }
 
-async function saveIP() {
-  if (!editDev.value) return
-  saving.value = true
-  ok.value = ''
-  err.value = ''
-  try {
-    const ipv4 = editIPv4.value
-      .split(/[\n,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-    await api.interfaces.update({
-      device: editDev.value,
-      ipv4,
-      up: editUp.value,
-    })
-    ok.value = `已更新 ${editDev.value} 的 IP 配置`
-    await loadRates()
-    const cur = ifaces.value.find((i) => i.name === editDev.value)
-    if (cur) selectEdit(cur)
-  } catch (e) {
-    err.value = e.message
-  } finally {
-    saving.value = false
-  }
-}
-
 function roleLabel(iface) {
   if (iface.role) return iface.role
   return ''
@@ -135,18 +187,37 @@ function addrLines(iface) {
   return (iface.addrs || []).map((a) => `${a.cidr}${a.scope ? ` (${a.scope})` : ''}`).join(', ') || '—'
 }
 
-function maxMbps(iface) {
-  const t = iface.traffic || {}
-  return Math.max(t.rx_mbps || 0, t.tx_mbps || 0, 0.1)
+/** 协商线速；未知时 1000 Mbps */
+function detectedCapMbps(iface) {
+  const s = iface?.link_speed_mbps
+  if (s > 0) return s
+  return 1000
 }
 
-onMounted(() => {
-  loadRates()
-  pollTimer.value = setInterval(loadRates, 2000)
-})
+/** 进度条上限：手动选择优先，否则自动 */
+function capMbps(iface) {
+  if (ratesCapChoice.value !== 'auto') {
+    const n = Number(ratesCapChoice.value)
+    if (n > 0) return n
+  }
+  return detectedCapMbps(iface)
+}
+
+/** LAN/WAN 与 traffic_history 字段对应 */
+function historyFields(iface) {
+  if (iface.role === 'LAN') {
+    return { rx: 'lan_rx_mbps', tx: 'lan_tx_mbps', ok: true }
+  }
+  if (iface.role === 'WAN') {
+    return { rx: 'wan_rx_mbps', tx: 'wan_tx_mbps', ok: true }
+  }
+  return { ok: false }
+}
+
+onMounted(loadInterfaces)
 
 onUnmounted(() => {
-  if (pollTimer.value) clearInterval(pollTimer.value)
+  closeRatesModal()
 })
 </script>
 
@@ -154,7 +225,7 @@ onUnmounted(() => {
   <div class="page-stack">
     <PageHeader
       title="接口"
-      description="查看网卡实时速率；IPv4 通过 netplan（/etc/netplan/99-qosnat2.yaml）写入并 netplan apply。LAN/WAN 由 DEV_LAN / DEV_WAN 标识。"
+      description="网卡近 4 小时流量趋势（LAN/WAN）；点击「实时速率」查看各口当前吞吐。IP 请在 netplan/系统侧配置。"
     />
     <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
     <p v-if="ok" class="text-green-700 text-sm mb-4">{{ ok }}</p>
@@ -189,41 +260,111 @@ onUnmounted(() => {
           </span>
         </div>
 
-        <dl class="grid grid-cols-2 gap-2 mt-3 text-sm">
-          <div class="col-span-2">
-            <dt class="text-slate-500 text-xs">地址</dt>
-            <dd class="font-mono text-xs break-all">{{ addrLines(iface) }}</dd>
-          </div>
-          <div>
-            <dt class="text-slate-500 text-xs">接收</dt>
-            <dd class="font-mono">{{ (iface.traffic?.rx_mbps ?? 0).toFixed(2) }} Mbps</dd>
-          </div>
-          <div>
-            <dt class="text-slate-500 text-xs">发送</dt>
-            <dd class="font-mono">{{ (iface.traffic?.tx_mbps ?? 0).toFixed(2) }} Mbps</dd>
-          </div>
+        <dl class="mt-3 text-sm">
+          <dt class="text-slate-500 text-xs">地址</dt>
+          <dd class="font-mono text-xs break-all mt-0.5">{{ addrLines(iface) }}</dd>
         </dl>
 
-        <div class="mt-3 space-y-1">
-          <ProgressBar
-            label="RX"
-            :value="iface.traffic?.rx_mbps ?? 0"
-            :max="maxMbps(iface)"
-            unit=" Mbps"
-            color="blue"
+        <div v-if="historyFields(iface).ok" class="mt-3 grid grid-cols-2 gap-3" @click.stop>
+          <TrafficSparkline
+            tall
+            :history="trafficHistory"
+            :field="historyFields(iface).rx"
+            label="近 4 小时 · 接收"
+            color="bg-blue-400"
           />
-          <ProgressBar
-            label="TX"
-            :value="iface.traffic?.tx_mbps ?? 0"
-            :max="maxMbps(iface)"
-            unit=" Mbps"
-            color="amber"
+          <TrafficSparkline
+            tall
+            :history="trafficHistory"
+            :field="historyFields(iface).tx"
+            label="近 4 小时 · 发送"
+            color="bg-amber-400"
           />
         </div>
+        <p v-else class="text-xs text-slate-400 mt-3">近 4 小时趋势仅统计 LAN/WAN 口</p>
+
+        <button
+          type="button"
+          class="btn-secondary text-xs mt-3 w-full"
+          @click="openRatesModal(iface, $event)"
+        >
+          实时速率
+        </button>
 
         <p class="text-xs text-slate-400 mt-2">RSS 队列 {{ iface.rss_channels ?? 0 }}</p>
       </div>
     </div>
+
+    <!-- 实时速率悬浮窗 -->
+    <Teleport to="body">
+      <div
+        v-if="ratesModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40"
+        role="dialog"
+        aria-modal="true"
+        @click.self="closeRatesModal"
+      >
+        <div class="card w-full max-w-md p-5 shadow-xl" @click.stop>
+          <div class="flex items-start justify-between gap-2 mb-4">
+            <div>
+              <h3 class="text-lg font-mono font-semibold">{{ ratesModal.name }}</h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                <span v-if="ratesModal.role">{{ ratesModal.role }} · </span>
+                {{ ratesModal.operstate }}
+                <span v-if="ratesModal.link_speed_mbps > 0" class="ml-1">
+                  · 协商 {{ ratesModal.link_speed_mbps }} Mbps
+                </span>
+                <span v-else class="ml-1 text-amber-700">· 协商未知</span>
+              </p>
+            </div>
+            <button type="button" class="text-slate-400 hover:text-slate-600 text-xl leading-none" @click="closeRatesModal">
+              ×
+            </button>
+          </div>
+
+          <div class="mb-4">
+            <label class="text-xs text-slate-500 block mb-1">基准线速（占比分母）</label>
+            <select
+              v-model="ratesCapChoice"
+              class="input-field w-full text-sm"
+              @change="onRatesCapChange"
+            >
+              <option
+                v-for="opt in RATES_CAP_OPTIONS"
+                :key="opt.value"
+                :value="opt.value"
+              >
+                {{ opt.label }}
+              </option>
+            </select>
+            <p class="text-xs text-slate-400 mt-1">
+              当前基准 <span class="font-mono text-slate-600">{{ capMbps(ratesModal) }} Mbps</span>
+              <span v-if="ratesCapChoice === 'auto'">（自动）</span>
+              <span v-else>（手动）</span>
+            </p>
+          </div>
+
+          <div class="space-y-2">
+            <ProgressBar
+              label="RX（占线速）"
+              :traffic-mbps="ratesModal.traffic?.rx_mbps ?? 0"
+              :cap-mbps="capMbps(ratesModal)"
+              color="blue"
+            />
+            <ProgressBar
+              label="TX（占线速）"
+              :traffic-mbps="ratesModal.traffic?.tx_mbps ?? 0"
+              :cap-mbps="capMbps(ratesModal)"
+              color="amber"
+            />
+          </div>
+
+          <p class="text-xs text-slate-400 mt-4 text-center">
+            每 2 秒刷新；无流量时显示 0（首次打开约需 0.2s 建立基线）
+          </p>
+        </div>
+      </div>
+    </Teleport>
 
     <DashboardWidget v-if="editDev" id="iface-ethtool" title="ethtool 环缓冲" class="mb-3">
       <p class="text-sm text-slate-600 mb-3">
@@ -281,34 +422,6 @@ onUnmounted(() => {
       </div>
     </DashboardWidget>
 
-    <DashboardWidget id="iface-edit" title="修改 IP 地址" class="mb-3">
-      <p class="text-sm text-slate-600 mb-4">
-        点击上方网卡选择接口。保存后写入 <code class="text-xs bg-slate-100 px-1 rounded">99-qosnat2.yaml</code>
-        并执行 <code class="text-xs">netplan apply</code>（每行一个 CIDR，如 <code class="text-xs">192.168.1.10/24</code>）。
-      </p>
-      <form class="max-w-lg space-y-3" @submit.prevent="saveIP">
-        <div>
-          <label class="text-sm">网卡</label>
-          <input v-model="editDev" class="input-field mt-1 font-mono" readonly placeholder="点击卡片选择" />
-        </div>
-        <div>
-          <label class="text-sm">IPv4 地址（每行一个 CIDR）</label>
-          <textarea
-            v-model="editIPv4"
-            class="input-field mt-1 font-mono h-24"
-            placeholder="192.168.1.10/24"
-          />
-        </div>
-        <label class="flex items-center gap-2 text-sm">
-          <input v-model="editUp" type="checkbox" />
-          接口 UP（netplan 应用后由 networkd 拉起；取消勾选则 apply 后 <code class="text-xs">ip link set down</code>）
-        </label>
-        <button type="submit" class="btn-primary" :disabled="!editDev || saving">
-          {{ saving ? '保存中…' : '保存 IP 配置' }}
-        </button>
-      </form>
-    </DashboardWidget>
-
     <div class="grid lg:grid-cols-2 gap-4">
       <DashboardWidget id="iface-links-lan" title="LAN 相关配置">
         <ul class="text-sm space-y-2">
@@ -340,6 +453,6 @@ onUnmounted(() => {
       </DashboardWidget>
     </div>
 
-    <p class="text-xs text-slate-400 mt-4">速率每 2 秒自动刷新</p>
+    <p class="text-xs text-slate-400 mt-2">流量历史每 5 秒采样，保留约 4 小时（LAN/WAN）</p>
   </div>
 </template>

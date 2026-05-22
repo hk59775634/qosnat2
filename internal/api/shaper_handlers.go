@@ -99,26 +99,6 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		writeJSON(w, http.StatusOK, srv.shaperProfilesPayload(list))
-	case http.MethodPut:
-		var body struct {
-			CIDR   string `json:"cidr"`
-			Down   string `json:"down"`
-			Up     string `json:"up"`
-			Device string `json:"device"`
-		}
-		if err := readJSON(r, &body); err != nil || body.CIDR == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr/down/up required"})
-			return
-		}
-		if _, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, 0, body.Device, false); err != nil {
-			if err == errEbpfNotLoaded {
-				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
-				return
-			}
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
 		cidr := r.URL.Query().Get("cidr")
 		if cidr == "" {

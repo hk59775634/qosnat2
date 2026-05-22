@@ -32,14 +32,12 @@ const menu = [
       { path: '/nat/forwards', label: '端口转发' },
       { path: '/firewall/rules', label: '防火墙规则' },
       { path: '/firewall/aliases', label: 'Aliases' },
-      { path: '/firewall/geoip', label: 'GeoIP' },
     ],
   },
   {
     title: 'Traffic',
     items: [
       { path: '/shaper/profiles', label: 'QoS 策略' },
-      { path: '/shaper/vip', label: 'VIP 主机' },
       { path: '/status/active', label: '活跃 Per-IP' },
     ],
   },

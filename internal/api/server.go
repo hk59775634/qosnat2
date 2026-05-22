@@ -107,17 +107,12 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
 	m.HandleFunc("/api/v1/system/audit", srv.requireAuth(srv.handleSystemAudit))
 	m.HandleFunc("/api/v1/firewall/rules", srv.requireAuth(srv.handleFirewallRules))
-	m.HandleFunc("/api/v1/shaper/hosts/", srv.requireAuth(srv.handleShaperHosts))
-	m.HandleFunc("/api/v1/shaper/hosts", srv.requireAuth(srv.handleShaperHosts))
 	m.HandleFunc("/api/v1/interfaces/queues", srv.requireAuth(srv.handleIfaceQueues))
 	m.HandleFunc("/api/v1/interfaces/ethtool", srv.requireAuth(srv.handleInterfacesEthtool))
 	m.HandleFunc("/api/v1/interfaces", srv.requireAuth(srv.handleInterfaces))
 	m.HandleFunc("/api/v1/firewall/aliases", srv.requireAuth(srv.handleFirewallAliases))
-	m.HandleFunc("/api/v1/firewall/geoip", srv.requireAuth(srv.handleFirewallGeoIP))
 	m.HandleFunc("/api/v1/network/vlans", srv.requireAuth(srv.handleNetworkVLANs))
 	m.HandleFunc("/api/v1/network/wan-links", srv.requireAuth(srv.handleNetworkWanLinks))
-	m.HandleFunc("/api/v1/network/netplan", srv.requireAuth(srv.handleNetworkNetplan))
-	m.HandleFunc("/api/v1/network/netplan/apply", srv.requireAuth(srv.handleNetworkNetplanApply))
 	m.HandleFunc("/api/v1/shaper/tc", srv.requireAuth(srv.handleShaperTC))
 
 	m.HandleFunc("/api/v1/vpn/wireguard/keys", srv.requireAuth(srv.handleWireGuardKeys))
@@ -446,6 +441,7 @@ func (srv *Server) startMetricsSampler() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				c.SampleAllInterfaceRates()
 				if srv.env.DevLAN != "" || srv.env.DevWAN != "" {
 					c.RecordTraffic(srv.env.DevLAN, srv.env.DevWAN)
 				}

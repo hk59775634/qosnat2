@@ -51,8 +51,7 @@ type ProfileEntry struct {
 type FirewallState struct {
 	WanPortForwards []WanPortForward `json:"wan_port_forwards"`
 	FilterRules     []FilterRule     `json:"filter_rules"`
-	Aliases         []AliasSet       `json:"aliases"`
-	GeoIP           []GeoIPRule      `json:"geoip"`
+	Aliases         []AliasSet `json:"aliases"`
 }
 
 // SystemState 系统可调项
@@ -124,8 +123,7 @@ func DefaultState() State {
 		Firewall: FirewallState{
 			WanPortForwards: []WanPortForward{},
 			FilterRules:     []FilterRule{},
-			Aliases:         []AliasSet{},
-			GeoIP:           []GeoIPRule{},
+			Aliases: []AliasSet{},
 		},
 		System: SystemState{
 			Sysctl: map[string]string{},
@@ -198,12 +196,6 @@ func (s *Store) Update(fn func(*State)) error {
 	return nil
 }
 
-func (s *Store) ensureDefaults() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ensureDefaultsLocked()
-}
-
 func (s *Store) ensureDefaultsLocked() {
 	if s.State.SharedIPs == nil {
 		s.State.SharedIPs = []string{}
@@ -262,9 +254,6 @@ func (s *Store) ensureDefaultsLocked() {
 	}
 	if s.State.Firewall.Aliases == nil {
 		s.State.Firewall.Aliases = []AliasSet{}
-	}
-	if s.State.Firewall.GeoIP == nil {
-		s.State.Firewall.GeoIP = []GeoIPRule{}
 	}
 	if s.State.Network.Ifaces == nil {
 		s.State.Network.Ifaces = []IfaceConfig{}

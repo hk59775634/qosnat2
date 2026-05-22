@@ -112,7 +112,7 @@ onMounted(load)
   <div class="page-stack">
     <PageHeader
       title="QoS 策略"
-      description="profile_lpm · id 越小优先级越高 · 拖动 ⋮⋮ 排序 · LPM 最长前缀匹配"
+      description="网段或单 IP（/32）模板 · profile_lpm · id 越小优先级越高 · 拖动 ⋮⋮ 排序"
     />
 
     <div class="card card-body text-sm space-y-2">
@@ -148,7 +148,7 @@ onMounted(load)
     <form class="card card-body grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 items-end" @submit.prevent="submit">
       <div class="lg:col-span-2">
         <label class="text-xs text-slate-600">CIDR</label>
-        <input v-model="form.cidr" class="input-field mt-0.5 font-mono" placeholder="10.0.0.0/24" />
+        <input v-model="form.cidr" class="input-field mt-0.5 font-mono" placeholder="10.0.0.0/24 或 10.0.0.100/32" />
       </div>
       <div>
         <label class="text-xs text-slate-600">下行</label>
@@ -178,7 +178,8 @@ onMounted(load)
     </form>
 
     <p class="page-hint">
-      单主机用 <code class="bg-slate-100 px-1 rounded">x.x.x.x/32</code>；相同 CIDR 再次提交为更新速率。
+      网段模板如 <code class="bg-slate-100 px-1 rounded">10.0.0.0/24</code>；单主机限速用
+      <code class="bg-slate-100 px-1 rounded">x.x.x.x/32</code>（覆盖网段默认速率，最长前缀优先）。相同 CIDR 再次提交为更新。
     </p>
 
     <p v-if="savingOrder" class="text-xs text-slate-500">正在保存顺序…</p>
@@ -220,7 +221,7 @@ onMounted(load)
             </td>
           </tr>
           <tr v-if="!profiles.length">
-            <td colspan="7" class="text-center text-slate-400 py-3">暂无网段模板</td>
+            <td colspan="7" class="text-center text-slate-400 py-3">暂无策略（网段或 /32）</td>
           </tr>
         </tbody>
       </table>

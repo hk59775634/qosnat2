@@ -155,29 +155,25 @@ else
   skip "profile_lpm count reconcile (python3/state)"
 fi
 
-# --- 7) VIP host_exact 写入与删除 ---
+# --- 7) /32 模板经 wizard（与 QoS 策略页一致）---
 if [ -n "${COOKIE:-}" ] || [ -n "${QOSNAT_API_KEY:-}" ]; then
-  VIP_JSON="{\"down\":\"50mbit\",\"up\":\"50mbit\"}"
+  WIZ_JSON="{\"cidr\":\"${TEST_VIP_IP}/32\",\"down\":\"50mbit\",\"up\":\"50mbit\",\"mask\":32}"
   if curl -sf "${QOSNAT_API_KEY:+-H X-API-Key: $QOSNAT_API_KEY}" -b "${COOKIE:-/dev/null}" \
-    -X PUT -H 'Content-Type: application/json' -d "$VIP_JSON" \
-    "$BASE/api/v1/shaper/hosts/$TEST_VIP_IP" >/dev/null 2>&1; then
-    hosts_json=$(curl -sf ${QOSNAT_API_KEY:+-H "X-API-Key: $QOSNAT_API_KEY"} -b "${COOKIE:-/dev/null}" \
-      "$BASE/api/v1/shaper/hosts" 2>/dev/null || echo '[]')
-    if echo "$hosts_json" | grep -q "$TEST_VIP_IP"; then
-      ok "VIP host_exact via API ($TEST_VIP_IP)"
-    elif bpftool map dump pinned /sys/fs/bpf/qosnat2/host_exact 2>/dev/null | grep -q '"key"'; then
-      ok "VIP host_exact map has entries"
+    -X POST -H 'Content-Type: application/json' -d "$WIZ_JSON" \
+    "$BASE/api/v1/shaper/wizard" >/dev/null 2>&1; then
+    if api GET /api/v1/shaper/profiles 2>/dev/null | grep -q "${TEST_VIP_IP}/32"; then
+      ok "/32 profile via wizard ($TEST_VIP_IP)"
     else
-      bad "VIP not visible after PUT $TEST_VIP_IP"
+      bad "/32 not in profiles after wizard"
     fi
     curl -sf "${QOSNAT_API_KEY:+-H X-API-Key: $QOSNAT_API_KEY}" -b "${COOKIE:-/dev/null}" \
-      -X DELETE "$BASE/api/v1/shaper/hosts/$TEST_VIP_IP" >/dev/null 2>&1 || true
-    ok "VIP cleanup DELETE"
+      -X DELETE "$BASE/api/v1/shaper/profiles?cidr=${TEST_VIP_IP}%2F32" >/dev/null 2>&1 || true
+    ok "/32 profile cleanup DELETE"
   else
-    bad "VIP PUT $TEST_VIP_IP"
+    bad "wizard POST ${TEST_VIP_IP}/32"
   fi
 else
-  skip "VIP host_exact (no API auth)"
+  skip "/32 wizard (no API auth)"
 fi
 
 # --- 8) iperf 上行（restart 前测，避免重启断连）---
@@ -285,10 +281,8 @@ else
   skip "conntrack proc"
 fi
 
-# --- 11) GeoIP / 多 WAN ---
-geo_n=$(python3 -c "import json; print(len(json.load(open('$STATE')).get('firewall',{}).get('geoip',[])))" 2>/dev/null || echo 0)
+# --- 11) 多 WAN ---
 wan_n=$(python3 -c "import json; print(len(json.load(open('$STATE')).get('network',{}).get('wan_links',[])))" 2>/dev/null || echo 0)
-[ "$geo_n" = "0" ] && skip "GeoIP rules (none configured)" || skip "GeoIP (configured — manual CIDR file test)"
 [ "$wan_n" = "0" ] && skip "multi-WAN failover (no wan_links)" || skip "multi-WAN failover (configure wan_links first)"
 
 # --- 报告 ---

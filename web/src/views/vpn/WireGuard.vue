@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const cfg = ref(null)
 const status = ref(null)
@@ -142,14 +143,12 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <h2 class="text-xl font-semibold mb-4">WireGuard</h2>
+    <PageHeader
+      title="WireGuard"
+      description="Peer 限速按隧道 IP（/32 模板）在 wg0 + IFB 上 HTB 整形；下行/上行相对服务端视角。"
+    />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
-    <p class="text-sm text-slate-600 mb-4">
-      Peer 限速按隧道 IP（AllowedIPs 中第一个 IPv4）写入网段模板
-      <code class="text-xs">x.x.x.x/32</code>，在
-      <code class="text-xs">wg0</code> + IFB 上 HTB 整形；下行/上行相对服务端视角。
-    </p>
 
     <div v-if="cfg" class="space-y-6">
       <section class="card p-4">

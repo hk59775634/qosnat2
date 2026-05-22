@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 
@@ -14,11 +13,6 @@ import (
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
-
-func osExec(args ...string) error {
-	_, err := exec.Command(args[0], args[1:]...).CombinedOutput()
-	return err
-}
 
 const (
 	PinDir      = "/sys/fs/bpf/qosnat2"

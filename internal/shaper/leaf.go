@@ -5,6 +5,15 @@ import (
 	"strings"
 )
 
+// AllowedLeafInput API 请求中的 leaf（空表示不修改；历史 fq 仍接受）
+func AllowedLeafInput(raw string) bool {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	if raw == "" {
+		return true
+	}
+	return raw == "fq_codel" || raw == "cake" || raw == "fq"
+}
+
 // ValidLeaf 支持的 HTB 叶子 qdisc
 func ValidLeaf(leaf string) bool {
 	switch strings.ToLower(strings.TrimSpace(leaf)) {

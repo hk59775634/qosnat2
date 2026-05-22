@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const managed = ref([])
 const live = ref([])
@@ -80,12 +81,13 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <h2 class="text-xl font-semibold mb-4">路由管理</h2>
-    <p class="text-sm text-slate-600 mb-4">
-      管理宿主机 <code class="text-xs bg-slate-100 px-1 rounded">main</code> 表静态路由（<code class="text-xs">ip route</code>）。
-      NAT「策略网段」仍在 <router-link to="/nat/outbound" class="text-blue-600">Outbound NAT</router-link> 配置。
-      当前 LAN=<span class="font-mono">{{ devLan }}</span> WAN=<span class="font-mono">{{ devWan }}</span>
-    </p>
+    <PageHeader title="路由管理">
+      <template #description>
+        管理宿主机 <code class="text-xs bg-slate-100 px-1 rounded">main</code> 表静态路由（<code class="text-xs">ip route</code>）。
+        NAT「策略网段」仍在 <router-link to="/nat/outbound" class="text-blue-600">Outbound NAT</router-link> 配置。
+        当前 LAN=<span class="font-mono">{{ devLan }}</span> WAN=<span class="font-mono">{{ devWan }}</span>
+      </template>
+    </PageHeader>
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 

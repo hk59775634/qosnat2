@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { api } from '@/api/client'
+import PageHeader from '@/components/PageHeader.vue'
 
 const data = ref(null)
 const limit = ref(200)
@@ -34,11 +35,10 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <h2 class="text-xl font-semibold mb-4">连接状态 (conntrack)</h2>
-    <p class="text-sm text-slate-600 mb-4">
-      来自 <code class="text-xs">conntrack -L</code>；总数取自
-      <code class="text-xs">nf_conntrack_count</code>。大量连接时仅返回前 N 条。
-    </p>
+    <PageHeader
+      title="连接状态 (conntrack)"
+      description="来自 conntrack -L；总数取自 nf_conntrack_count。大量连接时仅返回前 N 条。"
+    />
 
     <div class="card card-body mb-4 flex flex-wrap gap-3 items-end">
       <div>

@@ -629,7 +629,7 @@ paths:
   /api/v1/shaper/wizard:
     post:
       tags: [shaper]
-      summary: PCQ 向导（添加/更新 profile_lpm 条目，不覆盖已有 PolicyCIDR）
+      summary: 添加/更新 QoS 模板（网段或 /32；同步 policy_routes）
       requestBody:
         content:
           application/json:
@@ -709,20 +709,6 @@ paths:
                   dev_lan: { type: string }
                   dev_wan: { type: string }
                   attached_devices: { type: array, items: { type: string } }
-    put:
-      tags: [shaper]
-      summary: 添加/更新网段模板（单主机用 x.x.x.x/32）
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                cidr: { type: string }
-                down: { type: string }
-                up: { type: string }
-                device: { type: string, description: 绑定网卡，空为默认内网口 }
-                mask: { type: integer }
     delete:
       tags: [shaper]
       parameters:
@@ -862,21 +848,6 @@ paths:
     delete:
       tags: [nat]
       summary: 删除规则（query id）
-
-  /api/v1/shaper/hosts:
-    get:
-      tags: [shaper]
-      summary: VIP /32 主机列表（host_exact）
-  /api/v1/shaper/hosts/{ip}:
-    get:
-      tags: [shaper]
-      summary: 查询单主机速率
-    put:
-      tags: [shaper]
-      summary: 设置 VIP 主机 down/up
-    delete:
-      tags: [shaper]
-      summary: 删除 VIP 主机
 
   /api/v1/system/mark-policy:
     get:

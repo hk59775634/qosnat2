@@ -59,7 +59,6 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("flush ruleset\n\n")
 	b.WriteString(fmt.Sprintf("table inet %s {\n", TableName))
 	writeAliasSets(&b, st.Firewall.Aliases)
-	writeGeoIPSets(&b, st.Firewall.GeoIP)
 
 	// prerouting DNAT
 	b.WriteString("    chain prerouting {\n")
@@ -108,7 +107,6 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        type filter hook forward priority filter; policy accept;\n")
 	b.WriteString("        ct state established,related accept\n")
 	writeFilterRules(&b, "forward", st.Firewall.FilterRules)
-	writeGeoIPRules(&b, "forward", cfg.DevWAN, st.Firewall.GeoIP)
 	b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevLAN, cfg.DevWAN))
 	b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevWAN, cfg.DevLAN))
 	// 非对称回程：公网源直达 LAN 内网段丢弃

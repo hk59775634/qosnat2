@@ -50,10 +50,11 @@ func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"dev_lan":      srv.env.DevLAN,
-		"dev_wan":      srv.env.DevWAN,
-		"netplan_path": netif.NetplanConfigPathForAPI(),
-		"interfaces":   out,
+		"dev_lan":          srv.env.DevLAN,
+		"dev_wan":          srv.env.DevWAN,
+		"netplan_path":     netif.NetplanConfigPathForAPI(),
+		"interfaces":       out,
+		"traffic_history":  c.TrafficHistory(),
 	})
 }
 
