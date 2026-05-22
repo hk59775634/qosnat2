@@ -105,6 +105,7 @@ curl -s http://127.0.0.1:8080/api/v1/setup/status
 - 鉴权：见 [docs/API-AUTH.md](docs/API-AUTH.md)（Session Cookie / `QOSNAT_API_KEY`）
 - 冒烟：`scripts/test-ui-api.sh`
 - HTTPS 验收：`sudo QOSNAT_PASS=… scripts/acceptance-https.sh`
+- P2 iperf 对账：`sudo bash -c 'source /etc/qosnat2/env; scripts/acceptance-p2-iperf.sh'`（需 SSH `root@100.64.0.254`）
 - CI：GitHub Actions `.github/workflows/ci.yml`（`go test` + `npm run build`）
 
 ## 部署选项
