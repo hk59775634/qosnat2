@@ -389,45 +389,64 @@ UI 写 `state.json` + `sysctl -w` + 可选重启提示。
 
 ---
 
-## 13. 开发阶段（建议顺序）
+## 13. 开发阶段（历史顺序，均已交付）
 
-| 阶段 | 内容 | 验收 |
-|------|------|------|
-| **P0** | `qosnatd` 骨架 + nft SNAT + forward | 10.x 上网 |
-| **P1** | bpf Pin + `profile_lpm` / `host_exact` Map CRUD API | bpftool 可见 Map 条目 |
-| **P2** | classify.bpf + ifb + HTB/fq + ringbuf 建类 | iperf 单 IP≈配置速率 |
-| **P3** | Iterate `active_host` + Dashboard Widget | 状态页表格刷新 |
-| **P4** | Vue 流量整形 + 防火墙 NAT 页 | 端到端 UI 改 rate 生效 |
-| **P5** | mark 隔离测试 + 多队列/RSS 监控 | nft+QoS 同开无冲突 |
-| **P6** | WireGuard 页 + 抓包 | 可选上线 |
+> 功能里程碑见 [`待开发清单.md`](待开发清单.md)（P1–P4 已完成）。下表保留作架构演进记录。
+
+| 阶段 | 内容 | 验收依据 |
+|------|------|----------|
+| **P0** | `qosnatd` 骨架 + nft SNAT + forward | `acceptance-auto.sh`、`acceptance-check.sh` |
+| **P1** | bpf Pin + `profile_lpm` / `host_exact` Map CRUD API | `GET /ebpf/maps`、bpftool pinned |
+| **P2** | classify.bpf + ifb + HTB/fq + ringbuf 建类 | `acceptance-p2-mirred.sh`、`acceptance-p2-iperf.sh` |
+| **P3** | Iterate `active_host` + Dashboard、VLAN 回滚、DHCPv6 | `acceptance-p3-smoke.sh`、`P3-dashboard.md` |
+| **P4** | Vue 全模块 + 租户/VXLAN/ASN | `acceptance-p4-smoke.sh`、`P4-overlay.md` |
+| **P5** | mark 隔离 + 多队列/RSS/ethtool | `GET /system/mark-policy`、`/interfaces/queues` |
+| **P6** | WireGuard + tcpdump 抓包 | Web VPN/诊断页、`/api/v1/vpn/wireguard` |
 
 ---
 
 ## 14. 测试清单
 
-### 14.1 API / eBPF
+> **与 [`待开发清单.md`](待开发清单.md) §14 同步**。自动化报告：[`验收报告-auto.md`](验收报告-auto.md)、[`验收报告-p2-iperf.md`](验收报告-p2-iperf.md)。
 
-- [ ] `POST /shaper/wizard` 或 profile `/32` 后 `host_exact` / `profile_lpm` 有对应 key  
-- [ ] `DELETE` 后 key 立即消失  
-- [ ] `GET /shaper/active` 与 Map Iterate 一致  
-- [ ] 重启 `qosnatd` 后 Map 与 state.json 一致  
+### 14.1 API / eBPF（已验收）
 
-### 14.2 整形
+- [x] `POST /shaper/wizard` 或 profile `/32` 后 `host_exact` / `profile_lpm` 有对应 key（`acceptance-auto.sh`、P2 iperf）
+- [x] `DELETE` 后 key 消失（wizard 清理用例）
+- [x] `GET /shaper/active` 与 Map Iterate 一致（状态页 + API 冒烟）
+- [x] 重启 `qosnatd` 后 Map 与 state 稳定（auto：`restart qosnatd profile_lpm stable`）
 
-- [ ] 单 /32 iperf 下行/上行各 ≈配置值（±5%）  
-- [ ] `/32` profile 50M 覆盖默认 8M（LPM 优先）  
-- [ ] HTB `overlimits` 极少（Shaping 非 Policing）  
+### 14.2 整形（已验收 / 部分人工）
+
+- [x] 单 `/32` iperf 下行/上行 ≈配置值（±约 5%，见 `验收报告-p2-iperf.md`）
+- [x] `/32` profile 覆盖默认网段速率（LPM + `host_exact`，P2 环境 20mbit 对账）
+- [x] `100.64.0.0/24` profile + mirred 与 ~8M（`acceptance-p2-mirred.sh` + iperf）
+- [ ] HTB `overlimits` 极少（Shaping 非 Policing）— 高负载时人工看 `tc -s class`
 
 ### 14.3 NAT / mark
 
-- [ ] Outbound NAT + 限速同时开启 24h  
-- [ ] `tc_classid` 与 `mark` 互不影响（抓包 / nft trace）  
+- [x] `tc_classid` 与 `mark` 隔离（auto：LAN ingress 无 BPF、mirred→ifb0、Mark 策略页）
+- [ ] Outbound NAT + 限速同时开启 **24h** — 见 [`P3-stability.md`](P3-stability.md)，需人工值守
 
-### 14.4 旧项目回归
+### 14.4 旧项目回归 / 环境
 
-- [ ] 非对称回程 drop  
-- [ ] 显式 `DEV_LAN`/`DEV_WAN`  
-- [ ] policy 删除按钮引号（`onclick='...'`）  
+- [x] 非对称回程 drop（nft `forward` 规则，auto：`nft table qosnat`）
+- [x] 显式 `DEV_LAN`/`DEV_WAN`（env + 引导写入，禁止写死网卡名）
+- [x] 前端危险 `onclick` 引号约定（Vue 组件，见 §7 编码约束）
+
+### 14.5 仍须专项（未勾 = 待验收，非缺代码）
+
+- [ ] `10.0.0.0/8` policy 与 10.x 客户端 iperf 对账
+- [ ] 多 WAN **failover**（两条 `wan_links` default，断 WAN 恢复）
+- [ ] 24h 长稳（conntrack、活跃池、定时 iperf 子集）
+
+```bash
+# 推荐一键复验
+set -a; source /etc/qosnat2/env; set +a; export QOSNAT_PASS="${ADMIN_PASS:-password}"
+/opt/qosnat2/scripts/acceptance-auto.sh
+/opt/qosnat2/scripts/acceptance-p2-iperf.sh    # 需 SSH 测试机
+/opt/qosnat2/scripts/acceptance-p4-smoke.sh
+```
 
 ---
 
@@ -457,27 +476,27 @@ net.netfilter.nf_conntrack_max = 2097152
 
 ---
 
-## 17. 开发前检查清单（遗漏自检）
+## 17. 开发前检查清单（自检，2026-05-22 更新）
 
-| # | 项 | 状态 |
-|---|-----|------|
-| 1 | 控制面（Map）与数据面（HTB）职责分离 | ✅ §2、§6、§8 |
-| 2 | REST 强制 `update/delete/iterate` Map | ✅ §7 |
-| 3 | mark / tc_classid 隔离 | ✅ §7.5 |
-| 4 | IFB 上行 + egress 下行 | ✅ §4、§8 |
-| 5 | LPM 网段 + /32 VIP 优先级 | ✅ §6.2、§10.5 |
-| 6 | pfSense 菜单与 Widget | ✅ §10 |
-| 7 | 100G / RSS / SR-IOV 监控 | ✅ §10.1、§10.3 |
-| 8 | WireGuard / 抓包 | ✅ §10.6–10.7（P6） |
-| 9 | state.json 与 Map 启动对账 | ✅ §11 |
-| 10 | 旧 policer / netns 废弃 | ✅ §3、reference/ |
-| 11 | OpenAPI 契约文件 | ⚠️ 待建 `api/openapi.yaml` |
-| 12 | 前端仓库 `web/` 初始化 | ⚠️ 待 P4 创建 |
-| 13 | `qosnatd` 与旧 `nat-admin` 迁移路径 | ✅ §5（迁入而非并行） |
-| 14 | 认证/HTTPS/TLS | ⚠️ §10.2 General Setup 提及，细节待补 |
-| 15 | 日志与审计（API 谁改了哪条 rate） | ⚠️ 建议 P3 加 audit.log |
+| # | 项 | 状态 | 说明 |
+|---|-----|------|------|
+| 1 | 控制面（Map）与数据面（HTB）职责分离 | ✅ | §2、§6、§8 |
+| 2 | REST 强制 `update/delete/iterate` Map | ✅ | §7、`internal/ebpf` |
+| 3 | mark / tc_classid 隔离 | ✅ | §7.5、验收 auto |
+| 4 | IFB 上行 + egress 下行 | ✅ | §4、§8、mirred 验收 |
+| 5 | LPM 网段 + /32 优先级 | ✅ | QoS 策略页、`profile_lpm` |
+| 6 | pfSense 式菜单与 Dashboard | ✅ | `web/src/views/*` |
+| 7 | RSS / ethtool / 多队列 | ✅ | 接口页、高级调优 |
+| 8 | WireGuard / 抓包 | ✅ | P6 已交付 |
+| 9 | state.json 与 Map 启动对账 | ✅ | §11、启动 `ApplyAll` |
+| 10 | 旧 policer / netns 废弃 | ✅ | §3、`reference/` 只读 |
+| 11 | OpenAPI 契约 | ✅ | [`api/openapi.yaml`](../api/openapi.yaml)、`GET /openapi.yaml` |
+| 12 | 前端 `web/` | ✅ | Vue3 + Vite，部署需 `npm run build` |
+| 13 | 与旧 `nat-admin` 关系 | ✅ | 已迁入 `cmd/qosnatd`，勿双轨 |
+| 14 | 认证 / HTTPS | ✅ | Session、API Key 哈希、常规设置 TLS；见 [`API-AUTH.md`](API-AUTH.md) |
+| 15 | 审计日志 | ✅ | `GET /api/v1/system/audit`、Web 审计页 |
 
-**结论**：核心架构与 API/UI 蓝图已齐，**可以以 `/opt/qosnat2` 开工**。建议在 **P0 同时** 创建 `api/openapi.yaml` 空壳与 `cmd/qosnatd/main.go`，避免前后端并行时契约漂移。
+**结论（现行）**：P0–P6 与 P1–P4 路线图**已交付**；新工作以 [`待开发清单.md`](待开发清单.md) 为准（§14 三项实机验收、远期 Unbound/HAProxy 等）。**勿**按本说明从零新建仓库；在现有 `/opt/qosnat2` 上增量开发，并先读 AGENT_PROMPT 维护版。
 
 ---
 
@@ -489,5 +508,5 @@ net.netfilter.nf_conntrack_max = 2097152
 
 ---
 
-**文档版本**：2026-05-20 rev2（API/eBPF 规范 + pfSense UI 蓝图）  
-**维护**：qosnat2 唯一准则；开发根目录 `/opt/qosnat2`。
+**文档版本**：2026-05-22 rev3（§13–§17 与验收状态同步）  
+**维护**：架构准则 + 历史阶段记录；**任务优先级**以 [`待开发清单.md`](待开发清单.md) 为准。
