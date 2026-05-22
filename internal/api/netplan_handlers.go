@@ -18,6 +18,12 @@ func (srv *Server) applyNetplan() error {
 				v.Name = netif.VLANName(v.Parent, v.VID)
 			}
 		}
+		for i := range st.Network.VXLANTunnels {
+			t := &st.Network.VXLANTunnels[i]
+			if t.Name == "" && t.VNI > 0 {
+				t.Name = netif.VXLANIfaceName(t.VNI)
+			}
+		}
 	})
 	_ = srv.store.Save()
 	return nil

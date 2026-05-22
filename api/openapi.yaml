@@ -222,6 +222,27 @@ components:
         name: { type: string }
         ipv4: { type: array, items: { type: string } }
         up: { type: boolean }
+    TenantEntry:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        cidrs: { type: array, items: { type: string } }
+        down: { type: string, example: 50mbit }
+        up: { type: string, example: 50mbit }
+        device: { type: string }
+    VXLANTunnel:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        vni: { type: integer }
+        local: { type: string }
+        remote: { type: string }
+        port: { type: integer, default: 4789 }
+        underlay: { type: string }
+        ipv4: { type: array, items: { type: string } }
+        up: { type: boolean }
     WanLink:
       type: object
       properties:
@@ -833,6 +854,7 @@ paths:
                         up: { type: string }
                         down_bps: { type: integer }
                         up_bps: { type: integer }
+                        tenant_id: { type: string, description: 由租户 QoS 展开时写入 }
                   bind_device: { type: string }
                   dev_lan: { type: string }
                   dev_wan: { type: string }
@@ -844,6 +866,69 @@ paths:
           in: query
           required: true
           schema: { type: string }
+
+  /api/v1/shaper/tenants:
+    get:
+      tags: [shaper]
+      summary: 租户 QoS 列表（展开为多条 profile）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenants:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TenantEntry'
+    post:
+      tags: [shaper]
+      summary: 创建租户并展开 profile + 刷新整形
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantEntry'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantEntry'
+    put:
+      tags: [shaper]
+      summary: 更新租户（query id）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantEntry'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantEntry'
+    delete:
+      tags: [shaper]
+      summary: 删除租户及其关联 profile
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
 
   /api/v1/shaper/active:
     get:
@@ -1146,6 +1231,69 @@ paths:
     delete:
       tags: [network]
       summary: 删除 VLAN（query id）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/network/vxlan:
+    get:
+      tags: [network]
+      summary: VXLAN 隧道列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VXLANTunnel'
+    post:
+      tags: [network]
+      summary: 添加 VXLAN 隧道并 netplan apply（失败回滚）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VXLANTunnel'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VXLANTunnel'
+    put:
+      tags: [network]
+      summary: 更新 VXLAN 隧道（query id）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VXLANTunnel'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VXLANTunnel'
+    delete:
+      tags: [network]
+      summary: 删除 VXLAN 隧道
       parameters:
         - name: id
           in: query

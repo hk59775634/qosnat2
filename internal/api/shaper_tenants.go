@@ -1,0 +1,165 @@
+package api
+
+import (
+	"net"
+	"net/http"
+	"strings"
+
+	"github.com/hk59775634/qosnat2/internal/store"
+)
+
+func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		st := srv.store.Get()
+		list := st.Shaper.Tenants
+		if list == nil {
+			list = []store.TenantEntry{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"tenants": list})
+	case http.MethodPost:
+		var body store.TenantEntry
+		if err := readJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			return
+		}
+		if err := store.NormalizeTenant(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if !srv.bpfReady() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errEbpfNotLoaded.Error()})
+			return
+		}
+		_ = srv.store.Update(func(st *store.State) {
+			st.Shaper.Tenants = append(st.Shaper.Tenants, body)
+		})
+		_ = srv.store.Save()
+		if err := srv.applyTenantProfiles(body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		srv.auditLog(r, "shaper.tenant.add", body.Name)
+		writeJSON(w, http.StatusOK, body)
+	case http.MethodPut:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			return
+		}
+		var body store.TenantEntry
+		if err := readJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			return
+		}
+		body.ID = id
+		if err := store.NormalizeTenant(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		found := false
+		_ = srv.store.Update(func(st *store.State) {
+			for i, t := range st.Shaper.Tenants {
+				if t.ID == id {
+					st.Shaper.Tenants[i] = body
+					found = true
+					break
+				}
+			}
+		})
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "tenant not found"})
+			return
+		}
+		_ = srv.store.Save()
+		srv.removeTenantProfiles(id)
+		if err := srv.applyTenantProfiles(body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		srv.auditLog(r, "shaper.tenant.put", body.Name)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tenant": body})
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			return
+		}
+		found := false
+		_ = srv.store.Update(func(st *store.State) {
+			var out []store.TenantEntry
+			for _, t := range st.Shaper.Tenants {
+				if t.ID == id {
+					found = true
+					continue
+				}
+				out = append(out, t)
+			}
+			st.Shaper.Tenants = out
+		})
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "tenant not found"})
+			return
+		}
+		_ = srv.store.Save()
+		srv.removeTenantProfiles(id)
+		srv.refreshShaperAfterChange()
+		srv.auditLog(r, "shaper.tenant.delete", id)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (srv *Server) applyTenantProfiles(t store.TenantEntry) error {
+	srv.removeTenantProfiles(t.ID)
+	dev := strings.TrimSpace(t.Device)
+	for _, cidr := range t.CIDRs {
+		mask := 32
+		if _, ipNet, err := net.ParseCIDR(cidr); err == nil && ipNet != nil {
+			ones, _ := ipNet.Mask.Size()
+			if ones < 32 {
+				mask = ones
+			}
+		}
+		if _, err := srv.upsertShaperProfile(cidr, t.Down, t.Up, mask, dev, false); err != nil {
+			return err
+		}
+		_ = srv.store.Update(func(st *store.State) {
+			for i := range st.Shaper.Profiles {
+				if st.Shaper.Profiles[i].CIDR == cidr {
+					st.Shaper.Profiles[i].TenantID = t.ID
+					break
+				}
+			}
+		})
+		_ = srv.store.Save()
+	}
+	return nil
+}
+
+func (srv *Server) removeTenantProfiles(tenantID string) {
+	if tenantID == "" {
+		return
+	}
+	st := srv.store.Get()
+	var toDel []string
+	for _, p := range st.Shaper.Profiles {
+		if p.TenantID == tenantID {
+			toDel = append(toDel, p.CIDR)
+		}
+	}
+	for _, cidr := range toDel {
+		srv.teardownProfileShaper(cidr)
+		_ = srv.store.Update(func(st *store.State) {
+			var out []store.ProfileEntry
+			for _, p := range st.Shaper.Profiles {
+				if p.CIDR != cidr {
+					out = append(out, p)
+				}
+			}
+			st.Shaper.Profiles = out
+		})
+	}
+	_ = srv.store.Save()
+}

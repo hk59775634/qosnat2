@@ -95,6 +95,7 @@ func (srv *Server) routes() {
 
 	m.HandleFunc("/api/v1/shaper/profiles/order", srv.requireAuth(srv.handleShaperProfilesOrder))
 	m.HandleFunc("/api/v1/shaper/profiles", srv.requireAuth(srv.handleShaperProfiles))
+	m.HandleFunc("/api/v1/shaper/tenants", srv.requireAuth(srv.handleShaperTenants))
 	m.HandleFunc("/api/v1/shaper/wizard", srv.requireAuth(srv.handleShaperWizard))
 	m.HandleFunc("/api/v1/shaper/active", srv.requireAuth(srv.handleShaperActive))
 
@@ -114,6 +115,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/firewall/aliases", srv.requireAuth(srv.handleFirewallAliases))
 	m.HandleFunc("/api/v1/network/netplan/apply", srv.requireAuth(srv.handleNetworkNetplanApply))
 	m.HandleFunc("/api/v1/network/netplan", srv.requireAuth(srv.handleNetworkNetplan))
+	m.HandleFunc("/api/v1/network/vxlan", srv.requireAuth(srv.handleNetworkVXLAN))
 	m.HandleFunc("/api/v1/network/vlans", srv.requireAuth(srv.handleNetworkVLANs))
 	m.HandleFunc("/api/v1/network/wan-links", srv.requireAuth(srv.handleNetworkWanLinks))
 	m.HandleFunc("/api/v1/shaper/tc", srv.requireAuth(srv.handleShaperTC))
@@ -309,12 +311,11 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "complete initial setup first"})
 		return
 	}
-	role, ok := srv.verifyUserRole(body.User, body.Pass)
-	if !ok {
+	if !srv.verifyAdmin(body.User, body.Pass) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	tok, err := srv.sessions.create(role)
+	tok, err := srv.sessions.create()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -327,34 +328,17 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(sessionTTL.Seconds()),
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "role": role})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (srv *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	user := srv.env.AdminUser
-	role := roleAdmin
 	if st := srv.store.Get(); st.AdminUser != "" {
 		user = st.AdminUser
-	}
-	if c, err := r.Cookie(sessionCookie); err == nil {
-		if sr := srv.sessions.role(c.Value); sr != "" {
-			role = sr
-			if role == roleReadonly {
-				st := srv.store.Get()
-				if st.ReadOnlyUser != "" {
-					user = st.ReadOnlyUser
-				}
-			}
-		}
-	}
-	if hdrRole, ok := srv.apiKeyRole(r); ok {
-		role = hdrRole
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":             true,
 		"user":           user,
-		"role":           role,
-		"read_only":      role == roleReadonly,
 		"setup_complete": srv.setupComplete(),
 	})
 }

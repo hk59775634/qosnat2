@@ -29,6 +29,7 @@ type ShaperState struct {
 	PolicyCIDR      string                 `json:"policy_cidr"`
 	DefaultProfile  RateProfile            `json:"default_profile"`
 	Profiles        []ProfileEntry         `json:"profiles"`
+	Tenants         []TenantEntry          `json:"tenants,omitempty"`
 	Hosts           map[string]HostRate    `json:"hosts,omitempty"` // 已废弃，启动时迁入 profiles
 	Leaf            string                 `json:"leaf"`
 	IdleTimeoutSec  int                    `json:"idle_timeout_sec"`
@@ -45,6 +46,7 @@ type ProfileEntry struct {
 	ID       int    `json:"id"`
 	Priority int    `json:"priority,omitempty"` // 已废弃，启动时迁入 id
 	Device   string `json:"device,omitempty"`   // 绑定网卡，空则用 Shaper.Device 或 DEV_LAN
+	TenantID string `json:"tenant_id,omitempty"` // P4 租户展开时标记，便于批量删除
 }
 
 // FirewallState 防火墙/NAT 扩展
@@ -68,22 +70,19 @@ type SystemState struct {
 	TLSEnabled         bool   `json:"tls_enabled,omitempty"`
 }
 
-// APIKey 持久化 API Key（role: admin | readonly）
+// APIKey 持久化 API Key
 type APIKey struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Key       string `json:"key"`
-	Role      string `json:"role,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
 
 // State 完整持久化（/var/lib/qosnat2/state.json）
 type State struct {
 	SetupComplete  bool              `json:"setup_complete"`
-	AdminUser           string `json:"admin_user,omitempty"`
-	AdminPassHash       string `json:"admin_pass_hash,omitempty"`
-	ReadOnlyUser        string `json:"readonly_user,omitempty"`
-	ReadOnlyPassHash    string `json:"readonly_pass_hash,omitempty"`
+	AdminUser     string `json:"admin_user,omitempty"`
+	AdminPassHash string `json:"admin_pass_hash,omitempty"`
 	PolicyRoutes   []string          `json:"policy_routes"`
 	Routes         []RouteEntry      `json:"routes"`
 	SharedIPs      []string          `json:"shared_ips"`

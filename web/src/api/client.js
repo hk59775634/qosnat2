@@ -124,6 +124,16 @@ export const api = {
       preview: () => request('/api/v1/network/netplan'),
       apply: () => request('/api/v1/network/netplan/apply', { method: 'POST', body: '{}' }),
     },
+    vxlan: {
+      list: () => request('/api/v1/network/vxlan'),
+      add: (body) => request('/api/v1/network/vxlan', { method: 'POST', body: JSON.stringify(body) }),
+      put: (id, body) =>
+        request(`/api/v1/network/vxlan?id=${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        }),
+      del: (id) => request(`/api/v1/network/vxlan?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
     wanLinks: {
       list: () => request('/api/v1/network/wan-links'),
       add: (body) => request('/api/v1/network/wan-links', { method: 'POST', body: JSON.stringify(body) }),
@@ -138,6 +148,16 @@ export const api = {
     }),
   shaper: {
     wizard: (body) => request('/api/v1/shaper/wizard', { method: 'POST', body: JSON.stringify(body) }),
+    tenants: {
+      list: () => request('/api/v1/shaper/tenants'),
+      add: (body) => request('/api/v1/shaper/tenants', { method: 'POST', body: JSON.stringify(body) }),
+      put: (id, body) =>
+        request(`/api/v1/shaper/tenants?id=${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        }),
+      del: (id) => request(`/api/v1/shaper/tenants?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
     putProfile: (body) =>
       request('/api/v1/shaper/profiles', { method: 'PUT', body: JSON.stringify(body) }),
     profiles: () => request('/api/v1/shaper/profiles'),

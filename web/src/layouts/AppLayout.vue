@@ -21,6 +21,7 @@ const menu = [
       { path: '/network/routes', label: '路由' },
       { path: '/network/dhcp', label: 'DHCP' },
       { path: '/network/vlans', label: 'VLAN' },
+      { path: '/network/vxlan', label: 'VXLAN' },
       { path: '/network/wan-links', label: '多 WAN' },
       { path: '/interfaces/queues', label: 'RSS / 多队列' },
     ],
@@ -38,6 +39,7 @@ const menu = [
     title: 'Traffic',
     items: [
       { path: '/shaper/profiles', label: 'QoS 策略' },
+      { path: '/shaper/tenants', label: '租户 QoS' },
       { path: '/status/active', label: '活跃 Per-IP' },
     ],
   },

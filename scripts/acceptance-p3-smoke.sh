@@ -24,20 +24,6 @@ ok "dhcpv6 prefix validation"
 
 curl -sf -b "$J" "$BASE/api/v1/dhcp" | grep -q '"leases"' && ok "dhcp leases json"
 
-CODE=$(curl -s -o /dev/null -w "%{http_code}" -b "$J" -X POST -H 'Content-Type: application/json' \
-  -d '{"name":"x"}' "$BASE/api/v1/shaper/wizard")
-[[ "$CODE" == "403" ]] && bad "admin should not get 403 on wizard"
-
-# 只读：仅当 state 配置了 readonly 且密码已知时测试
-if [[ -n "${READONLY_PASS:-}" ]]; then
-  J2=$(mktemp)
-  curl -sf -c "$J2" -H 'Content-Type: application/json' \
-    -d "{\"user\":\"${READONLY_USER:-viewer}\",\"pass\":\"$READONLY_PASS\"}" "$BASE/api/v1/login" >/dev/null
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" -b "$J2" -X POST -d '{}' "$BASE/api/v1/dhcp/apply")
-  [[ "$CODE" == "403" ]] || bad "readonly POST expected 403 got $CODE"
-  ok "readonly blocks POST"
-else
-  echo "SKIP readonly (set READONLY_USER/READONLY_PASS)"
-fi
+curl -sf -b "$J" "$BASE/api/v1/session" | grep -q '"ok":true' && ok "session"
 
 ok "P3 smoke done"

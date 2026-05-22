@@ -7,10 +7,11 @@ import (
 	"strings"
 )
 
-// AliasSet nft 对象组（ipv4 地址/网段集合）
+// AliasSet nft 对象组（ipv4 地址/网段集合，asn 为 ASN 前缀集合）
 type AliasSet struct {
 	Name    string   `json:"name"`
-	Type    string   `json:"type"` // ipv4_addr
+	Type    string   `json:"type"` // ipv4_addr | asn
+	ASN     int      `json:"asn,omitempty"`
 	Members []string `json:"members"`
 	Comment string   `json:"comment,omitempty"`
 }
@@ -34,10 +35,17 @@ func NormalizeAlias(a *AliasSet) error {
 	if typ == "" {
 		typ = "ipv4_addr"
 	}
-	if typ != "ipv4_addr" {
-		return fmt.Errorf("only ipv4_addr supported")
+	switch typ {
+	case "ipv4_addr", "asn":
+	default:
+		return fmt.Errorf("type must be ipv4_addr or asn")
 	}
 	a.Type = typ
+	if typ == "asn" {
+		if a.ASN <= 0 || a.ASN > 4294967295 {
+			return fmt.Errorf("asn number required for type asn")
+		}
+	}
 	var members []string
 	for _, m := range a.Members {
 		m = strings.TrimSpace(m)

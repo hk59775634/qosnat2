@@ -52,13 +52,17 @@ func ApplyNetplan(net store.NetworkState) error {
 func RenderNetplan(net store.NetworkState) (body []byte, linkDown []string, err error) {
 	ifaces := net.Ifaces
 	vlans := net.VLANs
+	tunnels := net.VXLANTunnels
 	if ifaces == nil {
 		ifaces = []store.IfaceConfig{}
 	}
 	if vlans == nil {
 		vlans = []store.VLANIface{}
 	}
-	if len(ifaces) == 0 && len(vlans) == 0 {
+	if tunnels == nil {
+		tunnels = []store.VXLANTunnel{}
+	}
+	if len(ifaces) == 0 && len(vlans) == 0 && len(tunnels) == 0 {
 		return nil, nil, nil
 	}
 	var b strings.Builder
@@ -115,6 +119,46 @@ func RenderNetplan(net store.NetworkState) (body []byte, linkDown []string, err 
 			b.WriteString(fmt.Sprintf("      link: %s\n", v.Parent))
 			b.WriteString("      dhcp4: no\n")
 			addrs, aerr := normalizeNetplanAddrs(v.IPv4)
+			if aerr != nil {
+				return nil, nil, aerr
+			}
+			if len(addrs) > 0 {
+				b.WriteString("      addresses:\n")
+				for _, a := range addrs {
+					b.WriteString(fmt.Sprintf("        - %s\n", a))
+				}
+			}
+		}
+	}
+
+	if len(tunnels) > 0 {
+		b.WriteString("  tunnels:\n")
+		for _, t := range tunnels {
+			if t.VNI < 1 {
+				continue
+			}
+			name := strings.TrimSpace(t.Name)
+			if name == "" {
+				name = store.VXLANIfaceName(t.VNI)
+			}
+			if !t.Up {
+				linkDown = append(linkDown, name)
+			}
+			b.WriteString(fmt.Sprintf("    %s:\n", name))
+			b.WriteString("      mode: vxlan\n")
+			b.WriteString(fmt.Sprintf("      id: %d\n", t.VNI))
+			b.WriteString(fmt.Sprintf("      local: %s\n", strings.TrimSpace(t.Local)))
+			b.WriteString(fmt.Sprintf("      remote: %s\n", strings.TrimSpace(t.Remote)))
+			port := t.Port
+			if port <= 0 {
+				port = 4789
+			}
+			b.WriteString(fmt.Sprintf("      port: %d\n", port))
+			if u := strings.TrimSpace(t.Underlay); u != "" {
+				b.WriteString(fmt.Sprintf("      link: %s\n", u))
+			}
+			b.WriteString("      dhcp4: no\n")
+			addrs, aerr := normalizeNetplanAddrs(t.IPv4)
 			if aerr != nil {
 				return nil, nil, aerr
 			}

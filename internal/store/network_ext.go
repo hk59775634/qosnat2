@@ -37,11 +37,12 @@ type IfaceConfig struct {
 	DHCP4  bool     `json:"dhcp4,omitempty"`
 }
 
-// NetworkState VLAN / 多 WAN / netplan 托管接口
+// NetworkState VLAN / VXLAN / 多 WAN / netplan 托管接口
 type NetworkState struct {
-	Ifaces   []IfaceConfig `json:"ifaces"`
-	VLANs    []VLANIface   `json:"vlans"`
-	WanLinks []WanLink     `json:"wan_links"`
+	Ifaces       []IfaceConfig   `json:"ifaces"`
+	VLANs        []VLANIface     `json:"vlans"`
+	VXLANTunnels []VXLANTunnel   `json:"vxlan_tunnels"`
+	WanLinks     []WanLink       `json:"wan_links"`
 }
 
 // UpsertIfaceConfig 按设备名更新或追加托管网卡配置
