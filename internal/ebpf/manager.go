@@ -517,11 +517,3 @@ func (m *Manager) EachClassid(fn func(ip string, minor uint32) error) error {
 	}
 	return iter.Err()
 }
-
-// DeleteHostExact 兼容旧名
-func (m *Manager) DeleteHostExact(ip string) error { return m.DeleteHost(ip) }
-
-// UpdateHostExact 兼容旧名
-func (m *Manager) UpdateHostExact(ip string, downBPS, upBPS uint64) error {
-	return m.UpdateHost(ip, RateVal{DownBPS: downBPS, UpBPS: upBPS})
-}

@@ -21,7 +21,7 @@ func (srv *Server) applyNetplan() error {
 		for i := range st.Network.VXLANTunnels {
 			t := &st.Network.VXLANTunnels[i]
 			if t.Name == "" && t.VNI > 0 {
-				t.Name = netif.VXLANIfaceName(t.VNI)
+				t.Name = store.VXLANIfaceName(t.VNI)
 			}
 		}
 	})

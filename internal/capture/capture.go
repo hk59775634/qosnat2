@@ -57,7 +57,7 @@ func (m *Manager) Start(dev, filter string, durationSec int) (*Session, error) {
 	file := filepath.Join(m.dir, id+".pcap")
 	args := []string{"-i", dev, "-w", file, "-U"}
 	if filter != "" {
-		args = append(args, filter)
+		args = append(args, "-e", filter)
 	}
 	cmd := exec.Command("tcpdump", args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

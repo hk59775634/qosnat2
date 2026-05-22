@@ -22,19 +22,15 @@ func checkPassword(hash, pass string) bool {
 }
 
 func (srv *Server) setupComplete() bool {
-	st := srv.store.Get()
-	if st.SetupComplete {
-		return true
-	}
-	return srv.env.DevLAN != "" && srv.env.DevWAN != ""
+	return srv.store.Get().SetupComplete
 }
 
 func (srv *Server) verifyAdmin(user, pass string) bool {
 	st := srv.store.Get()
-	if st.AdminPassHash != "" && st.AdminUser != "" {
-		return user == st.AdminUser && checkPassword(st.AdminPassHash, pass)
+	if st.AdminPassHash == "" || st.AdminUser == "" {
+		return false
 	}
-	return user == srv.env.AdminUser && pass == srv.env.AdminPass
+	return user == st.AdminUser && checkPassword(st.AdminPassHash, pass)
 }
 
 func (srv *Server) reloadEnv() {

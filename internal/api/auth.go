@@ -9,6 +9,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 const (
@@ -17,7 +19,7 @@ const (
 )
 
 type sessionStore struct {
-	mu       sync.RWMutex
+	mu       sync.Mutex
 	sessions map[string]time.Time
 	file     string
 }
@@ -37,14 +39,21 @@ func (s *sessionStore) load() error {
 	return json.Unmarshal(b, &s.sessions)
 }
 
-func (s *sessionStore) save() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *sessionStore) saveLocked() error {
 	b, err := json.Marshal(s.sessions)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(s.file, b, 0600)
+}
+
+func (s *sessionStore) pruneLocked() {
+	now := time.Now()
+	for tok, exp := range s.sessions {
+		if !now.Before(exp) {
+			delete(s.sessions, tok)
+		}
+	}
 }
 
 func (s *sessionStore) create() (string, error) {
@@ -54,23 +63,25 @@ func (s *sessionStore) create() (string, error) {
 	}
 	tok := hex.EncodeToString(b)
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneLocked()
 	s.sessions[tok] = time.Now().Add(sessionTTL)
-	s.mu.Unlock()
-	return tok, s.save()
+	return tok, s.saveLocked()
 }
 
 func (s *sessionStore) valid(tok string) bool {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneLocked()
 	exp, ok := s.sessions[tok]
-	s.mu.RUnlock()
 	return ok && time.Now().Before(exp)
 }
 
 func (s *sessionStore) delete(tok string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	delete(s.sessions, tok)
-	s.mu.Unlock()
-	_ = s.save()
+	_ = s.saveLocked()
 }
 
 func (srv *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
@@ -93,9 +104,13 @@ func (srv *Server) checkAPIKey(r *http.Request) bool {
 	if key == "" {
 		return false
 	}
+	hash := store.HashAPIKey(key)
 	st := srv.store.Get()
 	for _, k := range st.APIKeys {
-		if subtle.ConstantTimeCompare([]byte(k.Key), []byte(key)) == 1 {
+		if k.KeyHash == "" {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(k.KeyHash), []byte(hash)) == 1 {
 			return true
 		}
 	}

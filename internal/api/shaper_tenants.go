@@ -31,14 +31,15 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errEbpfNotLoaded.Error()})
 			return
 		}
+		if err := srv.applyTenantProfiles(body, false); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		_ = srv.store.Update(func(st *store.State) {
 			st.Shaper.Tenants = append(st.Shaper.Tenants, body)
 		})
 		_ = srv.store.Save()
-		if err := srv.applyTenantProfiles(body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
+		srv.refreshShaperAfterChange()
 		srv.auditLog(r, "shaper.tenant.add", body.Name)
 		writeJSON(w, http.StatusOK, body)
 	case http.MethodPut:
@@ -57,26 +58,36 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		var prev store.TenantEntry
 		found := false
-		_ = srv.store.Update(func(st *store.State) {
-			for i, t := range st.Shaper.Tenants {
-				if t.ID == id {
-					st.Shaper.Tenants[i] = body
-					found = true
-					break
-				}
+		st := srv.store.Get()
+		for _, t := range st.Shaper.Tenants {
+			if t.ID == id {
+				prev = t
+				found = true
+				break
 			}
-		})
+		}
 		if !found {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "tenant not found"})
 			return
 		}
-		_ = srv.store.Save()
-		srv.removeTenantProfiles(id)
-		if err := srv.applyTenantProfiles(body); err != nil {
+		if err := srv.applyTenantProfiles(body, false); err != nil {
+			_ = srv.applyTenantProfiles(prev, false)
+			srv.refreshShaperAfterChange()
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		_ = srv.store.Update(func(st *store.State) {
+			for i, t := range st.Shaper.Tenants {
+				if t.ID == id {
+					st.Shaper.Tenants[i] = body
+					break
+				}
+			}
+		})
+		_ = srv.store.Save()
+		srv.refreshShaperAfterChange()
 		srv.auditLog(r, "shaper.tenant.put", body.Name)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tenant": body})
 	case http.MethodDelete:
@@ -111,7 +122,7 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (srv *Server) applyTenantProfiles(t store.TenantEntry) error {
+func (srv *Server) applyTenantProfiles(t store.TenantEntry, refreshEach bool) error {
 	srv.removeTenantProfiles(t.ID)
 	dev := strings.TrimSpace(t.Device)
 	for _, cidr := range t.CIDRs {
@@ -122,7 +133,7 @@ func (srv *Server) applyTenantProfiles(t store.TenantEntry) error {
 				mask = ones
 			}
 		}
-		if _, err := srv.upsertShaperProfile(cidr, t.Down, t.Up, mask, dev, false); err != nil {
+		if _, err := srv.upsertShaperProfile(cidr, t.Down, t.Up, mask, dev, false, refreshEach); err != nil {
 			return err
 		}
 		_ = srv.store.Update(func(st *store.State) {

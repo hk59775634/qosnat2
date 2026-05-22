@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -41,11 +42,11 @@ func GenKeyPair() (KeyPair, error) {
 		return KeyPair{}, err
 	}
 	privStr := strings.TrimSpace(string(priv))
-	pub, err := exec.Command("bash", "-c", fmt.Sprintf("echo %q | wg pubkey", privStr)).Output()
+	pub, err := wgPubkeyFromPrivate(privStr)
 	if err != nil {
 		return KeyPair{}, err
 	}
-	return KeyPair{Private: privStr, Public: strings.TrimSpace(string(pub))}, nil
+	return KeyPair{Private: privStr, Public: pub}, nil
 }
 
 // PublicKeyFromPrivate 由客户端私钥计算公钥（wg pubkey）
@@ -57,7 +58,13 @@ func PublicKeyFromPrivate(privateKey string) (string, error) {
 	if privStr == "" {
 		return "", fmt.Errorf("private key empty")
 	}
-	pub, err := exec.Command("bash", "-c", fmt.Sprintf("echo %q | wg pubkey", privStr)).Output()
+	return wgPubkeyFromPrivate(privStr)
+}
+
+func wgPubkeyFromPrivate(privStr string) (string, error) {
+	cmd := exec.Command("wg", "pubkey")
+	cmd.Stdin = strings.NewReader(privStr + "\n")
+	pub, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
@@ -142,6 +149,9 @@ func WriteConf(wg store.WireGuardState) error {
 	if iface == "" {
 		iface = "wg0"
 	}
+	if err := netif.ValidateIfaceName(iface); err != nil {
+		return err
+	}
 	path := filepath.Join(confDir, iface+".conf")
 	return os.WriteFile(path, []byte(RenderConf(wg)), 0600)
 }
@@ -157,6 +167,9 @@ func Apply(wg store.WireGuardState, up bool) error {
 	iface := wg.Interface
 	if iface == "" {
 		iface = "wg0"
+	}
+	if err := netif.ValidateIfaceName(iface); err != nil {
+		return err
 	}
 	var cmd *exec.Cmd
 	if up {

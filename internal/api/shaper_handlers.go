@@ -41,7 +41,8 @@ func (srv *Server) rateVal(down, up string) (ebpf.RateVal, error) {
 }
 
 // upsertShaperProfile 写入 BPF/HTB/state；wizard 额外同步 policy_routes 与默认 policy_cidr
-func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device string, wizard bool) (added bool, err error) {
+// refresh=false 时由调用方批量结束后统一 refreshShaperAfterChange
+func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device string, wizard bool, refresh bool) (added bool, err error) {
 	if !srv.bpfReady() {
 		return false, errEbpfNotLoaded
 	}
@@ -85,7 +86,9 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 	if err := srv.syncProfileBPFMaps(cidr, rv); err != nil {
 		return false, err
 	}
-	srv.refreshShaperAfterChange()
+	if refresh {
+		srv.refreshShaperAfterChange()
+	}
 	return added, nil
 }
 
@@ -127,7 +130,7 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errEbpfNotLoaded.Error()})
 			return
 		}
-		added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, false)
+		added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, false, true)
 		if err != nil {
 			if err == errEbpfNotLoaded {
 				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
@@ -205,7 +208,7 @@ func (srv *Server) handleShaperWizard(w http.ResponseWriter, r *http.Request) {
 	if body.Mask == 0 {
 		body.Mask = 32
 	}
-	added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, true)
+	added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, true, true)
 	if err != nil {
 		if err == errEbpfNotLoaded {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})

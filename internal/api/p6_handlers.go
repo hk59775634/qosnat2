@@ -193,8 +193,13 @@ func (srv *Server) handleWireGuardPeerConf(w http.ResponseWriter, r *http.Reques
 		ep = fmt.Sprintf("<WAN_IP>:%d", st.VPN.WireGuard.ListenPort)
 	}
 	conf := wg.ClientConf(st.VPN.WireGuard, *peer, ep)
+	fn, err := safeAttachmentFilename(name)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename="+name+".conf")
+	w.Header().Set("Content-Disposition", "attachment; filename="+fn+".conf")
 	w.Write([]byte(conf))
 }
 
@@ -223,6 +228,14 @@ func (srv *Server) handleCaptures(w http.ResponseWriter, r *http.Request) {
 		dev := body.Device
 		if dev == "" {
 			dev = srv.env.DevLAN
+		}
+		if err := validateCaptureDevice(dev); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := sanitizeTcpdumpFilter(body.Filter); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
 		}
 		s, err := srv.captures().Start(dev, body.Filter, body.DurationSec)
 		if err != nil {

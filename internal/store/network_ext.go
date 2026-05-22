@@ -78,17 +78,6 @@ func UpsertIfaceConfig(st *State, device string, ipv4 []string, up *bool, dhcp4 
 	st.Network.Ifaces = append(st.Network.Ifaces, entry)
 }
 
-// RemoveIfaceConfig 从 netplan 托管列表移除（不删 cloud-init 等其它文件中的定义）
-func RemoveIfaceConfig(st *State, device string) {
-	var out []IfaceConfig
-	for _, ic := range st.Network.Ifaces {
-		if ic.Device != device {
-			out = append(out, ic)
-		}
-	}
-	st.Network.Ifaces = out
-}
-
 func NewVLANID() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])

@@ -25,9 +25,9 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 		}
 		out := make([]item, 0, len(keys))
 		for _, k := range keys {
-			pfx := k.Key
-			if len(pfx) > 8 {
-				pfx = pfx[:8] + "…"
+			pfx := k.KeyPrefix
+			if pfx == "" && k.KeyHash != "" {
+				pfx = k.KeyHash[:8] + "…"
 			}
 			out = append(out, item{ID: k.ID, Name: k.Name, CreatedAt: k.CreatedAt, Prefix: pfx})
 		}
@@ -42,14 +42,15 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 		}
 		raw := make([]byte, 24)
 		if _, err := rand.Read(raw); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
 			return
 		}
 		key := "qk_" + hex.EncodeToString(raw)
 		ak := store.APIKey{
 			ID:        "key-" + hex.EncodeToString(raw[:8]),
 			Name:      body.Name,
-			Key:       key,
+			KeyHash:   store.HashAPIKey(key),
+			KeyPrefix: store.APIKeyPrefix(key),
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		}
 		_ = srv.store.Update(func(st *store.State) {

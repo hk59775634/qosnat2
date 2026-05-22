@@ -1,6 +1,7 @@
 package conntrack
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,7 +9,7 @@ import (
 	"strings"
 )
 
-// Entry 单条 conntrack 连接（由 conntrack -L 解析）
+// Entry 单条 conntrack 连接（由 conntrack -L 或 /proc 解析）
 type Entry struct {
 	L3Proto    string `json:"l3_proto,omitempty"`
 	Protocol   string `json:"protocol"`
@@ -49,7 +50,7 @@ func Count() int {
 	return n
 }
 
-// List 执行 conntrack -L，解析前 limit 条；filter 匹配 src/dst 子串
+// List 解析连接表，优先流式读 /proc 并在达到 limit 后停止
 func List(limit int, filter string) (ListResult, error) {
 	if limit <= 0 {
 		limit = 200
@@ -57,6 +58,56 @@ func List(limit int, filter string) (ListResult, error) {
 	if limit > 2000 {
 		limit = 2000
 	}
+	filter = strings.ToLower(strings.TrimSpace(filter))
+	total := Count()
+
+	if entries, err := listFromProc(limit, filter); err == nil {
+		return ListResult{
+			Count:     total,
+			Limit:     limit,
+			Truncated: total > len(entries) || len(entries) >= limit,
+			Entries:   entries,
+		}, nil
+	}
+	return listFromConntrackCLI(limit, filter, total)
+}
+
+func listFromProc(limit int, filter string) ([]Entry, error) {
+	f, err := os.Open("/proc/net/nf_conntrack")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var entries []Entry
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || !strings.Contains(line, "src=") {
+			continue
+		}
+		e, ok := parseLine(line)
+		if !ok {
+			continue
+		}
+		if filter != "" {
+			hay := strings.ToLower(e.Src + " " + e.Dst + " " + e.ReplySrc + " " + e.ReplyDst)
+			if !strings.Contains(hay, filter) {
+				continue
+			}
+		}
+		entries = append(entries, e)
+		if len(entries) >= limit {
+			break
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func listFromConntrackCLI(limit int, filter string, total int) (ListResult, error) {
 	if _, err := exec.LookPath("conntrack"); err != nil {
 		return ListResult{}, fmt.Errorf("conntrack-tools not installed")
 	}
@@ -66,13 +117,11 @@ func List(limit int, filter string) (ListResult, error) {
 		if msg == "" {
 			return ListResult{}, err
 		}
-		// 无连接时可能非零退出
 		if !strings.Contains(msg, "src=") {
 			return ListResult{}, fmt.Errorf("conntrack -L: %s", msg)
 		}
 		out = []byte(msg)
 	}
-	filter = strings.ToLower(strings.TrimSpace(filter))
 	var entries []Entry
 	for _, line := range strings.Split(string(out), "\n") {
 		line = strings.TrimSpace(line)
@@ -94,7 +143,6 @@ func List(limit int, filter string) (ListResult, error) {
 			break
 		}
 	}
-	total := Count()
 	return ListResult{
 		Count:     total,
 		Limit:     limit,
@@ -112,7 +160,7 @@ func parseLine(line string) (Entry, bool) {
 	e := Entry{Raw: line}
 	if fields[0] == "ipv4" || fields[0] == "ipv6" {
 		e.L3Proto = fields[0]
-		i = 3 // skip rev
+		i = 3
 		if i >= len(fields) {
 			return Entry{}, false
 		}
@@ -120,7 +168,7 @@ func parseLine(line string) (Entry, bool) {
 	e.Protocol = fields[i]
 	i++
 	if i < len(fields) && isDigits(fields[i]) {
-		i++ // L4 协议号，如 tcp 后的 6
+		i++
 	}
 	if i < len(fields) {
 		if n, err := strconv.Atoi(fields[i]); err == nil {

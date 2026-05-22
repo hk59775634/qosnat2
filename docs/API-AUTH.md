@@ -1,5 +1,12 @@
 # API 鉴权与冒烟测试
 
+## 安全策略（2026-05）
+
+- **未完成 TLS**：`qosnatd` 仅监听 `127.0.0.1:ADMIN_PORT`；请 SSH 隧道或本机访问 Web/API。
+- **初始设置**：`GET /api/v1/setup/status` 在本机返回一次性 `setup_token`；`setup/interfaces` 与 `setup/complete` 需头 `X-Setup-Token` 或 body `setup_token`。
+- **管理员口令**：仅存 `state.json` 的 bcrypt；无 env 明文回退。
+- **API Key**：`state.json` 仅存 `key_hash`；创建响应中的 `key` 仅显示一次。
+
 ## Session Cookie（浏览器）
 
 1. `POST /api/v1/login` body `{"user":"admin","pass":"..."}`
@@ -12,7 +19,7 @@
 2. 或已有 `state.json` 中 `api_keys` 条目
 
 ```bash
-export QOSNAT_API_KEY='qosnat_xxxxxxxx'
+export QOSNAT_API_KEY='qk_xxxxxxxx'
 curl -s -H "X-API-Key: $QOSNAT_API_KEY" http://127.0.0.1:8080/api/v1/shaper/profiles
 ```
 

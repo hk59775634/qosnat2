@@ -3,7 +3,7 @@
 set -euo pipefail
 BASE="${BASE:-http://127.0.0.1:8080}"
 USER="${ADMIN_USER:-admin}"
-PASS="${ADMIN_PASS:-${QOSNAT_PASS:-QosNat@2026}}"
+PASS="${ADMIN_PASS:-${QOSNAT_PASS:-}}"
 COOKIE=$(mktemp)
 trap 'rm -f "$COOKIE"' EXIT
 

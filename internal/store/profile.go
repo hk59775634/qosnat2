@@ -171,18 +171,3 @@ func ReorderProfiles(profiles []ProfileEntry, order []string) ([]ProfileEntry, e
 	}
 	return out, nil
 }
-
-// SortProfilesByPriority 兼容旧调用
-func SortProfilesByPriority(profiles []ProfileEntry) []ProfileEntry {
-	return SortProfilesByID(profiles)
-}
-
-// NormalizeProfilePriorities 兼容旧调用
-func NormalizeProfilePriorities(profiles *[]ProfileEntry) {
-	NormalizeProfileIDs(profiles)
-}
-
-// NextProfilePriority 兼容旧调用
-func NextProfilePriority(profiles []ProfileEntry) int {
-	return NextProfileID(profiles)
-}

@@ -47,6 +47,7 @@ type Server struct {
 	ringCancel      context.CancelFunc
 	metricsCancel   context.CancelFunc
 	mux             *http.ServeMux
+	loginLim        *loginLimiter
 }
 
 func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
@@ -65,6 +66,7 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 		bpf:      bpfM,
 		sessions: newSessionStore(env.SessionFile),
 		hosts:    shaper.NewHostShaper(shaperDevLAN(env.DevLAN), st.Get().Shaper.Leaf),
+		loginLim: newLoginLimiter(),
 	}
 	s.mux = http.NewServeMux()
 	s.routes()
@@ -311,23 +313,23 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "complete initial setup first"})
 		return
 	}
+	ip := clientIP(r)
+	if !srv.loginLim.allow(ip) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many login attempts"})
+		return
+	}
 	if !srv.verifyAdmin(body.User, body.Pass) {
+		srv.loginLim.recordFail(ip)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
+	srv.loginLim.clear(ip)
 	tok, err := srv.sessions.create()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    tok,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(sessionTTL.Seconds()),
-	})
+	srv.setSessionCookie(w, r, tok)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -352,6 +354,14 @@ func (srv *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *Server) serveOpenAPI(w http.ResponseWriter, r *http.Request) {
+	if srv.setupComplete() {
+		if !srv.checkAPIKey(r) {
+			if c, err := r.Cookie(sessionCookie); err != nil || !srv.sessions.valid(c.Value) {
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				return
+			}
+		}
+	}
 	path := srv.env.OpenAPIPath
 	if path == "" {
 		path = "api/openapi.yaml"
@@ -418,13 +428,13 @@ func isDir(p string) bool {
 func (srv *Server) Listen() error {
 	_ = srv.sessions.load()
 	srv.startMetricsSampler()
-	addr := ":" + srv.env.AdminPort
+	addr := srv.listenAddr()
 	h := srv.Handler()
-	if srv.env.TLSCert != "" && srv.env.TLSKey != "" {
+	if srv.tlsActive() {
 		log.Printf("qosnatd listening HTTPS on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
 		return http.ListenAndServeTLS(addr, srv.env.TLSCert, srv.env.TLSKey, h)
 	}
-	log.Printf("qosnatd listening on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
+	log.Printf("qosnatd listening on %s only (enable TLS in UI to expose LAN) (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
 	return http.ListenAndServe(addr, h)
 }
 
@@ -491,7 +501,7 @@ func LoadEnv() Env {
 	InitFromEnvFile("/etc/qosnat2/env")
 	return Env{
 		AdminUser:   EnvOr("ADMIN_USER", "admin"),
-		AdminPass:   EnvOr("ADMIN_PASS", "QosNat@2026"),
+		AdminPass:   EnvOr("ADMIN_PASS", ""),
 		AdminPort:   EnvOr("ADMIN_PORT", "8080"),
 		DevLAN:      EnvOr("DEV_LAN", ""),
 		DevWAN:      EnvOr("DEV_WAN", ""),

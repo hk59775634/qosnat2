@@ -21,13 +21,21 @@ func (srv *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	complete := srv.setupComplete()
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"setup_required": !complete,
 		"setup_complete": complete,
 		"dev_lan":        srv.env.DevLAN,
 		"dev_wan":        srv.env.DevWAN,
-		"has_admin":      srv.store.Get().AdminPassHash != "" || srv.env.AdminPass != "",
-	})
+		"has_admin":      srv.store.Get().AdminPassHash != "",
+		"local_only":     !srv.tlsActive(),
+	}
+	if !complete && isLoopback(r) {
+		st := srv.store.Get()
+		if st.SetupToken != "" {
+			resp["setup_token"] = st.SetupToken
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (srv *Server) handleSetupInterfaces(w http.ResponseWriter, r *http.Request) {
@@ -35,8 +43,7 @@ func (srv *Server) handleSetupInterfaces(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if srv.setupComplete() {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "setup already complete"})
+	if !srv.requireSetupAccess(w, r, "") {
 		return
 	}
 	ifaces, err := dnsmasq.ListInterfaces()
@@ -52,23 +59,23 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if srv.setupComplete() {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "setup already complete"})
-		return
-	}
 	var body struct {
-		AdminUser     string   `json:"admin_user"`
-		AdminPass     string   `json:"admin_pass"`
-		DevLAN        string   `json:"dev_lan"`
-		DevWAN        string   `json:"dev_wan"`
-		PolicyRoutes  []string `json:"policy_routes"`
-		SharedIPs     []string `json:"shared_ips"`
-		Hostname      string   `json:"hostname"`
-		EnableDHCP    bool     `json:"enable_dhcp"`
-		ApplyDataplane bool    `json:"apply_dataplane"`
+		SetupToken     string   `json:"setup_token"`
+		AdminUser      string   `json:"admin_user"`
+		AdminPass      string   `json:"admin_pass"`
+		DevLAN         string   `json:"dev_lan"`
+		DevWAN         string   `json:"dev_wan"`
+		PolicyRoutes   []string `json:"policy_routes"`
+		SharedIPs      []string `json:"shared_ips"`
+		Hostname       string   `json:"hostname"`
+		EnableDHCP     bool     `json:"enable_dhcp"`
+		ApplyDataplane bool     `json:"apply_dataplane"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		return
+	}
+	if !srv.requireSetupAccess(w, r, body.SetupToken) {
 		return
 	}
 	body.AdminUser = strings.TrimSpace(body.AdminUser)
@@ -100,7 +107,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, err := hashPassword(body.AdminPass)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
 		return
 	}
 	if len(body.PolicyRoutes) == 0 {
@@ -120,7 +127,6 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 
 	passHash := string(hash)
 	_ = srv.store.Update(func(st *store.State) {
-		st.SetupComplete = true
 		st.AdminUser = body.AdminUser
 		st.AdminPassHash = passHash
 		st.PolicyRoutes = body.PolicyRoutes
@@ -148,38 +154,40 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	srv.env.DevLAN = body.DevLAN
 	srv.env.DevWAN = body.DevWAN
 	envWrite := srv.env
-	envWrite.AdminPass = "" // 口令仅存 state bcrypt，不写明文到 env
+	envWrite.AdminPass = ""
 	if err := WriteRuntimeEnv(envWrite); err != nil {
 		log.Printf("write env: %v", err)
 	}
 	srv.reloadEnv()
 
 	var applyErr string
+	dataplaneOK := true
 	if body.ApplyDataplane {
 		_ = srv.applyAutoTuningOnSetup(true)
 		_ = srv.setupPrepareTC()
 		if err := srv.ApplyAll(); err != nil {
 			applyErr = err.Error()
+			dataplaneOK = false
 			log.Printf("setup apply: %v", err)
 		}
 	}
-	_ = enableDataplaneOneshot()
+	if dataplaneOK {
+		_ = srv.store.Update(func(st *store.State) {
+			st.SetupComplete = true
+			st.SetupToken = ""
+		})
+		_ = srv.store.Save()
+		_ = enableDataplaneOneshot()
+	}
 
 	tok, err := srv.sessions.create()
-	if err == nil {
-		http.SetCookie(w, &http.Cookie{
-			Name:     sessionCookie,
-			Value:    tok,
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-			MaxAge:   int(sessionTTL.Seconds()),
-		})
+	if err == nil && dataplaneOK {
+		srv.setSessionCookie(w, r, tok)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":             true,
-		"setup_complete": true,
+		"ok":             dataplaneOK,
+		"setup_complete": dataplaneOK,
 		"dev_lan":        body.DevLAN,
 		"dev_wan":        body.DevWAN,
 		"tuning_tier":    autoRec.Tier,
@@ -207,7 +215,6 @@ func enableDataplaneOneshot() error {
 	return nil
 }
 
-// setupPrepareTC 引导时预置 ifb/HTB（复用 shaper.SetupP0）
 func (srv *Server) setupPrepareTC() error {
 	if os.Getuid() != 0 || srv.env.DevLAN == "" {
 		return nil

@@ -28,9 +28,16 @@ export const api = {
   health: () => request('/api/v1/health'),
   setup: {
     status: () => request('/api/v1/setup/status'),
-    interfaces: () => request('/api/v1/setup/interfaces'),
+    interfaces: (setupToken) =>
+      request('/api/v1/setup/interfaces', {
+        headers: setupToken ? { 'X-Setup-Token': setupToken } : {},
+      }),
     complete: (body) =>
-      request('/api/v1/setup/complete', { method: 'POST', body: JSON.stringify(body) }),
+      request('/api/v1/setup/complete', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: body.setup_token ? { 'X-Setup-Token': body.setup_token } : {},
+      }),
   },
   login: (user, pass) =>
     request('/api/v1/login', { method: 'POST', body: JSON.stringify({ user, pass }) }),

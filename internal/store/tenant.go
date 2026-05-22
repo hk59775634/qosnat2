@@ -59,8 +59,3 @@ func NormalizeTenant(t *TenantEntry) error {
 	t.CIDRs = cidrs
 	return nil
 }
-
-// TenantProfileTag 写入 profile 的 tenant 归属标记（存于 Device 字段后缀不可用，用 CIDR 映射）
-func TenantProfileKey(tenantID, cidr string) string {
-	return tenantID + "|" + cidr
-}

@@ -7,7 +7,6 @@ import (
 	"log"
 
 	"github.com/cilium/ebpf/ringbuf"
-	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 // HostEnsurer 收到 NEW_HOST 时建 HTB 类
@@ -64,25 +63,4 @@ func (m *Manager) StartRingbuf(ctx context.Context, hs HostEnsurer) error {
 		}
 	}()
 	return nil
-}
-
-// ReplayHostClasses 对已配置 host 预建 HTB
-func ReplayHostClasses(st store.State, hs HostEnsurer) {
-	if hs == nil {
-		return
-	}
-	for _, p := range store.SortProfilesByID(st.Shaper.Profiles) {
-		ip, ok := store.ProfileHostIP(p.CIDR)
-		if !ok {
-			continue
-		}
-		d, err := rateFromProfile(p.Down, p.Up)
-		if err != nil {
-			log.Printf("replay profile %s: %v", p.CIDR, err)
-			continue
-		}
-		if err := hs.EnsureHost(ip, d.DownBPS, d.UpBPS, 0); err != nil {
-			log.Printf("replay profile %s: %v", p.CIDR, err)
-		}
-	}
 }

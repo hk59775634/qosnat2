@@ -99,7 +99,7 @@ func writeTLSCertFiles(certPEM, keyPEM string) error {
 	}
 	certPEM = normalizePEM(certPEM)
 	keyPEM = normalizePEM(keyPEM)
-	if err := os.WriteFile(defaultTLSCertPath, []byte(certPEM), 0644); err != nil {
+	if err := os.WriteFile(defaultTLSCertPath, []byte(certPEM), 0640); err != nil {
 		return err
 	}
 	return os.WriteFile(defaultTLSKeyPath, []byte(keyPEM), 0600)

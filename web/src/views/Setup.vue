@@ -9,6 +9,7 @@ const steps = ['欢迎', '管理员', '网卡', 'NAT（可选）', '完成']
 const loading = ref(false)
 const err = ref('')
 const ifaces = ref([])
+const setupToken = ref('')
 
 const form = ref({
   admin_user: 'admin',
@@ -32,7 +33,12 @@ onMounted(async () => {
       router.replace('/')
       return
     }
-    const res = await api.setup.interfaces()
+    setupToken.value = st.setup_token || ''
+    if (!setupToken.value) {
+      err.value = '请通过本机 http://127.0.0.1 打开向导以获取 setup_token'
+      return
+    }
+    const res = await api.setup.interfaces(setupToken.value)
     ifaces.value = res.interfaces || []
     if (!form.value.dev_lan && ifaces.value.length) {
       const up = ifaces.value.filter((i) => i.up)
@@ -84,6 +90,7 @@ async function finish() {
       .filter(Boolean)
     const shared = form.value.shared_ip.trim() ? [form.value.shared_ip.trim()] : []
     await api.setup.complete({
+      setup_token: setupToken.value,
       admin_user: form.value.admin_user,
       admin_pass: form.value.admin_pass,
       dev_lan: form.value.dev_lan,

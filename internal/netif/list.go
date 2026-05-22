@@ -72,24 +72,3 @@ func ListDetails() ([]Detail, error) {
 	}
 	return list, nil
 }
-
-// IPv4Addrs 返回网卡上所有 IPv4 CIDR
-func IPv4Addrs(dev string) ([]string, error) {
-	list, err := ListDetails()
-	if err != nil {
-		return nil, err
-	}
-	for _, d := range list {
-		if d.Name != dev {
-			continue
-		}
-		var out []string
-		for _, a := range d.Addrs {
-			if a.Family == "inet" {
-				out = append(out, a.CIDR)
-			}
-		}
-		return out, nil
-	}
-	return nil, fmt.Errorf("interface %q not found", dev)
-}

@@ -34,7 +34,7 @@ func runApplyState() {
 		log.Printf("ebpf load: %v", err)
 	}
 	srv := api.New(env, st, bpfM)
-	if !st.Get().SetupComplete && env.DevLAN == "" {
+	if !st.Get().SetupComplete {
 		log.Fatalf("apply-state: initial setup not complete (open Web UI wizard)")
 	}
 	log.Printf("apply-state: sysctl+tc+nft LAN=%s WAN=%s", env.DevLAN, env.DevWAN)
@@ -64,6 +64,12 @@ func runServer() {
 		defer bpfM.Close()
 	}
 	srv := api.New(env, st, bpfM)
+	if err := srv.EnsureSetupToken(); err != nil {
+		log.Printf("setup token: %v", err)
+	}
+	if err := srv.PersistState(); err != nil {
+		log.Printf("save setup token: %v", err)
+	}
 	if err := srv.ApplyAll(); err != nil {
 		log.Printf("apply on start: %v", err)
 	}

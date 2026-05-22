@@ -70,17 +70,20 @@ type SystemState struct {
 	TLSEnabled         bool   `json:"tls_enabled,omitempty"`
 }
 
-// APIKey 持久化 API Key
+// APIKey 持久化 API Key（仅存 key_hash；创建时明文仅返回一次）
 type APIKey struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
-	Key       string `json:"key"`
+	KeyHash   string `json:"key_hash,omitempty"`
+	KeyPrefix string `json:"key_prefix,omitempty"`
+	Key       string `json:"key,omitempty"` // 迁移用，保存前清空
 	CreatedAt string `json:"created_at"`
 }
 
 // State 完整持久化（/var/lib/qosnat2/state.json）
 type State struct {
 	SetupComplete  bool              `json:"setup_complete"`
+	SetupToken     string            `json:"setup_token,omitempty"` // 一次性引导 token，完成后清空
 	AdminUser     string `json:"admin_user,omitempty"`
 	AdminPassHash string `json:"admin_pass_hash,omitempty"`
 	PolicyRoutes   []string          `json:"policy_routes"`
@@ -173,9 +176,10 @@ func (s *Store) Load() error {
 }
 
 func (s *Store) Save() error {
-	s.mu.RLock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	migrateAPIKeysLocked(&s.State.APIKeys)
 	b, err := json.MarshalIndent(s.State, "", "  ")
-	s.mu.RUnlock()
 	if err != nil {
 		return err
 	}
@@ -283,12 +287,7 @@ func (s *Store) ensureDefaultsLocked() {
 	MigrateHostsToProfiles(&s.State.Shaper.Profiles, s.State.Shaper.Hosts)
 	s.State.Shaper.Hosts = nil
 	NormalizeProfileIDs(&s.State.Shaper.Profiles)
-	// 旧部署：env 已配置网卡但 state 无 setup_complete
-	if !s.State.SetupComplete {
-		if lan, wan := os.Getenv("DEV_LAN"), os.Getenv("DEV_WAN"); lan != "" && wan != "" {
-			s.State.SetupComplete = true
-		}
-	}
+	migrateAPIKeysLocked(&s.State.APIKeys)
 }
 
 // MbitToBPS 字节/秒（与 tc/htb 一致：mbit * 125000）
