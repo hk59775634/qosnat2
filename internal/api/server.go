@@ -279,6 +279,8 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	complete := srv.setupComplete()
+	st := srv.store.Get()
+	tlsActive := srv.env.TLSCert != "" && srv.env.TLSKey != ""
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
 		"service":         "qosnatd",
@@ -289,6 +291,10 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"dev_wan":         srv.env.DevWAN,
 		"bpf":             srv.bpf != nil && srv.bpf.Ready(),
 		"tc_attach":       srv.bpf != nil && srv.bpf.AttachedDev() != "",
+		"tls_enabled":     st.System.TLSEnabled,
+		"tls_active":      tlsActive,
+		"suggest_https":   st.System.TLSEnabled && !tlsActive,
+		"admin_port":      srv.env.AdminPort,
 	})
 }
 

@@ -11,6 +11,7 @@ ADMIN_PORT="${ADMIN_PORT:-8080}"
 STATE_DIR="${STATE_DIR:-/var/lib/qosnat2}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/qosnat2}"
 SKIP_WEB_BUILD="${SKIP_WEB_BUILD:-0}"
+BUILD_WEB="${BUILD_WEB:-0}"
 
 QOSNATD_SRC="${ROOT}/cmd/qosnatd"
 QOSNATD_BIN="/usr/local/bin/qosnatd"
@@ -63,6 +64,10 @@ build_bpf() {
 build_web() {
   if [[ "${SKIP_WEB_BUILD}" == "1" ]]; then
     warn "SKIP_WEB_BUILD=1，跳过前端构建"
+    return 0
+  fi
+  if [[ "${BUILD_WEB}" != "1" && -f "${WEB_DIST}/index.html" ]]; then
+    log "web/dist 已存在，跳过构建（使用 -BuildWeb 强制重建）"
     return 0
   fi
   if command -v npm &>/dev/null && [[ -f "${ROOT}/web/package.json" ]]; then
@@ -232,22 +237,37 @@ cmd_status() {
 
 usage() {
   cat <<EOF
-用法: $0 {start|stop|status}
+用法: $0 [选项] {start|stop|status}
 
   start  — 编译安装 qosnatd + Web UI，仅启动控制面（不加载 NAT/QoS）
   stop   — 停止服务
   status — 服务与健康检查
 
+选项:
+  -BuildWeb     强制 npm run build（即使 web/dist 已存在）
+  -SkipWeb      跳过前端构建（等同 SKIP_WEB_BUILD=1）
+
 首次安装后请用浏览器完成「初始设置」向导（管理员账号、LAN/WAN 网卡等）。
 数据面在向导点击「完成」后才会 apply（并启用 qos-nat.service）。
 
-可选环境变量（高级/自动化，跳过向导部分步骤）:
+可选环境变量:
   DEV_LAN=... DEV_WAN=... ADMIN_USER=... ADMIN_PASS=...
-  ADMIN_PORT=8080  SKIP_WEB_BUILD=1
+  ADMIN_PORT=8080  SKIP_WEB_BUILD=1  BUILD_WEB=1
 EOF
 }
 
-case "${1:-}" in
+CMD=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -BuildWeb) BUILD_WEB=1; shift ;;
+    -SkipWeb)  SKIP_WEB_BUILD=1; shift ;;
+    start|stop|status) CMD="$1"; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "未知参数: $1（$0 -h 查看帮助）" ;;
+  esac
+done
+
+case "${CMD:-}" in
   start)  cmd_start ;;
   stop)   cmd_stop ;;
   status) cmd_status ;;

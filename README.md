@@ -102,8 +102,18 @@ curl -s http://127.0.0.1:8080/api/v1/setup/status
 ## API 与测试
 
 - OpenAPI：`api/openapi.yaml`，运行时 `GET /openapi.yaml`
-- 鉴权：Session Cookie `qosnat_sess` 或 `X-API-Key`（实验性）
-- 冒烟：`scripts/test-ui-api.sh`（需已登录或设置 `QOSNAT_API_KEY`）
+- 鉴权：见 [docs/API-AUTH.md](docs/API-AUTH.md)（Session Cookie / `QOSNAT_API_KEY`）
+- 冒烟：`scripts/test-ui-api.sh`
+- HTTPS 验收：`sudo QOSNAT_PASS=… scripts/acceptance-https.sh`
+- CI：GitHub Actions `.github/workflows/ci.yml`（`go test` + `npm run build`）
+
+## 部署选项
+
+```bash
+sudo ./deploy-qos-nat.sh start           # 默认：无 dist 时才 npm build
+sudo ./deploy-qos-nat.sh -BuildWeb start # 强制重建 web/dist
+sudo ./deploy-qos-nat.sh -SkipWeb start  # 跳过前端构建
+```
 
 ## 最小验收环境
 

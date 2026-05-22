@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -114,13 +115,14 @@ func removeTLSFiles() {
 }
 
 // applyTLS 写入证书、更新 env；enabled=false 时清除 env 中的 TLS 行（保留磁盘文件可选）
-func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) error {
+// 调用方在 HTTP 响应写出后再 restart（避免中断当前请求）。
+func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart bool, err error) {
 	if enabled {
 		if err := validateCertKeyPair(certPEM, keyPEM); err != nil {
-			return err
+			return false, err
 		}
 		if err := writeTLSCertFiles(certPEM, keyPEM); err != nil {
-			return err
+			return false, err
 		}
 		srv.env.TLSCert = defaultTLSCertPath
 		srv.env.TLSKey = defaultTLSKeyPath
@@ -129,14 +131,24 @@ func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) error {
 		srv.env.TLSKey = ""
 	}
 	if err := writeRuntimeEnvMerged(srv.env); err != nil {
-		return err
+		return false, err
 	}
 	_ = srv.store.Update(func(st *store.State) {
 		st.System.TLSEnabled = enabled
 	})
 	_ = srv.store.Save()
 	srv.reloadEnv()
-	return restartQoSnatd()
+	return true, nil
+}
+
+// scheduleQoSnatdRestart 在响应返回后重启，使 TLS 监听生效
+func scheduleQoSnatdRestart() {
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		if err := restartQoSnatd(); err != nil {
+			log.Printf("restart qosnatd: %v", err)
+		}
+	}()
 }
 
 func restartQoSnatd() error {

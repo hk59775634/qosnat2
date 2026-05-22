@@ -118,6 +118,134 @@ components:
         dev_wan: { type: string }
         bpf: { type: boolean }
         tc_attach: { type: boolean }
+        setup_complete: { type: boolean }
+        setup_required: { type: boolean }
+        tls_enabled: { type: boolean }
+        tls_active: { type: boolean }
+        suggest_https: { type: boolean, description: 已配置 HTTPS 但进程仍监听 HTTP，需重启 qosnatd }
+        admin_port: { type: string }
+    TLSStatus:
+      type: object
+      properties:
+        tls_enabled: { type: boolean }
+        tls_active: { type: boolean }
+        cert_path: { type: string }
+        key_path: { type: string }
+        has_cert_file: { type: boolean }
+        has_key_file: { type: boolean }
+        cert_subject: { type: string }
+        cert_not_after: { type: string, format: date-time }
+    GeneralSettings:
+      type: object
+      properties:
+        hostname: { type: string }
+        admin_user: { type: string }
+        dev_lan: { type: string }
+        dev_wan: { type: string }
+        setup_complete: { type: boolean }
+        tls:
+          $ref: '#/components/schemas/TLSStatus'
+    GeneralSettingsPut:
+      type: object
+      properties:
+        hostname: { type: string }
+        new_password: { type: string, minLength: 8 }
+        current_password: { type: string }
+        tls_enabled: { type: boolean }
+        tls_cert: { type: string, description: PEM 证书 }
+        tls_key: { type: string, description: PEM 私钥 }
+    IfaceAddr:
+      type: object
+      properties:
+        family: { type: string }
+        cidr: { type: string }
+        scope: { type: string }
+    IfaceTraffic:
+      type: object
+      properties:
+        rx_mbps: { type: number }
+        tx_mbps: { type: number }
+    IfaceListItem:
+      type: object
+      properties:
+        name: { type: string }
+        up: { type: boolean }
+        operstate: { type: string }
+        mac: { type: string }
+        addrs: { type: array, items: { $ref: '#/components/schemas/IfaceAddr' } }
+        link_speed_mbps: { type: integer, description: 协商线速 Mbps，0=未知 }
+        role: { type: string, enum: [LAN, WAN] }
+        traffic: { $ref: '#/components/schemas/IfaceTraffic' }
+        rss_channels: { type: integer }
+    TrafficPoint:
+      type: object
+      properties:
+        ts: { type: integer, format: int64 }
+        lan_rx_mbps: { type: number }
+        lan_tx_mbps: { type: number }
+        wan_rx_mbps: { type: number }
+        wan_tx_mbps: { type: number }
+        cpu_percent: { type: number }
+        conntrack: { type: integer }
+    EthtoolRing:
+      type: object
+      properties:
+        rx_max: { type: integer }
+        rx_current: { type: integer }
+        tx_max: { type: integer }
+        tx_current: { type: integer }
+    EthtoolOffloads:
+      type: object
+      properties:
+        gro: { type: string }
+        gso: { type: string }
+        tx_checksum: { type: string }
+        rx_checksum: { type: string }
+    EthtoolInfo:
+      type: object
+      properties:
+        device: { type: string }
+        ring: { $ref: '#/components/schemas/EthtoolRing' }
+        offloads: { $ref: '#/components/schemas/EthtoolOffloads' }
+    EthtoolPut:
+      type: object
+      properties:
+        rx_ring: { type: integer }
+        tx_ring: { type: integer }
+        offloads: { $ref: '#/components/schemas/EthtoolOffloads' }
+    VLANIface:
+      type: object
+      properties:
+        id: { type: string }
+        parent: { type: string }
+        vid: { type: integer, minimum: 1 }
+        name: { type: string }
+        ipv4: { type: array, items: { type: string } }
+        up: { type: boolean }
+    WanLink:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        device: { type: string }
+        gateway: { type: string }
+        metric: { type: integer }
+        tier: { type: integer }
+        weight: { type: integer, description: 占位，尚未参与选路 }
+        enabled: { type: boolean }
+    ShaperTC:
+      type: object
+      properties:
+        leaf: { type: string, enum: [fq_codel, cake, fq] }
+        fq_flows: { type: integer }
+        fq_quantum: { type: integer }
+    ShaperTCPut:
+      type: object
+      properties:
+        leaf: { type: string, enum: [fq_codel, cake, fq] }
+        fq_flows: { type: integer }
+        fq_quantum: { type: integer }
+        apply: { type: boolean, description: true 时重建 TC 数据面 }
     WGPeer:
       type: object
       required: [name, public_key]
@@ -826,9 +954,36 @@ paths:
     get:
       tags: [system]
       summary: 常规设置（hostname、HTTPS 状态）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeneralSettings'
     put:
       tags: [system]
-      summary: 更新 hostname、密码或 HTTPS（tls_enabled/tls_cert/tls_key，改 HTTPS 需 current_password）
+      summary: 更新 hostname、密码或 HTTPS（改 HTTPS 需 current_password）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeneralSettingsPut'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  warning: { type: string, description: 如需手动 restart qosnatd }
+                  tls:
+                    $ref: '#/components/schemas/TLSStatus'
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/v1/system/audit:
     get:
@@ -870,6 +1025,18 @@ paths:
             application/json:
               schema:
                 type: object
+                properties:
+                  dev_lan: { type: string }
+                  dev_wan: { type: string }
+                  netplan_path: { type: string }
+                  interfaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IfaceListItem'
+                  traffic_history:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TrafficPoint'
     put:
       tags: [network]
       summary: 修改网卡 IPv4 与 up/down
@@ -906,6 +1073,181 @@ paths:
             application/json:
               schema:
                 type: object
+
+  /api/v1/interfaces/ethtool:
+    get:
+      tags: [network]
+      summary: 读取 ethtool ring 与 offload
+      parameters:
+        - name: device
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EthtoolInfo'
+    put:
+      tags: [network]
+      summary: 设置 ring 或 offload（ethtool -G / -K）
+      parameters:
+        - name: device
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EthtoolPut'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  ethtool:
+                    $ref: '#/components/schemas/EthtoolInfo'
+
+  /api/v1/network/vlans:
+    get:
+      tags: [network]
+      summary: VLAN 列表（netplan）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vlans:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VLANIface'
+                  netplan_path: { type: string }
+    post:
+      tags: [network]
+      summary: 添加 VLAN 并 netplan apply
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VLANIface'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VLANIface'
+    delete:
+      tags: [network]
+      summary: 删除 VLAN（query id）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/network/wan-links:
+    get:
+      tags: [network]
+      summary: 多 WAN 链路列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wan_links:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WanLink'
+                  dev_wan: { type: string }
+    post:
+      tags: [network]
+      summary: 添加 WAN 链路并同步 default 路由
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WanLink'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WanLink'
+    put:
+      tags: [network]
+      summary: 更新 WAN 链路（query id）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WanLink'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [network]
+      summary: 删除 WAN 链路
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/shaper/tc:
+    get:
+      tags: [shaper]
+      summary: HTB 叶子队列类型与 fq 参数
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShaperTC'
+    put:
+      tags: [shaper]
+      summary: 更新叶子队列；apply=true 时重建 TC
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShaperTCPut'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Ok'
+                  - $ref: '#/components/schemas/ShaperTC'
 
   /api/v1/vpn/wireguard:
     get:

@@ -50,39 +50,55 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			if enabled {
 				cert := strings.TrimSpace(body.TLSCert)
 				key := strings.TrimSpace(body.TLSKey)
+				var needRestart bool
+				var applyErr error
 				if cert == "" || key == "" {
 					if !tlsFileExists(defaultTLSCertPath) || !tlsFileExists(defaultTLSKeyPath) {
 						writeJSON(w, http.StatusBadRequest, map[string]string{"error": "paste or upload certificate and private key PEM"})
 						return
 					}
-					// 仅开启：使用已有文件
 					srv.env.TLSCert = defaultTLSCertPath
 					srv.env.TLSKey = defaultTLSKeyPath
-					if err := writeRuntimeEnvMerged(srv.env); err != nil {
-						writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-						return
-					}
-					_ = srv.store.Update(func(st *store.State) { st.System.TLSEnabled = true })
-					_ = srv.store.Save()
-					srv.reloadEnv()
-					if err := restartQoSnatd(); err != nil {
-						writeJSON(w, http.StatusOK, map[string]any{"ok": true, "warning": err.Error(), "tls": srv.tlsStatus()})
-						return
+					applyErr = writeRuntimeEnvMerged(srv.env)
+					if applyErr == nil {
+						_ = srv.store.Update(func(st *store.State) { st.System.TLSEnabled = true })
+						_ = srv.store.Save()
+						srv.reloadEnv()
+						needRestart = true
 					}
 				} else {
-					if err := srv.applyTLS(true, cert, key); err != nil {
-						writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-						return
-					}
-					srv.auditLog(r, "system.tls", "enabled")
+					needRestart, applyErr = srv.applyTLS(true, cert, key)
 				}
-			} else {
-				if err := srv.applyTLS(false, "", ""); err != nil {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				if applyErr != nil {
+					writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
 					return
 				}
-				srv.auditLog(r, "system.tls", "disabled")
+				srv.auditLog(r, "system.tls", "enabled")
+				writeJSON(w, http.StatusOK, map[string]any{
+					"ok":      true,
+					"warning": "qosnatd 正在重启以启用 HTTPS，约 2 秒后请使用 https:// 访问",
+					"tls":     srv.tlsStatus(),
+				})
+				if needRestart {
+					scheduleQoSnatdRestart()
+				}
+				return
 			}
+			needRestart, applyErr := srv.applyTLS(false, "", "")
+			if applyErr != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
+				return
+			}
+			srv.auditLog(r, "system.tls", "disabled")
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":      true,
+				"warning": "qosnatd 正在重启以关闭 HTTPS",
+				"tls":     srv.tlsStatus(),
+			})
+			if needRestart {
+				scheduleQoSnatdRestart()
+			}
+			return
 		}
 		if body.NewPassword != "" {
 			if len(body.NewPassword) < 8 {
