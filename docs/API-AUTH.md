@@ -44,3 +44,15 @@ curl -sk -H "X-API-Key: $QOSNAT_API_KEY" https://127.0.0.1:8080/api/v1/health
 ```
 
 验收脚本：`scripts/acceptance-https.sh`（需 root、已 setup_complete、已知管理员密码）。
+
+## 只读角色（P3）
+
+| 方式 | 配置 |
+|------|------|
+| 账号 | 在 `state.json` 设置 `readonly_user` + `readonly_pass_hash`（bcrypt），用该用户登录 |
+| API Key | 创建密钥时 body `{"name":"monitor","role":"readonly"}` |
+
+只读身份：**GET/HEAD** 允许；**POST/PUT/DELETE** 返回 `403`。  
+`GET /api/v1/session` 返回 `role` 与 `read_only: true`。
+
+管理员仍使用 `admin_user` / `admin_pass_hash`（或 env `ADMIN_USER` / `ADMIN_PASS`）。

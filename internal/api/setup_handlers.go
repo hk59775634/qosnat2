@@ -165,7 +165,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = enableDataplaneOneshot()
 
-	tok, err := srv.sessions.create()
+	tok, err := srv.sessions.create(roleAdmin)
 	if err == nil {
 		http.SetCookie(w, &http.Cookie{
 			Name:     sessionCookie,

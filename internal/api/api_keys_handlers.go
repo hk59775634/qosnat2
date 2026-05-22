@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -23,6 +24,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 		type item struct {
 			ID        string `json:"id"`
 			Name      string `json:"name"`
+			Role      string `json:"role"`
 			CreatedAt string `json:"created_at"`
 			Prefix    string `json:"key_prefix"`
 		}
@@ -32,15 +34,28 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			if len(pfx) > 8 {
 				pfx = pfx[:8] + "…"
 			}
-			out = append(out, item{ID: k.ID, Name: k.Name, CreatedAt: k.CreatedAt, Prefix: pfx})
+			role := k.Role
+			if role == "" {
+				role = "admin"
+			}
+			out = append(out, item{ID: k.ID, Name: k.Name, Role: role, CreatedAt: k.CreatedAt, Prefix: pfx})
 		}
 		writeJSON(w, http.StatusOK, out)
 	case http.MethodPost:
 		var body struct {
 			Name string `json:"name"`
+			Role string `json:"role"`
 		}
 		if err := readJSON(r, &body); err != nil || body.Name == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+			return
+		}
+		role := strings.TrimSpace(body.Role)
+		if role == "" {
+			role = "admin"
+		}
+		if role != "admin" && role != "readonly" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "role must be admin or readonly"})
 			return
 		}
 		raw := make([]byte, 24)
@@ -53,6 +68,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			ID:        "key-" + hex.EncodeToString(raw[:8]),
 			Name:      body.Name,
 			Key:       key,
+			Role:      role,
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		}
 		_ = srv.store.Update(func(st *store.State) {
@@ -61,7 +77,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Save()
 		srv.auditLog(r, "apikey.create", ak.Name)
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"id": ak.ID, "name": ak.Name, "key": key, "created_at": ak.CreatedAt,
+			"id": ak.ID, "name": ak.Name, "key": key, "role": ak.Role, "created_at": ak.CreatedAt,
 		})
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")

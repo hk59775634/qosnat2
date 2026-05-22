@@ -34,9 +34,15 @@ func (srv *Server) handleDHCPGet(w http.ResponseWriter, r *http.Request) {
 	if dnsmasq.ShowStatus().Installed {
 		rendered = dnsmasq.RenderConf(cfg, srv.env.DevWAN)
 	}
+	dnsSt := dnsmasq.ShowStatus()
+	leases := dnsmasq.ParseLeases(dnsSt.LeasesRaw)
+	if leases == nil {
+		leases = []dnsmasq.LeaseEntry{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"config":      cfg,
-		"status":      dnsmasq.ShowStatus(),
+		"status":      dnsSt,
+		"leases":      leases,
 		"interfaces":  ifaces,
 		"dev_lan":     srv.env.DevLAN,
 		"dev_wan":     srv.env.DevWAN,

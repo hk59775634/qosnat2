@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strings"
+
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/hk59775634/qosnat2/internal/shaper"
@@ -30,11 +32,29 @@ func (srv *Server) setupComplete() bool {
 }
 
 func (srv *Server) verifyAdmin(user, pass string) bool {
+	role, ok := srv.verifyUserRole(user, pass)
+	return ok && role == "admin"
+}
+
+func (srv *Server) verifyUserRole(user, pass string) (role string, ok bool) {
 	st := srv.store.Get()
-	if st.AdminPassHash != "" && st.AdminUser != "" {
-		return user == st.AdminUser && checkPassword(st.AdminPassHash, pass)
+	user = strings.TrimSpace(user)
+	if st.AdminPassHash != "" && st.AdminUser != "" && user == st.AdminUser {
+		if checkPassword(st.AdminPassHash, pass) {
+			return "admin", true
+		}
+		return "", false
 	}
-	return user == srv.env.AdminUser && pass == srv.env.AdminPass
+	if st.ReadOnlyPassHash != "" && st.ReadOnlyUser != "" && user == st.ReadOnlyUser {
+		if checkPassword(st.ReadOnlyPassHash, pass) {
+			return "readonly", true
+		}
+		return "", false
+	}
+	if st.AdminPassHash == "" && user == srv.env.AdminUser && pass == srv.env.AdminPass {
+		return "admin", true
+	}
+	return "", false
 }
 
 func (srv *Server) reloadEnv() {

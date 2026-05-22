@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -20,6 +21,7 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"vlans":        vlans,
 			"netplan_path": netif.NetplanConfigPathForAPI(),
+			"cloud_init_note": "基线网口可由 /etc/netplan/50-cloud-init.yaml 提供；本页变更写入 99-qosnat2.yaml",
 		})
 	case http.MethodPost:
 		var body store.VLANIface
@@ -27,28 +29,58 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 			return
 		}
-		if body.ID == "" {
-			body.ID = store.NewVLANID()
-		}
-		if body.Parent == "" || body.VID < 1 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parent and vid required"})
+		if err := srv.validateVLANBody(&body, true); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		if !route.LinkExists(body.Parent) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "parent interface not found"})
-			return
-		}
-		body.Name = netif.VLANName(body.Parent, body.VID)
-		_ = srv.store.Update(func(st *store.State) {
+		if err := srv.applyNetplanWithRollback(func(st *store.State) error {
+			if body.ID == "" {
+				body.ID = store.NewVLANID()
+			}
 			st.Network.VLANs = append(st.Network.VLANs, body)
-		})
-		_ = srv.store.Save()
-		if err := srv.applyNetplan(); err != nil {
+			return nil
+		}); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		srv.auditLog(r, "network.vlan.add", body.Name)
 		writeJSON(w, http.StatusOK, body)
+	case http.MethodPut:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id query required"})
+			return
+		}
+		var body store.VLANIface
+		if err := readJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			return
+		}
+		body.ID = id
+		if err := srv.validateVLANBody(&body, false); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		found := false
+		if err := srv.applyNetplanWithRollback(func(st *store.State) error {
+			for i, v := range st.Network.VLANs {
+				if v.ID == id {
+					st.Network.VLANs[i] = body
+					found = true
+					return nil
+				}
+			}
+			return nil
+		}); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vlan not found"})
+			return
+		}
+		srv.auditLog(r, "network.vlan.put", body.Name)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "vlan": body})
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
@@ -67,7 +99,7 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vlan not found"})
 			return
 		}
-		_ = srv.store.Update(func(st *store.State) {
+		if err := srv.applyNetplanWithRollback(func(st *store.State) error {
 			var out []store.VLANIface
 			for _, v := range st.Network.VLANs {
 				if v.ID != id {
@@ -75,9 +107,8 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			st.Network.VLANs = out
-		})
-		_ = srv.store.Save()
-		if err := srv.applyNetplan(); err != nil {
+			return nil
+		}); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -86,6 +117,20 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (srv *Server) validateVLANBody(v *store.VLANIface, newID bool) error {
+	if v.Parent == "" || v.VID < 1 || v.VID > 4094 {
+		return fmt.Errorf("parent and vid 1-4094 required")
+	}
+	if !route.LinkExists(v.Parent) {
+		return errDeviceNotFound(v.Parent + " not found")
+	}
+	v.Name = netif.VLANName(v.Parent, v.VID)
+	if newID && v.ID == "" {
+		v.ID = store.NewVLANID()
+	}
+	return nil
 }
 
 func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request) {

@@ -68,19 +68,22 @@ type SystemState struct {
 	TLSEnabled         bool   `json:"tls_enabled,omitempty"`
 }
 
-// APIKey 持久化 API Key
+// APIKey 持久化 API Key（role: admin | readonly）
 type APIKey struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Key       string `json:"key"`
+	Role      string `json:"role,omitempty"`
 	CreatedAt string `json:"created_at"`
 }
 
 // State 完整持久化（/var/lib/qosnat2/state.json）
 type State struct {
 	SetupComplete  bool              `json:"setup_complete"`
-	AdminUser      string            `json:"admin_user,omitempty"`
-	AdminPassHash  string            `json:"admin_pass_hash,omitempty"`
+	AdminUser           string `json:"admin_user,omitempty"`
+	AdminPassHash       string `json:"admin_pass_hash,omitempty"`
+	ReadOnlyUser        string `json:"readonly_user,omitempty"`
+	ReadOnlyPassHash    string `json:"readonly_pass_hash,omitempty"`
 	PolicyRoutes   []string          `json:"policy_routes"`
 	Routes         []RouteEntry      `json:"routes"`
 	SharedIPs      []string          `json:"shared_ips"`

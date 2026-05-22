@@ -9,6 +9,7 @@ const interfaces = ref([])
 const devLan = ref('')
 const devWan = ref('')
 const rendered = ref('')
+const leases = ref([])
 const err = ref('')
 const ok = ref('')
 const dnsText = ref('')
@@ -29,6 +30,7 @@ async function load() {
   devLan.value = d.dev_lan || ''
   devWan.value = d.dev_wan || ''
   rendered.value = d.rendered || ''
+  leases.value = d.leases || []
   dnsText.value = (cfg.value.dns_servers || []).join('\n')
   if (!cfg.value.interface && devLan.value) {
     cfg.value.interface = devLan.value
@@ -68,12 +70,6 @@ function addStatic() {
 
 function removeStatic(i) {
   cfg.value.static_leases.splice(i, 1)
-}
-
-function leaseLines() {
-  const raw = status.value?.leases_raw || ''
-  if (!raw.trim()) return []
-  return raw.trim().split('\n').filter(Boolean)
 }
 
 onMounted(load)
@@ -211,8 +207,30 @@ onMounted(load)
       </section>
 
       <section class="card p-4">
-        <h3 class="font-medium mb-3">当前租约（dnsmasq.leases）</h3>
-        <pre class="text-xs font-mono bg-slate-50 p-2 rounded overflow-auto max-h-48">{{ leaseLines().join('\n') || '（无）' }}</pre>
+        <h3 class="font-medium mb-3">当前租约</h3>
+        <table class="data w-full text-xs">
+          <thead>
+            <tr>
+              <th>类型</th><th>IP</th><th>MAC</th><th>主机名</th><th>到期</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(l, i) in leases" :key="i">
+              <td>{{ l.family }}</td>
+              <td class="font-mono">{{ l.ip }}</td>
+              <td class="font-mono">{{ l.mac }}</td>
+              <td>{{ l.hostname || '—' }}</td>
+              <td class="font-mono text-slate-500">{{ l.expires || l.expires_unix }}</td>
+            </tr>
+            <tr v-if="!leases.length">
+              <td colspan="5" class="text-center text-slate-400 py-3">无活跃租约</td>
+            </tr>
+          </tbody>
+        </table>
+        <pre
+          v-if="status?.leases_raw"
+          class="text-xs font-mono bg-slate-50 p-2 rounded overflow-auto max-h-24 mt-2 text-slate-500"
+        >{{ status.leases_raw }}</pre>
         <h3 class="font-medium mt-4 mb-2 text-sm">生成的配置预览</h3>
         <pre class="text-xs font-mono bg-slate-50 p-2 rounded overflow-auto max-h-40">{{ rendered || '# 启用后显示' }}</pre>
       </section>

@@ -81,11 +81,10 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface cannot be managed via netplan"})
 		return
 	}
-	_ = srv.store.Update(func(st *store.State) {
+	if err := srv.applyNetplanWithRollback(func(st *store.State) error {
 		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, nil)
-	})
-	_ = srv.store.Save()
-	if err := srv.applyNetplan(); err != nil {
+		return nil
+	}); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

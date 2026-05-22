@@ -120,7 +120,7 @@ func NormalizeDHCP(d *DHCPState, defaultIface string) error {
 		})
 	}
 	d.StaticLeases = leases
-	return nil
+	return NormalizeDHCPv6(d)
 }
 
 // DefaultDHCP 默认配置（未启用）

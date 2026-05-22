@@ -106,6 +106,7 @@ curl -s http://127.0.0.1:8080/api/v1/setup/status
 - 冒烟：`scripts/test-ui-api.sh`
 - HTTPS 验收：`sudo QOSNAT_PASS=… scripts/acceptance-https.sh`
 - P2 iperf 对账：`sudo bash -c 'source /etc/qosnat2/env; scripts/acceptance-p2-iperf.sh'`（需 SSH `root@100.64.0.254`）
+- P3 冒烟：`sudo bash -c 'source /etc/qosnat2/env; scripts/acceptance-p3-smoke.sh'`
 - CI：GitHub Actions `.github/workflows/ci.yml`（`go test` + `npm run build`）
 
 ## 部署选项

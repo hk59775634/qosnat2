@@ -113,7 +113,16 @@ export const api = {
     vlans: {
       list: () => request('/api/v1/network/vlans'),
       add: (body) => request('/api/v1/network/vlans', { method: 'POST', body: JSON.stringify(body) }),
+      put: (id, body) =>
+        request(`/api/v1/network/vlans?id=${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        }),
       del: (id) => request(`/api/v1/network/vlans?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
+    netplan: {
+      preview: () => request('/api/v1/network/netplan'),
+      apply: () => request('/api/v1/network/netplan/apply', { method: 'POST', body: '{}' }),
     },
     wanLinks: {
       list: () => request('/api/v1/network/wan-links'),
