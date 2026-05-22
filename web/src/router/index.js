@@ -13,7 +13,6 @@ const routes = [
       { path: 'nat/forwards', name: 'nat-forwards', component: () => import('@/views/nat/PortForwards.vue') },
       { path: 'firewall/rules', name: 'firewall-rules', component: () => import('@/views/security/FirewallRules.vue') },
       { path: 'firewall/aliases', name: 'firewall-aliases', component: () => import('@/views/security/Aliases.vue') },
-      { path: 'firewall/geoip', redirect: { name: 'firewall-rules' } },
       { path: 'shaper/wizard', redirect: { name: 'shaper-profiles' } },
       { path: 'shaper/profiles', name: 'shaper-profiles', component: () => import('@/views/shaper/Profiles.vue') },
       { path: 'shaper/vip', redirect: { name: 'shaper-profiles' } },

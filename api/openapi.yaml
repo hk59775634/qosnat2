@@ -825,10 +825,10 @@ paths:
   /api/v1/system/general:
     get:
       tags: [system]
-      summary: 常规设置（hostname、管理员）
+      summary: 常规设置（hostname、HTTPS 状态）
     put:
       tags: [system]
-      summary: 更新 hostname 或管理员密码
+      summary: 更新 hostname、密码或 HTTPS（tls_enabled/tls_cert/tls_key，改 HTTPS 需 current_password）
 
   /api/v1/system/audit:
     get:

@@ -11,7 +11,7 @@
 | **初始设置向导** | 安装后仅启动 Web；浏览器完成管理员、LAN/WAN、策略路由等后再加载数据面（类似 AdGuard Home） |
 | **高级设置 · 系统优化** | sysctl / conntrack / TCP / 网卡 txqueuelen & RPS / QoS 叶子队列；按 **CPU+内存** 自动推荐，可手动覆盖 |
 | **防火墙规则** | 自定义 forward/input nft 规则（Web 编辑） |
-| **常规设置 / 审计** | 改 hostname/密码、审计日志、API 密钥管理页 |
+| **常规设置 / 审计** | hostname/密码、**HTTPS 开关与证书**、审计、API 密钥 |
 | **NAT** | Outbound SNAT 池、1:1、前缀映射、WAN 端口转发、策略路由 |
 | **QoS** | Per-IP HTB + eBPF `profile_lpm`；网段与单 IP（`/32`）均在 QoS 策略页，`POST /shaper/wizard` |
 | **网络** | 接口 4h 流量、实时速率（线速占比/手动基准）、ethtool、**netplan** IPv4/VLAN、路由、DHCP |
@@ -91,7 +91,7 @@ curl -s http://127.0.0.1:8080/api/v1/setup/status
 - **Security** — 防火墙规则（forward/input）
 - **Observability / VPN / Diagnostics** — eBPF、Mark、conntrack、抓包、WireGuard
 
-> GeoIP 页与 `shaper/hosts` API 已移除（2026-05-22）；`/32` 在 **QoS 策略** 配置。
+> `/32` 限速在 **QoS 策略** 配置；**HTTPS** 在 **常规设置** 页启用并上传/粘贴证书。
 
 ### 系统优化（高级设置）
 

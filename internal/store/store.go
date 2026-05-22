@@ -65,6 +65,7 @@ type SystemState struct {
 	PerfPreset         bool   `json:"perf_preset,omitempty"`
 	TuningAutoApplied  bool   `json:"tuning_auto_applied,omitempty"`
 	TuningTier         string `json:"tuning_tier,omitempty"`
+	TLSEnabled         bool   `json:"tls_enabled,omitempty"`
 }
 
 // APIKey 持久化 API Key
