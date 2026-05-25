@@ -1,10 +1,8 @@
 package api
 
 import (
-	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/ocserv"
@@ -19,6 +17,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 			"config":         ocservPublicConfig(st.VPN.OCServ),
 			"status":         ocserv.InstallInfo(),
 			"install_script": ocserv.InstallScriptPath(),
+			"install_job":    ocserv.GetInstallStatus(),
 			"conf_path":      ocserv.ConfPath,
 		})
 	case http.MethodPut:
@@ -61,13 +60,23 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func (srv *Server) handleOCServInstallStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, http.StatusOK, ocserv.GetInstallStatus())
+}
+
 func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "install requires root on qosnatd host"})
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "安装需要 root 运行 qosnatd（systemd 未降权或使用 sudo 启动服务）",
+		})
 		return
 	}
 	script := ocserv.InstallScriptPath()
@@ -75,19 +84,16 @@ func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "install script not found"})
 		return
 	}
+	if err := ocserv.StartInstallAsync(script); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
 	srv.auditLog(r, "vpn.ocserv.install.start", script)
-	go func() {
-		out, err := exec.Command("bash", script).CombinedOutput()
-		if err != nil {
-			log.Printf("ocserv install: %s %v", strings.TrimSpace(string(out)), err)
-			return
-		}
-		log.Printf("ocserv install: ok")
-	}()
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok":      true,
-		"message": "install started in background; refresh status in 3–10 minutes",
+		"message": "已在后台开始编译安装，请稍候查看下方进度",
 		"script":  script,
+		"job":     ocserv.GetInstallStatus(),
 	})
 }
 

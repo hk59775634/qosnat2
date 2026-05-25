@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -10,6 +10,8 @@ const users = ref([])
 const err = ref('')
 const ok = ref('')
 const installing = ref(false)
+const installJob = ref(null)
+const installPollTimer = ref(null)
 const showAdvanced = ref(false)
 
 const userForm = ref({ username: '', password: '', comment: '' })
@@ -148,9 +150,39 @@ async function load() {
   ensureDefaults()
   status.value = d.status || {}
   installScript.value = d.install_script || ''
+  installJob.value = d.install_job || null
   users.value = (d.config?.users || []).map((u) => ({ ...u }))
   radiusSecret.value = ''
   camouflageSecret.value = ''
+}
+
+function stopInstallPoll() {
+  if (installPollTimer.value) {
+    clearInterval(installPollTimer.value)
+    installPollTimer.value = null
+  }
+}
+
+function startInstallPoll() {
+  stopInstallPoll()
+  installPollTimer.value = setInterval(async () => {
+    try {
+      const j = await api.get('/api/v1/vpn/ocserv/install/status')
+      installJob.value = j
+      if (j.state === 'ok') {
+        stopInstallPoll()
+        installing.value = false
+        ok.value = 'ocserv 安装完成'
+        await load()
+      } else if (j.state === 'failed') {
+        stopInstallPoll()
+        installing.value = false
+        err.value = j.message || '安装失败'
+      }
+    } catch {
+      /* ignore poll errors */
+    }
+  }, 3000)
 }
 
 async function runInstall() {
@@ -159,11 +191,16 @@ async function runInstall() {
   installing.value = true
   try {
     const r = await api.post('/api/v1/vpn/ocserv/install', {})
-    ok.value = r.message || '已在后台编译安装，请数分钟后刷新状态'
+    ok.value = r.message || '已在后台编译安装'
+    installJob.value = r.job || { state: 'running' }
+    startInstallPoll()
   } catch (e) {
-    err.value = e.message
-  } finally {
     installing.value = false
+    const msg = e.data?.error || e.message
+    err.value = msg
+    if (e.status === 403) {
+      err.value = `${msg}。请确认 qosnatd 以 root 运行后重试。`
+    }
   }
 }
 
@@ -226,7 +263,11 @@ async function delUser(name) {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  if (installJob.value?.state === 'running') startInstallPoll()
+})
+onUnmounted(stopInstallPoll)
 </script>
 
 <template>
@@ -244,6 +285,15 @@ onMounted(load)
       <button type="button" class="btn-secondary text-sm" :disabled="installing" @click="runInstall">
         {{ installing ? '安装中…' : '从源码安装' }}
       </button>
+      <div v-if="installJob && installJob.state !== 'idle'" class="mt-3 p-3 rounded border text-xs space-y-2"
+        :class="installJob.state === 'failed' ? 'border-red-200 bg-red-50' : installJob.state === 'ok' ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'">
+        <div class="flex gap-3 text-sm">
+          <span>安装任务: <strong>{{ installJob.state }}</strong></span>
+          <span v-if="installJob.message" class="text-slate-600">{{ installJob.message }}</span>
+        </div>
+        <pre v-if="installJob.log_tail" class="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700">{{ installJob.log_tail }}</pre>
+        <p v-if="installing" class="text-slate-500">编译约 3–10 分钟，页面将自动刷新状态…</p>
+      </div>
     </div>
 
     <div v-if="cfg" class="card p-4 space-y-4">

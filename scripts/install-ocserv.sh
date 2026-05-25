@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 从源码编译安装 ocserv（OpenConnect VPN 服务端，兼容 AnyConnect 客户端）
 # 用法: sudo /opt/qosnat2/scripts/install-ocserv.sh
-# 可选: OCSERV_TAG=v1.4.2 OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
+# 可选: OCSERV_TAG=1.4.2 OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
 set -euo pipefail
 
 OCSERV_REPO="${OCSERV_REPO:-https://gitlab.com/openconnect/ocserv.git}"
-OCSERV_TAG="${OCSERV_TAG:-v1.4.2}"
+OCSERV_TAG="${OCSERV_TAG:-1.4.2}"
 OCSERV_PREFIX="${OCSERV_PREFIX:-/usr/local}"
 OCSERV_SYSCONFDIR="${OCSERV_SYSCONFDIR:-/etc/ocserv}"
 BUILD_DIR="${BUILD_DIR:-/usr/local/src/ocserv-build}"
@@ -40,12 +40,33 @@ install_build_deps() {
 fetch_source() {
   rm -rf "${BUILD_DIR}"
   mkdir -p "${BUILD_DIR}"
-  log "克隆 ${OCSERV_REPO} (${OCSERV_TAG})..."
-  git clone --depth 1 --branch "${OCSERV_TAG}" "${OCSERV_REPO}" "${BUILD_DIR}/ocserv" \
-    || git clone --depth 1 "${OCSERV_REPO}" "${BUILD_DIR}/ocserv"
+  local tag="${OCSERV_TAG}"
+  local alt=""
+  if [[ "${tag}" == v* ]]; then
+    alt="${tag#v}"
+  else
+    alt="v${tag}"
+  fi
+  log "克隆 ${OCSERV_REPO} (tag=${tag})..."
+  if git clone --depth 1 --branch "${tag}" "${OCSERV_REPO}" "${BUILD_DIR}/ocserv" 2>/dev/null; then
+    :
+  elif [[ -n "${alt}" ]] && git clone --depth 1 --branch "${alt}" "${OCSERV_REPO}" "${BUILD_DIR}/ocserv" 2>/dev/null; then
+    tag="${alt}"
+    log "使用分支/tag ${tag}"
+  else
+    warn "tag ${OCSERV_TAG} 克隆失败，尝试完整克隆后检出"
+    git clone "${OCSERV_REPO}" "${BUILD_DIR}/ocserv" || die "git clone failed"
+    cd "${BUILD_DIR}/ocserv"
+    git checkout "${tag}" 2>/dev/null \
+      || { [[ -n "${alt}" ]] && git checkout "${alt}"; } 2>/dev/null \
+      || die "无法检出 tag ${OCSERV_TAG} 或 ${alt}"
+    return 0
+  fi
   cd "${BUILD_DIR}/ocserv"
   if ! git describe --tags --exact-match 2>/dev/null | grep -q .; then
-    git checkout "${OCSERV_TAG}" 2>/dev/null || warn "未检出 tag ${OCSERV_TAG}，使用默认分支"
+    git checkout "${tag}" 2>/dev/null \
+      || { [[ -n "${alt}" ]] && git checkout "${alt}"; } 2>/dev/null \
+      || warn "未检出 tag ${tag}，使用当前分支"
   fi
 }
 

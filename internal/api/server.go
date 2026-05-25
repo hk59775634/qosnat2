@@ -128,6 +128,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/vpn/wireguard/peers", srv.requireAuth(srv.handleWireGuardPeers))
 	m.HandleFunc("/api/v1/vpn/wireguard", srv.requireAuth(srv.handleWireGuard))
 
+	m.HandleFunc("/api/v1/vpn/ocserv/install/status", srv.requireAuth(srv.handleOCServInstallStatus))
 	m.HandleFunc("/api/v1/vpn/ocserv/install", srv.requireAuth(srv.handleOCServInstall))
 	m.HandleFunc("/api/v1/vpn/ocserv/apply", srv.requireAuth(srv.handleOCServApply))
 	m.HandleFunc("/api/v1/vpn/ocserv/users", srv.requireAuth(srv.handleOCServUsers))

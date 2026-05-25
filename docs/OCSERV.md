@@ -14,7 +14,7 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh
 
 | 变量 | 默认 |
 |------|------|
-| `OCSERV_TAG` | `v1.4.2` |
+| `OCSERV_TAG` | `1.4.2`（GitLab 标签无 `v` 前缀） |
 | `OCSERV_PREFIX` | `/usr/local` |
 | `OCSERV_SYSCONFDIR` | `/etc/ocserv` |
 
