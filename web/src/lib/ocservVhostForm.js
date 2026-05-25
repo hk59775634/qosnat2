@@ -92,6 +92,57 @@ export function emptyBasicVhost() {
   }
 }
 
+/** 从全局 OCServ 配置生成新 vhost 表单（创建后可在高级页逐项修改） */
+export function vhostFormFromGlobal(cfg) {
+  const g = cfg || {}
+  const adv = g.advanced || {}
+  const auth = (g.auth_method || 'plain').trim()
+  return normalizeVhostFromApi({
+    enabled: true,
+    domain: '',
+    comment: '',
+    auth_method: auth,
+    plain_passwd_path: '',
+    radius: null,
+    server_cert_path: g.server_cert_path || '',
+    server_key_path: g.server_key_path || '',
+    ca_cert_path: g.ca_cert_path || '',
+    ipv4_network: g.ipv4_network || '',
+    ipv4_netmask: g.ipv4_netmask || '',
+    dns: g.dns || [],
+    routes: g.routes || [],
+    no_routes: g.no_routes || [],
+    config_per_group: g.config_per_group || adv.config_per_group || '',
+    config_per_user: g.config_per_user || '',
+    default_group_config: g.default_group_config || '',
+    default_user_config: g.default_user_config || '',
+    auto_select_group: !!g.auto_select_group,
+    default_select_group: g.default_select_group || '',
+    compression: !!adv.compression,
+    dtls_legacy: !!adv.dtls_legacy,
+    cisco_client_compat: !!adv.cisco_client_compat,
+    cisco_svc_client_compat: !!adv.cisco_svc_client_compat,
+    deny_roaming: !!adv.deny_roaming,
+    predictable_ips: !!adv.predictable_ips,
+    camouflage: !!adv.camouflage,
+    camouflage_realm: adv.camouflage_realm || '',
+    max_same_clients: adv.max_same_clients || 0,
+    keepalive: adv.keepalive && adv.keepalive_sec > 0 ? adv.keepalive_sec : 0,
+    dpd: adv.dpd && adv.dpd_sec > 0 ? adv.dpd_sec : 0,
+    mobile_dpd: adv.mobile_dpd && adv.mobile_dpd_sec > 0 ? adv.mobile_dpd_sec : 0,
+    cookie_timeout: adv.cookie_timeout || 0,
+    rekey_time: adv.rekey && adv.rekey_time > 0 ? adv.rekey_time : 0,
+    rekey_method: adv.rekey_method || '',
+    rx_data_per_sec: adv.rx_data_per_sec || 0,
+    tx_data_per_sec: adv.tx_data_per_sec || 0,
+    default_domain: adv.default_domain || '',
+    cert_user_oid: adv.cert_user_oid || '',
+    tls_priorities: adv.tls_priorities || '',
+    acct_enabled: !!(g.radius && g.radius.acct_enabled),
+    stats_report_time: (g.radius && g.radius.stats_report_time) || 0,
+  })
+}
+
 export function normalizeVhostFromApi(v) {
   const base = emptyVhostForm()
   return {
@@ -109,6 +160,7 @@ export function normalizeVhostFromApi(v) {
 
 export function buildVhostPayload(form, { radiusSecret = '', camouflageSecret = '' } = {}) {
   const body = { ...form, domain: String(form.domain || '').trim() }
+  delete body.users
   if (body.radius && !String(body.radius.server || '').trim()) {
     body.radius = null
   }

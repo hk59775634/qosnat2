@@ -118,6 +118,7 @@ onMounted(load)
         :radius-secret-set="vhostRadiusSecretSet"
         v-model:camouflage-secret="vhostCamouflageSecret"
         :camouflage-secret-set="vhostCamouflageSecretSet"
+        @users-changed="load"
       />
 
       <div class="flex gap-2 pt-2 border-t border-slate-100">

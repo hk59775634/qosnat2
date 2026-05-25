@@ -70,7 +70,11 @@ func renderVhostBlock(b *bytes.Buffer, v store.OCServVhost, global store.OCServS
 	}
 	fmt.Fprintf(b, "\n[vhost:%s]\n", domain)
 
-	switch strings.TrimSpace(v.AuthMethod) {
+	auth := strings.TrimSpace(v.AuthMethod)
+	if auth == "" {
+		auth = strings.TrimSpace(global.AuthMethod)
+	}
+	switch auth {
 	case store.OCServAuthPlain:
 		passwd := PasswdPath
 		if p := strings.TrimSpace(v.PlainPasswdPath); p != "" {

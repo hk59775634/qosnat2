@@ -115,8 +115,15 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		}
 		body.Enabled = true
 		st := srv.store.Get().VPN.OCServ
+		if r.Method == http.MethodPost {
+			body = store.VhostFromGlobal(st, body.Domain, body.Comment, body.AuthMethod)
+		}
 		prev := findOCServVhost(st.Vhosts, body.Domain)
 		mergeOCServVhostSecrets(&body, prev)
+		if body.Users == nil {
+			body.Users = prev.Users
+		}
+		mergeOCServVhostUserPasswords(&body, prev)
 		if body.Radius != nil {
 			tmp := store.OCServState{AuthMethod: store.OCServAuthRadius, Radius: *body.Radius}
 			if err := ocserv.NormalizeRadiusConfig(&tmp); err != nil {
@@ -154,6 +161,12 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		if err := ocserv.WriteVhostRadcliConfig(body); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
+		}
+		if ocserv.VhostCanManagePlainUsers(body, st.AuthMethod) {
+			if err := ocserv.SyncUsersToPath(strings.TrimSpace(body.PlainPasswdPath), body.Users); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
 		}
 		if err := ocserv.WriteConf(st); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -214,6 +227,7 @@ func ocservPublicVhosts(vhosts []store.OCServVhost) []ocservVhostPublic {
 		}
 		p.CamouflageSecretSet = strings.TrimSpace(v.CamouflageSecret) != ""
 		p.CamouflageSecret = ""
+		p.Users = ocservPublicVhostUsers(v.Users)
 		out = append(out, p)
 	}
 	return out
@@ -235,4 +249,219 @@ func mergeOCServVhostSecrets(body *store.OCServVhost, prev store.OCServVhost) {
 	if body.CamouflageSecret == "" && prev.CamouflageSecret != "" {
 		body.CamouflageSecret = prev.CamouflageSecret
 	}
+}
+
+func mergeOCServVhostUserPasswords(body *store.OCServVhost, prev store.OCServVhost) {
+	prevPW := map[string]string{}
+	for _, u := range prev.Users {
+		if u.Password != "" {
+			prevPW[u.Username] = u.Password
+		}
+	}
+	for i := range body.Users {
+		if body.Users[i].Password == "" {
+			if p, ok := prevPW[body.Users[i].Username]; ok {
+				body.Users[i].Password = p
+			}
+		}
+	}
+}
+
+func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request) {
+	domain := strings.TrimSpace(r.URL.Query().Get("domain"))
+	if domain == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain required"})
+		return
+	}
+	st := srv.store.Get().VPN.OCServ
+	v, ok := findOCServVhostPtr(&st, domain)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})
+		return
+	}
+	if !ocserv.VhostCanManagePlainUsers(*v, st.AuthMethod) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vhost plain passwd file required for local user management"})
+		return
+	}
+	passwdPath := strings.TrimSpace(v.PlainPasswdPath)
+
+	switch r.Method {
+	case http.MethodGet:
+		list := make([]map[string]string, 0, len(v.Users))
+		for _, u := range v.Users {
+			list = append(list, map[string]string{
+				"username": u.Username,
+				"comment":  u.Comment,
+				"group":    u.Group,
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"users":       list,
+			"passwd_path": passwdPath,
+		})
+	case http.MethodPost:
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Comment  string `json:"comment"`
+			Group    string `json:"group"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			return
+		}
+		body.Username = strings.TrimSpace(body.Username)
+		if body.Username == "" || len(body.Password) < 4 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username and password (min 4) required"})
+			return
+		}
+		_ = srv.store.Update(func(s *store.State) {
+			i, ok := findOCServVhostIndexOnly(s.VPN.OCServ.Vhosts, domain)
+			if !ok {
+				return
+			}
+			for j, u := range s.VPN.OCServ.Vhosts[i].Users {
+				if u.Username == body.Username {
+					s.VPN.OCServ.Vhosts[i].Users[j].Password = body.Password
+					s.VPN.OCServ.Vhosts[i].Users[j].Comment = body.Comment
+					s.VPN.OCServ.Vhosts[i].Users[j].Group = body.Group
+					return
+				}
+			}
+			s.VPN.OCServ.Vhosts[i].Users = append(s.VPN.OCServ.Vhosts[i].Users, store.OCServUser{
+				Username: body.Username,
+				Password: body.Password,
+				Comment:  body.Comment,
+				Group:    body.Group,
+			})
+		})
+		_ = srv.store.Save()
+		stAfter := srv.store.Get().VPN.OCServ
+		vp, _ := findOCServVhostPtr(&stAfter, domain)
+		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		srv.auditLog(r, "vpn.ocserv.vhost.user.add", domain+"/"+body.Username)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "synced": true})
+	case http.MethodPut:
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Comment  string `json:"comment"`
+			Group    string `json:"group"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			return
+		}
+		body.Username = strings.TrimSpace(body.Username)
+		if body.Username == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username required"})
+			return
+		}
+		if body.Password != "" && len(body.Password) < 4 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password min 4 chars when changing"})
+			return
+		}
+		found := false
+		_ = srv.store.Update(func(s *store.State) {
+			i, ok := findOCServVhostIndexOnly(s.VPN.OCServ.Vhosts, domain)
+			if !ok {
+				return
+			}
+			for j, u := range s.VPN.OCServ.Vhosts[i].Users {
+				if u.Username != body.Username {
+					continue
+				}
+				found = true
+				if body.Password != "" {
+					s.VPN.OCServ.Vhosts[i].Users[j].Password = body.Password
+				}
+				s.VPN.OCServ.Vhosts[i].Users[j].Comment = body.Comment
+				s.VPN.OCServ.Vhosts[i].Users[j].Group = body.Group
+				return
+			}
+		})
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+			return
+		}
+		_ = srv.store.Save()
+		stAfter := srv.store.Get().VPN.OCServ
+		vp, _ := findOCServVhostPtr(&stAfter, domain)
+		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		srv.auditLog(r, "vpn.ocserv.vhost.user.update", domain+"/"+body.Username)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "synced": true})
+	case http.MethodDelete:
+		name := strings.TrimSpace(r.URL.Query().Get("username"))
+		if name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username required"})
+			return
+		}
+		found := false
+		_ = srv.store.Update(func(s *store.State) {
+			i, ok := findOCServVhostIndexOnly(s.VPN.OCServ.Vhosts, domain)
+			if !ok {
+				return
+			}
+			var out []store.OCServUser
+			for _, u := range s.VPN.OCServ.Vhosts[i].Users {
+				if u.Username == name {
+					found = true
+					continue
+				}
+				out = append(out, u)
+			}
+			s.VPN.OCServ.Vhosts[i].Users = out
+		})
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+			return
+		}
+		_ = srv.store.Save()
+		stAfter := srv.store.Get().VPN.OCServ
+		vp, _ := findOCServVhostPtr(&stAfter, domain)
+		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		srv.auditLog(r, "vpn.ocserv.vhost.user.delete", domain+"/"+name)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "synced": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func findOCServVhostPtr(st *store.OCServState, domain string) (*store.OCServVhost, bool) {
+	for i := range st.Vhosts {
+		if strings.EqualFold(st.Vhosts[i].Domain, domain) {
+			return &st.Vhosts[i], true
+		}
+	}
+	return nil, false
+}
+
+func ocservPublicVhostUsers(users []store.OCServUser) []store.OCServUser {
+	out := make([]store.OCServUser, 0, len(users))
+	for _, u := range users {
+		out = append(out, store.OCServUser{
+			Username: u.Username,
+			Comment:  u.Comment,
+			Group:    u.Group,
+		})
+	}
+	return out
+}
+
+func findOCServVhostIndexOnly(vhosts []store.OCServVhost, domain string) (int, bool) {
+	for i := range vhosts {
+		if strings.EqualFold(vhosts[i].Domain, domain) {
+			return i, true
+		}
+	}
+	return -1, false
 }

@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import SnmpTrafficChart from '@/components/SnmpTrafficChart.vue'
-import { buildVhostPayload, emptyBasicVhost, emptyVhostForm } from '@/lib/ocservVhostForm'
+import { buildVhostPayload, emptyBasicVhost, vhostFormFromGlobal } from '@/lib/ocservVhostForm'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -529,7 +529,7 @@ async function addVhost() {
   }
   try {
     const body = buildVhostPayload({
-      ...emptyVhostForm(),
+      ...vhostFormFromGlobal(cfg.value),
       ...basicVhostForm.value,
       domain: basicVhostForm.value.domain.trim(),
     })

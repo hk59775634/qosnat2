@@ -187,18 +187,30 @@ func writePEMFiles(certPath, keyPath, certPEM, keyPEM string) error {
 	return os.WriteFile(keyPath, []byte(keyPEM), 0600)
 }
 
-// SyncUsers 重建 ocpasswd（plain 用户）
+// SyncUsers 重建默认 ocpasswd（plain 用户）
 func SyncUsers(users []store.OCServUser) error {
+	return SyncUsersToPath(PasswdPath, users)
+}
+
+// SyncUsersToPath 重建指定路径的 ocpasswd 文件
+func SyncUsersToPath(passwdPath string, users []store.OCServUser) error {
+	passwdPath = strings.TrimSpace(passwdPath)
+	if passwdPath == "" {
+		return fmt.Errorf("passwd path required")
+	}
 	ocpasswd := OcpasswdPath
 	if p, err := exec.LookPath("ocpasswd"); err == nil {
 		ocpasswd = p
 	}
-	_ = os.Remove(PasswdPath)
+	if err := os.MkdirAll(filepath.Dir(passwdPath), 0755); err != nil {
+		return err
+	}
+	_ = os.Remove(passwdPath)
 	for _, u := range users {
 		if u.Username == "" || u.Password == "" {
 			continue
 		}
-		args := []string{"-c", PasswdPath}
+		args := []string{"-c", passwdPath}
 		if g := strings.TrimSpace(u.Group); g != "" {
 			args = append(args, "-g", g)
 		}
@@ -209,10 +221,28 @@ func SyncUsers(users []store.OCServUser) error {
 			return fmt.Errorf("ocpasswd %s: %s %w", u.Username, strings.TrimSpace(string(out)), err)
 		}
 	}
-	if _, err := os.Stat(PasswdPath); os.IsNotExist(err) {
-		return os.WriteFile(PasswdPath, []byte{}, 0600)
+	if _, err := os.Stat(passwdPath); os.IsNotExist(err) {
+		if err := os.WriteFile(passwdPath, []byte{}, 0600); err != nil {
+			return err
+		}
 	}
-	return os.Chmod(PasswdPath, 0600)
+	return os.Chmod(passwdPath, 0600)
+}
+
+// VhostEffectiveAuth 返回 vhost 实际认证方式（空则继承全局）
+func VhostEffectiveAuth(v store.OCServVhost, globalAuth string) string {
+	if a := strings.TrimSpace(v.AuthMethod); a != "" {
+		return a
+	}
+	return strings.TrimSpace(globalAuth)
+}
+
+// VhostCanManagePlainUsers 是否可在 vhost 页管理独立密码文件用户
+func VhostCanManagePlainUsers(v store.OCServVhost, globalAuth string) bool {
+	if VhostEffectiveAuth(v, globalAuth) != store.OCServAuthPlain {
+		return false
+	}
+	return strings.TrimSpace(v.PlainPasswdPath) != ""
 }
 
 // Reload 向运行中的 ocserv 发送 reload（不中断已有 VPN 连接）

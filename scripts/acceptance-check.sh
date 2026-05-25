@@ -17,10 +17,12 @@ else
   bad "qosnatd not active"
 fi
 
-if curl -sf http://127.0.0.1:8080/api/v1/health >/dev/null; then
+if curl -sf http://127.0.0.1:8080/api/v1/health >/dev/null 2>&1; then
   ok "health HTTP"
+elif curl -skf https://127.0.0.1:8080/api/v1/health >/dev/null 2>&1; then
+  ok "health HTTPS"
 else
-  bad "health HTTP"
+  bad "health HTTP/HTTPS"
 fi
 
 if [ -f "$STATE" ] && grep -q '"setup_complete": true' "$STATE"; then

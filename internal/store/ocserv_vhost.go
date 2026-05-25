@@ -14,6 +14,8 @@ type OCServVhost struct {
 
 	// plain：独立密码文件（空则全局 ocpasswd）
 	PlainPasswdPath string `json:"plain_passwd_path,omitempty"`
+	// Users 仅用于 plain_passwd_path 非空时，写入该 vhost 密码文件
+	Users []OCServUser `json:"users,omitempty"`
 
 	// radius：Server 为空则继承全局 RADIUS；否则写入 /etc/radcli/vhosts/<domain>.conf
 	Radius *OCServRadius `json:"radius,omitempty"`

@@ -121,6 +121,18 @@ func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 		v.NoRoutes = trimStringList(v.NoRoutes)
 		v.IRoutes = trimStringList(v.IRoutes)
 		v.SelectGroups = trimStringList(v.SelectGroups)
+		if v.Users == nil {
+			v.Users = []OCServUser{}
+		}
+		for i := range v.Users {
+			u := strings.TrimSpace(v.Users[i].Username)
+			if u == "" {
+				return fmt.Errorf("vhost %s: user username required", d)
+			}
+			v.Users[i].Username = u
+			v.Users[i].Group = strings.TrimSpace(v.Users[i].Group)
+			v.Users[i].Comment = strings.TrimSpace(v.Users[i].Comment)
+		}
 		out = append(out, v)
 	}
 	*vhosts = out

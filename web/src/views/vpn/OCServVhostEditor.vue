@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { emptyVhostRadius } from '@/lib/ocservVhostForm'
+import VhostPlainUsers from '@/views/vpn/VhostPlainUsers.vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
@@ -19,6 +20,7 @@ const emit = defineEmits([
   'update:modelValue',
   'update:radiusSecret',
   'update:camouflageSecret',
+  'users-changed',
 ])
 
 const { t } = useI18n()
@@ -57,6 +59,8 @@ const effectiveAuth = computed(() => {
 })
 
 const isPlain = computed(() => effectiveAuth.value === 'plain')
+const vhostDomain = computed(() => String(v.value.domain || '').trim())
+const groupOptions = computed(() => props.globalCfg?.groups || [])
 const isRadius = computed(() => effectiveAuth.value === 'radius')
 const isCert = computed(() => effectiveAuth.value === 'certificate')
 const globalIsRadius = computed(() => props.globalCfg?.auth_method === 'radius')
@@ -329,12 +333,14 @@ function patchRadius(partial) {
       <div v-if="isPlain" class="vhost-panel space-y-3">
         <h5 class="font-medium text-slate-800">{{ t('ocserv.vhostUsersPlainTitle') }}</h5>
         <p class="vhost-hint">{{ t('ocserv.vhostUsersPlainDesc') }}</p>
-        <p v-if="v.plain_passwd_path" class="text-xs font-mono bg-white border border-slate-200 rounded px-2 py-1">
-          {{ t('ocserv.vhostPlainPasswd') }}: {{ v.plain_passwd_path }}
-        </p>
-        <button type="button" class="btn-primary text-sm" @click="goOcservTab('users')">
-          {{ t('ocserv.vhostManageLocalUsers') }}
-        </button>
+        <VhostPlainUsers
+          v-if="vhostDomain"
+          :domain="vhostDomain"
+          :passwd-path="v.plain_passwd_path"
+          :group-options="groupOptions"
+          @changed="emit('users-changed')"
+          @go-auth="vhostTab = 'auth'"
+        />
       </div>
       <div v-else-if="isRadius" class="vhost-panel space-y-3">
         <h5 class="font-medium text-slate-800">{{ t('ocserv.vhostUsersRadiusTitle') }}</h5>

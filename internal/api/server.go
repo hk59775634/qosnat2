@@ -141,6 +141,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/vpn/ocserv/users/traffic", srv.requireAuth(srv.handleOCServUserTraffic))
 	m.HandleFunc("/api/v1/vpn/ocserv/users", srv.requireAuth(srv.handleOCServUsers))
 	m.HandleFunc("/api/v1/vpn/ocserv/groups", srv.requireAuth(srv.handleOCServGroups))
+	m.HandleFunc("/api/v1/vpn/ocserv/vhosts/users", srv.requireAuth(srv.handleOCServVhostUsers))
 	m.HandleFunc("/api/v1/vpn/ocserv/vhosts", srv.requireAuth(srv.handleOCServVhosts))
 	m.HandleFunc("/api/v1/vpn/ocserv", srv.requireAuth(srv.handleOCServ))
 

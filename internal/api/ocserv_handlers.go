@@ -22,6 +22,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 				pub.Vhosts[i].Radius = &r
 			}
 			pub.Vhosts[i].CamouflageSecret = ""
+			pub.Vhosts[i].Users = ocservPublicVhostUsers(pub.Vhosts[i].Users)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"config":                pub,
