@@ -49,6 +49,30 @@ func TestRenderConfAdvancedOff(t *testing.T) {
 	}
 }
 
+func TestRenderConfExtras(t *testing.T) {
+	o := store.DefaultOCServ()
+	o.NoRoutes = []string{"192.168.5.0/255.255.255.0"}
+	o.ServerCertPath = "/etc/ocserv/certs/server-cert.pem"
+	o.Advanced.Camouflage = true
+	o.Advanced.CamouflageSecret = "secret"
+	o.Advanced.CamouflageRealm = "Restricted"
+	o.Advanced.RxDataPerSec = 1250000
+	o.Advanced.RateLimitMs = 100
+	conf := RenderConf(o)
+	for _, want := range []string{
+		"no-route = 192.168.5.0/255.255.255.0",
+		"server-cert = /etc/ocserv/certs/server-cert.pem",
+		"camouflage = true",
+		"rx-data-per-sec = 1250000",
+		"rate-limit-ms = 100",
+		"cisco-svc-client-compat",
+	} {
+		if !strings.Contains(conf, want) {
+			t.Fatalf("missing %q in:\n%s", want, conf)
+		}
+	}
+}
+
 func TestRenderConfPlain(t *testing.T) {
 	o := store.DefaultOCServ()
 	conf := RenderConf(o)

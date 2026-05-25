@@ -45,14 +45,19 @@ type OCServState struct {
 	Device         string       `json:"device"` // tun 设备名前缀，默认 vpns
 	IPv4Network    string       `json:"ipv4_network"`
 	IPv4Netmask    string       `json:"ipv4_netmask"`
-	DNS            []string     `json:"dns,omitempty"`
-	Routes         []string     `json:"routes,omitempty"` // 如 default、192.168.0.0/24
+	DNS            []string       `json:"dns,omitempty"`
+	Routes         []string       `json:"routes,omitempty"`    // 如 default、10.0.0.0/24
+	NoRoutes       []string       `json:"no_routes,omitempty"` // no-route
 	MaxClients     int            `json:"max_clients,omitempty"`
 	IsolateWorkers bool           `json:"isolate_workers,omitempty"` // 已迁移至 advanced，仅作旧 state 兼容
 	Advanced       OCServAdvanced `json:"advanced,omitempty"`
-	UseQoSnatTLS   bool           `json:"use_qosnat_tls,omitempty"` // 证书用 /etc/qosnat2/tls.*
-	ServerCert     string       `json:"server_cert,omitempty"`
-	ServerKey      string       `json:"server_key,omitempty"`
+	UseQoSnatTLS   bool           `json:"use_qosnat_tls,omitempty"`
+	ServerCertPath string         `json:"server_cert_path,omitempty"`
+	ServerKeyPath  string         `json:"server_key_path,omitempty"`
+	CaCertPath     string         `json:"ca_cert_path,omitempty"`
+	SocketFile     string         `json:"socket_file,omitempty"`
+	ServerCert     string         `json:"server_cert,omitempty"` // PEM 内联（少用）
+	ServerKey      string         `json:"server_key,omitempty"`
 	Users          []OCServUser `json:"users"`
 }
 
@@ -76,6 +81,9 @@ func DefaultOCServ() OCServState {
 		MaxClients:     128,
 		Advanced:       DefaultOCServAdvanced(),
 		UseQoSnatTLS:   true,
+		ServerCertPath: "/etc/ocserv/certs/server-cert.pem",
+		ServerKeyPath:  "/etc/ocserv/certs/server-key.pem",
+		SocketFile:     "/var/run/ocserv-socket",
 		Users:          []OCServUser{},
 	}
 }
@@ -114,11 +122,23 @@ func NormalizeOCServ(o *OCServState) error {
 	if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
 		return err
 	}
-	if len(o.DNS) == 0 {
+	if o.DNS == nil {
 		o.DNS = []string{"8.8.8.8"}
 	}
-	if len(o.Routes) == 0 {
+	o.DNS = trimStringList(o.DNS)
+	if o.Routes == nil {
 		o.Routes = []string{"default"}
+	}
+	o.Routes = trimStringList(o.Routes)
+	o.NoRoutes = trimStringList(o.NoRoutes)
+	if strings.TrimSpace(o.ServerCertPath) == "" {
+		o.ServerCertPath = "/etc/ocserv/certs/server-cert.pem"
+	}
+	if strings.TrimSpace(o.ServerKeyPath) == "" {
+		o.ServerKeyPath = "/etc/ocserv/certs/server-key.pem"
+	}
+	if strings.TrimSpace(o.SocketFile) == "" {
+		o.SocketFile = "/var/run/ocserv-socket"
 	}
 	if o.MaxClients <= 0 {
 		o.MaxClients = 128
@@ -131,6 +151,13 @@ func NormalizeOCServ(o *OCServState) error {
 	o.IsolateWorkers = false
 	if !o.Advanced.Tcp && !o.Advanced.Udp {
 		return fmt.Errorf("TCP 与 UDP 至少启用一项")
+	}
+	rm := strings.TrimSpace(o.Advanced.RekeyMethod)
+	if rm != "" && rm != "ssl" && rm != "new-tunnel" {
+		return fmt.Errorf("rekey_method must be ssl or new-tunnel")
+	}
+	if o.Advanced.Camouflage && strings.TrimSpace(o.Advanced.CamouflageSecret) == "" {
+		return fmt.Errorf("camouflage enabled requires camouflage_secret")
 	}
 	if o.Radius.AuthPort <= 0 {
 		o.Radius.AuthPort = 1812
@@ -176,6 +203,17 @@ func validateIPv4Pool(network, netmask string) error {
 		return fmt.Errorf("invalid ipv4_netmask")
 	}
 	return nil
+}
+
+func trimStringList(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func NewOCServUserID() string {

@@ -28,7 +28,9 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh
 
 ### 高级配置
 
-通过开关启用/停用 ocserv 能力，例如：TCP/UDP、MTU 探测、DTLS 旧版兼容、Cisco 客户端兼容、隔离 worker、漫游、压缩、keepalive/DPD、rekey、occtl 等；并可调 `max-same-clients`、超时与间隔类数值。配置写入 `ocserv.conf`。
+通过开关启用/停用 ocserv 能力，例如：TCP/UDP、MTU 探测、DTLS/Cisco 兼容、伪装站点（camouflage）、压缩、keepalive/DPD、rekey、occtl 等；并可调限速、封禁、日志、带宽（rx/tx-data-per-sec）、`max-same-clients` 与各类超时。
+
+基础区另支持：**DNS**、**route / no-route**（多行）、**证书路径**（`server-cert`/`server-key`/`ca-cert`）、**socket-file**、**tls-priorities**、**cert-user-oid**、**default-domain**、**config-per-group**。
 
 ### 认证
 

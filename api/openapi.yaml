@@ -338,7 +338,24 @@ components:
         use_occtl: { type: boolean }
         rekey: { type: boolean }
         switch_to_tcp: { type: boolean }
+        camouflage: { type: boolean }
+        cisco_svc_client_compat: { type: boolean }
+        client_bypass_protocol: { type: boolean }
         max_same_clients: { type: integer }
+        rekey_method: { type: string, enum: [ssl, new-tunnel] }
+        rate_limit_ms: { type: integer }
+        log_level: { type: integer }
+        max_ban_score: { type: integer }
+        ban_time: { type: integer }
+        ban_reset_time: { type: integer }
+        server_stats_reset_time: { type: integer }
+        rx_data_per_sec: { type: integer }
+        tx_data_per_sec: { type: integer }
+        camouflage_realm: { type: string }
+        default_domain: { type: string }
+        config_per_group: { type: string }
+        cert_user_oid: { type: string }
+        tls_priorities: { type: string }
         keepalive_sec: { type: integer }
         dpd_sec: { type: integer }
         mobile_dpd_sec: { type: integer }
@@ -366,6 +383,13 @@ components:
         routes:
           type: array
           items: { type: string }
+        no_routes:
+          type: array
+          items: { type: string }
+        server_cert_path: { type: string }
+        server_key_path: { type: string }
+        ca_cert_path: { type: string }
+        socket_file: { type: string }
         max_clients: { type: integer }
         use_qosnat_tls: { type: boolean, description: 使用 /etc/qosnat2/tls.* 作为服务端证书 }
         server_cert: { type: string }

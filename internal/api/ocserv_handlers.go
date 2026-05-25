@@ -34,6 +34,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		prev := srv.store.Get().VPN.OCServ
 		mergeOCServPasswords(&body, prev)
 		mergeOCServRadiusSecret(&body, prev)
+		mergeOCServCamouflageSecret(&body, prev)
 		_ = srv.store.Update(func(s *store.State) {
 			s.VPN.OCServ = body
 		})
@@ -175,6 +176,7 @@ func (srv *Server) handleOCServUsers(w http.ResponseWriter, r *http.Request) {
 func ocservPublicConfig(o store.OCServState) store.OCServState {
 	out := o
 	out.Radius.Secret = ""
+	out.Advanced.CamouflageSecret = ""
 	out.Users = nil
 	for _, u := range o.Users {
 		out.Users = append(out.Users, store.OCServUser{
@@ -189,6 +191,12 @@ func ocservPublicConfig(o store.OCServState) store.OCServState {
 func mergeOCServRadiusSecret(body *store.OCServState, prev store.OCServState) {
 	if body.Radius.Secret == "" && prev.Radius.Secret != "" {
 		body.Radius.Secret = prev.Radius.Secret
+	}
+}
+
+func mergeOCServCamouflageSecret(body *store.OCServState, prev store.OCServState) {
+	if body.Advanced.CamouflageSecret == "" && prev.Advanced.CamouflageSecret != "" {
+		body.Advanced.CamouflageSecret = prev.Advanced.CamouflageSecret
 	}
 }
 
