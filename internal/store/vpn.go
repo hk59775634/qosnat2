@@ -25,7 +25,8 @@ type WireGuardState struct {
 	Peers           []WGPeer `json:"peers"`
 }
 
-// VPNState VPN 模块（仅 WireGuard；不支持 IPsec / OpenVPN）
+// VPNState VPN 模块（WireGuard + ocserv/OpenConnect）
 type VPNState struct {
 	WireGuard WireGuardState `json:"wireguard"`
+	OCServ    OCServState    `json:"ocserv"`
 }

@@ -28,6 +28,7 @@ const routes = [
       { path: 'network/vxlan', name: 'network-vxlan', component: () => import('@/views/network/Vxlan.vue') },
       { path: 'network/wan-links', name: 'network-wan-links', component: () => import('@/views/network/WanLinks.vue') },
       { path: 'vpn/wireguard', name: 'vpn-wg', component: () => import('@/views/vpn/WireGuard.vue') },
+      { path: 'vpn/ocserv', name: 'vpn-ocserv', component: () => import('@/views/vpn/OCServ.vue') },
       { path: 'diagnostics/capture', name: 'diag-capture', component: () => import('@/views/diagnostics/Capture.vue') },
       { path: 'diagnostics/conntrack', name: 'diag-conntrack', component: () => import('@/views/diagnostics/Conntrack.vue') },
       { path: 'system/general', name: 'system-general', component: () => import('@/views/system/General.vue') },

@@ -143,6 +143,7 @@ func DefaultState() State {
 				Address:    "10.200.0.1/24",
 				Peers:      []WGPeer{},
 			},
+			OCServ: DefaultOCServ(),
 		},
 		APIKeys: []APIKey{},
 	}
@@ -282,6 +283,14 @@ func (s *Store) ensureDefaultsLocked() {
 	}
 	if s.State.VPN.WireGuard.Peers == nil {
 		s.State.VPN.WireGuard.Peers = []WGPeer{}
+	}
+	if s.State.VPN.OCServ.TCPPort == 0 && len(s.State.VPN.OCServ.Users) == 0 && s.State.VPN.OCServ.IPv4Network == "" {
+		s.State.VPN.OCServ = DefaultOCServ()
+	} else {
+		_ = NormalizeOCServ(&s.State.VPN.OCServ)
+	}
+	if s.State.VPN.OCServ.Users == nil {
+		s.State.VPN.OCServ.Users = []OCServUser{}
 	}
 	MigrateHostsToProfiles(&s.State.Shaper.Profiles, s.State.Shaper.Hosts)
 	s.State.Shaper.Hosts = nil

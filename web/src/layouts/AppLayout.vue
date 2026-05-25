@@ -45,7 +45,10 @@ const menu = [
   },
   {
     title: 'VPN',
-    items: [{ path: '/vpn/wireguard', label: 'WireGuard' }],
+    items: [
+      { path: '/vpn/wireguard', label: 'WireGuard' },
+      { path: '/vpn/ocserv', label: 'OpenConnect' },
+    ],
   },
   {
     title: 'Observability',

@@ -299,6 +299,37 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WGPeer'
+    OCServUser:
+      type: object
+      properties:
+        username: { type: string }
+        password: { type: string, description: 仅 POST 创建/改密；GET 不返回 }
+        group: { type: string }
+        comment: { type: string }
+    OCServConfig:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        tcp_port: { type: integer, example: 443 }
+        udp_port: { type: integer }
+        device: { type: string, example: vpns }
+        ipv4_network: { type: string, example: 10.250.0.0 }
+        ipv4_netmask: { type: string, example: 255.255.255.0 }
+        dns:
+          type: array
+          items: { type: string }
+        routes:
+          type: array
+          items: { type: string }
+        max_clients: { type: integer }
+        isolate_workers: { type: boolean }
+        use_qosnat_tls: { type: boolean, description: 使用 /etc/qosnat2/tls.* 作为服务端证书 }
+        server_cert: { type: string }
+        server_key: { type: string }
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/OCServUser'
     ConntrackEntry:
       type: object
       properties:
@@ -1510,6 +1541,117 @@ paths:
           description: WireGuard client conf
           content:
             text/plain: {}
+
+  /api/v1/vpn/ocserv:
+    get:
+      tags: [vpn]
+      summary: ocserv（OpenConnect）配置与安装状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config:
+                    $ref: '#/components/schemas/OCServConfig'
+                  status:
+                    type: object
+                  install_script: { type: string }
+                  conf_path: { type: string }
+    put:
+      tags: [vpn]
+      summary: 保存 ocserv 配置
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OCServConfig'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/vpn/ocserv/apply:
+    post:
+      tags: [vpn]
+      summary: 写入 ocserv.conf、ocpasswd 并 systemctl start/stop ocserv
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/vpn/ocserv/install:
+    post:
+      tags: [vpn]
+      summary: 后台执行源码安装脚本（需 root 运行 qosnatd）
+      responses:
+        '202':
+          description: 安装已在后台启动
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+                  script: { type: string }
+        '403':
+          description: 非 root
+
+  /api/v1/vpn/ocserv/users:
+    get:
+      tags: [vpn]
+      summary: ocserv 用户列表（不含密码）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OCServUser'
+    post:
+      tags: [vpn]
+      summary: 添加或更新 ocserv 用户
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+                group: { type: string }
+                comment: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [vpn]
+      summary: 删除 ocserv 用户
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
 
   /api/v1/diagnostics/captures:
     get:
