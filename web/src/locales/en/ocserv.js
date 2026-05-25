@@ -41,6 +41,77 @@ export default {
   radiusNas: 'NAS-Identifier',
   radiusAcct: 'Accounting',
   radiusStats: 'Stats interval (s)',
+  radiusHelpBtn: 'RADIUS attribute guide',
+  radiusHelpTitle: 'ocserv RADIUS attributes',
+  radiusHelpIntro:
+    'Return these in Access-Accept. Requires auth groupconfig=true and a dictionary matching /etc/radcli/dictionary.',
+  radiusHelpGroupconfig:
+    'With groupconfig enabled, per-user/group dns, routes, and rate limits come from RADIUS instead of local config-per-user/group files.',
+  radiusHelpRateNote:
+    'Rate limits use server perspective: rx-data-per-sec caps client upload, tx-data-per-sec caps client download (bytes/s; 8 Mbps ≈ 1000000). Use Filter-Id lines or Roaring-Penguin vendor attrs (included in qosnat2 dictionary).',
+  radiusHelpColAttr: 'Attribute',
+  radiusHelpColDesc: 'Description',
+  radiusHelpExampleTitle: 'FreeRADIUS examples',
+  radiusHelpExampleFreeradius: `# users excerpt (groupconfig=true)
+vpnuser Cleartext-Password := "secret"
+    Framed-IP-Address = 10.250.0.50
+    Class = "OU=staff;vpn"
+    Session-Timeout = 86400
+    MS-Primary-DNS-Server = 8.8.8.8
+    Framed-Route = "10.0.0.0/8"`,
+  radiusHelpExampleRate: `# Rate limit (Filter-Id lines, bytes/s)
+    Filter-Id := "rx-data-per-sec = 1250000\\ntx-data-per-sec = 2500000"
+# Or vendor attrs (dictionary must define them)
+#    RP-Upstream-Speed-Limit = 1250000
+#    RP-Downstream-Speed-Limit = 2500000`,
+  radiusHelpSections: [
+    {
+      title: 'IPv4 / routes / session',
+      rows: [
+        { attr: 'Framed-IP-Address', desc: 'Client VPN IPv4 address' },
+        { attr: 'Framed-IP-Netmask', desc: 'Client netmask' },
+        { attr: 'Framed-Route', desc: 'Pushed route as CIDR (e.g. 10.0.0.0/8)' },
+        { attr: 'Session-Timeout', desc: 'Max session lifetime (seconds)' },
+        { attr: 'Idle-Timeout', desc: 'Idle disconnect (seconds)' },
+        { attr: 'Acct-Interim-Interval', desc: 'Accounting interval (seconds)' },
+      ],
+    },
+    {
+      title: 'Group / DNS',
+      rows: [
+        { attr: 'Class', desc: 'Groups as OU=group1;group2 (needs select-group)' },
+        { attr: 'Filter-Id', desc: 'Multi-line ocserv config (dns, route, rx/tx-data-per-sec, …)' },
+        { attr: 'MS-Primary-DNS-Server', desc: 'Primary DNS (Microsoft vendor 311)' },
+        { attr: 'MS-Secondary-DNS-Server', desc: 'Secondary DNS (Microsoft vendor 311)' },
+      ],
+    },
+    {
+      title: 'IPv6',
+      rows: [
+        { attr: 'Framed-IPv6-Address', desc: 'Client IPv6 address' },
+        { attr: 'Delegated-IPv6-Prefix', desc: 'Delegated IPv6 prefix' },
+        { attr: 'DNS-Server-IPv6-Address', desc: 'IPv6 DNS server' },
+        { attr: 'Framed-IPv6-Prefix / Route-IPv6-Information', desc: 'IPv6 routes/prefixes' },
+      ],
+    },
+    {
+      title: 'Cisco ASA (vendor 3076)',
+      rows: [
+        { attr: 'ASA-Group-Policy', desc: 'Group policy name (ASA proxy)' },
+        { attr: 'ASA-Primary-DNS / ASA-Secondary-DNS', desc: 'DNS servers' },
+        { attr: 'ASA-Address-Pools', desc: 'Address pools' },
+      ],
+    },
+    {
+      title: 'Rate limits (Roaring-Penguin vendor 10055)',
+      rows: [
+        { attr: 'RP-Upstream-Speed-Limit', desc: 'Client upload cap (bytes/s)' },
+        { attr: 'RP-Downstream-Speed-Limit', desc: 'Client download cap (bytes/s)' },
+      ],
+    },
+  ],
+  capDirectionHint:
+    'ocserv counts from the VPN server: rx = client upload, tx = client download. UI labels map accordingly when saving.',
   tcpPort: 'TCP port',
   udpPort: 'UDP port',
   device: 'TUN device',

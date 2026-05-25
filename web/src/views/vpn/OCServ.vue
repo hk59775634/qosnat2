@@ -6,6 +6,8 @@ import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import SnmpTrafficChart from '@/components/SnmpTrafficChart.vue'
 import { buildVhostPayload, emptyBasicVhost, vhostFormFromGlobal } from '@/lib/ocservVhostForm'
+import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
+import OCServRadiusHelpModal from '@/components/OCServRadiusHelpModal.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -89,8 +91,8 @@ function emptyGroupForm() {
     ipv4_netmask: '',
     mtu: 0,
     tunnel_all_dns: false,
-    rx_mbps: 0,
-    tx_mbps: 0,
+    down_mbps: 0,
+    up_mbps: 0,
   }
 }
 
@@ -103,22 +105,8 @@ const dnsText = ref('')
 const routesText = ref('')
 const noRoutesText = ref('')
 /** 带宽 M = Mbps，保存时换算为 ocserv 的 B/s（×125000） */
-const rxMbps = ref(0)
-const txMbps = ref(0)
-
-const bpsPerMbps = 125000
-
-function bpsToMbps(bps) {
-  if (!bps || bps <= 0) return 0
-  const m = bps / bpsPerMbps
-  return Number(m.toFixed(4).replace(/\.?0+$/, ''))
-}
-
-function mbpsToBps(m) {
-  const n = Number(m)
-  if (!n || n <= 0) return 0
-  return Math.round(n * bpsPerMbps)
-}
+const downMbps = ref(0)
+const upMbps = ref(0)
 
 const isRadius = computed(() => cfg.value?.auth_method === 'radius')
 const useOcctl = computed(() => !!cfg.value?.advanced?.use_occtl)
@@ -258,8 +246,12 @@ function ensureDefaults() {
   dnsText.value = listToText(cfg.value.dns)
   routesText.value = listToText(cfg.value.routes)
   noRoutesText.value = listToText(cfg.value.no_routes)
-  rxMbps.value = bpsToMbps(cfg.value.advanced.rx_data_per_sec)
-  txMbps.value = bpsToMbps(cfg.value.advanced.tx_data_per_sec)
+  const caps = clientMbpsFromOcserv(
+    cfg.value.advanced.rx_data_per_sec,
+    cfg.value.advanced.tx_data_per_sec,
+  )
+  downMbps.value = caps.downMbps
+  upMbps.value = caps.upMbps
   if (!cfg.value.groups) cfg.value.groups = []
   if (!cfg.value.vhosts) cfg.value.vhosts = []
   if (!cfg.value.config_per_group) cfg.value.config_per_group = '/etc/ocserv/config-per-group/'
@@ -277,8 +269,7 @@ function buildBody() {
   if (body.advanced) {
     body.advanced = {
       ...body.advanced,
-      rx_data_per_sec: mbpsToBps(rxMbps.value),
-      tx_data_per_sec: mbpsToBps(txMbps.value),
+      ...ocservBpsFromClientMbps(downMbps.value, upMbps.value),
     }
   }
   return body
@@ -458,13 +449,13 @@ function buildGroupPayload(form, dnsT, routesT, noRoutesT) {
     ipv4_netmask: form.ipv4_netmask,
     mtu: form.mtu || 0,
     tunnel_all_dns: !!form.tunnel_all_dns,
-    rx_data_per_sec: mbpsToBps(form.rx_mbps),
-    tx_data_per_sec: mbpsToBps(form.tx_mbps),
+    ...ocservBpsFromClientMbps(form.down_mbps, form.up_mbps),
   }
 }
 
 function startEditGroup(g) {
   editingGroup.value = g.name
+  const caps = clientMbpsFromOcserv(g.rx_data_per_sec, g.tx_data_per_sec)
   groupForm.value = {
     name: g.name,
     label: g.label || '',
@@ -473,8 +464,8 @@ function startEditGroup(g) {
     ipv4_netmask: g.ipv4_netmask || '',
     mtu: g.mtu || 0,
     tunnel_all_dns: !!g.tunnel_all_dns,
-    rx_mbps: bpsToMbps(g.rx_data_per_sec),
-    tx_mbps: bpsToMbps(g.tx_data_per_sec),
+    down_mbps: caps.downMbps,
+    up_mbps: caps.upMbps,
   }
   groupFormDns.value = listToText(g.dns)
   groupFormRoutes.value = listToText(g.routes)
@@ -987,11 +978,11 @@ onUnmounted(() => {
             </label>
             <label>
               {{ t('ocserv.downCapM') }}
-              <input v-model.number="groupForm.rx_mbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
+              <input v-model.number="groupForm.down_mbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
             </label>
             <label>
               {{ t('ocserv.upCapM') }}
-              <input v-model.number="groupForm.tx_mbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
+              <input v-model.number="groupForm.up_mbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
             </label>
             <label class="sm:col-span-2">
               {{ t('ocserv.dnsLines') }}
@@ -1202,7 +1193,10 @@ onUnmounted(() => {
       </div>
 
       <div v-if="isRadius" class="border rounded-lg p-4 space-y-3 bg-slate-50/50">
-        <h3 class="text-sm font-medium">{{ t('ocserv.radiusSection') }}</h3>
+        <div class="flex flex-wrap items-center gap-2">
+          <h3 class="text-sm font-medium">{{ t('ocserv.radiusSection') }}</h3>
+          <OCServRadiusHelpModal />
+        </div>
         <label class="block text-sm">{{ t('ocserv.radiusServer') }} <input v-model="cfg.radius.server" class="input w-full mt-1" /></label>
         <div class="grid grid-cols-2 gap-4">
           <label class="text-sm">{{ t('ocserv.radiusAuthPort') }} <input v-model.number="cfg.radius.auth_port" type="number" class="input w-full mt-1" /></label>
@@ -1316,15 +1310,16 @@ onUnmounted(() => {
       </div>
       <div class="grid grid-cols-2 gap-4 p-3 bg-slate-50/80 rounded border">
         <label class="text-sm">
-          下行带宽 (M)
-          <input v-model.number="rxMbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
-          <span class="text-xs text-slate-500">0=不限；1 M = 1 Mbps（如 100M 宽带填 100）</span>
+          {{ t('ocserv.downCapM') }}
+          <input v-model.number="downMbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
+          <span class="text-xs text-slate-500">{{ t('ocserv.capHint0') }} · tx-data-per-sec</span>
         </label>
         <label class="text-sm">
-          上行带宽 (M)
-          <input v-model.number="txMbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
-          <span class="text-xs text-slate-500">0=不限；保存后自动写入 ocserv 限速参数</span>
+          {{ t('ocserv.upCapM') }}
+          <input v-model.number="upMbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
+          <span class="text-xs text-slate-500">{{ t('ocserv.capHint0') }} · rx-data-per-sec</span>
         </label>
+        <p class="text-xs text-slate-500 col-span-2">{{ t('ocserv.capDirectionHint') }}</p>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <label v-for="n in numericAdvanced" v-show="!n.show || n.show()" :key="n.key" class="text-sm">

@@ -1,5 +1,7 @@
 /** Shared vhost form defaults and API payload helpers */
 
+import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
+
 export function emptyVhostForm() {
   return {
     enabled: true,
@@ -133,8 +135,10 @@ export function vhostFormFromGlobal(cfg) {
     cookie_timeout: adv.cookie_timeout || 0,
     rekey_time: adv.rekey && adv.rekey_time > 0 ? adv.rekey_time : 0,
     rekey_method: adv.rekey_method || '',
-    rx_data_per_sec: adv.rx_data_per_sec || 0,
-    tx_data_per_sec: adv.tx_data_per_sec || 0,
+    ...ocservBpsFromClientMbps(
+      clientMbpsFromOcserv(adv.rx_data_per_sec, adv.tx_data_per_sec).downMbps,
+      clientMbpsFromOcserv(adv.rx_data_per_sec, adv.tx_data_per_sec).upMbps,
+    ),
     default_domain: adv.default_domain || '',
     cert_user_oid: adv.cert_user_oid || '',
     tls_priorities: adv.tls_priorities || '',

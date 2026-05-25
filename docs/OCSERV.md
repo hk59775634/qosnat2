@@ -54,7 +54,7 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh
 
 ### 高级配置
 
-通过开关启用/停用 ocserv 能力，例如：TCP/UDP、MTU 探测、DTLS/Cisco 兼容、伪装站点（camouflage）、压缩、keepalive/DPD、rekey、occtl 等；并可调限速、封禁、日志、带宽（高级配置中按 **M（Mbps）** 填写上下行，内部换算为 `rx/tx-data-per-sec` 字节/秒）、`max-same-clients` 与各类超时。
+通过开关启用/停用 ocserv 能力，例如：TCP/UDP、MTU 探测、DTLS/Cisco 兼容、伪装站点（camouflage）、压缩、keepalive/DPD、rekey、occtl 等；并可调限速、封禁、日志、带宽（高级配置中按 **M（Mbps）** 填写**客户端**上下行：下行→`tx-data-per-sec`，上行→`rx-data-per-sec`，单位字节/秒）、`max-same-clients` 与各类超时。RADIUS 认证页提供「RADIUS 属性说明」悬浮窗（ocserv 可下发属性与示例）。
 
 基础区另支持：**DNS**、**route / no-route**（多行）、**证书路径**（`server-cert`/`server-key`/`ca-cert`）、**socket-file**、**tls-priorities**、**cert-user-oid**、**default-domain**。
 

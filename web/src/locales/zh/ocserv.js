@@ -41,6 +41,76 @@ export default {
   radiusNas: 'NAS-Identifier',
   radiusAcct: '计费 (acct)',
   radiusStats: '上报间隔 (秒)',
+  radiusHelpBtn: 'RADIUS 属性说明',
+  radiusHelpTitle: 'ocserv RADIUS 下发属性',
+  radiusHelpIntro: '在 Access-Accept 中返回下列属性；需启用 auth 的 groupconfig=true，且字典与 /etc/radcli/dictionary 一致。',
+  radiusHelpGroupconfig:
+    '启用「从 RADIUS 读取每组配置」后，用户/组的 dns、路由、限速等以 RADIUS 为准，不再使用本地 config-per-user/group 文件。',
+  radiusHelpRateNote:
+    '限速：ocserv 以服务器视角计数——rx-data-per-sec 限制客户端上行，tx-data-per-sec 限制客户端下行（单位：字节/秒，8 Mbps ≈ 1000000）。可通过 Filter-Id 多行下发，或使用 Roaring-Penguin 厂商属性（本系统字典已包含）。',
+  radiusHelpColAttr: '属性',
+  radiusHelpColDesc: '说明',
+  radiusHelpExampleTitle: 'FreeRADIUS 示例',
+  radiusHelpExampleFreeradius: `# users 片段（需 groupconfig=true）
+vpnuser Cleartext-Password := "secret"
+    Framed-IP-Address = 10.250.0.50
+    Class = "OU=staff;vpn"
+    Session-Timeout = 86400
+    MS-Primary-DNS-Server = 8.8.8.8
+    Framed-Route = "10.0.0.0/8"`,
+  radiusHelpExampleRate: `# 限速示例（Filter-Id 多行，单位 B/s）
+    Filter-Id := "rx-data-per-sec = 1250000\\ntx-data-per-sec = 2500000"
+# 或使用厂商属性（bps，需与字典一致）
+#    RP-Upstream-Speed-Limit = 1250000
+#    RP-Downstream-Speed-Limit = 2500000`,
+  radiusHelpSections: [
+    {
+      title: 'IPv4 / 路由 / 会话',
+      rows: [
+        { attr: 'Framed-IP-Address', desc: '客户端 VPN IPv4 地址' },
+        { attr: 'Framed-IP-Netmask', desc: '客户端掩码' },
+        { attr: 'Framed-Route', desc: '推送路由，CIDR 字符串（如 10.0.0.0/8）' },
+        { attr: 'Session-Timeout', desc: '会话最长时长（秒）' },
+        { attr: 'Idle-Timeout', desc: '空闲断开（秒）' },
+        { attr: 'Acct-Interim-Interval', desc: '计费上报间隔（秒），覆盖 stats-report-time' },
+      ],
+    },
+    {
+      title: '组 / DNS',
+      rows: [
+        { attr: 'Class', desc: '组名，格式 OU=组1;组2（需 select-group 与 group-separator）' },
+        { attr: 'Filter-Id', desc: '多行 ocserv 配置片段（dns、route、rx/tx-data-per-sec 等）' },
+        { attr: 'MS-Primary-DNS-Server', desc: '主 DNS（Microsoft 厂商 311）' },
+        { attr: 'MS-Secondary-DNS-Server', desc: '备 DNS（Microsoft 厂商 311）' },
+      ],
+    },
+    {
+      title: 'IPv6',
+      rows: [
+        { attr: 'Framed-IPv6-Address', desc: '客户端 IPv6 地址' },
+        { attr: 'Delegated-IPv6-Prefix', desc: '下发 IPv6 前缀' },
+        { attr: 'DNS-Server-IPv6-Address', desc: 'IPv6 DNS' },
+        { attr: 'Framed-IPv6-Prefix / Route-IPv6-Information', desc: 'IPv6 路由/前缀' },
+      ],
+    },
+    {
+      title: 'Cisco ASA（厂商 3076）',
+      rows: [
+        { attr: 'ASA-Group-Policy', desc: '组策略名（与 ASA 对接时常用）' },
+        { attr: 'ASA-Primary-DNS / ASA-Secondary-DNS', desc: 'DNS 服务器' },
+        { attr: 'ASA-Address-Pools', desc: '地址池' },
+      ],
+    },
+    {
+      title: '限速（Roaring-Penguin 厂商 10055）',
+      rows: [
+        { attr: 'RP-Upstream-Speed-Limit', desc: '客户端上行限速（字节/秒）' },
+        { attr: 'RP-Downstream-Speed-Limit', desc: '客户端下行限速（字节/秒）' },
+      ],
+    },
+  ],
+  capDirectionHint:
+    'ocserv 以 VPN 服务器视角：rx=客户端上行，tx=客户端下行。界面「下行/上行」已按客户端习惯对应写入配置。',
   tcpPort: 'TCP 端口',
   udpPort: 'UDP 端口',
   device: 'TUN 设备',

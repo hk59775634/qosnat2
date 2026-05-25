@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { emptyVhostRadius } from '@/lib/ocservVhostForm'
+import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
+import OCServRadiusHelpModal from '@/components/OCServRadiusHelpModal.vue'
 import VhostPlainUsers from '@/views/vpn/VhostPlainUsers.vue'
 
 const props = defineProps({
@@ -111,26 +113,23 @@ const selectGroupsText = computed({
   set: (s) => patch({ select_groups: textToList(s) }),
 })
 
-const vhostRxMbps = computed({
-  get: () => bpsToMbps(v.value.rx_data_per_sec),
-  set: (m) => patch({ rx_data_per_sec: mbpsToBps(m) }),
+const vhostDownMbps = computed({
+  get: () => clientMbpsFromOcserv(v.value.rx_data_per_sec, v.value.tx_data_per_sec).downMbps,
+  set: (m) => {
+    const caps = ocservBpsFromClientMbps(m, clientMbpsFromOcserv(v.value.rx_data_per_sec, v.value.tx_data_per_sec).upMbps)
+    patch(caps)
+  },
 })
-const vhostTxMbps = computed({
-  get: () => bpsToMbps(v.value.tx_data_per_sec),
-  set: (m) => patch({ tx_data_per_sec: mbpsToBps(m) }),
+const vhostUpMbps = computed({
+  get: () => clientMbpsFromOcserv(v.value.rx_data_per_sec, v.value.tx_data_per_sec).upMbps,
+  set: (m) => {
+    const caps = ocservBpsFromClientMbps(
+      clientMbpsFromOcserv(v.value.rx_data_per_sec, v.value.tx_data_per_sec).downMbps,
+      m,
+    )
+    patch(caps)
+  },
 })
-
-const bpsPerMbps = 125000
-function bpsToMbps(bps) {
-  if (!bps || bps <= 0) return 0
-  const m = bps / bpsPerMbps
-  return Number(m.toFixed(4).replace(/\.?0+$/, ''))
-}
-function mbpsToBps(m) {
-  const n = Number(m)
-  if (!n || n <= 0) return 0
-  return Math.round(n * bpsPerMbps)
-}
 function textToList(s) {
   return String(s || '')
     .split(/[\n,]+/)
@@ -217,7 +216,10 @@ function patchRadius(partial) {
       </div>
 
       <div v-if="isRadius" class="vhost-panel space-y-4">
-        <h5 class="font-medium text-slate-800">{{ t('ocserv.authRadius') }}</h5>
+        <div class="flex flex-wrap items-center gap-2">
+          <h5 class="font-medium text-slate-800">{{ t('ocserv.authRadius') }}</h5>
+          <OCServRadiusHelpModal button-class="text-blue-700 text-xs underline" />
+        </div>
         <label
           v-if="globalIsRadius"
           class="flex gap-2 items-start rounded-md border border-slate-200 bg-white px-3 py-2 cursor-pointer"
@@ -447,12 +449,14 @@ function patchRadius(partial) {
         <textarea v-model="nbnsText" class="input w-full mt-1 font-mono text-xs" rows="2" />
       </label>
       <label>
-        RX (Mbps)
-        <input v-model.number="vhostRxMbps" type="number" step="0.01" class="input w-full mt-1" />
+        {{ t('ocserv.downCapM') }}
+        <input v-model.number="vhostDownMbps" type="number" step="0.01" class="input w-full mt-1" />
+        <span class="vhost-hint">tx-data-per-sec</span>
       </label>
       <label>
-        TX (Mbps)
-        <input v-model.number="vhostTxMbps" type="number" step="0.01" class="input w-full mt-1" />
+        {{ t('ocserv.upCapM') }}
+        <input v-model.number="vhostUpMbps" type="number" step="0.01" class="input w-full mt-1" />
+        <span class="vhost-hint">rx-data-per-sec</span>
       </label>
       <label>
         pkt-mtu-size
