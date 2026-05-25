@@ -10,11 +10,69 @@ const users = ref([])
 const err = ref('')
 const ok = ref('')
 const installing = ref(false)
+const showAdvanced = ref(false)
 
 const userForm = ref({ username: '', password: '', comment: '' })
 const radiusSecret = ref('')
 
 const isRadius = computed(() => cfg.value?.auth_method === 'radius')
+
+const defaultAdvanced = () => ({
+  try_mtu_discovery: true,
+  isolate_workers: true,
+  dtls_legacy: true,
+  tcp: true,
+  udp: true,
+  deny_roaming: false,
+  cisco_client_compat: true,
+  compression: false,
+  keepalive: true,
+  dpd: true,
+  mobile_dpd: true,
+  predictable_ips: false,
+  ping_leases: false,
+  use_occtl: false,
+  rekey: true,
+  switch_to_tcp: true,
+  max_same_clients: 2,
+  keepalive_sec: 32400,
+  dpd_sec: 90,
+  mobile_dpd_sec: 1800,
+  cookie_timeout: 300,
+  rekey_time: 172800,
+  auth_timeout: 240,
+  switch_to_tcp_timeout: 25,
+})
+
+const featureToggles = [
+  { key: 'tcp', label: 'TCP', hint: '监听 tcp-port，主通道' },
+  { key: 'udp', label: 'UDP / DTLS', hint: '监听 udp-port，低延迟' },
+  { key: 'try_mtu_discovery', label: 'MTU 探测', hint: 'try-mtu-discovery' },
+  { key: 'isolate_workers', label: '隔离 worker', hint: 'isolate-workers，提升安全' },
+  { key: 'dtls_legacy', label: 'DTLS 旧版兼容', hint: 'AnyConnect 老客户端' },
+  { key: 'cisco_client_compat', label: 'Cisco 客户端兼容', hint: 'cisco-client-compat' },
+  { key: 'deny_roaming', label: '禁止漫游', hint: 'deny-roaming' },
+  { key: 'compression', label: '压缩', hint: 'compression（通常关闭）' },
+  { key: 'keepalive', label: 'Keepalive', hint: '长连接保活' },
+  { key: 'dpd', label: 'DPD', hint: '断线检测' },
+  { key: 'mobile_dpd', label: '移动端 DPD', hint: 'mobile-dpd' },
+  { key: 'switch_to_tcp', label: 'UDP 切 TCP', hint: 'switch-to-tcp-timeout' },
+  { key: 'rekey', label: '会话重密钥', hint: 'rekey-time / ssl' },
+  { key: 'predictable_ips', label: '可预测 IP', hint: 'predictable-ips' },
+  { key: 'ping_leases', label: 'Ping 租约', hint: 'ping-leases' },
+  { key: 'use_occtl', label: 'occtl 控制', hint: 'use-occtl（本机管理）' },
+]
+
+const numericAdvanced = [
+  { key: 'max_same_clients', label: '同用户最大会话', min: 1, max: 64 },
+  { key: 'keepalive_sec', label: 'Keepalive（秒）', min: 60, show: () => cfg.value?.advanced?.keepalive },
+  { key: 'dpd_sec', label: 'DPD（秒）', min: 10, show: () => cfg.value?.advanced?.dpd },
+  { key: 'mobile_dpd_sec', label: '移动端 DPD（秒）', min: 60, show: () => cfg.value?.advanced?.mobile_dpd },
+  { key: 'cookie_timeout', label: 'Cookie 超时（秒）', min: 60 },
+  { key: 'auth_timeout', label: '认证超时（秒）', min: 30 },
+  { key: 'rekey_time', label: 'Rekey 间隔（秒）', min: 3600, show: () => cfg.value?.advanced?.rekey },
+  { key: 'switch_to_tcp_timeout', label: '切 TCP 超时（秒）', min: 5, show: () => cfg.value?.advanced?.switch_to_tcp },
+]
 
 function ensureDefaults() {
   if (!cfg.value.auth_method) cfg.value.auth_method = 'plain'
@@ -25,6 +83,11 @@ function ensureDefaults() {
       groupconfig: true,
       stats_report_time: 360,
     }
+  }
+  if (!cfg.value.advanced || Object.keys(cfg.value.advanced).length === 0) {
+    cfg.value.advanced = defaultAdvanced()
+  } else {
+    cfg.value.advanced = { ...defaultAdvanced(), ...cfg.value.advanced }
   }
 }
 
@@ -57,6 +120,10 @@ async function save() {
   ok.value = ''
   try {
     const body = { ...cfg.value }
+    if (!body.advanced?.tcp && !body.advanced?.udp) {
+      err.value = 'TCP 与 UDP 至少启用一项'
+      return
+    }
     if (isRadius.value) {
       body.users = []
       if (radiusSecret.value) {
@@ -78,6 +145,7 @@ async function apply() {
   ok.value = ''
   try {
     await save()
+    if (err.value) return
     await api.post('/api/v1/vpn/ocserv/apply', {})
     ok.value = cfg.value.enabled ? '已应用并启动 ocserv' : '已停止 ocserv'
     await load()
@@ -160,7 +228,7 @@ onMounted(load)
         <div class="grid grid-cols-2 gap-4">
           <label class="block text-sm col-span-2">
             服务器地址
-            <input v-model="cfg.radius.server" class="input w-full mt-1" placeholder="192.168.1.10 或 radius.example.com" />
+            <input v-model="cfg.radius.server" class="input w-full mt-1" placeholder="192.168.1.10" />
           </label>
           <label class="block text-sm">
             认证端口
@@ -176,7 +244,7 @@ onMounted(load)
           </label>
           <label class="block text-sm col-span-2">
             NAS-Identifier（可选）
-            <input v-model="cfg.radius.nas_identifier" class="input w-full mt-1" placeholder="qosnat2" />
+            <input v-model="cfg.radius.nas_identifier" class="input w-full mt-1" />
           </label>
         </div>
         <label class="flex items-center gap-2 text-sm">
@@ -191,21 +259,59 @@ onMounted(load)
           计费上报间隔（秒）
           <input v-model.number="cfg.radius.stats_report_time" type="number" class="input w-full mt-1 max-w-xs" />
         </label>
-        <p class="text-xs text-slate-500">
-          配置写入 <code>/etc/radcli/</code>。FreeRADIUS 需在 acct_unique 中去掉 NAS-Port 依赖（ocserv 不发送该属性）。
-        </p>
       </div>
 
       <div class="grid grid-cols-2 gap-4">
-        <label class="block text-sm">TCP 端口 <input v-model.number="cfg.tcp_port" type="number" class="input w-full mt-1" /></label>
-        <label class="block text-sm">UDP 端口 <input v-model.number="cfg.udp_port" type="number" class="input w-full mt-1" /></label>
-        <label class="block text-sm">地址池网络 <input v-model="cfg.ipv4_network" class="input w-full mt-1" placeholder="10.250.0.0" /></label>
-        <label class="block text-sm">掩码 <input v-model="cfg.ipv4_netmask" class="input w-full mt-1" placeholder="255.255.255.0" /></label>
+        <label class="block text-sm">TCP 端口 <input v-model.number="cfg.tcp_port" type="number" class="input w-full mt-1" :disabled="!cfg.advanced?.tcp" /></label>
+        <label class="block text-sm">UDP 端口 <input v-model.number="cfg.udp_port" type="number" class="input w-full mt-1" :disabled="!cfg.advanced?.udp" /></label>
+        <label class="block text-sm">地址池网络 <input v-model="cfg.ipv4_network" class="input w-full mt-1" /></label>
+        <label class="block text-sm">掩码 <input v-model="cfg.ipv4_netmask" class="input w-full mt-1" /></label>
+        <label class="block text-sm col-span-2">TUN 设备名 <input v-model="cfg.device" class="input w-full mt-1" placeholder="vpns" /></label>
+        <label class="block text-sm">最大客户端 <input v-model.number="cfg.max_clients" type="number" class="input w-full mt-1" /></label>
       </div>
       <label class="flex items-center gap-2 text-sm">
         <input v-model="cfg.use_qosnat_tls" type="checkbox" />
         使用 qosnat2 HTTPS 证书（/etc/qosnat2/tls.crt）
       </label>
+
+      <div class="border border-slate-200 rounded-lg">
+        <button
+          type="button"
+          class="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-left hover:bg-slate-50"
+          @click="showAdvanced = !showAdvanced"
+        >
+          <span>高级配置</span>
+          <span class="text-slate-400">{{ showAdvanced ? '收起' : '展开' }}</span>
+        </button>
+        <div v-show="showAdvanced && cfg.advanced" class="px-4 pb-4 space-y-4 border-t border-slate-100">
+          <p class="text-xs text-slate-500 pt-3">开关对应 ocserv.conf 中的功能项；关闭后写入 <code>= false</code> 或省略端口行。</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <label
+              v-for="f in featureToggles"
+              :key="f.key"
+              class="flex items-start gap-2 text-sm p-2 rounded border border-slate-100 hover:bg-slate-50/80 cursor-pointer"
+            >
+              <input v-model="cfg.advanced[f.key]" type="checkbox" class="mt-0.5" />
+              <span>
+                <span class="font-medium">{{ f.label }}</span>
+                <span class="block text-xs text-slate-500">{{ f.hint }}</span>
+              </span>
+            </label>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <label
+              v-for="n in numericAdvanced"
+              v-show="!n.show || n.show()"
+              :key="n.key"
+              class="block text-sm"
+            >
+              {{ n.label }}
+              <input v-model.number="cfg.advanced[n.key]" type="number" class="input w-full mt-1" :min="n.min" />
+            </label>
+          </div>
+        </div>
+      </div>
+
       <div class="flex gap-2">
         <button type="button" class="btn-primary" @click="save">保存配置</button>
         <button type="button" class="btn-secondary" :disabled="!status?.installed" @click="apply">保存并应用</button>
@@ -233,7 +339,7 @@ onMounted(load)
     </div>
 
     <p v-if="cfg" class="text-xs text-slate-500 mt-4">
-      客户端：Cisco AnyConnect / openconnect CLI，连接 <code>https://&lt;WAN&gt;:{{ cfg?.tcp_port || 443 }}</code>
+      客户端：Cisco AnyConnect / openconnect，<code>https://&lt;WAN&gt;:{{ cfg?.tcp_port || 443 }}</code>
     </p>
   </div>
 </template>

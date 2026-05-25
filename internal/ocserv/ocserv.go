@@ -72,8 +72,6 @@ func RenderConf(o store.OCServState) string {
 	} else {
 		b.WriteString(fmt.Sprintf("auth = \"plain[passwd=%s]\"\n", PasswdPath))
 	}
-	b.WriteString(fmt.Sprintf("tcp-port = %d\n", o.TCPPort))
-	b.WriteString(fmt.Sprintf("udp-port = %d\n", o.UDPPort))
 	b.WriteString("run-as-user = nobody\n")
 	b.WriteString("run-as-group = daemon\n")
 	b.WriteString("socket-file = /var/run/ocserv.sock\n")
@@ -88,14 +86,8 @@ func RenderConf(o store.OCServState) string {
 		b.WriteString(fmt.Sprintf("route = %s\n", strings.TrimSpace(r)))
 	}
 	b.WriteString(fmt.Sprintf("device = %s\n", o.Device))
-	b.WriteString("try-mtu-discovery = true\n")
-	if o.IsolateWorkers {
-		b.WriteString("isolate-workers = true\n")
-	}
 	b.WriteString(fmt.Sprintf("max-clients = %d\n", o.MaxClients))
-	b.WriteString("max-same-clients = 2\n")
-	b.WriteString("keepalive = 32400\n")
-	b.WriteString("dtls-legacy = true\n")
+	renderAdvanced(&b, o)
 	return b.String()
 }
 

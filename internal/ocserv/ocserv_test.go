@@ -27,8 +27,25 @@ func TestRenderConfRadius(t *testing.T) {
 	if !strings.Contains(conf, "stats-report-time = 360") {
 		t.Fatalf("missing stats-report-time: %s", conf)
 	}
+	if !strings.Contains(conf, "try-mtu-discovery = true") {
+		t.Fatalf("missing advanced: %s", conf)
+	}
 	if strings.Contains(conf, "plain[passwd") {
 		t.Fatal("should not use plain auth")
+	}
+}
+
+func TestRenderConfAdvancedOff(t *testing.T) {
+	o := store.DefaultOCServ()
+	o.Advanced = store.DefaultOCServAdvanced()
+	o.Advanced.Udp = false
+	o.Advanced.DtlsLegacy = false
+	conf := RenderConf(o)
+	if strings.Contains(conf, "udp-port") {
+		t.Fatal("udp should be disabled")
+	}
+	if strings.Contains(conf, "dtls-legacy = true") {
+		t.Fatal("dtls-legacy should be false")
 	}
 }
 

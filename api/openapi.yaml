@@ -318,6 +318,34 @@ components:
         acct_enabled: { type: boolean }
         stats_report_time: { type: integer, example: 360 }
         config_path: { type: string }
+    OCServAdvanced:
+      type: object
+      description: ocserv 功能开关与高级参数
+      properties:
+        try_mtu_discovery: { type: boolean }
+        isolate_workers: { type: boolean }
+        dtls_legacy: { type: boolean }
+        tcp: { type: boolean }
+        udp: { type: boolean }
+        deny_roaming: { type: boolean }
+        cisco_client_compat: { type: boolean }
+        compression: { type: boolean }
+        keepalive: { type: boolean }
+        dpd: { type: boolean }
+        mobile_dpd: { type: boolean }
+        predictable_ips: { type: boolean }
+        ping_leases: { type: boolean }
+        use_occtl: { type: boolean }
+        rekey: { type: boolean }
+        switch_to_tcp: { type: boolean }
+        max_same_clients: { type: integer }
+        keepalive_sec: { type: integer }
+        dpd_sec: { type: integer }
+        mobile_dpd_sec: { type: integer }
+        cookie_timeout: { type: integer }
+        rekey_time: { type: integer }
+        auth_timeout: { type: integer }
+        switch_to_tcp_timeout: { type: integer }
     OCServConfig:
       type: object
       properties:
@@ -325,6 +353,8 @@ components:
         auth_method: { type: string, enum: [plain, radius] }
         radius:
           $ref: '#/components/schemas/OCServRadius'
+        advanced:
+          $ref: '#/components/schemas/OCServAdvanced'
         tcp_port: { type: integer, example: 443 }
         udp_port: { type: integer }
         device: { type: string, example: vpns }
@@ -337,7 +367,6 @@ components:
           type: array
           items: { type: string }
         max_clients: { type: integer }
-        isolate_workers: { type: boolean }
         use_qosnat_tls: { type: boolean, description: 使用 /etc/qosnat2/tls.* 作为服务端证书 }
         server_cert: { type: string }
         server_key: { type: string }

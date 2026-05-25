@@ -29,3 +29,14 @@ func TestNormalizeOCServRadius(t *testing.T) {
 		t.Fatalf("%+v", o.Radius)
 	}
 }
+
+func TestMergeOCServAdvancedDefaults(t *testing.T) {
+	o := DefaultOCServ()
+	o.Advanced = OCServAdvanced{}
+	if err := NormalizeOCServ(&o); err != nil {
+		t.Fatal(err)
+	}
+	if !o.Advanced.CiscoClientCompat || !o.Advanced.Tcp {
+		t.Fatalf("%+v", o.Advanced)
+	}
+}

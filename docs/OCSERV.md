@@ -24,7 +24,11 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh
 
 ## Web 管理
 
-**VPN → OpenConnect**：启用、端口、地址池（默认 `10.250.0.0/24`）、**认证方式**、保存并 Apply。
+**VPN → OpenConnect**：启用、端口、地址池（默认 `10.250.0.0/24`）、**认证方式**、**高级配置**（功能开关）、保存并 Apply。
+
+### 高级配置
+
+通过开关启用/停用 ocserv 能力，例如：TCP/UDP、MTU 探测、DTLS 旧版兼容、Cisco 客户端兼容、隔离 worker、漫游、压缩、keepalive/DPD、rekey、occtl 等；并可调 `max-same-clients`、超时与间隔类数值。配置写入 `ocserv.conf`。
 
 ### 认证
 

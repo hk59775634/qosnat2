@@ -47,9 +47,10 @@ type OCServState struct {
 	IPv4Netmask    string       `json:"ipv4_netmask"`
 	DNS            []string     `json:"dns,omitempty"`
 	Routes         []string     `json:"routes,omitempty"` // 如 default、192.168.0.0/24
-	MaxClients     int          `json:"max_clients,omitempty"`
-	IsolateWorkers bool         `json:"isolate_workers,omitempty"`
-	UseQoSnatTLS   bool         `json:"use_qosnat_tls,omitempty"` // 证书用 /etc/qosnat2/tls.*
+	MaxClients     int            `json:"max_clients,omitempty"`
+	IsolateWorkers bool           `json:"isolate_workers,omitempty"` // 已迁移至 advanced，仅作旧 state 兼容
+	Advanced       OCServAdvanced `json:"advanced,omitempty"`
+	UseQoSnatTLS   bool           `json:"use_qosnat_tls,omitempty"` // 证书用 /etc/qosnat2/tls.*
 	ServerCert     string       `json:"server_cert,omitempty"`
 	ServerKey      string       `json:"server_key,omitempty"`
 	Users          []OCServUser `json:"users"`
@@ -73,7 +74,7 @@ func DefaultOCServ() OCServState {
 		DNS:            []string{"8.8.8.8"},
 		Routes:         []string{"default"},
 		MaxClients:     128,
-		IsolateWorkers: true,
+		Advanced:       DefaultOCServAdvanced(),
 		UseQoSnatTLS:   true,
 		Users:          []OCServUser{},
 	}
@@ -121,6 +122,15 @@ func NormalizeOCServ(o *OCServState) error {
 	}
 	if o.MaxClients <= 0 {
 		o.MaxClients = 128
+	}
+	var legacyIso *bool
+	if ocservAdvancedEmpty(o.Advanced) {
+		legacyIso = &o.IsolateWorkers
+	}
+	MergeOCServAdvanced(&o.Advanced, legacyIso)
+	o.IsolateWorkers = false
+	if !o.Advanced.Tcp && !o.Advanced.Udp {
+		return fmt.Errorf("TCP 与 UDP 至少启用一项")
 	}
 	if o.Radius.AuthPort <= 0 {
 		o.Radius.AuthPort = 1812
