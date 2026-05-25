@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 从源码编译安装 ocserv（OpenConnect VPN 服务端，兼容 AnyConnect 客户端）
 # 用法: sudo /opt/qosnat2/scripts/install-ocserv.sh
-# 可选: OCSERV_TAG=v1.3.0 OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
+# 可选: OCSERV_TAG=v1.4.2 OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
 set -euo pipefail
 
 OCSERV_REPO="${OCSERV_REPO:-https://gitlab.com/openconnect/ocserv.git}"
-OCSERV_TAG="${OCSERV_TAG:-v1.3.0}"
+OCSERV_TAG="${OCSERV_TAG:-v1.4.2}"
 OCSERV_PREFIX="${OCSERV_PREFIX:-/usr/local}"
 OCSERV_SYSCONFDIR="${OCSERV_SYSCONFDIR:-/etc/ocserv}"
 BUILD_DIR="${BUILD_DIR:-/usr/local/src/ocserv-build}"

@@ -14,7 +14,7 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh
 
 | 变量 | 默认 |
 |------|------|
-| `OCSERV_TAG` | `v1.3.0` |
+| `OCSERV_TAG` | `v1.4.2` |
 | `OCSERV_PREFIX` | `/usr/local` |
 | `OCSERV_SYSCONFDIR` | `/etc/ocserv` |
 
