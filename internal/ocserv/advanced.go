@@ -89,9 +89,6 @@ func renderAdvanced(b *bytes.Buffer, o store.OCServState) {
 	if strings.TrimSpace(a.DefaultDomain) != "" {
 		fmt.Fprintf(b, "default-domain = %s\n", strings.TrimSpace(a.DefaultDomain))
 	}
-	if strings.TrimSpace(a.ConfigPerGroup) != "" {
-		fmt.Fprintf(b, "config-per-group = %s\n", strings.TrimSpace(a.ConfigPerGroup))
-	}
 	if a.RxDataPerSec > 0 {
 		fmt.Fprintf(b, "rx-data-per-sec = %d\n", a.RxDataPerSec)
 	}

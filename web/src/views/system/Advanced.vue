@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+
+const { t } = useI18n()
 
 const data = ref(null)
 const overrides = ref({})
@@ -107,7 +110,7 @@ async function save(applyNow) {
   saving.value = true
   try {
     await api.system.tuning.put(buildBody(applyNow))
-    ok.value = applyNow ? '已保存并应用到内核/网卡' : '已保存'
+    ok.value = applyNow ? t('system.advanced.savedApplied') : t('system.advanced.saved')
     await load()
   } catch (e) {
     err.value = e.message
@@ -126,7 +129,7 @@ async function applyHardwareRecommend() {
     const extra = b
       ? `；conntrack max ${b.conntrack_max?.toLocaleString()} / buckets ${b.conntrack_buckets?.toLocaleString()}（优化内存 ${b.optimization_mb}MB）`
       : ''
-    ok.value = `已按当前硬件（${data.value?.hardware_tier_label || res.tier || ''}）填入推荐值并应用${extra}`
+    ok.value = t('system.advanced.appliedHw') + (data.value?.hardware_tier_label || res.tier || '') + extra
     await load()
   } catch (e) {
     err.value = e.message
@@ -148,7 +151,7 @@ function fillRecommendedToForm() {
     'system.rps_wan': !!rec.rps_wan,
     'system.perf_preset': !!rec.perf_preset,
   }
-  ok.value = '已填入推荐值到表单，请点击「保存并应用」生效'
+  ok.value = t('system.advanced.filledRec')
 }
 
 onMounted(load)
@@ -156,32 +159,27 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <h2 class="text-lg font-semibold mb-1">高级设置 · 系统优化</h2>
-    <p class="page-hint mb-2">
-      QoS/NAT 网关相关的内核 sysctl、连接跟踪、TCP、网卡队列与 HTB 叶子队列等。「按硬件重新推荐」将总内存的
-      <strong>50%</strong> 划为优化专用预算，其中约 <strong>75%</strong> 用于 conntrack（按约 384 字节/连接估算
-      <code class="text-xs">max</code> 与 <code class="text-xs">buckets=max/4</code>，2 的幂）。16GB 内存示例：
-      max≈1677 万、buckets≈419 万。
-    </p>
+    <h2 class="text-lg font-semibold mb-1">{{ t('system.advanced.title') }}</h2>
+    <p class="page-hint mb-2">{{ t('system.advanced.description') }}</p>
 
-    <p v-if="loading" class="text-sm text-slate-500">加载中…</p>
+    <p v-if="loading" class="text-sm text-slate-500">{{ t('common.loading') }}</p>
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div v-if="!loading && !data && err" class="card card-body max-w-xl">
-      <p class="text-sm text-slate-700 mb-3">无法加载配置。若刚升级代码，请执行部署脚本重启服务。</p>
-      <button type="button" class="btn-primary text-sm" @click="load">重试</button>
+      <p class="text-sm text-slate-700 mb-3">{{ t('system.advanced.loadFail') }}</p>
+      <button type="button" class="btn-primary text-sm" @click="load">{{ t('common.retry') }}</button>
     </div>
 
     <div v-if="data" class="space-y-3">
       <div class="card card-body bg-blue-50/80 border-blue-100">
-        <h3 class="font-medium text-slate-800 mb-2">本机硬件与推荐档位</h3>
+        <h3 class="font-medium text-slate-800 mb-2">{{ t('system.advanced.hardware') }}</h3>
         <p class="text-sm text-slate-700">
-          CPU <strong>{{ data.hardware?.cpus ?? '—' }}</strong> 核 · 内存
-          <strong>{{ data.hardware?.mem_mb ?? '—' }}</strong> MB · 检测档位
-          <strong>{{ data.hardware_tier_label }}</strong>
-          <span v-if="data.tuning_auto_applied" class="text-green-700 ml-2">（已自动应用推荐）</span>
-          <span v-if="data.tuning_tier" class="text-slate-500 ml-1">保存档位: {{ data.tuning_tier }}</span>
+          {{ t('system.advanced.cpuCores') }} <strong>{{ data.hardware?.cpus ?? '—' }}</strong> ·
+          {{ t('system.advanced.memory') }} <strong>{{ data.hardware?.mem_mb ?? '—' }}</strong> MB ·
+          {{ t('system.advanced.detectedTier') }} <strong>{{ data.hardware_tier_label }}</strong>
+          <span v-if="data.tuning_auto_applied" class="text-green-700 ml-2">({{ t('system.advanced.autoApplied') }})</span>
+          <span v-if="data.tuning_tier" class="text-slate-500 ml-1">{{ t('system.advanced.saveTier') }}: {{ data.tuning_tier }}</span>
         </p>
         <p
           v-if="data.recommended?.memory_budget"
@@ -199,9 +197,9 @@ onMounted(load)
           <span class="font-mono">{{ data.conf_path }}</span>
         </p>
         <div class="flex flex-wrap gap-2 mt-3">
-          <button type="button" class="btn-secondary text-sm" @click="fillRecommendedToForm">填入推荐值</button>
+          <button type="button" class="btn-secondary text-sm" @click="fillRecommendedToForm">{{ t('system.advanced.fillRecommended') }}</button>
           <button type="button" class="btn-primary text-sm" :disabled="saving" @click="applyHardwareRecommend">
-            按硬件重新推荐并应用
+            {{ t('system.advanced.reRecommend') }}
           </button>
         </div>
       </div>
@@ -229,7 +227,7 @@ onMounted(load)
                   :checked="!!appVal(row.key)"
                   @change="setApp(row.key, $event.target.checked)"
                 />
-                启用
+                {{ t('common.enabled') }}
               </label>
               <input
                 v-else
@@ -254,16 +252,16 @@ onMounted(load)
 
       <div v-for="cat in sysctlCategories" :key="cat" class="card card-body overflow-x-auto">
         <h3 class="font-medium text-slate-800 mb-1">{{ cat }}</h3>
-        <p class="text-xs text-slate-500 mb-3">sysctl · 留空「手动覆盖」则使用默认 + 高性能预设合并结果</p>
+        <p class="text-xs text-slate-500 mb-3">sysctl</p>
         <table class="w-full text-sm min-w-[640px]">
           <thead>
             <tr class="text-left text-xs text-slate-500 border-b">
-              <th class="pb-2 pr-2">参数</th>
-              <th class="pb-2 pr-2">说明</th>
-              <th class="pb-2 pr-2">生效</th>
-              <th class="pb-2 pr-2">内核</th>
-              <th class="pb-2 pr-2">推荐</th>
-              <th class="pb-2">覆盖</th>
+              <th class="pb-2 pr-2">{{ t('system.advanced.param') }}</th>
+              <th class="pb-2 pr-2">{{ t('system.advanced.meaning') }}</th>
+              <th class="pb-2 pr-2">{{ t('system.advanced.effective') }}</th>
+              <th class="pb-2 pr-2">{{ t('system.advanced.kernel') }}</th>
+              <th class="pb-2 pr-2">{{ t('system.advanced.recommended') }}</th>
+              <th class="pb-2">{{ t('system.advanced.override') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -289,7 +287,7 @@ onMounted(load)
                   class="text-xs text-slate-500 mt-0.5 block"
                   @click="clearOverride(row.key)"
                 >
-                  清除
+                  {{ t('system.advanced.clear') }}
                 </button>
               </td>
             </tr>
@@ -298,11 +296,11 @@ onMounted(load)
       </div>
 
       <div class="flex flex-wrap gap-3 sticky bottom-0 bg-slate-100/90 py-2">
-        <button type="button" class="btn-secondary" :disabled="saving" @click="save(false)">仅保存</button>
+        <button type="button" class="btn-secondary" :disabled="saving" @click="save(false)">{{ t('common.save') }}</button>
         <button type="button" class="btn-primary" :disabled="saving" @click="save(true)">
-          {{ saving ? '处理中…' : '保存并应用' }}
+          {{ saving ? t('common.processing') : t('common.saveAndApply') }}
         </button>
-        <button type="button" class="text-sm text-slate-600" :disabled="saving" @click="load">刷新</button>
+        <button type="button" class="text-sm text-slate-600" :disabled="saving" @click="load">{{ t('common.refresh') }}</button>
       </div>
     </div>
   </div>

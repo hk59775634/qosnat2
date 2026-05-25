@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -11,6 +12,7 @@ const props = defineProps({
 })
 const emit = defineEmits(['move-up', 'move-down'])
 
+const { t } = useI18n()
 const open = ref(props.defaultOpen)
 const storageKey = 'qosnat2-widget-collapsed'
 
@@ -59,7 +61,7 @@ watch(() => props.id, loadState)
             type="button"
             class="text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-30"
             :disabled="!canMoveUp"
-            title="上移"
+            :title="t('common.moveUp')"
             @click="emit('move-up')"
           >
             ↑
@@ -68,13 +70,13 @@ watch(() => props.id, loadState)
             type="button"
             class="text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-30"
             :disabled="!canMoveDown"
-            title="下移"
+            :title="t('common.moveDown')"
             @click="emit('move-down')"
           >
             ↓
           </button>
         </span>
-        <span class="text-slate-400 text-xs">{{ open ? '收起' : '展开' }}</span>
+        <span class="text-slate-400 text-xs">{{ open ? t('components.widgetCollapse') : t('components.widgetExpand') }}</span>
       </span>
     </button>
     <div v-show="open" class="p-3 text-sm">

@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const managed = ref([])
 const live = ref([])
 const devLan = ref('')
@@ -38,7 +40,7 @@ async function addRoute() {
       comment: form.value.comment,
       enabled: form.value.enabled,
     })
-    ok.value = '已添加并应用路由'
+    ok.value = t('network.routes.added')
     await load()
   } catch (e) {
     err.value = e.message
@@ -50,9 +52,9 @@ async function toggleEnabled(r) {
   await load()
 }
 
-async function remove(id) {
-  if (!confirm('删除该托管路由并从内核移除？')) return
-  await api.del(`/api/v1/routes/${id}`)
+async function remove(r) {
+  if (!confirm(t('network.routes.confirmDelete', { dest: r.dest }))) return
+  await api.del(`/api/v1/routes/${r.id}`)
   await load()
 }
 
@@ -60,7 +62,7 @@ async function applyAll() {
   err.value = ''
   try {
     await api.post('/api/v1/routes/apply', {})
-    ok.value = '已回放全部托管路由'
+    ok.value = t('network.routes.replayed')
     await load()
   } catch (e) {
     err.value = e.message
@@ -81,57 +83,51 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader title="路由管理">
-      <template #description>
-        管理宿主机 <code class="text-xs bg-slate-100 px-1 rounded">main</code> 表静态路由（<code class="text-xs">ip route</code>）。
-        NAT「策略网段」仍在 <router-link to="/nat/outbound" class="text-blue-600">Outbound NAT</router-link> 配置。
-        当前 LAN=<span class="font-mono">{{ devLan }}</span> WAN=<span class="font-mono">{{ devWan }}</span>
-      </template>
-    </PageHeader>
+    <PageHeader :title="t('network.routes.title')" :description="t('network.routes.description')" />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div class="card card-body mb-0">
-      <h3 class="font-medium mb-3">添加静态路由</h3>
+      <h3 class="font-medium mb-3">{{ t('network.routes.add') }}</h3>
       <div class="grid sm:grid-cols-2 gap-3 text-sm">
         <div>
-          <label class="text-xs text-slate-500">目标</label>
-          <input v-model="form.dest" class="input-field font-mono" placeholder="default 或 10.0.0.0/8" />
+          <label class="text-xs text-slate-500">{{ t('network.routes.dest') }}</label>
+          <input v-model="form.dest" class="input-field font-mono" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">网关</label>
-          <input v-model="form.gateway" class="input-field font-mono" placeholder="可选" />
+          <label class="text-xs text-slate-500">{{ t('network.routes.gateway') }}</label>
+          <input v-model="form.gateway" class="input-field font-mono" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">接口</label>
+          <label class="text-xs text-slate-500">{{ t('network.routes.iface') }}</label>
           <input v-model="form.device" class="input-field font-mono" :placeholder="devLan || 'ens19'" />
         </div>
         <div>
           <label class="text-xs text-slate-500">Metric</label>
-          <input v-model="form.metric" type="number" class="input-field" placeholder="0" />
+          <input v-model="form.metric" type="number" class="input-field" />
         </div>
         <div class="sm:col-span-2">
-          <label class="text-xs text-slate-500">备注</label>
+          <label class="text-xs text-slate-500">{{ t('common.comment') }}</label>
           <input v-model="form.comment" class="input-field" />
         </div>
         <label class="flex items-center gap-2 sm:col-span-2">
-          <input v-model="form.enabled" type="checkbox" /> 启用
+          <input v-model="form.enabled" type="checkbox" /> {{ t('network.routes.enabled') }}
         </label>
       </div>
       <div class="flex gap-2 mt-4">
-        <button type="button" class="btn-primary" @click="addRoute">添加并应用</button>
-        <button type="button" class="btn-secondary" @click="applyAll">回放全部托管路由</button>
+        <button type="button" class="btn-primary" @click="addRoute">{{ t('network.routes.addApply') }}</button>
+        <button type="button" class="btn-secondary" @click="applyAll">{{ t('network.routes.replay') }}</button>
       </div>
     </div>
 
     <div class="grid lg:grid-cols-2 gap-3">
       <section class="card table-wrap p-4">
-        <h3 class="font-medium mb-3">托管路由</h3>
+        <h3 class="font-medium mb-3">{{ t('network.routes.managed') }}</h3>
         <table class="data w-full text-sm">
           <thead>
             <tr>
-              <th>目标</th>
-              <th>下一跳</th>
+              <th>{{ t('network.routes.dest') }}</th>
+              <th>{{ t('network.routes.gateway') }}</th>
               <th></th>
             </tr>
           </thead>
@@ -144,25 +140,25 @@ onMounted(load)
               </td>
               <td class="whitespace-nowrap text-xs">
                 <button type="button" class="text-blue-600 mr-2" @click="toggleEnabled(r)">
-                  {{ r.enabled ? '禁用' : '启用' }}
+                  {{ r.enabled ? t('common.disabled') : t('common.enabled') }}
                 </button>
-                <button type="button" class="text-red-600" @click="remove(r.id)">删除</button>
+                <button type="button" class="text-red-600" @click="remove(r)">{{ t('common.delete') }}</button>
               </td>
             </tr>
             <tr v-if="!managed.length">
-              <td colspan="3" class="text-center text-slate-400 py-4">暂无</td>
+              <td colspan="3" class="text-center text-slate-400 py-4">{{ t('common.noData') }}</td>
             </tr>
           </tbody>
         </table>
       </section>
 
       <section class="card table-wrap p-4">
-        <h3 class="font-medium mb-3">内核 main 表（只读）</h3>
+        <h3 class="font-medium mb-3">{{ t('network.routes.kernelMain') }}</h3>
         <table class="data w-full text-xs">
           <thead>
             <tr>
-              <th>路由</th>
-              <th>协议</th>
+              <th>{{ t('network.routes.route') }}</th>
+              <th>{{ t('network.routes.protocol') }}</th>
               <th></th>
             </tr>
           </thead>
@@ -171,7 +167,7 @@ onMounted(load)
               <td class="font-mono">{{ fmtRoute(r) }}</td>
               <td>{{ r.protocol || '—' }}</td>
               <td>
-                <span v-if="r.managed" class="text-green-700">托管</span>
+                <span v-if="r.managed" class="text-green-700">{{ t('network.routes.managed') }}</span>
               </td>
             </tr>
           </tbody>

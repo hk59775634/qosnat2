@@ -1,10 +1,13 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 
 onMounted(async () => {
   try {
@@ -14,11 +17,11 @@ onMounted(async () => {
       tlsPending.value = true
       const port = h.admin_port || location.port || '8080'
       const host = location.hostname || 'localhost'
-      httpsHint.value = `HTTPS 已配置但尚未生效，请重启 qosnatd 后使用 https://${host}:${port}/`
+      httpsHint.value = t('login.httpsPending', { host, port })
     } else if (h.tls_active && location.protocol === 'http:') {
       const port = h.admin_port || location.port || '8080'
       const host = location.hostname || 'localhost'
-      httpsHint.value = `管理端已启用 HTTPS，建议使用 https://${host}:${port}/ 访问`
+      httpsHint.value = t('login.httpsSuggest', { host, port })
     }
   } catch {
     /* ignore */
@@ -38,7 +41,7 @@ async function submit() {
     await api.login(user.value, pass.value)
     router.push(route.query.redirect || '/')
   } catch (e) {
-    err.value = e.message || '登录失败'
+    err.value = e.message || t('login.failed')
   } finally {
     loading.value = false
   }
@@ -46,10 +49,13 @@ async function submit() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-700 to-pfsense-nav">
+  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-700 to-pfsense-nav relative">
+    <div class="absolute top-4 right-4">
+      <LanguageSwitcher />
+    </div>
     <form class="card w-full max-w-md p-8" @submit.prevent="submit">
-      <h1 class="text-xl font-semibold text-pfsense-nav mb-1">qosnat2 登录</h1>
-      <p class="text-sm text-slate-500 mb-3">管理控制台</p>
+      <h1 class="text-xl font-semibold text-pfsense-nav mb-1">{{ t('login.title') }}</h1>
+      <p class="text-sm text-slate-500 mb-3">{{ t('login.subtitle') }}</p>
       <p
         v-if="httpsHint"
         class="text-sm mb-3 p-2 rounded"
@@ -57,13 +63,13 @@ async function submit() {
       >
         {{ httpsHint }}
       </p>
-      <label class="block text-sm mb-1">用户名</label>
+      <label class="block text-sm mb-1">{{ t('login.username') }}</label>
       <input v-model="user" class="input-field mb-4" autocomplete="username" />
-      <label class="block text-sm mb-1">密码</label>
+      <label class="block text-sm mb-1">{{ t('login.password') }}</label>
       <input v-model="pass" type="password" class="input-field mb-4" autocomplete="current-password" />
       <p v-if="err" class="text-red-600 text-sm mb-3">{{ err }}</p>
       <button type="submit" class="btn-primary w-full" :disabled="loading">
-        {{ loading ? '登录中…' : '登录' }}
+        {{ loading ? t('login.submitting') : t('login.submit') }}
       </button>
     </form>
   </div>

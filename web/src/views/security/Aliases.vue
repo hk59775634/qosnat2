@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const aliases = ref([])
 const form = ref({ name: '', type: 'ipv4_addr', asn: 0, membersText: '', comment: '' })
 const err = ref('')
@@ -31,7 +33,7 @@ async function add() {
 }
 
 async function remove(name) {
-  if (!confirm(`删除别名 ${name}？`)) return
+  if (!confirm(t('security.aliases.confirmDelete', { name }))) return
   await api.firewall.aliases.del(name)
   await load()
 }
@@ -41,13 +43,10 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="防火墙 Aliases"
-      description="nft 地址对象组；type=asn 时填写 AS 号与前缀成员（P4），规则中仍用 src_alias 引用。"
-    />
+    <PageHeader :title="t('security.aliases.title')" :description="t('security.aliases.description')" />
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
     <div class="card card-body mb-0 space-y-3 text-sm">
-      <input v-model="form.name" class="input-field font-mono" placeholder="名称 lan_hosts" />
+      <input v-model="form.name" class="input-field font-mono" :placeholder="t('security.aliases.namePh')" />
       <div class="flex flex-wrap gap-3 items-center">
         <select v-model="form.type" class="input-field w-36">
           <option value="ipv4_addr">ipv4_addr</option>
@@ -58,21 +57,27 @@ onMounted(load)
           v-model.number="form.asn"
           type="number"
           class="input-field w-32"
-          placeholder="AS 号 13335"
+          :placeholder="t('security.aliases.asnPh')"
         />
       </div>
       <textarea
         v-model="form.membersText"
         class="input-field font-mono text-xs h-24"
-        placeholder="成员，每行一个 CIDR&#10;10.0.0.0/8"
+        :placeholder="t('security.aliases.membersPh')"
       />
-      <input v-model="form.comment" class="input-field" placeholder="备注" />
-      <button type="button" class="btn-primary" @click="add">添加并应用 nft</button>
+      <input v-model="form.comment" class="input-field" :placeholder="t('security.aliases.remarkPh')" />
+      <button type="button" class="btn-primary" @click="add">{{ t('security.aliases.addApply') }}</button>
     </div>
     <div class="card overflow-x-auto">
       <table class="data w-full text-sm">
         <thead>
-          <tr><th>名称</th><th>类型</th><th>ASN</th><th>成员</th><th></th></tr>
+          <tr>
+            <th>{{ t('common.name') }}</th>
+            <th>Type</th>
+            <th>ASN</th>
+            <th>Members</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           <tr v-for="a in aliases" :key="a.name">
@@ -80,7 +85,7 @@ onMounted(load)
             <td>{{ a.type || 'ipv4_addr' }}</td>
             <td>{{ a.asn || '—' }}</td>
             <td class="text-xs font-mono">{{ (a.members || []).join(', ') }}</td>
-            <td><button type="button" class="text-red-600 text-xs" @click="remove(a.name)">删除</button></td>
+            <td><button type="button" class="text-red-600 text-xs" @click="remove(a.name)">{{ t('common.delete') }}</button></td>
           </tr>
         </tbody>
       </table>

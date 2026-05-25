@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const tenants = ref([])
 const err = ref('')
 const ok = ref('')
@@ -19,14 +21,14 @@ function reset() {
   form.value = { name: '', cidrsText: '100.64.0.0/24', down: '8mbit', up: '8mbit', device: '' }
 }
 
-function startEdit(t) {
-  editing.value = t.id
+function startEdit(tenant) {
+  editing.value = tenant.id
   form.value = {
-    name: t.name,
-    cidrsText: (t.cidrs || []).join('\n'),
-    down: t.down,
-    up: t.up,
-    device: t.device || '',
+    name: tenant.name,
+    cidrsText: (tenant.cidrs || []).join('\n'),
+    down: tenant.down,
+    up: tenant.up,
+    device: tenant.device || '',
   }
 }
 
@@ -43,10 +45,10 @@ async function submit() {
   try {
     if (editing.value) {
       await api.shaper.tenants.put(editing.value, body)
-      ok.value = '租户已更新（已同步 QoS profile）'
+      ok.value = t('common.saved')
     } else {
       await api.shaper.tenants.add(body)
-      ok.value = '租户已创建'
+      ok.value = t('common.saved')
     }
     reset()
     await load()
@@ -56,7 +58,7 @@ async function submit() {
 }
 
 async function remove(id) {
-  if (!confirm('删除租户将移除其下所有 QoS profile？')) return
+  if (!confirm(t('shaper.tenants.confirmDelete', { id }))) return
   await api.shaper.tenants.del(id)
   await load()
 }
@@ -66,46 +68,49 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="租户 QoS"
-      description="一组 CIDR 共享上下行速率，自动展开为多条 profile_lpm 并加入 mirred 列表（P4）。"
-    />
+    <PageHeader :title="t('shaper.tenants.title')" :description="t('shaper.tenants.description')" />
     <p v-if="ok" class="text-green-700 text-sm">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm">{{ err }}</p>
 
     <div class="card card-body space-y-3 text-sm">
-      <h3 class="font-medium">{{ editing ? '编辑租户' : '新建租户' }}</h3>
-      <input v-model="form.name" class="input-field" placeholder="租户名称" />
-      <textarea v-model="form.cidrsText" class="input-field font-mono h-20" placeholder="CIDR 每行一个" />
+      <h3 class="font-medium">{{ editing ? t('shaper.tenants.edit') : t('shaper.tenants.new') }}</h3>
+      <input v-model="form.name" class="input-field" :placeholder="t('common.name')" />
+      <textarea v-model="form.cidrsText" class="input-field font-mono h-20" placeholder="CIDR" />
       <div class="grid sm:grid-cols-2 gap-2">
-        <input v-model="form.down" class="input-field" placeholder="下行 8mbit" />
-        <input v-model="form.up" class="input-field" placeholder="上行 8mbit" />
+        <input v-model="form.down" class="input-field" :placeholder="t('shaper.profiles.downCap')" />
+        <input v-model="form.up" class="input-field" :placeholder="t('shaper.profiles.upCap')" />
       </div>
-      <input v-model="form.device" class="input-field font-mono" placeholder="绑定网卡（可选）" />
+      <input v-model="form.device" class="input-field font-mono" :placeholder="t('shaper.ifaceSelect')" />
       <div class="flex gap-2">
-        <button type="button" class="btn-primary" @click="submit">{{ editing ? '保存' : '创建' }}</button>
-        <button v-if="editing" type="button" class="btn-secondary" @click="reset">取消</button>
+        <button type="button" class="btn-primary" @click="submit">{{ editing ? t('common.save') : t('common.create') }}</button>
+        <button v-if="editing" type="button" class="btn-secondary" @click="reset">{{ t('common.cancel') }}</button>
       </div>
     </div>
 
     <div class="card overflow-x-auto">
       <table class="data w-full text-sm">
         <thead>
-          <tr><th>名称</th><th>CIDR</th><th>下行</th><th>上行</th><th></th></tr>
+          <tr>
+            <th>{{ t('common.name') }}</th>
+            <th>CIDR</th>
+            <th>{{ t('shaper.profiles.colDown') }}</th>
+            <th>{{ t('shaper.profiles.colUp') }}</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
-          <tr v-for="t in tenants" :key="t.id">
-            <td>{{ t.name }}</td>
-            <td class="font-mono text-xs">{{ (t.cidrs || []).join(', ') }}</td>
-            <td>{{ t.down }}</td>
-            <td>{{ t.up }}</td>
+          <tr v-for="tenant in tenants" :key="tenant.id">
+            <td>{{ tenant.name }}</td>
+            <td class="font-mono text-xs">{{ (tenant.cidrs || []).join(', ') }}</td>
+            <td>{{ tenant.down }}</td>
+            <td>{{ tenant.up }}</td>
             <td class="text-right space-x-2">
-              <button type="button" class="text-blue-600 text-xs" @click="startEdit(t)">编辑</button>
-              <button type="button" class="text-red-600 text-xs" @click="remove(t.id)">删除</button>
+              <button type="button" class="text-blue-600 text-xs" @click="startEdit(tenant)">{{ t('common.edit') }}</button>
+              <button type="button" class="text-red-600 text-xs" @click="remove(tenant.id)">{{ t('common.delete') }}</button>
             </td>
           </tr>
           <tr v-if="!tenants.length">
-            <td colspan="5" class="text-center text-slate-400 py-3">暂无租户</td>
+            <td colspan="5" class="text-center text-slate-400 py-3">{{ t('shaper.tenants.noTenants') }}</td>
           </tr>
         </tbody>
       </table>

@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const cfg = ref(null)
 const form = ref({
   hostname: '',
@@ -11,15 +13,27 @@ const form = ref({
   tls_enabled: false,
   tls_cert: '',
   tls_key: '',
+  tls_domain: '',
+  tls_acme_enabled: false,
+  tls_acme_email: '',
+  tls_acme_staging: false,
+  tls_acme_renew_days: 30,
 })
 const err = ref('')
 const ok = ref('')
 const warn = ref('')
+const acmeBusy = ref(false)
 
 async function load() {
   cfg.value = await api.system.general.get()
+  const tlsCfg = cfg.value.tls || {}
   form.value.hostname = cfg.value.hostname || ''
-  form.value.tls_enabled = cfg.value.tls?.tls_enabled ?? false
+  form.value.tls_enabled = tlsCfg.tls_enabled ?? false
+  form.value.tls_domain = tlsCfg.domain || ''
+  form.value.tls_acme_enabled = tlsCfg.acme_enabled ?? false
+  form.value.tls_acme_email = tlsCfg.acme_email || ''
+  form.value.tls_acme_staging = tlsCfg.acme_staging ?? false
+  form.value.tls_acme_renew_days = tlsCfg.acme_renew_days || 30
   form.value.tls_cert = ''
   form.value.tls_key = ''
 }
@@ -35,31 +49,50 @@ function readFile(e, field) {
   e.target.value = ''
 }
 
+function buildPutBody() {
+  return {
+    hostname: form.value.hostname,
+    new_password: form.value.new_password || undefined,
+    current_password: form.value.current_password || undefined,
+    tls_enabled: form.value.tls_enabled,
+    tls_domain: form.value.tls_domain,
+    tls_acme_enabled: form.value.tls_acme_enabled,
+    tls_acme_email: form.value.tls_acme_email,
+    tls_acme_staging: form.value.tls_acme_staging,
+    tls_acme_renew_days: form.value.tls_acme_renew_days,
+    tls_cert: form.value.tls_cert.trim() || undefined,
+    tls_key: form.value.tls_key.trim() || undefined,
+  }
+}
+
+function tlsSettingsTouched() {
+  const tlsCfg = cfg.value?.tls || {}
+  return (
+    form.value.tls_enabled !== (tlsCfg.tls_enabled ?? false) ||
+    form.value.tls_domain !== (tlsCfg.domain || '') ||
+    form.value.tls_acme_enabled !== (tlsCfg.acme_enabled ?? false) ||
+    form.value.tls_acme_email !== (tlsCfg.acme_email || '') ||
+    form.value.tls_acme_staging !== (tlsCfg.acme_staging ?? false) ||
+    form.value.tls_acme_renew_days !== (tlsCfg.acme_renew_days || 30) ||
+    form.value.tls_cert.trim() !== '' ||
+    form.value.tls_key.trim() !== ''
+  )
+}
+
 async function save() {
   err.value = ''
   ok.value = ''
   warn.value = ''
   try {
-    const body = {
-      hostname: form.value.hostname,
-      new_password: form.value.new_password || undefined,
-      current_password: form.value.current_password || undefined,
+    const needPw =
+      form.value.new_password ||
+      (tlsSettingsTouched() && (form.value.tls_enabled || form.value.tls_acme_enabled || form.value.tls_cert))
+    if (needPw && !form.value.current_password) {
+      err.value = t('system.general.needPasswordForTls')
+      return
     }
-    const tlsChange =
-      form.value.tls_enabled !== (cfg.value?.tls?.tls_enabled ?? false) ||
-      form.value.tls_cert.trim() !== '' ||
-      form.value.tls_key.trim() !== ''
-    if (tlsChange) {
-      body.tls_enabled = form.value.tls_enabled
-      if (form.value.tls_cert.trim()) body.tls_cert = form.value.tls_cert.trim()
-      if (form.value.tls_key.trim()) body.tls_key = form.value.tls_key.trim()
-      if (!form.value.current_password) {
-        err.value = '修改 HTTPS 设置需填写当前密码'
-        return
-      }
-    }
-    const res = await api.system.general.put(body)
-    ok.value = '已保存'
+    const res = await api.system.general.put(buildPutBody())
+    ok.value = t('system.general.saved')
     if (res.warning) warn.value = res.warning
     form.value.new_password = ''
     form.value.current_password = ''
@@ -67,7 +100,35 @@ async function save() {
     form.value.tls_key = ''
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
+  }
+}
+
+async function runAcme(action) {
+  err.value = ''
+  ok.value = ''
+  warn.value = ''
+  if (!form.value.current_password) {
+    err.value = t('system.general.needPasswordForTls')
+    return
+  }
+  acmeBusy.value = true
+  try {
+    await api.system.general.put(buildPutBody())
+    const res = await api.post('/api/v1/system/tls/acme', {
+      action,
+      current_password: form.value.current_password,
+    })
+    ok.value =
+      res.message ||
+      (action === 'obtain' ? t('system.general.certRequested') : t('system.general.certRenewed'))
+    if (res.warning) warn.value = res.warning
+    await load()
+  } catch (e) {
+    err.value = e.data?.error || e.message
+    await load()
+  } finally {
+    acmeBusy.value = false
   }
 }
 
@@ -77,8 +138,8 @@ onMounted(load)
 <template>
   <div class="page-stack">
     <PageHeader
-      title="常规设置"
-      description="主机名、管理员密码、HTTPS（证书粘贴或上传）；修改 HTTPS 需当前密码。"
+      :title="t('system.general.title')"
+      :description="t('system.general.description')"
     />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="warn" class="text-amber-700 text-sm mb-2">{{ warn }}</p>
@@ -86,72 +147,106 @@ onMounted(load)
 
     <div v-if="cfg" class="card card-body space-y-6">
       <section class="space-y-4">
-        <h3 class="text-sm font-semibold text-slate-800">基本</h3>
+        <h3 class="text-sm font-semibold text-slate-800">{{ t('system.general.basic') }}</h3>
         <p class="text-sm text-slate-600">
-          管理员 <span class="font-mono">{{ cfg.admin_user }}</span> · LAN
+          {{ t('system.general.adminSection') }}
+          <span class="font-mono">{{ cfg.admin_user }}</span> · LAN
           <span class="font-mono">{{ cfg.dev_lan }}</span> · WAN
           <span class="font-mono">{{ cfg.dev_wan }}</span>
         </p>
         <div>
-          <label class="text-xs text-slate-500">主机名</label>
+          <label class="text-xs text-slate-500">{{ t('system.general.hostname') }}</label>
           <input v-model="form.hostname" class="input-field mt-1 font-mono" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">新密码（至少 8 位，留空不修改）</label>
+          <label class="text-xs text-slate-500">{{ t('system.general.newPassword') }}</label>
           <input v-model="form.new_password" type="password" class="input-field mt-1" autocomplete="new-password" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">当前密码（改口令或 HTTPS 时必填）</label>
+          <label class="text-xs text-slate-500">{{ t('system.general.currentPassword') }}</label>
           <input v-model="form.current_password" type="password" class="input-field mt-1" autocomplete="current-password" />
         </div>
       </section>
 
       <section class="space-y-4 pt-4 border-t border-slate-200">
         <h3 class="text-sm font-semibold text-slate-800">HTTPS</h3>
-        <p class="text-xs text-slate-500">
-          启用后写入 <span class="font-mono">/etc/qosnat2/tls.crt</span> 与
-          <span class="font-mono">tls.key</span>，并更新 <span class="font-mono">env</span> 后重启
-          <span class="font-mono">qosnatd</span>。保存后请使用 <span class="font-mono">https://</span> 访问。
-        </p>
         <div v-if="cfg.tls" class="text-xs text-slate-600 space-y-1 bg-slate-50 rounded p-3">
           <p>
-            运行中:
             <span :class="cfg.tls.tls_active ? 'text-green-700' : 'text-slate-500'">
-              {{ cfg.tls.tls_active ? 'HTTPS 已生效' : 'HTTP' }}
+              {{ cfg.tls.tls_active ? t('system.general.tlsRunning') : t('system.general.tlsHttp') }}
             </span>
-            · 配置开关: {{ cfg.tls.tls_enabled ? '开' : '关' }}
+            · {{ cfg.tls.tls_enabled ? t('common.on') : t('common.off') }}
           </p>
-          <p v-if="cfg.tls.has_cert_file">证书: {{ cfg.tls.cert_subject || cfg.tls.cert_path }}</p>
-          <p v-if="cfg.tls.cert_not_after">到期: {{ cfg.tls.cert_not_after }}</p>
-          <p v-if="!cfg.tls.has_cert_file && form.tls_enabled" class="text-amber-700">尚未上传证书，请粘贴或选择文件后保存</p>
+          <p v-if="cfg.tls.has_cert_file">{{ t('system.general.certPath') }}: {{ cfg.tls.cert_subject || cfg.tls.cert_path }}</p>
+          <p v-if="cfg.tls.cert_not_after">{{ t('system.general.certExpiry') }}: {{ cfg.tls.cert_not_after }}</p>
+          <p v-if="cfg.tls.acme_last_ok">{{ t('system.general.acmeOk') }}: {{ cfg.tls.acme_last_ok }}</p>
+          <p v-if="cfg.tls.acme_last_error" class="text-red-600">{{ t('system.general.acmeError') }}: {{ cfg.tls.acme_last_error }}</p>
         </div>
+
         <label class="flex items-center gap-2 text-sm cursor-pointer">
           <input v-model="form.tls_enabled" type="checkbox" class="rounded" />
-          启用 HTTPS
+          {{ t('system.general.enableHttps') }}
         </label>
-        <div>
-          <label class="text-xs text-slate-500">证书 PEM（含 CERTIFICATE 头尾，可粘贴或上传）</label>
-          <textarea
-            v-model="form.tls_cert"
-            class="input-field mt-1 font-mono text-xs h-28"
-            placeholder="-----BEGIN CERTIFICATE-----"
-            spellcheck="false"
-          />
-          <input type="file" accept=".pem,.crt,.cer,.txt" class="text-xs mt-1" @change="readFile($event, 'tls_cert')" />
+
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input v-model="form.tls_acme_enabled" type="checkbox" class="rounded" />
+          {{ t('system.general.acmeEnable') }}
+        </label>
+
+        <div v-if="form.tls_acme_enabled" class="space-y-3 p-4 rounded-lg border border-blue-100 bg-blue-50/40">
+          <p class="text-xs text-slate-600">{{ t('system.general.acmeHttp01') }}</p>
+          <div>
+            <label class="text-xs text-slate-500">{{ t('system.general.acmeDomain') }}</label>
+            <input v-model="form.tls_domain" class="input-field mt-1 font-mono" placeholder="vpn.example.com" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">{{ t('system.general.acmeEmail') }}</label>
+            <input v-model="form.tls_acme_email" type="email" class="input-field mt-1" placeholder="admin@example.com" />
+          </div>
+          <label class="flex items-center gap-2 text-sm">
+            <input v-model="form.tls_acme_staging" type="checkbox" class="rounded" />
+            {{ t('system.general.acmeStaging') }}
+          </label>
+          <div>
+            <label class="text-xs text-slate-500">{{ t('system.general.acmeAutoRenew') }}</label>
+            <input v-model.number="form.tls_acme_renew_days" type="number" min="7" max="60" class="input-field mt-1 max-w-xs" />
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="btn-secondary text-sm"
+              :disabled="acmeBusy || !form.tls_domain"
+              @click="runAcme('obtain')"
+            >
+              {{ acmeBusy ? t('common.processing') : t('system.general.acmeRequest') }}
+            </button>
+            <button
+              type="button"
+              class="btn-secondary text-sm"
+              :disabled="acmeBusy || !cfg.tls.has_cert_file"
+              @click="runAcme('renew')"
+            >
+              {{ t('system.general.acmeRenewNow') }}
+            </button>
+          </div>
         </div>
-        <div>
-          <label class="text-xs text-slate-500">私钥 PEM（含 PRIVATE KEY 头尾，可粘贴或上传）</label>
-          <textarea
-            v-model="form.tls_key"
-            class="input-field mt-1 font-mono text-xs h-28"
-            placeholder="-----BEGIN PRIVATE KEY-----"
-            spellcheck="false"
-          />
-          <input type="file" accept=".pem,.key,.txt" class="text-xs mt-1" @change="readFile($event, 'tls_key')" />
-        </div>
+
+        <template v-else>
+          <p class="text-xs text-slate-500">{{ t('system.general.manualPem') }}</p>
+          <div>
+            <label class="text-xs text-slate-500">PEM</label>
+            <textarea v-model="form.tls_cert" class="input-field mt-1 font-mono text-xs h-24" spellcheck="false" />
+            <input type="file" accept=".pem,.crt,.cer" class="text-xs mt-1" @change="readFile($event, 'tls_cert')" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-500">PEM key</label>
+            <textarea v-model="form.tls_key" class="input-field mt-1 font-mono text-xs h-24" spellcheck="false" />
+            <input type="file" accept=".pem,.key" class="text-xs mt-1" @change="readFile($event, 'tls_key')" />
+          </div>
+        </template>
       </section>
 
-      <button type="button" class="btn-primary" @click="save">保存</button>
+      <button type="button" class="btn-primary" @click="save">{{ t('common.save') }}</button>
     </div>
   </div>
 </template>

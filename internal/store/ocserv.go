@@ -58,7 +58,15 @@ type OCServState struct {
 	SocketFile     string         `json:"socket_file,omitempty"`
 	ServerCert     string         `json:"server_cert,omitempty"` // PEM 内联（少用）
 	ServerKey      string         `json:"server_key,omitempty"`
-	Users          []OCServUser `json:"users"`
+	Users              []OCServUser   `json:"users"`
+	ConfigPerGroup     string         `json:"config_per_group,omitempty"`
+	ConfigPerUser      string         `json:"config_per_user,omitempty"`
+	DefaultGroupConfig string         `json:"default_group_config,omitempty"`
+	DefaultUserConfig  string         `json:"default_user_config,omitempty"`
+	AutoSelectGroup    bool           `json:"auto_select_group,omitempty"`
+	DefaultSelectGroup string         `json:"default_select_group,omitempty"`
+	Groups             []OCServGroup  `json:"groups,omitempty"`
+	Vhosts             []OCServVhost  `json:"vhosts,omitempty"`
 }
 
 func DefaultOCServ() OCServState {
@@ -84,7 +92,11 @@ func DefaultOCServ() OCServState {
 		ServerCertPath: "/etc/ocserv/certs/server-cert.pem",
 		ServerKeyPath:  "/etc/ocserv/certs/server-key.pem",
 		SocketFile:     "/var/run/ocserv-socket",
-		Users:          []OCServUser{},
+		Users:              []OCServUser{},
+		ConfigPerGroup:     "/etc/ocserv/config-per-group/",
+		DefaultGroupConfig: "/etc/ocserv/defaults/group.conf",
+		Groups:             []OCServGroup{},
+		Vhosts:             []OCServVhost{},
 	}
 }
 
@@ -185,6 +197,43 @@ func NormalizeOCServ(o *OCServState) error {
 			return fmt.Errorf("user username required")
 		}
 		o.Users[i].Username = u
+		o.Users[i].Group = strings.TrimSpace(o.Users[i].Group)
+	}
+	if strings.TrimSpace(o.ConfigPerGroup) == "" && strings.TrimSpace(o.Advanced.ConfigPerGroup) != "" {
+		o.ConfigPerGroup = strings.TrimSpace(o.Advanced.ConfigPerGroup)
+	}
+	if strings.TrimSpace(o.ConfigPerGroup) == "" {
+		o.ConfigPerGroup = "/etc/ocserv/config-per-group/"
+	}
+	if strings.TrimSpace(o.DefaultGroupConfig) == "" {
+		o.DefaultGroupConfig = "/etc/ocserv/defaults/group.conf"
+	}
+	if o.Groups == nil {
+		o.Groups = []OCServGroup{}
+	}
+	if o.Vhosts == nil {
+		o.Vhosts = []OCServVhost{}
+	}
+	if err := NormalizeOCServGroups(&o.Groups); err != nil {
+		return err
+	}
+	if err := NormalizeOCServVhosts(&o.Vhosts, o.AuthMethod); err != nil {
+		return err
+	}
+	for _, u := range o.Users {
+		if u.Group == "" {
+			continue
+		}
+		found := false
+		for _, g := range o.Groups {
+			if g.Name == u.Group {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("user %s: unknown group %s", u.Username, u.Group)
+		}
 	}
 	return nil
 }

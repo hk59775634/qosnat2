@@ -1,75 +1,160 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const router = useRouter()
 const route = useRoute()
-const open = ref(true)
+const { t } = useI18n()
+
+const NAV_COLLAPSED_KEY = 'qosnat2.nav.collapsed'
+const NAV_GROUPS_KEY = 'qosnat2.nav.groups'
+
+const mobileOpen = ref(false)
+const sidebarCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === '1')
+
 const isApiDocs = computed(() => route.name === 'docs-api')
 
-/** 对齐 UI开发建议 第十五节：现代 SDN/QoS 控制台菜单 */
-const menu = [
+const menu = computed(() => [
   {
-    title: 'Dashboard',
-    items: [{ path: '/', label: '仪表盘' }],
+    title: t('nav.dashboard'),
+    items: [{ path: '/', label: t('nav.dashboardHome') }],
   },
   {
-    title: 'Network',
+    title: t('nav.network'),
     items: [
-      { path: '/network/interfaces', label: '接口' },
-      { path: '/network/routes', label: '路由' },
-      { path: '/network/dhcp', label: 'DHCP' },
-      { path: '/network/vlans', label: 'VLAN' },
-      { path: '/network/vxlan', label: 'VXLAN' },
-      { path: '/network/wan-links', label: '多 WAN' },
-      { path: '/interfaces/queues', label: 'RSS / 多队列' },
+      { path: '/network/interfaces', label: t('nav.interfaces') },
+      { path: '/network/routes', label: t('nav.routes') },
+      { path: '/network/dhcp', label: t('nav.dhcp') },
+      { path: '/network/vlans', label: t('nav.vlans') },
+      { path: '/network/vxlan', label: t('nav.vxlan') },
+      { path: '/network/wan-links', label: t('nav.wanLinks') },
+      { path: '/interfaces/queues', label: t('nav.rssQueues') },
     ],
   },
   {
-    title: 'Security',
+    title: t('nav.security'),
     items: [
-      { path: '/nat/outbound', label: 'Outbound NAT' },
-      { path: '/nat/forwards', label: '端口转发' },
-      { path: '/firewall/rules', label: '防火墙规则' },
-      { path: '/firewall/aliases', label: 'Aliases' },
+      { path: '/nat/outbound', label: t('nav.outboundNat') },
+      { path: '/nat/forwards', label: t('nav.portForwards') },
+      { path: '/firewall/rules', label: t('nav.firewallRules') },
+      { path: '/firewall/aliases', label: t('nav.aliases') },
     ],
   },
   {
-    title: 'Traffic',
+    title: t('nav.traffic'),
     items: [
-      { path: '/shaper/profiles', label: 'QoS 策略' },
-      { path: '/shaper/tenants', label: '租户 QoS' },
-      { path: '/status/active', label: '活跃 Per-IP' },
+      { path: '/shaper/profiles', label: t('nav.qosProfiles') },
+      { path: '/shaper/tenants', label: t('nav.qosTenants') },
+      { path: '/status/active', label: t('nav.activePerIp') },
     ],
   },
   {
-    title: 'VPN',
+    title: t('nav.vpn'),
     items: [
-      { path: '/vpn/wireguard', label: 'WireGuard' },
-      { path: '/vpn/ocserv', label: 'OpenConnect' },
+      { path: '/vpn/wireguard', label: t('nav.wireguard') },
+      { path: '/vpn/ocserv', label: t('nav.openconnect') },
     ],
   },
   {
-    title: 'Observability',
+    title: t('nav.observability'),
     items: [
-      { path: '/status/ebpf', label: 'eBPF Maps' },
-      { path: '/status/mark', label: 'Mark 隔离' },
-      { path: '/diagnostics/conntrack', label: '连接跟踪' },
-      { path: '/diagnostics/capture', label: '抓包' },
+      { path: '/status/ebpf', label: t('nav.ebpfMaps') },
+      { path: '/status/mark', label: t('nav.markIsolation') },
+      { path: '/diagnostics/conntrack', label: t('nav.conntrack') },
+      { path: '/diagnostics/capture', label: t('nav.capture') },
     ],
   },
   {
-    title: 'System',
+    title: t('nav.system'),
     items: [
-      { path: '/system/general', label: '常规设置' },
-      { path: '/system/advanced', label: '高级设置' },
-      { path: '/system/api-keys', label: 'API 密钥' },
-      { path: '/system/audit', label: '审计日志' },
-      { path: '/docs/api', label: 'API / OpenAPI' },
+      { path: '/system/general', label: t('nav.general') },
+      { path: '/system/advanced', label: t('nav.advanced') },
+      { path: '/system/api-keys', label: t('nav.apiKeys') },
+      { path: '/system/audit', label: t('nav.audit') },
+      { path: '/docs/api', label: t('nav.apiDocs') },
     ],
   },
-]
+])
+
+function loadExpandedGroups() {
+  try {
+    const raw = localStorage.getItem(NAV_GROUPS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return new Set(parsed)
+    }
+  } catch {
+    /* ignore */
+  }
+  const active = groupForPath(route.path)
+  return new Set(active ? [active] : [t('nav.dashboard')])
+}
+
+const expandedGroups = ref(loadExpandedGroups())
+
+function persistExpandedGroups() {
+  localStorage.setItem(NAV_GROUPS_KEY, JSON.stringify([...expandedGroups.value]))
+}
+
+function persistSidebarCollapsed() {
+  localStorage.setItem(NAV_COLLAPSED_KEY, sidebarCollapsed.value ? '1' : '0')
+}
+
+function groupForPath(path) {
+  for (const g of menu.value) {
+    if (g.items.some((it) => isActive(it.path, path))) return g.title
+  }
+  return null
+}
+
+function isGroupExpanded(title) {
+  return expandedGroups.value.has(title)
+}
+
+function toggleGroup(title) {
+  const next = new Set(expandedGroups.value)
+  if (next.has(title)) next.delete(title)
+  else next.add(title)
+  expandedGroups.value = next
+  persistExpandedGroups()
+}
+
+function expandAllGroups() {
+  expandedGroups.value = new Set(menu.value.map((g) => g.title))
+  persistExpandedGroups()
+}
+
+function collapseAllGroups() {
+  const active = groupForPath(route.path)
+  expandedGroups.value = active ? new Set([active]) : new Set()
+  persistExpandedGroups()
+}
+
+function toggleSidebarCollapsed() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  persistSidebarCollapsed()
+}
+
+watch(
+  () => route.path,
+  (path) => {
+    mobileOpen.value = false
+    closeFlyout()
+    const g = groupForPath(path)
+    if (g && !expandedGroups.value.has(g)) {
+      const next = new Set(expandedGroups.value)
+      next.add(g)
+      expandedGroups.value = next
+      persistExpandedGroups()
+    }
+  },
+  { immediate: true },
+)
+
+watch(sidebarCollapsed, persistSidebarCollapsed)
 
 async function logout() {
   try {
@@ -79,10 +164,34 @@ async function logout() {
   }
 }
 
-function isActive(path) {
-  if (path === '/') return route.path === '/'
-  return route.path.startsWith(path)
+function isActive(path, current = route.path) {
+  if (path === '/') return current === '/'
+  return current.startsWith(path)
 }
+
+const asideWidthClass = computed(() =>
+  sidebarCollapsed.value ? 'w-12' : 'w-56',
+)
+
+const flyoutGroup = ref(null)
+
+function toggleFlyout(title) {
+  flyoutGroup.value = flyoutGroup.value === title ? null : title
+}
+
+function closeFlyout() {
+  flyoutGroup.value = null
+}
+
+const groupShort = computed(() => ({
+  [t('nav.dashboard')]: 'D',
+  [t('nav.network')]: 'N',
+  [t('nav.security')]: 'S',
+  [t('nav.traffic')]: 'T',
+  [t('nav.vpn')]: 'V',
+  [t('nav.observability')]: 'O',
+  [t('nav.system')]: 'Y',
+}))
 </script>
 
 <template>
@@ -90,17 +199,53 @@ function isActive(path) {
     <header class="bg-pfsense-nav text-white shadow-md shrink-0">
       <div class="flex items-center justify-between px-4 py-3">
         <div class="flex items-center gap-3">
-          <button type="button" class="lg:hidden text-white/80" aria-label="菜单" @click="open = !open">☰</button>
+          <button
+            v-if="!isApiDocs"
+            type="button"
+            class="text-white/80 hover:text-white p-1 -ml-1"
+            :aria-label="sidebarCollapsed ? t('common.expandNav') : t('common.collapseNav')"
+            :title="sidebarCollapsed ? t('common.expandNav') : t('common.collapseNav')"
+            @click="toggleSidebarCollapsed"
+          >
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path
+                v-if="sidebarCollapsed"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M4 6h16M4 12h16M4 18h16"
+              />
+              <path
+                v-else
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M11 19l-7-7 7-7M19 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+          <button
+            v-if="!isApiDocs"
+            type="button"
+            class="lg:hidden text-white/80 hover:text-white p-1"
+            :aria-label="t('common.menu')"
+            @click="mobileOpen = !mobileOpen"
+          >
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
           <h1 class="text-lg font-semibold tracking-tight">qosnat2</h1>
           <span class="text-xs text-blue-200 hidden sm:inline">QoS · NAT · eBPF</span>
         </div>
-        <button type="button" class="text-sm text-blue-100 hover:text-white" @click="logout">登出</button>
+        <div class="flex items-center gap-3">
+          <LanguageSwitcher />
+          <button type="button" class="text-sm text-blue-100 hover:text-white" @click="logout">{{ t('common.logout') }}</button>
+        </div>
       </div>
       <div class="bg-pfsense-bar px-4 py-1.5 text-xs text-blue-100 hidden sm:flex gap-4">
         <span>HTB / IFB</span>
         <span>nftables</span>
         <span>profile_lpm</span>
-        <span class="text-blue-200">API-first 控制面</span>
+        <span class="text-blue-200">{{ t('common.apiFirstControl') }}</span>
       </div>
     </header>
 
@@ -108,38 +253,127 @@ function isActive(path) {
       <aside
         v-if="!isApiDocs"
         :class="[
-          'bg-slate-800 text-slate-200 w-56 shrink-0 overflow-y-auto transition-all',
-          open ? 'block' : 'hidden lg:block',
+          'bg-slate-800 text-slate-200 shrink-0 overflow-y-auto overflow-x-hidden transition-[width] duration-200',
+          asideWidthClass,
+          mobileOpen ? 'fixed inset-y-0 left-0 z-40 top-[var(--header-h,0)] shadow-xl lg:static lg:shadow-none' : 'hidden lg:block',
         ]"
       >
-        <nav class="py-3 text-sm">
-          <div v-for="group in menu" :key="group.title" class="mb-4">
-            <div class="px-4 py-1.5 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
-              {{ group.title }}
+        <nav class="py-2 text-sm" :class="sidebarCollapsed ? 'px-1' : 'px-0'">
+          <div
+            v-if="!sidebarCollapsed"
+            class="flex items-center justify-between gap-1 px-3 py-1.5 mb-1 border-b border-slate-700/80"
+          >
+            <span class="text-[10px] uppercase tracking-widest text-slate-500">{{ t('common.navigation') }}</span>
+            <div class="flex gap-0.5">
+              <button
+                type="button"
+                class="text-[10px] text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-700"
+                :title="t('nav.expandGroupTitle')"
+                @click="expandAllGroups"
+              >
+                {{ t('common.expandAll') }}
+              </button>
+              <button
+                type="button"
+                class="text-[10px] text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-700"
+                :title="t('nav.collapseGroupTitle')"
+                @click="collapseAllGroups"
+              >
+                {{ t('common.collapseAll') }}
+              </button>
             </div>
-            <router-link
-              v-for="item in group.items"
-              :key="item.path"
-              :to="item.path"
-              class="block px-4 py-2 hover:bg-slate-700/80 transition-colors"
-              :class="
-                isActive(item.path)
-                  ? 'bg-slate-700 text-white border-l-4 border-blue-400 pl-3'
-                  : 'border-l-4 border-transparent'
-              "
-            >
-              {{ item.label }}
-            </router-link>
+          </div>
+
+          <div v-for="group in menu" :key="group.title" class="mb-0.5">
+            <template v-if="sidebarCollapsed">
+              <div class="relative mx-0.5">
+                <button
+                  type="button"
+                  class="w-full flex items-center justify-center py-2 rounded text-xs font-semibold transition-colors"
+                  :class="
+                    group.items.some((it) => isActive(it.path))
+                      ? 'bg-slate-700 text-white ring-1 ring-blue-400/60'
+                      : 'text-slate-400 hover:bg-slate-700/80 hover:text-slate-200'
+                  "
+                  :title="group.title"
+                  @click="toggleFlyout(group.title)"
+                >
+                  {{ groupShort[group.title] || group.title[0] }}
+                </button>
+                <div
+                  v-if="flyoutGroup === group.title"
+                  class="absolute left-full top-0 ml-1 z-50 min-w-[11rem] py-1 rounded-md bg-slate-800 border border-slate-600 shadow-xl"
+                >
+                  <div class="px-3 py-1.5 text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-700">
+                    {{ group.title }}
+                  </div>
+                  <router-link
+                    v-for="item in group.items"
+                    :key="item.path"
+                    :to="item.path"
+                    class="block px-3 py-2 text-sm hover:bg-slate-700/80"
+                    :class="isActive(item.path) ? 'text-white bg-slate-700/60' : 'text-slate-300'"
+                    @click="closeFlyout"
+                  >
+                    {{ item.label }}
+                  </router-link>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <button
+                type="button"
+                class="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-slate-700/50 transition-colors"
+                @click="toggleGroup(group.title)"
+              >
+                <svg
+                  class="w-3 h-3 shrink-0 text-slate-500 transition-transform"
+                  :class="isGroupExpanded(group.title) ? 'rotate-90' : ''"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                <span class="flex-1 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+                  {{ group.title }}
+                </span>
+                <span class="text-[10px] text-slate-600 tabular-nums">{{ group.items.length }}</span>
+              </button>
+              <div v-show="isGroupExpanded(group.title)" class="pb-1">
+                <router-link
+                  v-for="item in group.items"
+                  :key="item.path"
+                  :to="item.path"
+                  class="block px-4 py-1.5 pl-8 hover:bg-slate-700/80 transition-colors"
+                  :class="
+                    isActive(item.path)
+                      ? 'bg-slate-700 text-white border-l-4 border-blue-400 pl-7'
+                      : 'border-l-4 border-transparent text-slate-300'
+                  "
+                >
+                  {{ item.label }}
+                </router-link>
+              </div>
+            </template>
           </div>
         </nav>
       </aside>
+
+      <div
+        v-if="!isApiDocs && mobileOpen"
+        class="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"
+        aria-hidden="true"
+        @click="mobileOpen = false"
+      />
 
       <main
         :class="
           isApiDocs
             ? 'flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden p-2 lg:p-3'
-            : 'flex-1 p-3 lg:p-4 overflow-auto'
+            : 'flex-1 p-3 lg:p-4 overflow-auto min-w-0'
         "
+        @click="closeFlyout"
       >
         <router-view />
       </main>

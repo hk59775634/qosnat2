@@ -129,6 +129,10 @@ func StartInstallAsync(script string) error {
 }
 
 func finishInstall(started, state, msg, tail string) {
+	if state == installStateOK {
+		_ = os.Remove(installStatusFile)
+		return
+	}
 	st := InstallJobStatus{
 		State:      state,
 		Message:    msg,

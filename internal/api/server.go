@@ -15,6 +15,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/capture"
 	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/nft"
+	"github.com/hk59775634/qosnat2/internal/ocserv/usertraffic"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/stats"
@@ -44,8 +45,9 @@ type Server struct {
 	hosts      *shaper.HostShaper
 	metrics    *stats.Collector
 	pcap       *capture.Manager
-	ringCancel      context.CancelFunc
-	metricsCancel   context.CancelFunc
+	ringCancel           context.CancelFunc
+	metricsCancel        context.CancelFunc
+	ocservTrafficCancel  context.CancelFunc
 	mux             *http.ServeMux
 	loginLim        *loginLimiter
 }
@@ -108,11 +110,13 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/mark-policy", srv.requireAuth(srv.handleMarkPolicy))
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
+	m.HandleFunc("/api/v1/system/tls/acme", srv.requireAuth(srv.handleTLSAcme))
 	m.HandleFunc("/api/v1/system/audit", srv.requireAuth(srv.handleSystemAudit))
 	m.HandleFunc("/api/v1/firewall/rules/order", srv.requireAuth(srv.handleFirewallRulesOrder))
 	m.HandleFunc("/api/v1/firewall/rules", srv.requireAuth(srv.handleFirewallRules))
 	m.HandleFunc("/api/v1/interfaces/queues", srv.requireAuth(srv.handleIfaceQueues))
 	m.HandleFunc("/api/v1/interfaces/ethtool", srv.requireAuth(srv.handleInterfacesEthtool))
+	m.HandleFunc("/api/v1/interfaces/roles", srv.requireAuth(srv.handleInterfacesRoles))
 	m.HandleFunc("/api/v1/interfaces", srv.requireAuth(srv.handleInterfaces))
 	m.HandleFunc("/api/v1/firewall/aliases", srv.requireAuth(srv.handleFirewallAliases))
 	m.HandleFunc("/api/v1/network/netplan/apply", srv.requireAuth(srv.handleNetworkNetplanApply))
@@ -131,7 +135,13 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/vpn/ocserv/install/status", srv.requireAuth(srv.handleOCServInstallStatus))
 	m.HandleFunc("/api/v1/vpn/ocserv/install", srv.requireAuth(srv.handleOCServInstall))
 	m.HandleFunc("/api/v1/vpn/ocserv/apply", srv.requireAuth(srv.handleOCServApply))
+	m.HandleFunc("/api/v1/vpn/ocserv/status/detail", srv.requireAuth(srv.handleOCServStatusDetail))
+	m.HandleFunc("/api/v1/vpn/ocserv/sessions/disconnect", srv.requireAuth(srv.handleOCServSessionsDisconnect))
+	m.HandleFunc("/api/v1/vpn/ocserv/sessions", srv.requireAuth(srv.handleOCServSessions))
+	m.HandleFunc("/api/v1/vpn/ocserv/users/traffic", srv.requireAuth(srv.handleOCServUserTraffic))
 	m.HandleFunc("/api/v1/vpn/ocserv/users", srv.requireAuth(srv.handleOCServUsers))
+	m.HandleFunc("/api/v1/vpn/ocserv/groups", srv.requireAuth(srv.handleOCServGroups))
+	m.HandleFunc("/api/v1/vpn/ocserv/vhosts", srv.requireAuth(srv.handleOCServVhosts))
 	m.HandleFunc("/api/v1/vpn/ocserv", srv.requireAuth(srv.handleOCServ))
 
 	m.HandleFunc("/api/v1/diagnostics/captures/", srv.requireAuth(srv.handleCaptures))
@@ -150,20 +160,22 @@ func (srv *Server) ApplyAll() error {
 		log.Printf("apply skipped: initial setup not complete")
 		return nil
 	}
-	if srv.env.DevLAN == "" || srv.env.DevWAN == "" {
-		return fmt.Errorf("DEV_LAN and DEV_WAN must be set")
+	if srv.env.DevWAN == "" {
+		return fmt.Errorf("DEV_WAN must be set")
 	}
 	st := srv.store.Get()
 	if err := srv.applySystemTuning(st); err != nil {
 		log.Printf("system tuning: %v", err)
 	}
-	if err := shaper.SetupP0(shaper.Config{
-		DevLAN:    srv.env.DevLAN,
-		Leaf:      st.Shaper.Leaf,
-		FQFlows:   st.Shaper.FQFlows,
-		FQQuantum: st.Shaper.FQQuantum,
-	}); err != nil {
-		return fmt.Errorf("shaper: %w", err)
+	if srv.env.DevLAN != "" {
+		if err := shaper.SetupP0(shaper.Config{
+			DevLAN:    srv.env.DevLAN,
+			Leaf:      st.Shaper.Leaf,
+			FQFlows:   st.Shaper.FQFlows,
+			FQQuantum: st.Shaper.FQQuantum,
+		}); err != nil {
+			return fmt.Errorf("shaper: %w", err)
+		}
 	}
 	cfg := nft.Config{DevLAN: srv.env.DevLAN, DevWAN: srv.env.DevWAN}
 	if ips, auto := nft.ResolveSharedIPs(cfg, st); len(ips) == 0 {
@@ -235,6 +247,7 @@ func (srv *Server) StartBackground() {
 		interval = time.Minute
 	}
 	go shaper.StartLoop(ctx.Done(), interval, gc)
+	srv.startACMEBackground()
 	go func() {
 		t := time.NewTicker(30 * time.Second)
 		defer t.Stop()
@@ -437,6 +450,7 @@ func isDir(p string) bool {
 func (srv *Server) Listen() error {
 	_ = srv.sessions.load()
 	srv.startMetricsSampler()
+	srv.startOCServTrafficSampler()
 	addr := srv.listenAddr()
 	h := srv.Handler()
 	if srv.tlsActive() {
@@ -445,6 +459,17 @@ func (srv *Server) Listen() error {
 	}
 	log.Printf("qosnatd listening on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
 	return http.ListenAndServe(addr, h)
+}
+
+func (srv *Server) startOCServTrafficSampler() {
+	if srv.ocservTrafficCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	srv.ocservTrafficCancel = cancel
+	go usertraffic.StartSampler(ctx, func() store.OCServState {
+		return srv.store.Get().VPN.OCServ
+	})
 }
 
 func (srv *Server) startMetricsSampler() {

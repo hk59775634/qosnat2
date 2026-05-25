@@ -1,15 +1,17 @@
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps({
   history: { type: Array, default: () => [] },
   field: { type: String, required: true }, // lan_rx_mbps | lan_tx_mbps | wan_rx_mbps | wan_tx_mbps
   label: { type: String, default: '' },
   color: { type: String, default: 'bg-blue-400' },
-  /** 接口页等场景使用更高柱状图 */
+  /** Taller bars for interface pages */
   tall: { type: Boolean, default: false },
 })
 
+const { t } = useI18n()
 const barMaxPx = computed(() => (props.tall ? 64 : 48))
 
 const points = computed(() => {
@@ -34,6 +36,6 @@ const points = computed(() => {
         :title="((props.history[i] && props.history[i][props.field]) || 0).toFixed(2) + ' Mbps'"
       />
     </div>
-    <p v-else class="text-xs text-slate-400">采集中…（约 5s 后显示）</p>
+    <p v-else class="text-xs text-slate-400">{{ t('components.trafficSampling') }}</p>
   </div>
 </template>

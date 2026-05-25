@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const data = ref(null)
 const limit = ref(200)
 const filter = ref('')
@@ -35,44 +37,41 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="连接状态 (conntrack)"
-      description="来自 conntrack -L；总数取自 nf_conntrack_count。大量连接时仅返回前 N 条。"
-    />
+    <PageHeader :title="t('diagnostics.conntrack.title')" :description="t('diagnostics.conntrack.description')" />
 
     <div class="card card-body mb-4 flex flex-wrap gap-3 items-end">
       <div>
-        <label class="text-xs text-slate-500">条数上限</label>
+        <label class="text-xs text-slate-500">{{ t('diagnostics.conntrack.limit') }}</label>
         <input v-model.number="limit" type="number" min="10" max="2000" class="input-field w-28" />
       </div>
       <div class="flex-1 min-w-[12rem]">
-        <label class="text-xs text-slate-500">过滤（src/dst 子串）</label>
-        <input v-model="filter" class="input-field font-mono text-xs" placeholder="10.0.0. 或 8.8.8.8" />
+        <label class="text-xs text-slate-500">{{ t('diagnostics.conntrack.filter') }}</label>
+        <input v-model="filter" class="input-field font-mono text-xs" />
       </div>
       <button type="button" class="btn-primary" :disabled="loading" @click="load">
-        {{ loading ? '加载中…' : '刷新' }}
+        {{ loading ? t('common.loading') : t('common.refresh') }}
       </button>
     </div>
 
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div v-if="data" class="card card-body mb-4 text-sm flex flex-wrap gap-4">
-      <span>表内总数: <strong>{{ data.count }}</strong></span>
-      <span>本页: {{ data.entries?.length ?? 0 }} / limit {{ data.limit }}</span>
-      <span v-if="data.truncated" class="text-amber-700">已截断</span>
+      <span>{{ t('diagnostics.conntrack.tableTotal') }}: <strong>{{ data.count }}</strong></span>
+      <span>{{ t('diagnostics.conntrack.pageRows') }}: {{ data.entries?.length ?? 0 }} / limit {{ data.limit }}</span>
+      <span v-if="data.truncated" class="text-amber-700">{{ t('diagnostics.conntrack.truncated') }}</span>
     </div>
 
     <div class="card table-wrap p-4 overflow-x-auto">
       <table class="data w-full text-xs">
         <thead>
           <tr>
-            <th>协议</th>
-            <th>状态</th>
-            <th>超时</th>
-            <th>原始</th>
-            <th>回复</th>
+            <th>{{ t('diagnostics.conntrack.colProto') }}</th>
+            <th>{{ t('diagnostics.conntrack.colState') }}</th>
+            <th>{{ t('diagnostics.conntrack.colTimeout') }}</th>
+            <th>{{ t('diagnostics.conntrack.colOrig') }}</th>
+            <th>{{ t('diagnostics.conntrack.colReply') }}</th>
             <th>Mark</th>
-            <th>标志</th>
+            <th>{{ t('diagnostics.conntrack.colFlags') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -88,7 +87,7 @@ onMounted(load)
             <td>{{ e.flags || '—' }}</td>
           </tr>
           <tr v-if="!loading && !(data?.entries?.length)">
-            <td colspan="7" class="text-slate-400 text-center py-6">无匹配连接</td>
+            <td colspan="7" class="text-slate-400 text-center py-6">{{ t('diagnostics.conntrack.noMatch') }}</td>
           </tr>
         </tbody>
       </table>

@@ -106,7 +106,9 @@ func RenderConf(o store.OCServState) string {
 	}
 	b.WriteString(fmt.Sprintf("device = %s\n", o.Device))
 	b.WriteString(fmt.Sprintf("max-clients = %d\n", o.MaxClients))
+	renderGroupGlobals(&b, o)
 	renderAdvanced(&b, o)
+	renderVhosts(&b, o)
 	return b.String()
 }
 
@@ -133,6 +135,9 @@ func WriteConf(o store.OCServState) error {
 			return fmt.Errorf("ocserv 未编译 RADIUS 支持，请重装: sudo %s（需 libradcli-dev）", InstallScriptPath())
 		}
 	} else if err := SyncUsers(o.Users); err != nil {
+		return err
+	}
+	if err := WriteGroupConfigs(o); err != nil {
 		return err
 	}
 	return os.WriteFile(ConfPath, []byte(RenderConf(o)), 0644)
@@ -183,7 +188,12 @@ func SyncUsers(users []store.OCServUser) error {
 		if u.Username == "" || u.Password == "" {
 			continue
 		}
-		cmd := exec.Command(ocpasswd, "-c", PasswdPath, u.Username)
+		args := []string{"-c", PasswdPath}
+		if g := strings.TrimSpace(u.Group); g != "" {
+			args = append(args, "-g", g)
+		}
+		args = append(args, u.Username)
+		cmd := exec.Command(ocpasswd, args...)
 		cmd.Stdin = strings.NewReader(u.Password + "\n")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("ocpasswd %s: %s %w", u.Username, strings.TrimSpace(string(out)), err)
@@ -195,32 +205,69 @@ func SyncUsers(users []store.OCServUser) error {
 	return os.Chmod(PasswdPath, 0600)
 }
 
-// Apply 写配置并 systemctl restart|stop ocserv
-func Apply(o store.OCServState, up bool) error {
+// Reload 向运行中的 ocserv 发送 reload（不中断已有 VPN 连接）
+func Reload(o store.OCServState) error {
+	cfg := OcctlFromState(o)
+	cmdArgs := append([]string{}, cfg.occtlSocketArg()...)
+	cmdArgs = append(cmdArgs, "reload")
+	cmd := exec.Command(occtlBin(), cmdArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("occtl reload: %s %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// SyncPlainUsers 将 store 中本地用户写入 ocpasswd（plain 认证）
+func SyncPlainUsers(o store.OCServState) error {
+	if store.OCServUsesRadius(o) {
+		return nil
+	}
+	return SyncUsers(o.Users)
+}
+
+// Apply 写配置；运行中优先 systemctl reload（不踢下线），否则 restart/stop。
+// 返回值 applyMode：reload | restart | start | stop
+func Apply(o store.OCServState, up bool) (applyMode string, err error) {
 	st := InstallInfo()
 	if !st.Installed {
-		return fmt.Errorf("ocserv not installed; run: sudo /opt/qosnat2/scripts/install-ocserv.sh")
+		return "", fmt.Errorf("ocserv not installed; run: sudo /opt/qosnat2/scripts/install-ocserv.sh")
 	}
 	if err := WriteConf(o); err != nil {
-		return err
+		return "", err
 	}
+	var out []byte
 	if up {
-		out, err := exec.Command("systemctl", "enable", "ocserv").CombinedOutput()
+		out, err = exec.Command("systemctl", "enable", "ocserv").CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("systemctl enable: %s %w", strings.TrimSpace(string(out)), err)
+			return "", fmt.Errorf("systemctl enable: %s %w", strings.TrimSpace(string(out)), err)
+		}
+		if st.Active {
+			out, err = exec.Command("systemctl", "reload", "ocserv").CombinedOutput()
+			if err == nil {
+				return "reload", nil
+			}
+			if err := Reload(o); err == nil {
+				return "reload", nil
+			}
+			_ = out
+		}
+		mode := "restart"
+		if !st.Active {
+			mode = "start"
 		}
 		out, err = exec.Command("systemctl", "restart", "ocserv").CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("systemctl restart: %s %w", strings.TrimSpace(string(out)), err)
+			return "", fmt.Errorf("systemctl restart: %s %w", strings.TrimSpace(string(out)), err)
 		}
-		return nil
+		return mode, nil
 	}
-	out, err := exec.Command("systemctl", "stop", "ocserv").CombinedOutput()
+	out, err = exec.Command("systemctl", "stop", "ocserv").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("systemctl stop: %s %w", strings.TrimSpace(string(out)), err)
+		return "", fmt.Errorf("systemctl stop: %s %w", strings.TrimSpace(string(out)), err)
 	}
 	_, _ = exec.Command("systemctl", "disable", "ocserv").CombinedOutput()
-	return nil
+	return "stop", nil
 }
 
 // InstallScriptPath 返回仓库内安装脚本路径

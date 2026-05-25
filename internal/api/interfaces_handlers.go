@@ -1,10 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
+	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/stats"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
@@ -101,5 +103,64 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		"ok":        true,
 		"device":    dev,
 		"interface": updated,
+	})
+}
+
+func (srv *Server) handleInterfacesRoles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		DevLAN string `json:"dev_lan"`
+		DevWAN string `json:"dev_wan"`
+		Apply  *bool  `json:"apply"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		return
+	}
+	body.DevLAN = strings.TrimSpace(body.DevLAN)
+	body.DevWAN = strings.TrimSpace(body.DevWAN)
+	if body.DevWAN == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_wan required"})
+		return
+	}
+	if body.DevLAN != "" && body.DevLAN == body.DevWAN {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_lan and dev_wan must differ"})
+		return
+	}
+	if body.DevLAN != "" && !route.LinkExists(body.DevLAN) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_lan: interface %q not found", body.DevLAN)})
+		return
+	}
+	if !route.LinkExists(body.DevWAN) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_wan: interface %q not found", body.DevWAN)})
+		return
+	}
+	if err := WriteDevRoles(body.DevLAN, body.DevWAN); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	srv.env.DevLAN = body.DevLAN
+	srv.env.DevWAN = body.DevWAN
+	srv.reloadEnv()
+
+	apply := true
+	if body.Apply != nil {
+		apply = *body.Apply
+	}
+	var applyErr string
+	if apply && srv.setupComplete() {
+		if err := srv.ApplyAll(); err != nil {
+			applyErr = err.Error()
+		}
+	}
+	srv.auditLog(r, "iface.roles", body.DevWAN+","+body.DevLAN)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":        applyErr == "",
+		"dev_lan":   body.DevLAN,
+		"dev_wan":   body.DevWAN,
+		"apply_error": applyErr,
 	})
 }

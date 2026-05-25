@@ -1,6 +1,9 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+
+const { t } = useI18n()
 import PageHeader from '@/components/PageHeader.vue'
 import DashboardWidget from '@/components/DashboardWidget.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
@@ -8,11 +11,14 @@ import TrafficSparkline from '@/components/TrafficSparkline.vue'
 
 const devLan = ref('')
 const devWan = ref('')
+const roleLan = ref('')
+const roleWan = ref('')
 const ifaces = ref([])
 const trafficHistory = ref([])
 const err = ref('')
 const ok = ref('')
 const saving = ref(false)
+const savingRoles = ref(false)
 
 const editDev = ref('')
 const eth = ref(null)
@@ -75,11 +81,44 @@ function onRatesCapChange() {
   }
 }
 
+async function saveRoles() {
+  if (!roleWan.value) {
+    err.value = t('network.interfaces.wanRequired')
+    return
+  }
+  if (roleLan.value && roleLan.value === roleWan.value) {
+    err.value = t('network.interfaces.lanWanDiff')
+    return
+  }
+  savingRoles.value = true
+  err.value = ''
+  ok.value = ''
+  try {
+    const res = await api.interfaces.setRoles({
+      dev_lan: roleLan.value,
+      dev_wan: roleWan.value,
+      apply: true,
+    })
+    if (res.apply_error) {
+      err.value = `角色已保存，但应用失败: ${res.apply_error}`
+    } else {
+      ok.value = t('network.interfaces.rolesApplied')
+    }
+    await loadInterfaces()
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    savingRoles.value = false
+  }
+}
+
 async function loadInterfaces() {
   try {
     const d = await api.interfaces.list()
     devLan.value = d.dev_lan || ''
     devWan.value = d.dev_wan || ''
+    roleLan.value = d.dev_lan || ''
+    roleWan.value = d.dev_wan || ''
     ifaces.value = d.interfaces || []
     trafficHistory.value = d.traffic_history || []
     err.value = ''
@@ -224,11 +263,44 @@ onUnmounted(() => {
 <template>
   <div class="page-stack">
     <PageHeader
-      title="接口"
-      description="网卡近 4 小时流量趋势（LAN/WAN）；点击「实时速率」查看各口当前吞吐。IP 请在 netplan/系统侧配置。"
+      :title="t('network.interfaces.title')"
+      :description="t('network.interfaces.description')"
     />
     <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
     <p v-if="ok" class="text-green-700 text-sm mb-4">{{ ok }}</p>
+
+    <div class="card p-4 mb-4">
+      <h3 class="text-sm font-semibold text-slate-800 mb-3">{{ t('network.interfaces.wanLan') }}</h3>
+      <div class="grid sm:grid-cols-2 gap-3 text-sm max-w-2xl">
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.interfaces.wan') }} *</label>
+          <select v-model="roleWan" class="input-field mt-1">
+            <option value="">{{ t('network.interfaces.choose') }}</option>
+            <option v-for="i in ifaces" :key="'rw-' + i.name" :value="i.name">
+              {{ i.name }} {{ i.up ? '(UP)' : '' }}
+            </option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.interfaces.lan') }}</label>
+          <select v-model="roleLan" class="input-field mt-1">
+            <option value="">{{ t('network.interfaces.notMapped') }}</option>
+            <option v-for="i in ifaces" :key="'rl-' + i.name" :value="i.name">
+              {{ i.name }} {{ i.up ? '(UP)' : '' }}
+            </option>
+          </select>
+        </div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">保存后将写入运行配置并尝试应用 nft/TC（需已走完初始引导）。</p>
+      <button
+        type="button"
+        class="btn-primary mt-3"
+        :disabled="savingRoles || !roleWan"
+        @click="saveRoles"
+      >
+        {{ savingRoles ? t('common.processing') : t('common.save') }}
+      </button>
+    </div>
 
     <div class="grid md:grid-cols-2 gap-4 mb-3">
       <div

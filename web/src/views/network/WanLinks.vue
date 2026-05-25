@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const links = ref([])
 const devWan = ref('')
 const err = ref('')
@@ -28,7 +30,7 @@ async function add() {
   err.value = ''
   try {
     await api.network.wanLinks.add({ ...form.value })
-    ok.value = '已添加并同步默认路由'
+    ok.value = t('common.saved')
     await load()
   } catch (e) {
     err.value = e.message
@@ -36,7 +38,7 @@ async function add() {
 }
 
 async function remove(id) {
-  if (!confirm('删除该 WAN 链路？')) return
+  if (!confirm(t('common.delete') + '?')) return
   await api.network.wanLinks.del(id)
   await load()
 }
@@ -46,25 +48,22 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="多 WAN"
-      description="Tier 越小越优先；Metric 用于 ip route。启用项会同步为 default 路由（comment qosnat-wan:…）。"
-    />
+    <PageHeader :title="t('network.wanLinks.title')" :description="t('network.wanLinks.description')" />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div class="card card-body mb-0 space-y-3 text-sm">
       <div class="grid sm:grid-cols-2 gap-3">
         <div>
-          <label class="text-xs text-slate-500">名称</label>
+          <label class="text-xs text-slate-500">{{ t('common.name') }}</label>
           <input v-model="form.name" class="input-field mt-1" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">网卡</label>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.iface') }}</label>
           <input v-model="form.device" class="input-field mt-1 font-mono" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">网关</label>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.gateway') }}</label>
           <input v-model="form.gateway" class="input-field mt-1 font-mono" />
         </div>
         <div>
@@ -76,26 +75,26 @@ onMounted(load)
           <input v-model.number="form.tier" type="number" class="input-field mt-1" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">权重</label>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.weight') }}</label>
           <input v-model.number="form.weight" type="number" class="input-field mt-1" />
         </div>
         <label class="flex items-center gap-2 sm:col-span-2">
-          <input v-model="form.enabled" type="checkbox" /> 启用
+          <input v-model="form.enabled" type="checkbox" /> {{ t('common.enabled') }}
         </label>
       </div>
-      <button type="button" class="btn-primary" @click="add">添加 WAN</button>
+      <button type="button" class="btn-primary" @click="add">{{ t('common.add') }}</button>
     </div>
 
     <div class="table-wrap card">
       <table class="data w-full text-sm">
         <thead>
           <tr>
-            <th>名称</th>
-            <th>设备</th>
-            <th>网关</th>
+            <th>{{ t('common.name') }}</th>
+            <th>{{ t('network.wanLinks.iface') }}</th>
+            <th>{{ t('network.wanLinks.gateway') }}</th>
             <th>Tier</th>
             <th>Metric</th>
-            <th>权重</th>
+            <th>{{ t('network.wanLinks.weight') }}</th>
             <th></th>
           </tr>
         </thead>
@@ -107,10 +106,10 @@ onMounted(load)
             <td>{{ w.tier }}</td>
             <td>{{ w.metric }}</td>
             <td>{{ w.weight }}</td>
-            <td><button type="button" class="text-red-600 text-xs" @click="remove(w.id)">删除</button></td>
+            <td><button type="button" class="text-red-600 text-xs" @click="remove(w.id)">{{ t('common.delete') }}</button></td>
           </tr>
           <tr v-if="!links.length">
-            <td colspan="7" class="text-center text-slate-400 py-3">未配置额外 WAN</td>
+            <td colspan="7" class="text-center text-slate-400 py-3">{{ t('network.wanLinks.noExtra') }}</td>
           </tr>
         </tbody>
       </table>

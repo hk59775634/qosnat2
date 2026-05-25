@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const list = ref([])
 const dev = ref('')
 const filter = ref('')
@@ -65,14 +67,14 @@ onMounted(async () => {
 
 <template>
   <div class="page-stack">
-    <PageHeader title="抓包 (tcpdump)" description="文件保存在 /var/lib/qosnat2/captures/，最长 300 秒。" />
+    <PageHeader :title="t('diagnostics.capture.title')" :description="t('diagnostics.capture.description')" />
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div class="card card-body mb-0 grid gap-3">
-      <input v-model="dev" class="input-field font-mono" placeholder="接口 ens19" />
-      <input v-model="filter" class="input-field font-mono" placeholder="bpf 过滤，如 host 10.0.0.1" />
-      <input v-model.number="duration" type="number" class="input-field w-32" placeholder="秒" />
-      <button type="button" class="btn-primary w-fit" @click="start">开始抓包</button>
+      <input v-model="dev" class="input-field font-mono" :placeholder="t('diagnostics.capture.ifacePh')" />
+      <input v-model="filter" class="input-field font-mono" :placeholder="t('diagnostics.capture.bpfPh')" />
+      <input v-model.number="duration" type="number" class="input-field w-32" :placeholder="t('diagnostics.capture.secPh')" />
+      <button type="button" class="btn-primary w-fit" @click="start">{{ t('diagnostics.capture.start') }}</button>
     </div>
 
     <div class="card table-wrap p-4">
@@ -80,9 +82,9 @@ onMounted(async () => {
         <thead>
           <tr>
             <th>ID</th>
-            <th>接口</th>
-            <th>大小</th>
-            <th>状态</th>
+            <th>{{ t('diagnostics.capture.colIface') }}</th>
+            <th>{{ t('diagnostics.capture.colSize') }}</th>
+            <th>{{ t('diagnostics.capture.colStatus') }}</th>
             <th></th>
           </tr>
         </thead>
@@ -91,10 +93,10 @@ onMounted(async () => {
             <td class="font-mono text-xs">{{ c.id.slice(-8) }}</td>
             <td>{{ c.device }}</td>
             <td>{{ fmtSize(c.size_bytes) }}</td>
-            <td>{{ c.running ? '进行中' : '已结束' }}</td>
+            <td>{{ c.running ? t('diagnostics.capture.inProgress') : t('diagnostics.capture.finished') }}</td>
             <td>
-              <button v-if="c.running" type="button" class="text-xs text-red-600 mr-2" @click='stop(c.id)'>停止</button>
-              <button type="button" class="text-xs text-blue-600" @click='download(c.id)'>下载 pcap</button>
+              <button v-if="c.running" type="button" class="text-xs text-red-600 mr-2" @click="stop(c.id)">{{ t('diagnostics.capture.stop') }}</button>
+              <button type="button" class="text-xs text-blue-600" @click="download(c.id)">{{ t('diagnostics.capture.download') }}</button>
             </td>
           </tr>
         </tbody>

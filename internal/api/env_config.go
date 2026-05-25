@@ -18,3 +18,19 @@ func ValidateEnv(e Env) error {
 func WriteRuntimeEnv(e Env) error {
 	return writeRuntimeEnvMerged(e)
 }
+
+// WriteDevRoles 写入 WAN/LAN 网卡映射；空字符串表示清除对应项
+func WriteDevRoles(lan, wan string) error {
+	m := readEnvFileMap()
+	if lan == "" {
+		delete(m, "DEV_LAN")
+	} else {
+		m["DEV_LAN"] = lan
+	}
+	if wan == "" {
+		delete(m, "DEV_WAN")
+	} else {
+		m["DEV_WAN"] = wan
+	}
+	return writeEnvMap(m)
+}

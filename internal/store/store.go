@@ -67,7 +67,14 @@ type SystemState struct {
 	PerfPreset         bool   `json:"perf_preset,omitempty"`
 	TuningAutoApplied  bool   `json:"tuning_auto_applied,omitempty"`
 	TuningTier         string `json:"tuning_tier,omitempty"`
-	TLSEnabled         bool   `json:"tls_enabled,omitempty"`
+	TLSEnabled            bool   `json:"tls_enabled,omitempty"`
+	TLSDomain             string `json:"tls_domain,omitempty"`
+	TLSAcmeEnabled        bool   `json:"tls_acme_enabled,omitempty"`
+	TLSAcmeEmail          string `json:"tls_acme_email,omitempty"`
+	TLSAcmeStaging        bool   `json:"tls_acme_staging,omitempty"`
+	TLSAcmeRenewDays      int    `json:"tls_acme_renew_days,omitempty"` // 到期前 N 天续期，默认 30
+	TLSAcmeLastOK         string `json:"tls_acme_last_ok,omitempty"`
+	TLSAcmeLastError      string `json:"tls_acme_last_error,omitempty"`
 }
 
 // APIKey 持久化 API Key（仅存 key_hash；创建时明文仅返回一次）

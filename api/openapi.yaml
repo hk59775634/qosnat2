@@ -135,6 +135,13 @@ components:
         has_key_file: { type: boolean }
         cert_subject: { type: string }
         cert_not_after: { type: string, format: date-time }
+        acme_enabled: { type: boolean }
+        domain: { type: string }
+        acme_email: { type: string }
+        acme_staging: { type: boolean }
+        acme_renew_days: { type: integer }
+        acme_last_ok: { type: string }
+        acme_last_error: { type: string }
     GeneralSettings:
       type: object
       properties:
@@ -154,6 +161,11 @@ components:
         tls_enabled: { type: boolean }
         tls_cert: { type: string, description: PEM 证书 }
         tls_key: { type: string, description: PEM 私钥 }
+        tls_domain: { type: string }
+        tls_acme_enabled: { type: boolean }
+        tls_acme_email: { type: string }
+        tls_acme_staging: { type: boolean }
+        tls_acme_renew_days: { type: integer }
     IfaceAddr:
       type: object
       properties:
@@ -306,6 +318,48 @@ components:
         password: { type: string, description: 仅 POST 创建/改密；GET 不返回 }
         group: { type: string }
         comment: { type: string }
+    OCServGroup:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        label: { type: string, description: select-group 展示名 }
+        comment: { type: string }
+        dns:
+          type: array
+          items: { type: string }
+        routes:
+          type: array
+          items: { type: string }
+        no_routes:
+          type: array
+          items: { type: string }
+        ipv4_network: { type: string }
+        ipv4_netmask: { type: string }
+        rx_data_per_sec: { type: integer }
+        tx_data_per_sec: { type: integer }
+        mtu: { type: integer }
+        tunnel_all_dns: { type: boolean }
+    OCServVhost:
+      type: object
+      required: [domain]
+      properties:
+        enabled: { type: boolean }
+        domain: { type: string }
+        auth_method: { type: string, enum: ['', plain, radius, certificate] }
+        server_cert_path: { type: string }
+        server_key_path: { type: string }
+        ca_cert_path: { type: string }
+        ipv4_network: { type: string }
+        ipv4_netmask: { type: string }
+        dns:
+          type: array
+          items: { type: string }
+        routes:
+          type: array
+          items: { type: string }
+        cert_user_oid: { type: string }
+        comment: { type: string }
     OCServRadius:
       type: object
       properties:
@@ -398,6 +452,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OCServUser'
+        config_per_group: { type: string, example: /etc/ocserv/config-per-group/ }
+        default_group_config: { type: string, example: /etc/ocserv/defaults/group.conf }
+        auto_select_group: { type: boolean }
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/OCServGroup'
+        vhosts:
+          type: array
+          items:
+            $ref: '#/components/schemas/OCServVhost'
     ConntrackEntry:
       type: object
       properties:
@@ -1169,6 +1234,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /api/v1/system/tls/acme:
+    post:
+      tags: [system]
+      summary: ACME 申请或续期证书（HTTP-01，需 root）
+      parameters:
+        - name: action
+          in: query
+          schema: { type: string, enum: [obtain, renew] }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password]
+              properties:
+                current_password: { type: string }
+                action: { type: string, enum: [obtain, renew] }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+                  tls:
+                    $ref: '#/components/schemas/TLSStatus'
+
   /api/v1/system/audit:
     get:
       tags: [system]
@@ -1671,6 +1765,224 @@ paths:
         '403':
           description: 非 root
 
+  /api/v1/vpn/ocserv/status/detail:
+    get:
+      tags: [vpn]
+      summary: ocserv 运行统计（occtl show status -j）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: object }
+                  detail: { type: object }
+                  use_occtl: { type: boolean }
+                  socket_file: { type: string }
+        '503':
+          description: occtl 不可用或未启用
+
+  /api/v1/vpn/ocserv/sessions:
+    get:
+      tags: [vpn]
+      summary: 在线会话（occtl show users -j）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items: { type: object }
+                  use_occtl: { type: boolean }
+                  socket_file: { type: string }
+        '503':
+          description: occtl 不可用或未启用
+
+  /api/v1/vpn/ocserv/sessions/disconnect:
+    post:
+      tags: [vpn]
+      summary: 断开在线会话（occtl disconnect user|id）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                id: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '400':
+          description: 参数错误或断开失败
+
+  /api/v1/vpn/ocserv/groups:
+    get:
+      tags: [vpn]
+      summary: ocserv 组列表与全局组路径
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  groups:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OCServGroup'
+                  config_per_group: { type: string }
+                  default_group_config: { type: string }
+                  auto_select_group: { type: boolean }
+    post:
+      tags: [vpn]
+      summary: 添加 ocserv 组（plain 认证）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OCServGroup'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    put:
+      tags: [vpn]
+      summary: 更新 ocserv 组
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OCServGroup'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [vpn]
+      summary: 删除 ocserv 组
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/vpn/ocserv/vhosts:
+    get:
+      tags: [vpn]
+      summary: ocserv 虚拟主机列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  vhosts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OCServVhost'
+    post:
+      tags: [vpn]
+      summary: 添加 vhost（重写 ocserv.conf）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OCServVhost'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    put:
+      tags: [vpn]
+      summary: 更新 vhost
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OCServVhost'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [vpn]
+      summary: 删除 vhost
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/vpn/ocserv/users/traffic:
+    get:
+      tags: [vpn]
+      summary: ocserv 用户流量统计与历史曲线
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema: { type: string }
+        - name: period
+          in: query
+          schema: { type: string, enum: [24h, 7d, 30d, 365d], default: 7d }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username: { type: string }
+                  online: { type: boolean }
+                  summary:
+                    type: object
+                    properties:
+                      total_rx_bytes: { type: integer }
+                      total_tx_bytes: { type: integer }
+                      today_rx_bytes: { type: integer }
+                      today_tx_bytes: { type: integer }
+                      period_rx_bytes: { type: integer }
+                      period_tx_bytes: { type: integer }
+                  series:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ts: { type: integer }
+                        rx_mbps: { type: number }
+                        tx_mbps: { type: number }
+                  resolution: { type: string }
+                  period: { type: string }
+
   /api/v1/vpn/ocserv/users:
     get:
       tags: [vpn]
@@ -1695,6 +2007,26 @@ paths:
             schema:
               type: object
               required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+                group: { type: string }
+                comment: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    put:
+      tags: [vpn]
+      summary: 修改 ocserv 用户（密码留空则不修改）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
               properties:
                 username: { type: string }
                 password: { type: string }

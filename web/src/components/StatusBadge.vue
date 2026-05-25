@@ -1,9 +1,13 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
+
 defineProps({
   label: String,
   ok: Boolean,
   detail: String,
 })
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -14,7 +18,7 @@ defineProps({
         class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
         :class="ok ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600'"
       >
-        {{ ok ? '运行中' : '未启用' }}
+        {{ ok ? t('components.statusRunning') : t('components.statusDisabled') }}
       </span>
       <p v-if="detail" class="text-xs text-slate-400 mt-0.5 font-mono">{{ detail }}</p>
     </div>

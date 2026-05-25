@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const tunnels = ref([])
 const err = ref('')
 const ok = ref('')
@@ -27,16 +29,16 @@ function reset() {
   form.value = { vni: 100, local: '', remote: '', port: 4789, underlay: '', ipv4: '', up: true }
 }
 
-function startEdit(t) {
-  editing.value = t.id
+function startEdit(tun) {
+  editing.value = tun.id
   form.value = {
-    vni: t.vni,
-    local: t.local,
-    remote: t.remote,
-    port: t.port || 4789,
-    underlay: t.underlay || '',
-    ipv4: (t.ipv4 || []).join('\n'),
-    up: t.up !== false,
+    vni: tun.vni,
+    local: tun.local,
+    remote: tun.remote,
+    port: tun.port || 4789,
+    underlay: tun.underlay || '',
+    ipv4: (tun.ipv4 || []).join('\n'),
+    up: tun.up !== false,
   }
 }
 
@@ -55,10 +57,10 @@ async function submit() {
   try {
     if (editing.value) {
       await api.network.vxlan.put(editing.value, body)
-      ok.value = 'VXLAN 已更新'
+      ok.value = t('common.saved')
     } else {
       await api.network.vxlan.add(body)
-      ok.value = 'VXLAN 已创建'
+      ok.value = t('common.saved')
     }
     reset()
     await load()
@@ -68,7 +70,7 @@ async function submit() {
 }
 
 async function remove(id) {
-  if (!confirm('删除 VXLAN 隧道？')) return
+  if (!confirm(t('common.delete') + '?')) return
   await api.network.vxlan.del(id)
   await load()
 }
@@ -78,10 +80,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="VXLAN"
-      description="L2 VXLAN overlay 写入 netplan tunnels 段；underlay 为物理口上的 VTEP IP。"
-    />
+    <PageHeader :title="t('network.vxlan.title')" :description="t('network.vxlan.description')" />
     <p v-if="ok" class="text-green-700 text-sm">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm">{{ err }}</p>
 
@@ -91,49 +90,49 @@ onMounted(load)
         <input v-model.number="form.vni" type="number" class="input-field mt-1" />
       </div>
       <div>
-        <label class="text-xs text-slate-500">UDP 端口</label>
+        <label class="text-xs text-slate-500">{{ t('network.vxlan.udpPort') }}</label>
         <input v-model.number="form.port" type="number" class="input-field mt-1" />
       </div>
       <div>
-        <label class="text-xs text-slate-500">本端 VTEP IP</label>
+        <label class="text-xs text-slate-500">{{ t('network.vxlan.localVtep') }}</label>
         <input v-model="form.local" class="input-field mt-1 font-mono" />
       </div>
       <div>
-        <label class="text-xs text-slate-500">对端 VTEP IP</label>
+        <label class="text-xs text-slate-500">{{ t('network.vxlan.remoteVtep') }}</label>
         <input v-model="form.remote" class="input-field mt-1 font-mono" />
       </div>
       <div>
-        <label class="text-xs text-slate-500">Underlay 接口（可选）</label>
-        <input v-model="form.underlay" class="input-field mt-1 font-mono" placeholder="ens18" />
+        <label class="text-xs text-slate-500">{{ t('network.vxlan.underlay') }}</label>
+        <input v-model="form.underlay" class="input-field mt-1 font-mono" />
       </div>
       <div class="sm:col-span-2">
-        <label class="text-xs text-slate-500">Overlay IPv4（每行 CIDR）</label>
+        <label class="text-xs text-slate-500">{{ t('network.vxlan.overlayIpv4') }}</label>
         <textarea v-model="form.ipv4" class="input-field mt-1 font-mono h-14" />
       </div>
       <label class="flex items-center gap-2">
-        <input v-model="form.up" type="checkbox" /> UP
+        <input v-model="form.up" type="checkbox" /> {{ t('common.up') }}
       </label>
       <div class="sm:col-span-2 flex gap-2">
-        <button type="button" class="btn-primary" @click="submit">{{ editing ? '保存' : '创建' }}</button>
-        <button v-if="editing" type="button" class="btn-secondary" @click="reset">取消</button>
+        <button type="button" class="btn-primary" @click="submit">{{ editing ? t('common.save') : t('common.create') }}</button>
+        <button v-if="editing" type="button" class="btn-secondary" @click="reset">{{ t('common.cancel') }}</button>
       </div>
     </div>
 
     <div class="card overflow-x-auto">
       <table class="data w-full text-sm">
         <thead>
-          <tr><th>名称</th><th>VNI</th><th>local</th><th>remote</th><th>IPv4</th><th></th></tr>
+          <tr><th>{{ t('common.name') }}</th><th>VNI</th><th>local</th><th>remote</th><th>IPv4</th><th></th></tr>
         </thead>
         <tbody>
-          <tr v-for="t in tunnels" :key="t.id">
-            <td class="font-mono">{{ t.name }}</td>
-            <td>{{ t.vni }}</td>
-            <td class="font-mono text-xs">{{ t.local }}</td>
-            <td class="font-mono text-xs">{{ t.remote }}</td>
-            <td class="font-mono text-xs">{{ (t.ipv4 || []).join(', ') || '—' }}</td>
+          <tr v-for="tun in tunnels" :key="tun.id">
+            <td class="font-mono">{{ tun.name }}</td>
+            <td>{{ tun.vni }}</td>
+            <td class="font-mono text-xs">{{ tun.local }}</td>
+            <td class="font-mono text-xs">{{ tun.remote }}</td>
+            <td class="font-mono text-xs">{{ (tun.ipv4 || []).join(', ') || '—' }}</td>
             <td class="text-right space-x-2">
-              <button type="button" class="text-xs text-blue-600" @click="startEdit(t)">编辑</button>
-              <button type="button" class="text-red-600 text-xs" @click="remove(t.id)">删除</button>
+              <button type="button" class="text-xs text-blue-600" @click="startEdit(tun)">{{ t('common.edit') }}</button>
+              <button type="button" class="text-red-600 text-xs" @click="remove(tun.id)">{{ t('common.delete') }}</button>
             </td>
           </tr>
         </tbody>

@@ -1,8 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
+const { t } = useI18n()
 const vlans = ref([])
 const netplanPath = ref('')
 const err = ref('')
@@ -50,10 +52,10 @@ async function submit() {
   try {
     if (editing.value) {
       await api.network.vlans.put(editing.value, payload)
-      ok.value = 'VLAN 已更新（netplan apply 失败会自动回滚）'
+      ok.value = t('common.saved')
     } else {
       await api.network.vlans.add(payload)
-      ok.value = 'VLAN 已创建'
+      ok.value = t('common.saved')
     }
     resetForm()
     await load()
@@ -63,7 +65,7 @@ async function submit() {
 }
 
 async function remove(id) {
-  if (!confirm('删除 VLAN 子接口？')) return
+  if (!confirm(t('common.delete') + '?')) return
   err.value = ''
   try {
     await api.network.vlans.del(id)
@@ -76,7 +78,7 @@ async function remove(id) {
 
 async function previewNetplan() {
   const d = await api.network.netplan.preview()
-  ok.value = `预览 ${d.path || netplanPath.value}（${d.vlans} VLAN / ${d.ifaces} 口）`
+  ok.value = `${t('network.vlans.previewNetplan')} ${d.path || netplanPath.value}`
 }
 
 onMounted(load)
@@ -84,43 +86,40 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="VLAN"
-      description="802.1Q 写入 99-qosnat2.yaml；与 cloud-init 50-cloud-init 合并，同名口以本文件为准。apply 失败会回滚 state 与 netplan 备份。"
-    />
+    <PageHeader :title="t('network.vlans.title')" :description="t('network.vlans.description')" />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div class="card card-body mb-0 space-y-3 text-sm">
-      <h3 class="font-medium">{{ editing ? '编辑 VLAN' : '新建 VLAN' }}</h3>
+      <h3 class="font-medium">{{ editing ? t('network.vlans.edit') : t('network.vlans.new') }}</h3>
       <div class="grid sm:grid-cols-2 gap-3">
         <div>
-          <label class="text-xs text-slate-500">父接口</label>
-          <input v-model="form.parent" class="input-field mt-1 font-mono" placeholder="ens19" />
+          <label class="text-xs text-slate-500">{{ t('network.vlans.parent') }}</label>
+          <input v-model="form.parent" class="input-field mt-1 font-mono" />
         </div>
         <div>
           <label class="text-xs text-slate-500">VID</label>
           <input v-model.number="form.vid" type="number" min="1" max="4094" class="input-field mt-1" />
         </div>
         <div class="sm:col-span-2">
-          <label class="text-xs text-slate-500">IPv4（可选，每行 CIDR）</label>
+          <label class="text-xs text-slate-500">{{ t('network.vlans.ipv4') }}</label>
           <textarea v-model="form.ipv4" class="input-field mt-1 font-mono h-16" />
         </div>
         <label class="flex items-center gap-2">
-          <input v-model="form.up" type="checkbox" /> 创建后 UP
+          <input v-model="form.up" type="checkbox" /> {{ t('network.vlans.upOnCreate') }}
         </label>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button type="button" class="btn-primary" @click="submit">{{ editing ? '保存' : '创建 VLAN' }}</button>
-        <button v-if="editing" type="button" class="btn-secondary" @click="resetForm">取消</button>
-        <button type="button" class="btn-secondary text-xs" @click="previewNetplan">预览 netplan</button>
+        <button type="button" class="btn-primary" @click="submit">{{ editing ? t('common.save') : t('common.create') }}</button>
+        <button v-if="editing" type="button" class="btn-secondary" @click="resetForm">{{ t('common.cancel') }}</button>
+        <button type="button" class="btn-secondary text-xs" @click="previewNetplan">{{ t('network.vlans.previewNetplan') }}</button>
       </div>
     </div>
 
     <div class="table-wrap card">
       <table class="data w-full text-sm">
         <thead>
-          <tr><th>名称</th><th>父接口</th><th>VID</th><th>IPv4</th><th></th></tr>
+          <tr><th>{{ t('common.name') }}</th><th>{{ t('network.vlans.parent') }}</th><th>VID</th><th>{{ t('network.vlans.ipv4') }}</th><th></th></tr>
         </thead>
         <tbody>
           <tr v-for="v in vlans" :key="v.id" :class="{ 'bg-blue-50': editing === v.id }">
@@ -129,12 +128,12 @@ onMounted(load)
             <td>{{ v.vid }}</td>
             <td class="font-mono text-xs">{{ (v.ipv4 || []).join(', ') || '—' }}</td>
             <td class="text-right whitespace-nowrap space-x-2">
-              <button type="button" class="text-xs text-blue-600" @click="startEdit(v)">编辑</button>
-              <button type="button" class="text-red-600 text-xs" @click="remove(v.id)">删除</button>
+              <button type="button" class="text-xs text-blue-600" @click="startEdit(v)">{{ t('common.edit') }}</button>
+              <button type="button" class="text-red-600 text-xs" @click="remove(v.id)">{{ t('common.delete') }}</button>
             </td>
           </tr>
           <tr v-if="!vlans.length">
-            <td colspan="5" class="text-center text-slate-400 py-3">无 VLAN</td>
+            <td colspan="5" class="text-center text-slate-400 py-3">{{ t('network.vlans.noVlan') }}</td>
           </tr>
         </tbody>
       </table>

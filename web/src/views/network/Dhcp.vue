@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+
+const { t } = useI18n()
 import PageHeader from '@/components/PageHeader.vue'
 
 const cfg = ref(null)
@@ -46,7 +49,7 @@ async function save(applyAfter) {
       .map((s) => s.trim())
       .filter(Boolean)
     await api.put('/api/v1/dhcp', cfg.value)
-    ok.value = '配置已保存'
+    ok.value = t('network.dhcp.saved')
     if (applyAfter) {
       await api.post('/api/v1/dhcp/apply', {})
       ok.value = cfg.value.enabled ? '已保存并启动 dnsmasq' : '已保存并停止 DHCP'
@@ -59,7 +62,7 @@ async function save(applyAfter) {
 
 function addStatic() {
   if (!staticForm.value.mac || !staticForm.value.ip) {
-    err.value = '静态绑定需填写 MAC 与 IP'
+    err.value = t('network.dhcp.staticNeedMacIp')
     return
   }
   if (!cfg.value.static_leases) cfg.value.static_leases = []
@@ -77,25 +80,18 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader title="DHCP 服务">
-      <template #description>
-        通过 <strong>dnsmasq</strong> 在指定网卡提供 DHCP，通常绑定内网口
-        <span class="font-mono">{{ devLan }}</span>，并排除 WAN
-        <span class="font-mono">{{ devWan }}</span>。
-        请确保该网卡已配置静态 IP，且 LAN 上无其它 DHCP 服务冲突。
-      </template>
-    </PageHeader>
+    <PageHeader :title="t('network.dhcp.title')" :description="t('network.dhcp.description')" />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div v-if="cfg" class="card card-body mb-0 space-y-3">
       <label class="flex items-center gap-2 text-sm font-medium">
-        <input v-model="cfg.enabled" type="checkbox" /> 启用 DHCP
+        <input v-model="cfg.enabled" type="checkbox" /> {{ t('network.dhcp.enable') }}
       </label>
 
       <div class="grid sm:grid-cols-2 gap-3 text-sm">
         <div>
-          <label class="text-xs text-slate-500">绑定网卡（监听接口）</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.bindIface') }}</label>
           <select v-model="bindIface" class="input-field font-mono">
             <option v-for="iface in interfaces" :key="iface.name" :value="iface.name">
               {{ iface.name }}
@@ -106,7 +102,7 @@ onMounted(load)
           <p class="text-xs text-slate-400 mt-1">留空时默认使用 DEV_LAN（{{ devLan }}）</p>
         </div>
         <div>
-          <label class="text-xs text-slate-500">默认网关 (option 3)</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.gateway') }}</label>
           <input v-model="cfg.router" class="input-field font-mono" placeholder="192.168.1.1" />
         </div>
         <div>
@@ -167,8 +163,8 @@ onMounted(load)
       </div>
 
       <div class="flex flex-wrap gap-2">
-        <button type="button" class="btn-primary" @click="save(true)">保存并应用</button>
-        <button type="button" class="btn-secondary" @click="save(false)">仅保存</button>
+        <button type="button" class="btn-primary" @click="save(true)">{{ t('network.dhcp.saveApply') }}</button>
+        <button type="button" class="btn-secondary" @click="save(false)">{{ t('network.dhcp.saveOnly') }}</button>
       </div>
 
       <p class="text-xs text-slate-500">
@@ -182,12 +178,12 @@ onMounted(load)
 
     <div v-if="cfg" class="grid lg:grid-cols-2 gap-3">
       <section class="card p-4">
-        <h3 class="font-medium mb-3">静态租约</h3>
+        <h3 class="font-medium mb-3">{{ t('network.dhcp.staticLeases') }}</h3>
         <div class="grid sm:grid-cols-2 gap-2 text-sm mb-3">
           <input v-model="staticForm.mac" class="input-field font-mono text-xs" placeholder="aa:bb:cc:dd:ee:ff" />
           <input v-model="staticForm.ip" class="input-field font-mono text-xs" placeholder="192.168.1.50" />
           <input v-model="staticForm.hostname" class="input-field text-xs" placeholder="hostname" />
-          <button type="button" class="btn-secondary text-xs" @click="addStatic">添加</button>
+          <button type="button" class="btn-secondary text-xs" @click="addStatic">{{ t('common.add') }}</button>
         </div>
         <table class="data w-full text-xs">
           <thead>
@@ -207,7 +203,7 @@ onMounted(load)
       </section>
 
       <section class="card p-4">
-        <h3 class="font-medium mb-3">当前租约</h3>
+        <h3 class="font-medium mb-3">{{ t('network.dhcp.currentLeases') }}</h3>
         <table class="data w-full text-xs">
           <thead>
             <tr>
@@ -223,7 +219,7 @@ onMounted(load)
               <td class="font-mono text-slate-500">{{ l.expires || l.expires_unix }}</td>
             </tr>
             <tr v-if="!leases.length">
-              <td colspan="5" class="text-center text-slate-400 py-3">无活跃租约</td>
+              <td colspan="5" class="text-center text-slate-400 py-3">{{ t('network.dhcp.noLeases') }}</td>
             </tr>
           </tbody>
         </table>

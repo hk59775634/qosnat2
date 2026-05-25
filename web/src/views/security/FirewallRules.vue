@@ -1,6 +1,9 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+
+const { t } = useI18n()
 import PageHeader from '@/components/PageHeader.vue'
 
 const rules = ref([])
@@ -100,7 +103,7 @@ async function saveEdit() {
 }
 
 async function remove(id) {
-  if (!confirm('删除规则？')) return
+  if (!confirm(t('security.firewall.confirmDelete'))) return
   await api.firewall.rules.del(id)
   if (editing.value === id) cancelEdit()
   await load()
@@ -160,15 +163,15 @@ onMounted(load)
 <template>
   <div class="page-stack">
     <PageHeader
-      title="防火墙规则"
-      description="自定义 forward/input 过滤规则（插入 established 之后）。拖动 ⋮⋮ 或 ↑↓ 排序。"
+      :title="t('security.firewall.title')"
+      :description="t('security.firewall.description')"
     />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
-    <p v-if="savingOrder" class="text-xs text-slate-500">正在保存顺序…</p>
+    <p v-if="savingOrder" class="text-xs text-slate-500">{{ t('security.firewall.savingOrder') }}</p>
 
     <div class="card card-body mb-0 space-y-3 text-sm">
-      <h3 class="font-medium">{{ editing ? `编辑规则 ${editing}` : '添加规则' }}</h3>
+      <h3 class="font-medium">{{ editing ? t('security.firewall.editRule') : t('security.firewall.addRule') }}</h3>
       <div class="grid sm:grid-cols-2 gap-3">
         <div>
           <label class="text-xs text-slate-500">链</label>

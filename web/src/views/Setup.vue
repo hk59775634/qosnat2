@@ -1,11 +1,20 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 const step = ref(0)
-const steps = ['欢迎', '管理员', '网卡', 'NAT（可选）', '完成']
+const steps = computed(() => [
+  t('setup.steps.welcome'),
+  t('setup.steps.admin'),
+  t('setup.steps.iface'),
+  t('setup.steps.nat'),
+  t('setup.steps.done'),
+])
 const loading = ref(false)
 const err = ref('')
 const ifaces = ref([])
@@ -23,7 +32,7 @@ const form = ref({
   apply_dataplane: true,
 })
 
-const progress = computed(() => Math.round(((step.value + 1) / steps.length) * 100))
+const progress = computed(() => Math.round(((step.value + 1) / steps.value.length) * 100))
 
 onMounted(async () => {
   try {
@@ -34,13 +43,13 @@ onMounted(async () => {
     }
     const res = await api.setup.interfaces()
     ifaces.value = res.interfaces || []
-    if (!form.value.dev_lan && ifaces.value.length) {
+    if (!form.value.dev_wan && ifaces.value.length) {
       const up = ifaces.value.filter((i) => i.up)
-      if (up.length >= 1) form.value.dev_lan = up[0].name
-      if (up.length >= 2) form.value.dev_wan = up[1].name
+      if (up.length >= 1) form.value.dev_wan = up[0].name
+      if (up.length >= 2) form.value.dev_lan = up[1].name
     }
   } catch (e) {
-    err.value = e.message || '无法连接 API'
+    err.value = e.message || t('setup.apiUnreachable')
   }
 })
 
@@ -48,25 +57,29 @@ function next() {
   err.value = ''
   if (step.value === 1) {
     if (form.value.admin_pass.length < 8) {
-      err.value = '密码至少 8 位'
+      err.value = t('setup.passMin')
       return
     }
     if (form.value.admin_pass !== form.value.admin_pass2) {
-      err.value = '两次密码不一致'
+      err.value = t('setup.passMismatch')
       return
     }
   }
   if (step.value === 2) {
-    if (!form.value.dev_lan || !form.value.dev_wan) {
-      err.value = '请选择 LAN 与 WAN 网卡'
+    if (!form.value.dev_wan) {
+      err.value = t('setup.wanRequired')
       return
     }
-    if (form.value.dev_lan === form.value.dev_wan) {
-      err.value = 'LAN 与 WAN 不能相同'
+    if (form.value.dev_lan && form.value.dev_lan === form.value.dev_wan) {
+      err.value = t('setup.lanWanDiff')
+      return
+    }
+    if (form.value.enable_dhcp && !form.value.dev_lan) {
+      err.value = t('setup.dhcpNeedsLan')
       return
     }
   }
-  if (step.value < steps.length - 1) step.value++
+  if (step.value < steps.value.length - 1) step.value++
 }
 
 function back() {
@@ -96,7 +109,7 @@ async function finish() {
     })
     router.replace('/')
   } catch (e) {
-    err.value = e.message || '设置失败'
+    err.value = e.message || t('setup.setupFailed')
   } finally {
     loading.value = false
   }
@@ -104,100 +117,100 @@ async function finish() {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-800 to-pfsense-nav flex items-center justify-center p-4">
+  <div class="min-h-screen bg-gradient-to-br from-slate-800 to-pfsense-nav flex items-center justify-center p-4 relative">
+    <div class="absolute top-4 right-4">
+      <LanguageSwitcher />
+    </div>
     <div class="card w-full max-w-xl p-8 shadow-xl">
       <div class="mb-3">
-        <h1 class="text-2xl font-semibold text-pfsense-nav">qosnat2 初始设置</h1>
-        <p class="text-sm text-slate-500 mt-1">完成引导后才会加载 NAT、QoS 与防火墙规则。远程部署可直接访问本向导，无需 token。</p>
+        <h1 class="text-2xl font-semibold text-pfsense-nav">{{ t('setup.title') }}</h1>
         <div class="mt-4 h-2 bg-slate-200 rounded-full overflow-hidden">
           <div class="h-full bg-blue-600 transition-all" :style="{ width: progress + '%' }" />
         </div>
-        <p class="text-xs text-slate-400 mt-2">步骤 {{ step + 1 }} / {{ steps.length }}：{{ steps[step] }}</p>
+        <p class="text-xs text-slate-400 mt-2">
+          {{ t('setup.stepOf', { n: step + 1, m: steps.length }) }}：{{ steps[step] }}
+        </p>
       </div>
 
       <div v-if="step === 0" class="space-y-3 text-sm text-slate-600">
-        <p>欢迎使用 qosnat2。当前仅启动了 Web 管理界面，数据面尚未生效。</p>
-        <ul class="list-disc pl-5 space-y-1">
-          <li>创建管理员账号与密码</li>
-          <li>选择内网（LAN）与外网（WAN）物理接口</li>
-          <li>可选配置 SNAT 公网 IP 与策略网段</li>
-        </ul>
-        <p class="text-xs text-slate-400">流程参考 AdGuard Home 首次安装向导。</p>
+        <p>qosnat2</p>
       </div>
 
       <div v-else-if="step === 1" class="space-y-3">
         <div>
-          <label class="block text-sm mb-1">管理员用户名</label>
+          <label class="block text-sm mb-1">{{ t('setup.adminUser') }}</label>
           <input v-model="form.admin_user" class="input-field" autocomplete="username" />
         </div>
         <div>
-          <label class="block text-sm mb-1">密码（至少 8 位）</label>
+          <label class="block text-sm mb-1">{{ t('setup.password') }}</label>
           <input v-model="form.admin_pass" type="password" class="input-field" autocomplete="new-password" />
         </div>
         <div>
-          <label class="block text-sm mb-1">确认密码</label>
+          <label class="block text-sm mb-1">{{ t('setup.confirmPassword') }}</label>
           <input v-model="form.admin_pass2" type="password" class="input-field" autocomplete="new-password" />
         </div>
       </div>
 
       <div v-else-if="step === 2" class="space-y-3">
         <div>
-          <label class="block text-sm mb-1">内网接口 (LAN)</label>
-          <select v-model="form.dev_lan" class="input-field">
-            <option value="">— 选择 —</option>
-            <option v-for="i in ifaces" :key="'l-' + i.name" :value="i.name">
-              {{ i.name }} {{ i.up ? '(UP)' : '' }} {{ i.addrs?.[0] || '' }}
-            </option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm mb-1">外网接口 (WAN)</label>
+          <label class="block text-sm mb-1">{{ t('setup.wanIface') }} *</label>
           <select v-model="form.dev_wan" class="input-field">
-            <option value="">— 选择 —</option>
+            <option value="">{{ t('setup.choose') }}</option>
             <option v-for="i in ifaces" :key="'w-' + i.name" :value="i.name">
               {{ i.name }} {{ i.up ? '(UP)' : '' }} {{ i.addrs?.[0] || '' }}
             </option>
           </select>
         </div>
         <div>
-          <label class="block text-sm mb-1">主机名</label>
+          <label class="block text-sm mb-1">{{ t('setup.lanIface') }}</label>
+          <select v-model="form.dev_lan" class="input-field">
+            <option value="">{{ t('setup.lanLater') }}</option>
+            <option v-for="i in ifaces" :key="'l-' + i.name" :value="i.name">
+              {{ i.name }} {{ i.up ? '(UP)' : '' }} {{ i.addrs?.[0] || '' }}
+            </option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm mb-1">{{ t('setup.hostname') }}</label>
           <input v-model="form.hostname" class="input-field" />
         </div>
-        <label class="flex items-center gap-2 text-sm">
-          <input v-model="form.enable_dhcp" type="checkbox" />
-          引导完成后启用 DHCP（dnsmasq，监听 LAN）
+        <label class="flex items-center gap-2 text-sm" :class="{ 'opacity-50': !form.dev_lan }">
+          <input v-model="form.enable_dhcp" type="checkbox" :disabled="!form.dev_lan" />
+          {{ t('setup.dhcpAfterSetup') }}
         </label>
       </div>
 
       <div v-else-if="step === 3" class="space-y-3">
         <div>
-          <label class="block text-sm mb-1">策略路由网段（逗号或换行，默认 10.0.0.0/8）</label>
+          <label class="block text-sm mb-1">{{ t('setup.policyCidrs') }}</label>
           <textarea v-model="form.policy_routes" class="input-field h-20" />
         </div>
         <div>
-          <label class="block text-sm mb-1">共享 SNAT 公网 IP（可选，留空则使用 WAN 口当前 IPv4）</label>
-          <input v-model="form.shared_ip" class="input-field" placeholder="留空 = WAN 口 IP" />
+          <label class="block text-sm mb-1">{{ t('setup.sharedIps') }}</label>
+          <input v-model="form.shared_ip" class="input-field" :placeholder="t('setup.sharedEmpty')" />
         </div>
         <label class="flex items-center gap-2 text-sm">
           <input v-model="form.apply_dataplane" type="checkbox" />
-          立即应用 sysctl / TC / nft（推荐）
+          {{ t('setup.applyNow') }}
         </label>
       </div>
 
       <div v-else class="space-y-2 text-sm text-slate-600">
-        <p><strong>用户：</strong>{{ form.admin_user }}</p>
-        <p><strong>LAN：</strong>{{ form.dev_lan }} · <strong>WAN：</strong>{{ form.dev_wan }}</p>
-        <p><strong>策略网段：</strong>{{ form.policy_routes }}</p>
-        <p v-if="form.shared_ip"><strong>共享 IP：</strong>{{ form.shared_ip }}</p>
-        <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
-          点击「完成设置」后将加载数据面；未填共享 IP 时将自动使用 WAN 口 IPv4 做 SNAT。
+        <p><strong>{{ t('setup.summaryUser') }}：</strong>{{ form.admin_user }}</p>
+        <p>
+          <strong>{{ t('setup.summaryLan') }}：</strong>{{ form.dev_lan || t('common.notSet') }}
+          · <strong>{{ t('setup.summaryWan') }}：</strong>{{ form.dev_wan }}
         </p>
+        <p><strong>{{ t('setup.summaryPolicy') }}：</strong>{{ form.policy_routes }}</p>
+        <p v-if="form.shared_ip"><strong>{{ t('setup.summaryShared') }}：</strong>{{ form.shared_ip }}</p>
       </div>
 
       <p v-if="err" class="text-red-600 text-sm mt-4">{{ err }}</p>
 
       <div class="flex justify-between mt-8 gap-3">
-        <button v-if="step > 0" type="button" class="btn-secondary" :disabled="loading" @click="back">上一步</button>
+        <button v-if="step > 0" type="button" class="btn-secondary" :disabled="loading" @click="back">
+          {{ t('setup.prev') }}
+        </button>
         <span v-else />
         <button
           v-if="step < steps.length - 1"
@@ -206,10 +219,10 @@ async function finish() {
           :disabled="loading"
           @click="next"
         >
-          下一步
+          {{ t('setup.next') }}
         </button>
         <button v-else type="button" class="btn-primary" :disabled="loading" @click="finish">
-          {{ loading ? '应用中…' : '完成设置' }}
+          {{ loading ? t('setup.applying') : t('setup.finish') }}
         </button>
       </div>
     </div>

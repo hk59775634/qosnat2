@@ -1,6 +1,9 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api, bpsLabel } from '@/api/client'
+
+const { t } = useI18n()
 import PageHeader from '@/components/PageHeader.vue'
 import ShaperBindBar from '@/views/shaper/ShaperBindBar.vue'
 import ProfileIfaceSelect from '@/views/shaper/ProfileIfaceSelect.vue'
@@ -68,7 +71,7 @@ async function submit() {
 }
 
 async function remove(cidr) {
-  if (!confirm(`删除模板 ${cidr}?`)) return
+  if (!confirm(t('shaper.profiles.confirmDelete', { cidr }))) return
   await api.shaper.delProfile(cidr)
   await load()
 }
@@ -110,10 +113,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="QoS 策略"
-      description="网段或单 IP（/32）模板 · profile_lpm · id 越小优先级越高 · 拖动 ⋮⋮ 排序"
-    />
+    <PageHeader :title="t('shaper.profiles.title')" :description="t('shaper.profiles.description')" />
 
     <div class="card card-body text-sm space-y-2">
       <ShaperBindBar
@@ -125,7 +125,7 @@ onMounted(load)
       />
       <div class="border-t border-slate-100 pt-2 flex flex-wrap gap-2 items-end">
         <div class="min-w-[7rem]">
-          <label class="text-xs text-slate-500">叶子 qdisc</label>
+          <label class="text-xs text-slate-500">{{ t('shaper.profiles.leafQdisc') }}</label>
           <select v-model="tcLeaf" class="input-field mt-0.5">
             <option value="fq_codel">fq_codel</option>
             <option value="cake">cake</option>
@@ -140,7 +140,7 @@ onMounted(load)
           <input v-model.number="tcQuantum" type="number" min="0" class="input-field mt-0.5 w-20" />
         </div>
         <button type="button" class="btn-secondary" :disabled="tcSaving" @click="saveTC">
-          {{ tcSaving ? '应用中…' : '重建根 qdisc' }}
+          {{ tcSaving ? t('shaper.profiles.applying') : t('shaper.profiles.rebuildRoot') }}
         </button>
       </div>
     </div>
@@ -151,11 +151,11 @@ onMounted(load)
         <input v-model="form.cidr" class="input-field mt-0.5 font-mono" placeholder="10.0.0.0/24 或 10.0.0.100/32" />
       </div>
       <div>
-        <label class="text-xs text-slate-600">下行</label>
+        <label class="text-xs text-slate-600">{{ t('shaper.profiles.colDown') }}</label>
         <input v-model="form.down" class="input-field mt-0.5" placeholder="8mbit" />
       </div>
       <div>
-        <label class="text-xs text-slate-600">上行</label>
+        <label class="text-xs text-slate-600">{{ t('shaper.profiles.colUp') }}</label>
         <input v-model="form.up" class="input-field mt-0.5" placeholder="8mbit" />
       </div>
       <div class="sm:col-span-2 lg:col-span-1">
@@ -167,11 +167,11 @@ onMounted(load)
         />
       </div>
       <div>
-        <label class="text-xs text-slate-600">掩码</label>
+        <label class="text-xs text-slate-600">{{ t('shaper.profiles.mask') }}</label>
         <input v-model.number="form.mask" type="number" min="1" max="32" class="input-field mt-0.5 w-full" />
       </div>
       <div class="flex flex-col gap-1">
-        <button type="submit" class="btn-primary w-full">添加</button>
+        <button type="submit" class="btn-primary w-full">{{ t('shaper.profiles.add') }}</button>
         <p v-if="ok" class="text-green-700 text-xs truncate" :title="ok">{{ ok }}</p>
         <p v-if="err" class="text-red-600 text-xs truncate" :title="err">{{ err }}</p>
       </div>
@@ -182,7 +182,7 @@ onMounted(load)
       <code class="bg-slate-100 px-1 rounded">x.x.x.x/32</code>（覆盖网段默认速率，最长前缀优先）。相同 CIDR 再次提交为更新。
     </p>
 
-    <p v-if="savingOrder" class="text-xs text-slate-500">正在保存顺序…</p>
+    <p v-if="savingOrder" class="text-xs text-slate-500">{{ t('security.firewall.savingOrder') }}</p>
 
     <div class="card table-wrap card-body !p-2">
       <table class="data w-full">
@@ -190,11 +190,11 @@ onMounted(load)
           <tr>
             <th class="w-7"></th>
             <th class="w-10">ID</th>
-            <th>网卡</th>
+            <th>{{ t('shaper.profiles.colIface') }}</th>
             <th>CIDR</th>
-            <th>下行</th>
-            <th>上行</th>
-            <th class="w-24 text-right">操作</th>
+            <th>{{ t('shaper.profiles.colDown') }}</th>
+            <th>{{ t('shaper.profiles.colUp') }}</th>
+            <th class="w-24 text-right">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -208,20 +208,20 @@ onMounted(load)
             @dragover="onDragOver"
             @drop="onDrop(idx)"
           >
-            <td class="text-slate-400 text-center select-none text-xs" title="拖动排序">⋮⋮</td>
+            <td class="text-slate-400 text-center select-none text-xs" :title="t('shaper.profiles.dragSort')">⋮⋮</td>
             <td class="text-center font-mono text-slate-500">{{ p.id }}</td>
             <td class="font-mono text-xs">{{ p.device || bindDevice || devLan }}</td>
             <td class="font-mono">{{ p.cidr }}</td>
             <td>{{ bpsLabel(p.down_bps) }}</td>
             <td>{{ bpsLabel(p.up_bps) }}</td>
             <td class="text-right whitespace-nowrap">
-              <button type="button" class="btn-danger" title="删除" @click="remove(p.cidr)">
-                删除
+              <button type="button" class="btn-danger" :title="t('common.delete')" @click="remove(p.cidr)">
+                {{ t('common.delete') }}
               </button>
             </td>
           </tr>
           <tr v-if="!profiles.length">
-            <td colspan="7" class="text-center text-slate-400 py-3">暂无策略（网段或 /32）</td>
+            <td colspan="7" class="text-center text-slate-400 py-3">{{ t('shaper.profiles.noProfiles') }}</td>
           </tr>
         </tbody>
       </table>

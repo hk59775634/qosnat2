@@ -21,14 +21,21 @@ const (
 
 // TLSStatus Web 展示用 HTTPS 状态（不含私钥内容）
 type TLSStatus struct {
-	Enabled      bool   `json:"tls_enabled"`
-	Active       bool   `json:"tls_active"`
-	CertPath     string `json:"cert_path"`
-	KeyPath      string `json:"key_path"`
-	HasCertFile  bool   `json:"has_cert_file"`
-	HasKeyFile   bool   `json:"has_key_file"`
-	CertSubject  string `json:"cert_subject,omitempty"`
-	CertNotAfter string `json:"cert_not_after,omitempty"`
+	Enabled       bool   `json:"tls_enabled"`
+	Active        bool   `json:"tls_active"`
+	CertPath      string `json:"cert_path"`
+	KeyPath       string `json:"key_path"`
+	HasCertFile   bool   `json:"has_cert_file"`
+	HasKeyFile    bool   `json:"has_key_file"`
+	CertSubject   string `json:"cert_subject,omitempty"`
+	CertNotAfter  string `json:"cert_not_after,omitempty"`
+	AcmeEnabled   bool   `json:"acme_enabled,omitempty"`
+	Domain        string `json:"domain,omitempty"`
+	AcmeEmail     string `json:"acme_email,omitempty"`
+	AcmeStaging   bool   `json:"acme_staging,omitempty"`
+	AcmeRenewDays int    `json:"acme_renew_days,omitempty"`
+	AcmeLastOK    string `json:"acme_last_ok,omitempty"`
+	AcmeLastError string `json:"acme_last_error,omitempty"`
 }
 
 func (srv *Server) tlsStatus() TLSStatus {

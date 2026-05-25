@@ -172,6 +172,8 @@ export const api = {
   interfaces: {
     list: () => request('/api/v1/interfaces'),
     update: (body) => request('/api/v1/interfaces', { method: 'PUT', body: JSON.stringify(body) }),
+    setRoles: (body) =>
+      request('/api/v1/interfaces/roles', { method: 'PUT', body: JSON.stringify(body) }),
   },
   ifaceQueues: () => request('/api/v1/interfaces/queues'),
   get: (path) => request(path),

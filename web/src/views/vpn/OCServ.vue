@@ -1,7 +1,11 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
+import SnmpTrafficChart from '@/components/SnmpTrafficChart.vue'
+
+const { t } = useI18n()
 
 const cfg = ref(null)
 const status = ref(null)
@@ -12,16 +16,155 @@ const ok = ref('')
 const installing = ref(false)
 const installJob = ref(null)
 const installPollTimer = ref(null)
-const showAdvanced = ref(false)
+const activeTab = ref('overview')
+const detail = ref(null)
+const sessions = ref([])
+const opsErr = ref('')
+const sessionsPoll = ref(null)
+const sessionSearch = ref('')
+const sessionPage = ref(1)
+const SESSION_PAGE_SIZE = 20
 
-const userForm = ref({ username: '', password: '', comment: '' })
+const editingUser = ref(null)
+const userSearch = ref('')
+const trafficModal = ref(null)
+const trafficData = ref(null)
+const trafficPeriod = ref('7d')
+const trafficLoading = ref(false)
+const trafficErr = ref('')
+const editingGroup = ref(null)
+const groupForm = ref(emptyGroupForm())
+const groupFormDns = ref('')
+const groupFormRoutes = ref('')
+const groupFormNoRoutes = ref('')
+const groupSearch = ref('')
+const editingVhost = ref(null)
+const vhostForm = ref(emptyVhostForm())
+const vhostFormDns = ref('')
+const vhostFormRoutes = ref('')
+const vhostSearch = ref('')
+
+const tabs = computed(() => [
+  { id: 'overview', label: t('ocserv.tabOverview') },
+  { id: 'sessions', label: t('ocserv.tabSessions') },
+  { id: 'config', label: t('ocserv.tabServer') },
+  { id: 'groups', label: t('ocserv.tabGroups') },
+  { id: 'vhosts', label: t('ocserv.tabVhosts') },
+  { id: 'users', label: t('ocserv.tabUsers') },
+  { id: 'certs', label: t('ocserv.tabCerts') },
+  { id: 'advanced', label: t('ocserv.tabAdvanced') },
+])
+
+const isSettingsTab = computed(() =>
+  ['config', 'groups', 'vhosts', 'users', 'certs', 'advanced'].includes(activeTab.value),
+)
+
+const groupOptions = computed(() => cfg.value?.groups || [])
+
+const filteredGroups = computed(() => {
+  const q = groupSearch.value.trim().toLowerCase()
+  const list = cfg.value?.groups || []
+  if (!q) return list
+  return list.filter((g) =>
+    [g.name, g.label, g.comment].join(' ').toLowerCase().includes(q),
+  )
+})
+
+const filteredVhosts = computed(() => {
+  const q = vhostSearch.value.trim().toLowerCase()
+  const list = cfg.value?.vhosts || []
+  if (!q) return list
+  return list.filter((v) =>
+    [v.domain, v.comment, v.auth_method].join(' ').toLowerCase().includes(q),
+  )
+})
+
+function emptyGroupForm() {
+  return {
+    name: '',
+    label: '',
+    comment: '',
+    ipv4_network: '',
+    ipv4_netmask: '',
+    mtu: 0,
+    tunnel_all_dns: false,
+    rx_mbps: 0,
+    tx_mbps: 0,
+  }
+}
+
+function emptyVhostForm() {
+  return {
+    enabled: true,
+    domain: '',
+    auth_method: '',
+    server_cert_path: '',
+    server_key_path: '',
+    ca_cert_path: '',
+    ipv4_network: '',
+    ipv4_netmask: '',
+    cert_user_oid: '',
+    comment: '',
+  }
+}
+
+const userForm = ref({ username: '', password: '', comment: '', group: '' })
 const radiusSecret = ref('')
+const radiusSecretSet = ref(false)
+const camouflageSecretSet = ref(false)
 const camouflageSecret = ref('')
 const dnsText = ref('')
 const routesText = ref('')
 const noRoutesText = ref('')
+/** 带宽 M = Mbps，保存时换算为 ocserv 的 B/s（×125000） */
+const rxMbps = ref(0)
+const txMbps = ref(0)
+
+const bpsPerMbps = 125000
+
+function bpsToMbps(bps) {
+  if (!bps || bps <= 0) return 0
+  const m = bps / bpsPerMbps
+  return Number(m.toFixed(4).replace(/\.?0+$/, ''))
+}
+
+function mbpsToBps(m) {
+  const n = Number(m)
+  if (!n || n <= 0) return 0
+  return Math.round(n * bpsPerMbps)
+}
 
 const isRadius = computed(() => cfg.value?.auth_method === 'radius')
+const useOcctl = computed(() => !!cfg.value?.advanced?.use_occtl)
+
+const overviewCards = computed(() => {
+  const d = detail.value?.detail || {}
+  const st = detail.value?.status || status.value || {}
+  return [
+    { label: t('ocserv.installed'), value: st.installed ? t('common.yes') : t('common.no') },
+    { label: t('ocserv.running'), value: st.active ? t('common.yes') : t('common.no') },
+    { label: t('ocserv.version'), value: st.version || '—' },
+    { label: t('ocserv.serviceStatus'), value: d.Status || '—' },
+    { label: t('ocserv.activeSessions'), value: d['Active sessions'] ?? '—' },
+    { label: t('ocserv.totalSessions'), value: d['Total sessions'] ?? '—' },
+    { label: t('ocserv.periodSessions'), value: d['Sessions handled'] ?? '—' },
+    { label: t('common.rx'), value: formatTraffic(d._RX, d.RX) },
+    { label: t('common.tx'), value: formatTraffic(d._TX, d.TX) },
+    { label: t('ocserv.uptime'), value: d._Up_since || d.uptime != null ? `${d.uptime}s` : '—' },
+  ]
+})
+
+/** 仅安装中或失败时展示进度区；成功后隐藏 */
+const showInstallProgress = computed(() => {
+  if (installing.value) return true
+  const s = installJob.value?.state
+  return s === 'running' || s === 'failed'
+})
+
+function normalizeInstallJob(job) {
+  if (!job || job.state === 'idle' || job.state === 'ok') return null
+  return job
+}
 
 const defaultAdvanced = () => ({
   try_mtu_discovery: true,
@@ -67,46 +210,44 @@ const defaultAdvanced = () => ({
   tls_priorities: 'NORMAL:%SERVER_PRECEDENCE:%COMPAT:-VERS-SSL3.0:-VERS-TLS1.0:-VERS-TLS1.1',
 })
 
-const featureToggles = [
-  { key: 'tcp', label: 'TCP', hint: 'tcp-port' },
-  { key: 'udp', label: 'UDP / DTLS', hint: 'udp-port' },
-  { key: 'try_mtu_discovery', label: 'MTU 探测', hint: 'try-mtu-discovery' },
-  { key: 'isolate_workers', label: '隔离 worker', hint: 'isolate-workers' },
-  { key: 'dtls_legacy', label: 'DTLS 旧版兼容', hint: 'dtls-legacy' },
-  { key: 'cisco_client_compat', label: 'Cisco 兼容', hint: 'cisco-client-compat' },
-  { key: 'cisco_svc_client_compat', label: 'Cisco SVC 兼容', hint: 'cisco-svc-client-compat' },
-  { key: 'client_bypass_protocol', label: '客户端绕过协议', hint: 'client-bypass-protocol' },
-  { key: 'deny_roaming', label: '禁止漫游', hint: 'deny-roaming' },
-  { key: 'compression', label: '压缩', hint: 'compression' },
-  { key: 'keepalive', label: 'Keepalive', hint: 'keepalive' },
-  { key: 'dpd', label: 'DPD', hint: 'dpd' },
-  { key: 'mobile_dpd', label: '移动端 DPD', hint: 'mobile-dpd' },
-  { key: 'switch_to_tcp', label: 'UDP 切 TCP', hint: 'switch-to-tcp-timeout' },
-  { key: 'rekey', label: '会话重密钥', hint: 'rekey-time' },
-  { key: 'predictable_ips', label: '可预测 IP', hint: 'predictable-ips' },
-  { key: 'ping_leases', label: 'Ping 租约', hint: 'ping-leases' },
-  { key: 'use_occtl', label: 'occtl', hint: 'use-occtl' },
-  { key: 'camouflage', label: '伪装站点', hint: 'camouflage' },
+const FEATURE_KEYS = [
+  'tcp', 'udp', 'try_mtu_discovery', 'isolate_workers', 'dtls_legacy', 'cisco_client_compat',
+  'cisco_svc_client_compat', 'client_bypass_protocol', 'deny_roaming', 'compression', 'keepalive',
+  'dpd', 'mobile_dpd', 'switch_to_tcp', 'rekey', 'predictable_ips', 'ping_leases', 'use_occtl', 'camouflage',
 ]
 
-const numericAdvanced = [
-  { key: 'max_same_clients', label: '同用户最大会话', min: 1 },
-  { key: 'rate_limit_ms', label: '连接限速间隔（ms）', min: 0 },
-  { key: 'log_level', label: '日志级别', min: 0, max: 9 },
-  { key: 'max_ban_score', label: '封禁分数阈值', min: 1 },
-  { key: 'ban_time', label: '封禁时长（秒）', min: 1 },
-  { key: 'ban_reset_time', label: '封禁分数重置（秒）', min: 1 },
-  { key: 'server_stats_reset_time', label: '统计清零周期（秒）', min: 60 },
-  { key: 'keepalive_sec', label: 'Keepalive（秒）', min: 60, show: () => cfg.value?.advanced?.keepalive },
-  { key: 'dpd_sec', label: 'DPD（秒）', min: 10, show: () => cfg.value?.advanced?.dpd },
-  { key: 'mobile_dpd_sec', label: '移动端 DPD（秒）', min: 60, show: () => cfg.value?.advanced?.mobile_dpd },
-  { key: 'cookie_timeout', label: 'Cookie 超时（秒）', min: 60 },
-  { key: 'auth_timeout', label: '认证超时（秒）', min: 30 },
-  { key: 'rekey_time', label: 'Rekey 间隔（秒）', min: 3600, show: () => cfg.value?.advanced?.rekey },
-  { key: 'switch_to_tcp_timeout', label: '切 TCP 超时（秒）', min: 5, show: () => cfg.value?.advanced?.switch_to_tcp },
-  { key: 'rx_data_per_sec', label: '下行限速 B/s（0=不限）', min: 0 },
-  { key: 'tx_data_per_sec', label: '上行限速 B/s（0=不限）', min: 0 },
+const NUMERIC_KEYS = [
+  { key: 'max_same_clients', min: 1 },
+  { key: 'rate_limit_ms', min: 0 },
+  { key: 'log_level', min: 0, max: 9 },
+  { key: 'max_ban_score', min: 1 },
+  { key: 'ban_time', min: 1 },
+  { key: 'ban_reset_time', min: 1 },
+  { key: 'server_stats_reset_time', min: 60 },
+  { key: 'keepalive_sec', min: 60, show: () => cfg.value?.advanced?.keepalive },
+  { key: 'dpd_sec', min: 10, show: () => cfg.value?.advanced?.dpd },
+  { key: 'mobile_dpd_sec', min: 60, show: () => cfg.value?.advanced?.mobile_dpd },
+  { key: 'cookie_timeout', min: 60 },
+  { key: 'auth_timeout', min: 30 },
+  { key: 'rekey_time', min: 3600, show: () => cfg.value?.advanced?.rekey },
+  { key: 'switch_to_tcp_timeout', min: 5, show: () => cfg.value?.advanced?.switch_to_tcp },
 ]
+
+const featureToggles = computed(() =>
+  FEATURE_KEYS.map((key) => ({
+    key,
+    label: t(`ocserv.feat.${key}.label`),
+    desc: t(`ocserv.feat.${key}.desc`),
+  })),
+)
+
+const numericAdvanced = computed(() =>
+  NUMERIC_KEYS.map((n) => ({
+    ...n,
+    label: t(`ocserv.num.${n.key}.label`),
+    desc: t(`ocserv.num.${n.key}.desc`),
+  })),
+)
 
 function listToText(arr) {
   return (arr || []).join('\n')
@@ -131,6 +272,12 @@ function ensureDefaults() {
   dnsText.value = listToText(cfg.value.dns)
   routesText.value = listToText(cfg.value.routes)
   noRoutesText.value = listToText(cfg.value.no_routes)
+  rxMbps.value = bpsToMbps(cfg.value.advanced.rx_data_per_sec)
+  txMbps.value = bpsToMbps(cfg.value.advanced.tx_data_per_sec)
+  if (!cfg.value.groups) cfg.value.groups = []
+  if (!cfg.value.vhosts) cfg.value.vhosts = []
+  if (!cfg.value.config_per_group) cfg.value.config_per_group = '/etc/ocserv/config-per-group/'
+  if (!cfg.value.default_group_config) cfg.value.default_group_config = '/etc/ocserv/defaults/group.conf'
 }
 
 function buildBody() {
@@ -141,6 +288,13 @@ function buildBody() {
   if (body.advanced?.camouflage && camouflageSecret.value) {
     body.advanced = { ...body.advanced, camouflage_secret: camouflageSecret.value }
   }
+  if (body.advanced) {
+    body.advanced = {
+      ...body.advanced,
+      rx_data_per_sec: mbpsToBps(rxMbps.value),
+      tx_data_per_sec: mbpsToBps(txMbps.value),
+    }
+  }
   return body
 }
 
@@ -150,10 +304,12 @@ async function load() {
   ensureDefaults()
   status.value = d.status || {}
   installScript.value = d.install_script || ''
-  installJob.value = d.install_job || null
+  installJob.value = normalizeInstallJob(d.install_job)
   users.value = (d.config?.users || []).map((u) => ({ ...u }))
   radiusSecret.value = ''
+  radiusSecretSet.value = !!d.radius_secret_set
   camouflageSecret.value = ''
+  camouflageSecretSet.value = !!d.camouflage_secret_set
 }
 
 function stopInstallPoll() {
@@ -172,12 +328,13 @@ function startInstallPoll() {
       if (j.state === 'ok') {
         stopInstallPoll()
         installing.value = false
-        ok.value = 'ocserv 安装完成'
+        installJob.value = null
+        ok.value = t('ocserv.installDone')
         await load()
       } else if (j.state === 'failed') {
         stopInstallPoll()
         installing.value = false
-        err.value = j.message || '安装失败'
+        err.value = j.message || t('ocserv.installFailed')
       }
     } catch {
       /* ignore poll errors */
@@ -191,7 +348,7 @@ async function runInstall() {
   installing.value = true
   try {
     const r = await api.post('/api/v1/vpn/ocserv/install', {})
-    ok.value = r.message || '已在后台编译安装'
+    ok.value = r.message || t('ocserv.installQueued')
     installJob.value = r.job || { state: 'running' }
     startInstallPoll()
   } catch (e) {
@@ -199,7 +356,7 @@ async function runInstall() {
     const msg = e.data?.error || e.message
     err.value = msg
     if (e.status === 403) {
-      err.value = `${msg}。请确认 qosnatd 以 root 运行后重试。`
+      err.value = t('ocserv.installRootHint', { msg })
     }
   }
 }
@@ -210,7 +367,7 @@ async function save() {
   try {
     const body = buildBody()
     if (!body.advanced?.tcp && !body.advanced?.udp) {
-      err.value = 'TCP 与 UDP 至少启用一项'
+      err.value = t('ocserv.needTcpUdp')
       return
     }
     if (isRadius.value) {
@@ -220,7 +377,7 @@ async function save() {
       body.users = users.value
     }
     await api.put('/api/v1/vpn/ocserv', body)
-    ok.value = '配置已保存'
+    ok.value = t('ocserv.configSaved')
     await load()
   } catch (e) {
     err.value = e.message
@@ -233,8 +390,15 @@ async function apply() {
   try {
     await save()
     if (err.value) return
-    await api.post('/api/v1/vpn/ocserv/apply', {})
-    ok.value = cfg.value.enabled ? '已应用并启动 ocserv' : '已停止 ocserv'
+    const r = await api.post('/api/v1/vpn/ocserv/apply', {})
+    const mode = r.apply_mode
+    if (mode === 'reload') {
+      ok.value = t('ocserv.appliedReload')
+    } else if (mode === 'stop') {
+      ok.value = t('ocserv.stoppedOcserv')
+    } else {
+      ok.value = cfg.value.enabled ? t('ocserv.appliedStarted') : t('ocserv.stoppedOcserv')
+    }
     await load()
   } catch (e) {
     err.value = e.message
@@ -245,16 +409,185 @@ async function addUser() {
   err.value = ''
   try {
     await api.post('/api/v1/vpn/ocserv/users', userForm.value)
-    userForm.value = { username: '', password: '', comment: '' }
-    ok.value = '用户已添加'
+    userForm.value = { username: '', password: '', comment: '', group: '' }
+    ok.value = t('ocserv.userAdded')
     await load()
   } catch (e) {
     err.value = e.message
   }
 }
 
+function startEditUser(u) {
+  editingUser.value = {
+    username: u.username,
+    password: '',
+    comment: u.comment || '',
+    group: u.group || '',
+  }
+}
+
+function cancelEditUser() {
+  editingUser.value = null
+}
+
+async function saveEditUser() {
+  if (!editingUser.value) return
+  err.value = ''
+  try {
+    const body = {
+      username: editingUser.value.username,
+      comment: editingUser.value.comment,
+      group: editingUser.value.group,
+    }
+    if (editingUser.value.password) body.password = editingUser.value.password
+    await api.put('/api/v1/vpn/ocserv/users', body)
+    editingUser.value = null
+    ok.value = t('ocserv.userUpdated')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+function buildGroupPayload(form, dnsT, routesT, noRoutesT) {
+  return {
+    name: form.name.trim(),
+    label: form.label,
+    comment: form.comment,
+    dns: textToList(dnsT),
+    routes: textToList(routesT),
+    no_routes: textToList(noRoutesT),
+    ipv4_network: form.ipv4_network,
+    ipv4_netmask: form.ipv4_netmask,
+    mtu: form.mtu || 0,
+    tunnel_all_dns: !!form.tunnel_all_dns,
+    rx_data_per_sec: mbpsToBps(form.rx_mbps),
+    tx_data_per_sec: mbpsToBps(form.tx_mbps),
+  }
+}
+
+function startEditGroup(g) {
+  editingGroup.value = g.name
+  groupForm.value = {
+    name: g.name,
+    label: g.label || '',
+    comment: g.comment || '',
+    ipv4_network: g.ipv4_network || '',
+    ipv4_netmask: g.ipv4_netmask || '',
+    mtu: g.mtu || 0,
+    tunnel_all_dns: !!g.tunnel_all_dns,
+    rx_mbps: bpsToMbps(g.rx_data_per_sec),
+    tx_mbps: bpsToMbps(g.tx_data_per_sec),
+  }
+  groupFormDns.value = listToText(g.dns)
+  groupFormRoutes.value = listToText(g.routes)
+  groupFormNoRoutes.value = listToText(g.no_routes)
+}
+
+function cancelEditGroup() {
+  editingGroup.value = null
+  groupForm.value = emptyGroupForm()
+  groupFormDns.value = ''
+  groupFormRoutes.value = ''
+  groupFormNoRoutes.value = ''
+}
+
+async function saveGroup() {
+  err.value = ''
+  if (!groupForm.value.name.trim()) {
+    err.value = t('ocserv.groupNameRequired')
+    return
+  }
+  try {
+    const body = buildGroupPayload(groupForm.value, groupFormDns.value, groupFormRoutes.value, groupFormNoRoutes.value)
+    if (editingGroup.value) {
+      await api.put('/api/v1/vpn/ocserv/groups', body)
+    } else {
+      await api.post('/api/v1/vpn/ocserv/groups', body)
+    }
+    cancelEditGroup()
+    ok.value = t('ocserv.groupSaved')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+async function delGroup(name) {
+  if (!confirm(t('ocserv.deleteGroupConfirm', { name }))) return
+  try {
+    await api.del(`/api/v1/vpn/ocserv/groups?name=${encodeURIComponent(name)}`)
+    await load()
+    ok.value = t('ocserv.groupDeleted')
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+function startEditVhost(v) {
+  editingVhost.value = v.domain
+  vhostForm.value = {
+    enabled: true,
+    domain: v.domain,
+    auth_method: v.auth_method || '',
+    server_cert_path: v.server_cert_path || '',
+    server_key_path: v.server_key_path || '',
+    ca_cert_path: v.ca_cert_path || '',
+    ipv4_network: v.ipv4_network || '',
+    ipv4_netmask: v.ipv4_netmask || '',
+    cert_user_oid: v.cert_user_oid || '',
+    comment: v.comment || '',
+  }
+  vhostFormDns.value = listToText(v.dns)
+  vhostFormRoutes.value = listToText(v.routes)
+}
+
+function cancelEditVhost() {
+  editingVhost.value = null
+  vhostForm.value = emptyVhostForm()
+  vhostFormDns.value = ''
+  vhostFormRoutes.value = ''
+}
+
+async function saveVhost() {
+  err.value = ''
+  if (!vhostForm.value.domain.trim()) {
+    err.value = t('ocserv.vhostDomainRequired')
+    return
+  }
+  try {
+    const body = {
+      ...vhostForm.value,
+      domain: vhostForm.value.domain.trim(),
+      dns: textToList(vhostFormDns.value),
+      routes: textToList(vhostFormRoutes.value),
+    }
+    if (editingVhost.value) {
+      await api.put('/api/v1/vpn/ocserv/vhosts', body)
+    } else {
+      await api.post('/api/v1/vpn/ocserv/vhosts', body)
+    }
+    cancelEditVhost()
+    ok.value = t('ocserv.vhostSaved')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+async function delVhost(domain) {
+  if (!confirm(t('ocserv.deleteVhostConfirm', { domain }))) return
+  try {
+    await api.del(`/api/v1/vpn/ocserv/vhosts?domain=${encodeURIComponent(domain)}`)
+    await load()
+    ok.value = t('ocserv.vhostDeleted')
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
 async function delUser(name) {
-  if (!confirm(`删除用户 ${name}?`)) return
+  if (!confirm(t('ocserv.deleteUserConfirm', { name }))) return
   try {
     await api.del(`/api/v1/vpn/ocserv/users?username=${encodeURIComponent(name)}`)
     await load()
@@ -263,155 +596,908 @@ async function delUser(name) {
   }
 }
 
+async function loadUserTraffic() {
+  if (!trafficModal.value) return
+  trafficLoading.value = true
+  trafficErr.value = ''
+  try {
+    const q = new URLSearchParams({
+      username: trafficModal.value,
+      period: trafficPeriod.value,
+    })
+    trafficData.value = await api.get(`/api/v1/vpn/ocserv/users/traffic?${q}`)
+  } catch (e) {
+    trafficErr.value = e.message
+    trafficData.value = null
+  } finally {
+    trafficLoading.value = false
+  }
+}
+
+function openUserTraffic(username) {
+  trafficModal.value = username
+  trafficPeriod.value = '7d'
+  trafficData.value = null
+  trafficErr.value = ''
+  loadUserTraffic()
+}
+
+function closeUserTraffic() {
+  trafficModal.value = null
+  trafficData.value = null
+  trafficErr.value = ''
+}
+
+watch(trafficPeriod, () => {
+  if (trafficModal.value) loadUserTraffic()
+})
+
+function sessVal(s, ...keys) {
+  for (const k of keys) {
+    const v = s[k]
+    if (v != null && v !== '') return v
+  }
+  return '—'
+}
+
+/** 字节数自动换算 B / KB / MB / GB */
+function formatBytes(n) {
+  const num = Number(n)
+  if (!Number.isFinite(num) || num < 0) return '—'
+  if (num === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = num
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  const digits = v >= 100 ? 0 : v >= 10 ? 1 : 2
+  return `${v.toFixed(digits).replace(/\.?0+$/, '')} ${units[i]}`
+}
+
+/** 优先 occtl 已格式化的 _RX/_TX，否则按字节换算 */
+function formatTraffic(pretty, raw) {
+  if (pretty != null && String(pretty).trim() !== '') return String(pretty).trim()
+  if (raw == null || raw === '') return '—'
+  if (typeof raw === 'string' && /[kmgt]b/i.test(raw) && !/^\d+$/.test(raw.trim())) return raw.trim()
+  return formatBytes(raw)
+}
+
+function sessTraffic(s, dir) {
+  if (dir === 'rx') return formatTraffic(s._RX, s.RX ?? s.rx)
+  return formatTraffic(s._TX, s.TX ?? s.tx)
+}
+
+function formatDuration(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0))
+  if (s < 60) return t('ocserv.durationSec', { n: s })
+  if (s < 3600) {
+    const m = Math.floor(s / 60)
+    const r = s % 60
+    return r ? `${t('ocserv.durationMin', { n: m })} ${t('ocserv.durationSec', { n: r })}` : t('ocserv.durationMin', { n: m })
+  }
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return m ? `${t('ocserv.durationHour', { n: h })} ${t('ocserv.durationMin', { n: m })}` : t('ocserv.durationHour', { n: h })
+}
+
+function sessionRowText(s) {
+  return [
+    sessVal(s, 'Username', 'username'),
+    sessVal(s, 'ID', 'id'),
+    sessVal(s, 'IPv4', 'VPN IPv4', 'ip'),
+    sessVal(s, 'Remote IP', 'remote_ip'),
+    sessVal(s, 'Device', 'device'),
+    sessVal(s, 'Hostname', 'hostname'),
+    sessVal(s, 'Local Device IP'),
+    sessVal(s, 'User-Agent', 'user_agent'),
+    sessVal(s, 'State', 'state'),
+  ]
+    .join(' ')
+    .toLowerCase()
+}
+
+const filteredSessions = computed(() => {
+  const q = sessionSearch.value.trim().toLowerCase()
+  if (!q) return sessions.value
+  return sessions.value.filter((s) => sessionRowText(s).includes(q))
+})
+
+const sessionPageCount = computed(() =>
+  Math.max(1, Math.ceil(filteredSessions.value.length / SESSION_PAGE_SIZE)),
+)
+
+const paginatedSessions = computed(() => {
+  const page = Math.min(Math.max(1, sessionPage.value), sessionPageCount.value)
+  const start = (page - 1) * SESSION_PAGE_SIZE
+  return filteredSessions.value.slice(start, start + SESSION_PAGE_SIZE)
+})
+
+const filteredUsers = computed(() => {
+  const q = userSearch.value.trim().toLowerCase()
+  if (!q) return users.value
+  return users.value.filter((u) =>
+    [u.username, u.comment, u.group].join(' ').toLowerCase().includes(q),
+  )
+})
+
+/** 在线时长：优先 occtl 相对时间，否则由 raw_session_started_at 计算 */
+function sessOnlineDuration(s) {
+  const rel = s['_Session started at']
+  if (rel != null && String(rel).trim()) return String(rel).trim()
+  const raw = s.raw_session_started_at ?? s.raw_connected_at
+  if (raw != null) {
+    const ts = Number(raw)
+    if (Number.isFinite(ts) && ts > 0) {
+      return formatDuration(Math.floor(Date.now() / 1000) - ts)
+    }
+  }
+  return '—'
+}
+
+async function loadOverview() {
+  opsErr.value = ''
+  try {
+    detail.value = await api.get('/api/v1/vpn/ocserv/status/detail')
+  } catch (e) {
+    opsErr.value = e.data?.error || e.message
+    detail.value = null
+  }
+}
+
+async function loadSessions() {
+  opsErr.value = ''
+  try {
+    const r = await api.get('/api/v1/vpn/ocserv/sessions')
+    sessions.value = r.sessions || []
+  } catch (e) {
+    opsErr.value = e.data?.error || e.message
+    sessions.value = []
+  }
+}
+
+function stopSessionsPoll() {
+  if (sessionsPoll.value) {
+    clearInterval(sessionsPoll.value)
+    sessionsPoll.value = null
+  }
+}
+
+function startSessionsPoll() {
+  stopSessionsPoll()
+  sessionsPoll.value = setInterval(loadSessions, 8000)
+}
+
+async function disconnectSession(s) {
+  const name = s.Username ?? s.username
+  const idRaw = s.ID ?? s.id
+  const label = name || (idRaw != null ? String(idRaw) : '?')
+  if (!confirm(t('ocserv.disconnectConfirm', { label }))) return
+  opsErr.value = ''
+  try {
+    const body = name ? { username: String(name) } : { id: String(idRaw) }
+    await api.post('/api/v1/vpn/ocserv/sessions/disconnect', body)
+    ok.value = t('ocserv.disconnected')
+    await loadSessions()
+  } catch (e) {
+    opsErr.value = e.data?.error || e.message
+  }
+}
+
+watch(sessionSearch, () => {
+  sessionPage.value = 1
+})
+
+watch(filteredSessions, () => {
+  if (sessionPage.value > sessionPageCount.value) {
+    sessionPage.value = sessionPageCount.value
+  }
+})
+
+watch(activeTab, async (t) => {
+  stopSessionsPoll()
+  opsErr.value = ''
+  if (t === 'overview') await loadOverview()
+  else if (t === 'sessions') {
+    await loadSessions()
+    startSessionsPoll()
+  } else if (t === 'users') {
+    editingUser.value = null
+    await load()
+  }
+})
+
 onMounted(async () => {
   await load()
   if (installJob.value?.state === 'running') startInstallPoll()
 })
-onUnmounted(stopInstallPoll)
+onUnmounted(() => {
+  stopInstallPoll()
+  stopSessionsPoll()
+})
 </script>
 
 <template>
   <div>
-    <PageHeader title="OpenConnect (ocserv)" subtitle="AnyConnect 兼容 SSL VPN" />
+    <PageHeader :title="t('ocserv.title')" :description="t('ocserv.description')" />
     <p v-if="err" class="text-sm text-red-600 mb-2">{{ err }}</p>
     <p v-if="ok" class="text-sm text-green-700 mb-2">{{ ok }}</p>
 
     <div class="card p-4 mb-4 space-y-2">
       <div class="flex flex-wrap gap-4 text-sm">
-        <span>已安装: <strong>{{ status?.installed ? '是' : '否' }}</strong></span>
-        <span>运行中: <strong>{{ status?.active ? '是' : '否' }}</strong></span>
-        <span>RADIUS: <strong>{{ status?.radius_linked ? '是' : '否' }}</strong></span>
+        <span>{{ t('ocserv.installed') }}: <strong>{{ status?.installed ? t('common.yes') : t('common.no') }}</strong></span>
+        <span>{{ t('ocserv.running') }}: <strong>{{ status?.active ? t('common.yes') : t('common.no') }}</strong></span>
+        <span>{{ t('ocserv.radiusLinked') }}: <strong>{{ status?.radius_linked ? t('common.yes') : t('common.no') }}</strong></span>
+        <span>occtl: <strong>{{ useOcctl ? t('common.enabled') : t('common.disabled') }}</strong></span>
       </div>
       <button type="button" class="btn-secondary text-sm" :disabled="installing" @click="runInstall">
-        {{ installing ? '安装中…' : '从源码安装' }}
+        {{ installing ? t('ocserv.installing') : t('ocserv.installFromSource') }}
       </button>
-      <div v-if="installJob && installJob.state !== 'idle'" class="mt-3 p-3 rounded border text-xs space-y-2"
-        :class="installJob.state === 'failed' ? 'border-red-200 bg-red-50' : installJob.state === 'ok' ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'">
+      <div v-if="showInstallProgress" class="mt-3 p-3 rounded border text-xs space-y-2"
+        :class="installJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'">
         <div class="flex gap-3 text-sm">
-          <span>安装任务: <strong>{{ installJob.state }}</strong></span>
-          <span v-if="installJob.message" class="text-slate-600">{{ installJob.message }}</span>
+          <span>{{ t('ocserv.installTask') }}: <strong>{{ installJob?.state || 'running' }}</strong></span>
+          <span v-if="installJob?.message" class="text-slate-600">{{ installJob.message }}</span>
         </div>
-        <pre v-if="installJob.log_tail" class="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700">{{ installJob.log_tail }}</pre>
-        <p v-if="installing" class="text-slate-500">编译约 3–10 分钟，页面将自动刷新状态…</p>
+        <pre v-if="installJob?.log_tail" class="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700">{{ installJob.log_tail }}</pre>
+        <p v-if="installing" class="text-slate-500">{{ t('ocserv.installHint') }}</p>
       </div>
     </div>
 
-    <div v-if="cfg" class="card p-4 space-y-4">
+    <nav class="flex flex-wrap gap-1 mb-4 border-b border-slate-200">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        type="button"
+        class="px-4 py-2 text-sm border-b-2 -mb-px transition-colors"
+        :class="activeTab === tab.id ? 'border-blue-600 text-blue-700 font-medium' : 'border-transparent text-slate-600 hover:text-slate-900'"
+        @click="activeTab = tab.id"
+      >
+        {{ tab.label }}
+      </button>
+    </nav>
+
+    <p v-if="opsErr && !isSettingsTab" class="text-sm text-amber-700 mb-2">{{ opsErr }}</p>
+
+    <div v-if="activeTab === 'overview'" class="space-y-4">
+      <p v-if="!useOcctl" class="text-sm text-slate-600">
+        {{ t('ocserv.occtlHint') }}
+      </p>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div v-for="c in overviewCards" :key="c.label" class="card p-4">
+          <div class="text-xs text-slate-500 mb-1">{{ c.label }}</div>
+          <div class="text-sm font-semibold break-all">{{ c.value }}</div>
+        </div>
+      </div>
+      <button type="button" class="btn-secondary text-sm" @click="loadOverview">{{ t('common.refresh') }}</button>
+    </div>
+
+    <div v-if="activeTab === 'sessions'" class="card p-4">
+      <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+        <h3 class="font-medium">{{ t('ocserv.tabSessions') }}</h3>
+        <button type="button" class="btn-secondary text-sm" @click="loadSessions">{{ t('common.refresh') }}</button>
+      </div>
+      <div class="flex flex-wrap gap-2 items-center mb-3">
+        <input
+          v-model="sessionSearch"
+          type="search"
+          class="input flex-1 min-w-[12rem] text-sm"
+          :placeholder="t('ocserv.sessionsSearch')"
+        />
+        <span class="text-xs text-slate-500 whitespace-nowrap">
+          {{ t('ocserv.sessionsTotal', { n: filteredSessions.length }) }}
+          <template v-if="filteredSessions.length > SESSION_PAGE_SIZE">
+            · {{ t('common.pageOf', { page: sessionPage, total: sessionPageCount }) }}
+          </template>
+        </span>
+      </div>
+      <p v-if="!useOcctl" class="text-sm text-slate-600 mb-3">{{ t('ocserv.occtlHint') }}</p>
+      <div class="table-wrap overflow-x-auto">
+        <table class="data w-full text-sm">
+          <thead>
+            <tr>
+              <th>{{ t('ocserv.colUser') }}</th>
+              <th>{{ t('ocserv.colId') }}</th>
+              <th>{{ t('ocserv.colIp') }}</th>
+              <th>{{ t('ocserv.colDevice') }}</th>
+              <th>{{ t('ocserv.colRx') }}</th>
+              <th>{{ t('ocserv.colTx') }}</th>
+              <th>Started</th>
+              <th>{{ t('ocserv.colDuration') }}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(s, i) in paginatedSessions" :key="sessVal(s, 'ID', 'id') + '-' + i">
+              <td>{{ sessVal(s, 'Username', 'username') }}</td>
+              <td class="font-mono">{{ sessVal(s, 'ID', 'id') }}</td>
+              <td class="font-mono">{{ sessVal(s, 'VPN IPv4', 'IPv4', 'ip') }}</td>
+              <td>{{ sessVal(s, 'Device', 'device') }}</td>
+              <td>{{ sessTraffic(s, 'rx') }}</td>
+              <td>{{ sessTraffic(s, 'tx') }}</td>
+              <td class="whitespace-nowrap">{{ sessVal(s, 'Session started at', 'Last connected at', 'connected_at') }}</td>
+              <td class="whitespace-nowrap text-slate-600">{{ sessOnlineDuration(s) }}</td>
+              <td>
+                <button type="button" class="text-red-600 text-sm" @click="disconnectSession(s)">{{ t('ocserv.disconnect') }}</button>
+              </td>
+            </tr>
+            <tr v-if="!paginatedSessions.length">
+              <td colspan="9" class="text-center text-slate-400 py-6">
+                {{ sessions.length && sessionSearch.trim() ? t('ocserv.noSessionsMatch') : t('ocserv.noSessions') }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div
+        v-if="filteredSessions.length > SESSION_PAGE_SIZE"
+        class="flex flex-wrap items-center justify-center gap-2 mt-3 text-sm"
+      >
+        <button
+          type="button"
+          class="btn-secondary text-xs px-2 py-1"
+          :disabled="sessionPage <= 1"
+          @click="sessionPage = Math.max(1, sessionPage - 1)"
+        >
+          {{ t('common.prevPage') }}
+        </button>
+        <span class="text-slate-600">{{ t('common.pageOf', { page: sessionPage, total: sessionPageCount }) }}</span>
+        <button
+          type="button"
+          class="btn-secondary text-xs px-2 py-1"
+          :disabled="sessionPage >= sessionPageCount"
+          @click="sessionPage = Math.min(sessionPageCount, sessionPage + 1)"
+        >
+          {{ t('common.nextPage') }}
+        </button>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">{{ t('ocserv.sessionsPoll', { n: SESSION_PAGE_SIZE }) }}</p>
+    </div>
+
+    <div v-if="cfg && activeTab === 'groups'" class="card p-4 space-y-4">
+      <h3 class="font-medium">{{ t('ocserv.groupsTitle') }}</h3>
+      <p class="text-xs text-slate-500">{{ t('ocserv.groupsHint') }}</p>
+      <div v-if="isRadius" class="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
+        {{ t('ocserv.groupsRadius') }}
+      </div>
+      <template v-else>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/80 rounded border text-sm">
+          <label class="sm:col-span-2">
+            {{ t('ocserv.groupDir') }}
+            <input v-model="cfg.config_per_group" class="input w-full mt-1 font-mono text-xs" />
+            <span class="text-xs text-slate-500">config-per-group</span>
+          </label>
+          <label class="sm:col-span-2">
+            {{ t('ocserv.groupDefault') }}
+            <input v-model="cfg.default_group_config" class="input w-full mt-1 font-mono text-xs" />
+            <span class="text-xs text-slate-500">default-group-config</span>
+          </label>
+          <label class="flex items-center gap-2 sm:col-span-2">
+            <input v-model="cfg.auto_select_group" type="checkbox" />
+            {{ t('ocserv.autoSelectGroup') }}
+          </label>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <button type="button" class="btn-primary text-sm" @click="save">{{ t('ocserv.saveGroupGlobals') }}</button>
+          <button type="button" class="btn-secondary text-sm" :disabled="!status?.installed" @click="apply">{{ t('common.saveAndApply') }}</button>
+        </div>
+        <div class="border rounded-lg p-4 space-y-3 bg-blue-50/30">
+          <h4 class="text-sm font-medium">{{ editingGroup ? t('ocserv.editGroup', { name: editingGroup }) : t('ocserv.addGroup') }}</h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            <label>
+              {{ t('ocserv.groupName') }}
+              <input v-model="groupForm.name" class="input w-full mt-1 font-mono" :disabled="!!editingGroup" :placeholder="t('ocserv.groupNamePh')" />
+            </label>
+            <label>
+              {{ t('ocserv.groupLabel') }}
+              <input v-model="groupForm.label" class="input w-full mt-1" :placeholder="t('ocserv.groupLabelPh')" />
+            </label>
+            <label class="sm:col-span-2">
+              {{ t('common.comment') }}
+              <input v-model="groupForm.comment" class="input w-full mt-1" />
+            </label>
+            <label>
+              {{ t('ocserv.groupNet') }}
+              <input v-model="groupForm.ipv4_network" class="input w-full mt-1 font-mono" placeholder="10.10.1.0" />
+            </label>
+            <label>
+              {{ t('ocserv.groupMask') }}
+              <input v-model="groupForm.ipv4_netmask" class="input w-full mt-1 font-mono" placeholder="255.255.255.0" />
+            </label>
+            <label>
+              MTU
+              <input v-model.number="groupForm.mtu" type="number" class="input w-full mt-1" min="0" />
+            </label>
+            <label class="flex items-end gap-2 pb-1">
+              <input v-model="groupForm.tunnel_all_dns" type="checkbox" />
+              tunnel-all-dns
+            </label>
+            <label>
+              {{ t('ocserv.downCapM') }}
+              <input v-model.number="groupForm.rx_mbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
+            </label>
+            <label>
+              {{ t('ocserv.upCapM') }}
+              <input v-model.number="groupForm.tx_mbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
+            </label>
+            <label class="sm:col-span-2">
+              {{ t('ocserv.dnsLines') }}
+              <textarea v-model="groupFormDns" class="input w-full mt-1 font-mono text-xs" rows="2" />
+            </label>
+            <label class="sm:col-span-2">
+              {{ t('ocserv.routesLines') }}
+              <textarea v-model="groupFormRoutes" class="input w-full mt-1 font-mono text-xs" rows="2" />
+            </label>
+            <label class="sm:col-span-2">
+              {{ t('ocserv.noRoutesLines') }}
+              <textarea v-model="groupFormNoRoutes" class="input w-full mt-1 font-mono text-xs" rows="2" />
+            </label>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" class="btn-primary text-sm" @click="saveGroup">{{ editingGroup ? t('ocserv.updateGroup') : t('ocserv.addGroup') }}</button>
+            <button v-if="editingGroup" type="button" class="btn-secondary text-sm" @click="cancelEditGroup">{{ t('common.cancel') }}</button>
+          </div>
+        </div>
+        <input
+          v-model="groupSearch"
+          type="search"
+          class="input w-full max-w-md text-sm"
+          :placeholder="t('ocserv.searchGroups')"
+        />
+        <div class="table-wrap overflow-x-auto">
+          <table class="data w-full text-sm">
+            <thead>
+              <tr>
+                <th>{{ t('ocserv.groupName') }}</th>
+                <th>{{ t('ocserv.groupLabel') }}</th>
+                <th>{{ t('ocserv.groupNet') }}</th>
+                <th>{{ t('common.comment') }}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="g in filteredGroups" :key="g.name">
+                <td class="font-mono">{{ g.name }}</td>
+                <td>{{ g.label || '—' }}</td>
+                <td class="font-mono text-xs">{{ g.ipv4_network ? `${g.ipv4_network}/${g.ipv4_netmask || ''}` : '—' }}</td>
+                <td>{{ g.comment || '—' }}</td>
+                <td class="whitespace-nowrap space-x-2">
+                  <button type="button" class="text-blue-600 text-sm" @click="startEditGroup(g)">{{ t('common.edit') }}</button>
+                  <button type="button" class="text-red-600 text-sm" @click="delGroup(g.name)">{{ t('common.delete') }}</button>
+                </td>
+              </tr>
+              <tr v-if="!filteredGroups.length">
+                <td colspan="5" class="text-center text-slate-400 py-6">{{ t('ocserv.noGroups') }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+    </div>
+
+    <div v-if="cfg && activeTab === 'vhosts'" class="card p-4 space-y-4">
+      <h3 class="font-medium">{{ t('ocserv.vhostsTitle') }}</h3>
+      <p class="text-xs text-slate-500">{{ t('ocserv.vhostsHint') }}</p>
+      <div class="border rounded-lg p-4 space-y-3 bg-blue-50/30">
+        <h4 class="text-sm font-medium">{{ editingVhost ? t('ocserv.editVhost', { domain: editingVhost }) : t('ocserv.addVhost') }}</h4>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+          <label>
+            {{ t('ocserv.vhostDomain') }}
+            <input v-model="vhostForm.domain" class="input w-full mt-1" :disabled="!!editingVhost" placeholder="vpn.example.com" />
+          </label>
+          <label>
+            {{ t('ocserv.vhostAuth') }}
+            <select v-model="vhostForm.auth_method" class="input w-full mt-1">
+              <option value="">{{ t('ocserv.vhostAuthEmpty') }}</option>
+              <option value="plain">{{ t('ocserv.authPlain') }}</option>
+              <option value="radius">{{ t('ocserv.authRadius') }}</option>
+              <option value="certificate">{{ t('ocserv.authCert') }}</option>
+            </select>
+          </label>
+          <label class="sm:col-span-2">
+            {{ t('ocserv.serverCert') }}
+            <input v-model="vhostForm.server_cert_path" class="input w-full mt-1 font-mono text-xs" />
+          </label>
+          <label class="sm:col-span-2">
+            {{ t('ocserv.serverKey') }}
+            <input v-model="vhostForm.server_key_path" class="input w-full mt-1 font-mono text-xs" />
+          </label>
+          <label class="sm:col-span-2">
+            {{ t('ocserv.caCert') }}
+            <input v-model="vhostForm.ca_cert_path" class="input w-full mt-1 font-mono text-xs" />
+          </label>
+          <label>
+            {{ t('ocserv.groupNet') }}
+            <input v-model="vhostForm.ipv4_network" class="input w-full mt-1 font-mono" />
+          </label>
+          <label>
+            {{ t('ocserv.groupMask') }}
+            <input v-model="vhostForm.ipv4_netmask" class="input w-full mt-1 font-mono" />
+          </label>
+          <label class="sm:col-span-2">
+            {{ t('ocserv.certUserOid') }}
+            <input v-model="vhostForm.cert_user_oid" class="input w-full mt-1 font-mono text-xs" />
+          </label>
+          <label class="sm:col-span-2">
+            {{ t('ocserv.dnsLines') }}
+            <textarea v-model="vhostFormDns" class="input w-full mt-1 font-mono text-xs" rows="2" />
+          </label>
+          <label class="sm:col-span-2">
+            {{ t('ocserv.routesLines') }}
+            <textarea v-model="vhostFormRoutes" class="input w-full mt-1 font-mono text-xs" rows="2" />
+          </label>
+          <label class="sm:col-span-2">
+            {{ t('common.comment') }}
+            <input v-model="vhostForm.comment" class="input w-full mt-1" />
+          </label>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="btn-primary text-sm" @click="saveVhost">{{ editingVhost ? t('ocserv.update') : t('common.add') }}</button>
+          <button v-if="editingVhost" type="button" class="btn-secondary text-sm" @click="cancelEditVhost">{{ t('common.cancel') }}</button>
+        </div>
+      </div>
+      <input
+        v-model="vhostSearch"
+        type="search"
+        class="input w-full max-w-md text-sm"
+        :placeholder="t('ocserv.searchVhosts')"
+      />
+      <div class="table-wrap overflow-x-auto">
+        <table class="data w-full text-sm">
+          <thead>
+            <tr>
+              <th>{{ t('ocserv.vhostDomain') }}</th>
+              <th>{{ t('ocserv.colAuth') }}</th>
+              <th>{{ t('ocserv.groupNet') }}</th>
+              <th>{{ t('common.comment') }}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="v in filteredVhosts" :key="v.domain">
+              <td class="font-mono">{{ v.domain }}</td>
+              <td>{{ v.auth_method || t('ocserv.inherit') }}</td>
+              <td class="font-mono text-xs">{{ v.ipv4_network ? `${v.ipv4_network}/${v.ipv4_netmask || ''}` : '—' }}</td>
+              <td>{{ v.comment || '—' }}</td>
+              <td class="whitespace-nowrap space-x-2">
+                <button type="button" class="text-blue-600 text-sm" @click="startEditVhost(v)">{{ t('common.edit') }}</button>
+                <button type="button" class="text-red-600 text-sm" @click="delVhost(v.domain)">{{ t('common.delete') }}</button>
+              </td>
+            </tr>
+            <tr v-if="!filteredVhosts.length">
+              <td colspan="5" class="text-center text-slate-400 py-6">{{ t('ocserv.noVhosts') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div v-if="activeTab === 'users'" class="card p-4">
+      <h3 class="font-medium mb-2">{{ t('ocserv.usersTitle') }}</h3>
+      <p v-if="isRadius" class="text-sm text-slate-600 mb-4">
+        {{ t('ocserv.usersRadius') }}
+      </p>
+      <template v-else>
+        <div v-if="editingUser" class="border rounded-lg p-4 mb-4 bg-blue-50/50 space-y-3">
+          <h4 class="text-sm font-medium">{{ t('ocserv.editUser', { name: editingUser.username }) }}</h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            <label class="text-sm">
+              {{ t('ocserv.newPassword') }}
+              <input v-model="editingUser.password" type="password" class="input w-full mt-1" :placeholder="t('ocserv.passwordMinPh')" />
+            </label>
+            <label class="text-sm">
+              {{ t('ocserv.colGroup') }}
+              <select v-model="editingUser.group" class="input w-full mt-1">
+                <option value="">{{ t('ocserv.groupDefaultOpt') }}</option>
+                <option v-for="g in groupOptions" :key="g.name" :value="g.name">{{ g.label || g.name }}</option>
+              </select>
+            </label>
+            <label class="text-sm sm:col-span-2">
+              {{ t('common.comment') }}
+              <input v-model="editingUser.comment" class="input w-full mt-1" />
+            </label>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" class="btn-primary text-sm" @click="saveEditUser">{{ t('common.save') }}</button>
+            <button type="button" class="btn-secondary text-sm" @click="cancelEditUser">{{ t('common.cancel') }}</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-3 text-sm">
+          <input v-model="userForm.username" class="input" :placeholder="t('ocserv.usernamePh')" />
+          <input v-model="userForm.password" type="password" class="input" :placeholder="t('ocserv.passwordMinPh')" />
+          <input v-model="userForm.comment" class="input" :placeholder="t('common.comment')" />
+          <select v-model="userForm.group" class="input">
+            <option value="">{{ t('ocserv.groupOptional') }}</option>
+            <option v-for="g in groupOptions" :key="g.name" :value="g.name">{{ g.label || g.name }}</option>
+          </select>
+        </div>
+        <button type="button" class="btn-secondary text-sm mb-3" @click="addUser">{{ t('ocserv.addUser') }}</button>
+        <input
+          v-model="userSearch"
+          type="search"
+          class="input w-full max-w-md text-sm mb-3"
+          :placeholder="t('ocserv.searchUsers')"
+        />
+        <div class="table-wrap overflow-x-auto">
+          <table class="data w-full text-sm">
+            <thead>
+              <tr>
+                <th>{{ t('ocserv.colUser') }}</th>
+                <th>{{ t('ocserv.colComment') }}</th>
+                <th>{{ t('ocserv.colGroup') }}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="u in filteredUsers" :key="u.username">
+                <td class="font-mono">{{ u.username }}</td>
+                <td>{{ u.comment || '—' }}</td>
+                <td>{{ u.group || '—' }}</td>
+                <td class="whitespace-nowrap space-x-2">
+                  <button type="button" class="text-blue-600 text-sm" @click="startEditUser(u)">{{ t('common.edit') }}</button>
+                  <button type="button" class="text-red-600 text-sm" @click="delUser(u.username)">{{ t('common.delete') }}</button>
+                  <button type="button" class="text-emerald-700 text-sm" @click="openUserTraffic(u.username)">{{ t('ocserv.traffic') }}</button>
+                </td>
+              </tr>
+              <tr v-if="!filteredUsers.length">
+                <td colspan="4" class="text-center text-slate-400 py-6">
+                  {{ users.length && userSearch.trim() ? t('ocserv.noUsersMatch') : t('ocserv.noUsers') }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-slate-500 mt-3">{{ t('ocserv.usersOcpasswd') }}</p>
+      </template>
+    </div>
+
+    <div v-if="cfg && activeTab === 'config'" class="card p-4 space-y-4">
       <label class="flex items-center gap-2">
         <input v-model="cfg.enabled" type="checkbox" />
-        启用 ocserv
+        {{ t('ocserv.enable') }}
       </label>
 
       <div>
-        <span class="text-sm font-medium">认证方式</span>
+        <span class="text-sm font-medium">{{ t('ocserv.authMethod') }}</span>
         <div class="flex gap-4 mt-2 text-sm">
-          <label class="flex items-center gap-2"><input v-model="cfg.auth_method" type="radio" value="plain" /> 本地</label>
-          <label class="flex items-center gap-2"><input v-model="cfg.auth_method" type="radio" value="radius" /> RADIUS</label>
+          <label class="flex items-center gap-2"><input v-model="cfg.auth_method" type="radio" value="plain" /> {{ t('ocserv.authPlain') }}</label>
+          <label class="flex items-center gap-2"><input v-model="cfg.auth_method" type="radio" value="radius" /> {{ t('ocserv.authRadius') }}</label>
         </div>
       </div>
 
       <div v-if="isRadius" class="border rounded-lg p-4 space-y-3 bg-slate-50/50">
-        <h3 class="text-sm font-medium">RADIUS</h3>
-        <label class="block text-sm">服务器 <input v-model="cfg.radius.server" class="input w-full mt-1" /></label>
+        <h3 class="text-sm font-medium">{{ t('ocserv.radiusSection') }}</h3>
+        <label class="block text-sm">{{ t('ocserv.radiusServer') }} <input v-model="cfg.radius.server" class="input w-full mt-1" /></label>
         <div class="grid grid-cols-2 gap-4">
-          <label class="text-sm">认证端口 <input v-model.number="cfg.radius.auth_port" type="number" class="input w-full mt-1" /></label>
-          <label class="text-sm">计费端口 <input v-model.number="cfg.radius.acct_port" type="number" class="input w-full mt-1" /></label>
+          <label class="text-sm">{{ t('ocserv.radiusAuthPort') }} <input v-model.number="cfg.radius.auth_port" type="number" class="input w-full mt-1" /></label>
+          <label class="text-sm">{{ t('ocserv.radiusAcctPort') }} <input v-model.number="cfg.radius.acct_port" type="number" class="input w-full mt-1" /></label>
         </div>
-        <label class="text-sm">共享密钥 <input v-model="radiusSecret" type="password" class="input w-full mt-1" placeholder="留空保持已保存" /></label>
-        <label class="text-sm">NAS-Identifier <input v-model="cfg.radius.nas_identifier" class="input w-full mt-1" /></label>
-        <label class="flex gap-2 text-sm"><input v-model="cfg.radius.groupconfig" type="checkbox" /> groupconfig</label>
-        <label class="flex gap-2 text-sm"><input v-model="cfg.radius.acct_enabled" type="checkbox" /> RADIUS 计费</label>
-        <label v-if="cfg.radius.acct_enabled" class="text-sm">stats-report-time（秒）
+        <label class="text-sm">
+          {{ t('ocserv.radiusSecret') }}
+          <input
+            v-model="radiusSecret"
+            type="password"
+            class="input w-full mt-1"
+            :placeholder="radiusSecretSet ? t('ocserv.radiusSecretPh') : t('ocserv.radiusSecretRequired')"
+            autocomplete="new-password"
+          />
+          <span v-if="radiusSecretSet && !radiusSecret" class="text-xs text-green-700">{{ t('ocserv.radiusSecretSaved') }}</span>
+        </label>
+        <label class="text-sm">
+          NAS 标识符
+          <input v-model="cfg.radius.nas_identifier" class="input w-full mt-1" placeholder="NAS-Identifier，可选" />
+          <span class="text-xs text-slate-500">发往 RADIUS 的 NAS-Identifier 属性</span>
+        </label>
+        <label class="flex gap-2 text-sm">
+          <input v-model="cfg.radius.groupconfig" type="checkbox" />
+          <span>从 RADIUS 读取每组配置 <span class="text-slate-500">（groupconfig）</span></span>
+        </label>
+        <label class="flex gap-2 text-sm"><input v-model="cfg.radius.acct_enabled" type="checkbox" /> 启用 RADIUS 计费（acct）</label>
+        <label v-if="cfg.radius.acct_enabled" class="text-sm">
+          计费上报间隔（秒）
           <input v-model.number="cfg.radius.stats_report_time" type="number" class="input w-full mt-1 max-w-xs" />
+          <span class="text-xs text-slate-500">stats-report-time</span>
         </label>
       </div>
 
       <div class="grid grid-cols-2 gap-4">
-        <label class="text-sm">TCP 端口 <input v-model.number="cfg.tcp_port" type="number" class="input w-full mt-1" :disabled="!cfg.advanced?.tcp" /></label>
-        <label class="text-sm">UDP 端口 <input v-model.number="cfg.udp_port" type="number" class="input w-full mt-1" :disabled="!cfg.advanced?.udp" /></label>
-        <label class="text-sm">地址池 <input v-model="cfg.ipv4_network" class="input w-full mt-1" /></label>
-        <label class="text-sm">掩码 <input v-model="cfg.ipv4_netmask" class="input w-full mt-1" /></label>
-        <label class="text-sm">TUN 设备 <input v-model="cfg.device" class="input w-full mt-1" /></label>
-        <label class="text-sm">最大客户端 <input v-model.number="cfg.max_clients" type="number" class="input w-full mt-1" /></label>
-        <label class="text-sm col-span-2">Socket 文件 <input v-model="cfg.socket_file" class="input w-full mt-1" /></label>
+        <label class="text-sm">{{ t('ocserv.tcpPort') }} <input v-model.number="cfg.tcp_port" type="number" class="input w-full mt-1" :disabled="!cfg.advanced?.tcp" /></label>
+        <label class="text-sm">{{ t('ocserv.udpPort') }} <input v-model.number="cfg.udp_port" type="number" class="input w-full mt-1" :disabled="!cfg.advanced?.udp" /></label>
+        <label class="text-sm">{{ t('ocserv.ipv4Net') }} <input v-model="cfg.ipv4_network" class="input w-full mt-1" /></label>
+        <label class="text-sm">{{ t('ocserv.ipv4Mask') }} <input v-model="cfg.ipv4_netmask" class="input w-full mt-1" /></label>
+        <label class="text-sm">{{ t('ocserv.device') }} <input v-model="cfg.device" class="input w-full mt-1" /></label>
+        <label class="text-sm">{{ t('ocserv.maxClients') }} <input v-model.number="cfg.max_clients" type="number" class="input w-full mt-1" /></label>
+        <label class="text-sm col-span-2">
+          {{ t('ocserv.socketFile') }}
+          <input v-model="cfg.socket_file" class="input w-full mt-1 font-mono text-xs" />
+          <span class="text-xs text-slate-500">socket-file</span>
+        </label>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <label class="text-sm">DNS（每行一个）<textarea v-model="dnsText" class="input w-full mt-1 font-mono text-xs" rows="3" /></label>
-        <label class="text-sm">路由 route（每行一个）<textarea v-model="routesText" class="input w-full mt-1 font-mono text-xs" rows="3" placeholder="default" /></label>
-        <label class="text-sm">排除 no-route<textarea v-model="noRoutesText" class="input w-full mt-1 font-mono text-xs" rows="3" placeholder="192.168.5.0/255.255.255.0" /></label>
+        <label class="text-sm">{{ t('ocserv.dnsLines') }}<textarea v-model="dnsText" class="input w-full mt-1 font-mono text-xs" rows="3" /></label>
+        <label class="text-sm">{{ t('ocserv.pushRoutes') }}<textarea v-model="routesText" class="input w-full mt-1 font-mono text-xs" rows="3" placeholder="default" /><span class="text-xs text-slate-500">route</span></label>
+        <label class="text-sm">{{ t('ocserv.excludeRoutes') }}<textarea v-model="noRoutesText" class="input w-full mt-1 font-mono text-xs" rows="3" /><span class="text-xs text-slate-500">no-route</span></label>
       </div>
 
-      <div class="border rounded-lg p-4 space-y-3">
-        <h3 class="text-sm font-medium">TLS / 证书</h3>
-        <label class="flex gap-2 text-sm"><input v-model="cfg.use_qosnat_tls" type="checkbox" /> 使用 qosnat2 TLS（复制到下方路径）</label>
-        <div class="grid grid-cols-2 gap-4">
-          <label class="text-sm">server-cert 路径 <input v-model="cfg.server_cert_path" class="input w-full mt-1" /></label>
-          <label class="text-sm">server-key 路径 <input v-model="cfg.server_key_path" class="input w-full mt-1" /></label>
-          <label class="text-sm col-span-2">ca-cert 路径（可选）<input v-model="cfg.ca_cert_path" class="input w-full mt-1" placeholder="留空不启用客户端证书" /></label>
-        </div>
-        <label class="text-sm">cert-user-oid <input v-model="cfg.advanced.cert_user_oid" class="input w-full mt-1 font-mono text-xs" /></label>
-        <label class="text-sm">tls-priorities <input v-model="cfg.advanced.tls_priorities" class="input w-full mt-1 font-mono text-xs" /></label>
+      <div class="flex gap-2 pt-2">
+        <button type="button" class="btn-primary" @click="save">{{ t('common.save') }}</button>
+        <button type="button" class="btn-secondary" :disabled="!status?.installed" @click="apply">{{ t('common.saveAndApply') }}</button>
       </div>
+    </div>
 
-      <div class="border rounded-lg">
-        <button type="button" class="w-full flex justify-between px-4 py-3 text-sm font-medium" @click="showAdvanced = !showAdvanced">
-          <span>高级配置</span>
-          <span class="text-slate-400">{{ showAdvanced ? '收起' : '展开' }}</span>
-        </button>
-        <div v-show="showAdvanced" class="px-4 pb-4 space-y-4 border-t">
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3">
-            <label v-for="f in featureToggles" :key="f.key" class="flex gap-2 text-sm p-2 border rounded cursor-pointer">
-              <input v-model="cfg.advanced[f.key]" type="checkbox" class="mt-0.5" />
-              <span><span class="font-medium">{{ f.label }}</span><span class="block text-xs text-slate-500">{{ f.hint }}</span></span>
-            </label>
-          </div>
-          <div v-if="cfg.advanced.camouflage" class="grid grid-cols-2 gap-4 p-3 bg-amber-50/50 rounded border border-amber-100">
-            <label class="text-sm col-span-2">camouflage_secret <input v-model="camouflageSecret" type="password" class="input w-full mt-1" placeholder="留空保持已保存" /></label>
-            <label class="text-sm col-span-2">camouflage_realm <input v-model="cfg.advanced.camouflage_realm" class="input w-full mt-1" placeholder="Restricted Content" /></label>
-          </div>
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <label v-for="n in numericAdvanced" v-show="!n.show || n.show()" :key="n.key" class="text-sm">
-              {{ n.label }}
-              <input v-model.number="cfg.advanced[n.key]" type="number" class="input w-full mt-1" :min="n.min" />
-            </label>
-          </div>
-          <div class="grid grid-cols-2 gap-4">
-            <label class="text-sm">rekey-method
-              <select v-model="cfg.advanced.rekey_method" class="input w-full mt-1">
-                <option value="ssl">ssl</option>
-                <option value="new-tunnel">new-tunnel</option>
-              </select>
-            </label>
-            <label class="text-sm">default-domain <input v-model="cfg.advanced.default_domain" class="input w-full mt-1" /></label>
-            <label class="text-sm col-span-2">config-per-group 目录 <input v-model="cfg.advanced.config_per_group" class="input w-full mt-1" placeholder="/etc/ocserv/config-per-group/" /></label>
-          </div>
-        </div>
+    <div v-if="cfg && activeTab === 'certs'" class="card p-4 space-y-4">
+      <h3 class="text-sm font-medium">{{ t('ocserv.certsTitle') }}</h3>
+      <p class="text-xs text-slate-500">{{ t('ocserv.certsHint') }}</p>
+      <label class="flex gap-2 text-sm"><input v-model="cfg.use_qosnat_tls" type="checkbox" /> {{ t('ocserv.useQosnatTls') }}</label>
+      <div class="grid grid-cols-2 gap-4">
+        <label class="text-sm">{{ t('ocserv.serverCert') }} <input v-model="cfg.server_cert_path" class="input w-full mt-1 font-mono text-xs" /><span class="text-xs text-slate-500">server-cert</span></label>
+        <label class="text-sm">{{ t('ocserv.serverKey') }} <input v-model="cfg.server_key_path" class="input w-full mt-1 font-mono text-xs" /><span class="text-xs text-slate-500">server-key</span></label>
+        <label class="text-sm col-span-2">{{ t('ocserv.caCert') }}<input v-model="cfg.ca_cert_path" class="input w-full mt-1 font-mono text-xs" /><span class="text-xs text-slate-500">ca-cert</span></label>
       </div>
-
-      <div class="flex gap-2">
+      <label class="text-sm">
+        证书用户 OID
+        <input v-model="cfg.advanced.cert_user_oid" class="input w-full mt-1 font-mono text-xs" />
+        <span class="text-xs text-slate-500">cert-user-oid：客户端证书登录时从证书提取用户名</span>
+      </label>
+      <label class="text-sm">
+        TLS 算法优先级
+        <input v-model="cfg.advanced.tls_priorities" class="input w-full mt-1 font-mono text-xs" />
+        <span class="text-xs text-slate-500">tls-priorities：OpenSSL 优先级字符串</span>
+      </label>
+      <div class="flex gap-2 pt-2">
         <button type="button" class="btn-primary" @click="save">保存</button>
         <button type="button" class="btn-secondary" :disabled="!status?.installed" @click="apply">保存并应用</button>
       </div>
     </div>
 
-    <div v-if="cfg && !isRadius" class="card p-4 mt-4">
-      <h3 class="font-medium mb-2">本地用户</h3>
-      <div class="grid grid-cols-3 gap-2 mb-3 text-sm">
-        <input v-model="userForm.username" class="input" placeholder="用户名" />
-        <input v-model="userForm.password" type="password" class="input" placeholder="密码" />
-        <input v-model="userForm.comment" class="input" placeholder="备注" />
+    <div v-if="cfg && activeTab === 'advanced'" class="card p-4 space-y-4">
+      <h3 class="text-sm font-medium">高级设置</h3>
+      <p class="text-xs text-slate-500">协议特性、限速、封禁与 occtl；修改后请保存并应用。</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <label v-for="f in featureToggles" :key="f.key" class="flex gap-2 text-sm p-2 border rounded cursor-pointer">
+          <input v-model="cfg.advanced[f.key]" type="checkbox" class="mt-0.5" />
+          <span><span class="font-medium">{{ f.label }}</span><span class="block text-xs text-slate-500">{{ f.desc }}</span></span>
+        </label>
       </div>
-      <button type="button" class="btn-secondary text-sm mb-3" @click="addUser">添加</button>
-      <table class="w-full text-sm">
-        <tbody>
-          <tr v-for="u in users" :key="u.username" class="border-t">
-            <td class="py-2">{{ u.username }}</td>
-            <td>{{ u.comment }}</td>
-            <td><button type="button" class="text-red-600" @click="delUser(u.username)">删除</button></td>
-          </tr>
-        </tbody>
-      </table>
+      <div v-if="cfg.advanced.camouflage" class="grid grid-cols-2 gap-4 p-3 bg-amber-50/50 rounded border border-amber-100">
+        <label class="text-sm col-span-2">
+          伪装密钥
+          <input
+            v-model="camouflageSecret"
+            type="password"
+            class="input w-full mt-1"
+            :placeholder="camouflageSecretSet ? '已设置，留空则不修改' : '启用伪装时必填'"
+            autocomplete="new-password"
+          />
+          <span class="text-xs text-slate-500">camouflage-secret</span>
+        </label>
+        <label class="text-sm col-span-2">
+          伪装站点提示语
+          <input v-model="cfg.advanced.camouflage_realm" class="input w-full mt-1" placeholder="Restricted Content" />
+          <span class="text-xs text-slate-500">camouflage-realm：HTTPS 伪装页显示的 Realm</span>
+        </label>
+      </div>
+      <div class="grid grid-cols-2 gap-4 p-3 bg-slate-50/80 rounded border">
+        <label class="text-sm">
+          下行带宽 (M)
+          <input v-model.number="rxMbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
+          <span class="text-xs text-slate-500">0=不限；1 M = 1 Mbps（如 100M 宽带填 100）</span>
+        </label>
+        <label class="text-sm">
+          上行带宽 (M)
+          <input v-model.number="txMbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
+          <span class="text-xs text-slate-500">0=不限；保存后自动写入 ocserv 限速参数</span>
+        </label>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <label v-for="n in numericAdvanced" v-show="!n.show || n.show()" :key="n.key" class="text-sm">
+          {{ n.label }}
+          <input v-model.number="cfg.advanced[n.key]" type="number" class="input w-full mt-1" :min="n.min" :max="n.max" />
+          <span v-if="n.desc" class="text-xs text-slate-500">{{ n.desc }}</span>
+        </label>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <label class="text-sm">
+          重密钥方式
+          <select v-model="cfg.advanced.rekey_method" class="input w-full mt-1">
+            <option value="ssl">SSL 重协商（ssl）</option>
+            <option value="new-tunnel">新建隧道（new-tunnel）</option>
+          </select>
+          <span class="text-xs text-slate-500">rekey-method</span>
+        </label>
+        <label class="text-sm">
+          默认域名
+          <input v-model="cfg.advanced.default_domain" class="input w-full mt-1" />
+          <span class="text-xs text-slate-500">default-domain：下发给客户端的 DNS 域</span>
+        </label>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="button" class="btn-primary" @click="save">保存</button>
+        <button type="button" class="btn-secondary" :disabled="!status?.installed" @click="apply">保存并应用</button>
+      </div>
     </div>
+
+    <!-- 用户流量统计悬浮窗 -->
+    <Teleport to="body">
+      <div
+        v-if="trafficModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+        @click.self="closeUserTraffic"
+      >
+        <div
+          class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200"
+          role="dialog"
+          aria-labelledby="traffic-modal-title"
+        >
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white z-10">
+            <h3 id="traffic-modal-title" class="font-medium">
+              流量统计 · <span class="font-mono text-blue-700">{{ trafficModal }}</span>
+            </h3>
+            <button type="button" class="text-slate-500 hover:text-slate-800 text-xl leading-none px-2" @click="closeUserTraffic">×</button>
+          </div>
+          <div class="p-4 space-y-4">
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+              <span class="text-slate-600">时间范围</span>
+              <select v-model="trafficPeriod" class="input text-sm py-1 w-auto">
+                <option value="24h">近 24 小时</option>
+                <option value="7d">近 7 天</option>
+                <option value="30d">近 30 天</option>
+                <option value="365d">近 1 年</option>
+              </select>
+              <span
+                v-if="trafficData"
+                class="text-xs px-2 py-0.5 rounded"
+                :class="trafficData.online ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'"
+              >
+                {{ trafficData.online ? '当前在线' : '当前离线' }}
+              </span>
+            </div>
+            <p v-if="trafficErr" class="text-sm text-red-600">{{ trafficErr }}</p>
+            <p v-else-if="trafficLoading" class="text-sm text-slate-500">加载中…</p>
+            <template v-else-if="trafficData">
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                <div class="rounded-lg border p-2 bg-slate-50">
+                  <p class="text-xs text-slate-500">今日下行</p>
+                  <p class="font-mono font-medium">{{ formatBytes(trafficData.summary?.today_rx_bytes) }}</p>
+                </div>
+                <div class="rounded-lg border p-2 bg-slate-50">
+                  <p class="text-xs text-slate-500">今日上行</p>
+                  <p class="font-mono font-medium">{{ formatBytes(trafficData.summary?.today_tx_bytes) }}</p>
+                </div>
+                <div class="rounded-lg border p-2 bg-slate-50">
+                  <p class="text-xs text-slate-500">区间下行</p>
+                  <p class="font-mono font-medium">{{ formatBytes(trafficData.summary?.period_rx_bytes) }}</p>
+                </div>
+                <div class="rounded-lg border p-2 bg-slate-50">
+                  <p class="text-xs text-slate-500">区间上行</p>
+                  <p class="font-mono font-medium">{{ formatBytes(trafficData.summary?.period_tx_bytes) }}</p>
+                </div>
+                <div class="rounded-lg border p-2 bg-emerald-50/50 sm:col-span-2">
+                  <p class="text-xs text-slate-500">累计下行（约 1 年内 hourly 汇总）</p>
+                  <p class="font-mono font-medium text-emerald-800">{{ formatBytes(trafficData.summary?.total_rx_bytes) }}</p>
+                </div>
+                <div class="rounded-lg border p-2 bg-sky-50/50 sm:col-span-2">
+                  <p class="text-xs text-slate-500">累计上行</p>
+                  <p class="font-mono font-medium text-sky-800">{{ formatBytes(trafficData.summary?.total_tx_bytes) }}</p>
+                </div>
+              </div>
+              <div v-if="trafficData.online && trafficData.current" class="text-sm rounded border border-emerald-100 bg-emerald-50/40 p-3">
+                <p class="text-xs text-slate-600 mb-1">当前会话（occtl）</p>
+                <p>
+                  RX {{ formatTraffic(trafficData.current._RX, trafficData.current.RX ?? trafficData.current.rx) }}
+                  · TX {{ formatTraffic(trafficData.current._TX, trafficData.current.TX ?? trafficData.current.tx) }}
+                </p>
+              </div>
+              <SnmpTrafficChart :series="trafficData.series || []" />
+            </template>
+            <p class="text-xs text-slate-500">
+              需开启 <strong>occtl</strong> 且用户曾在线；后台每 5 分钟采样一次，历史保留 1 年（按小时），近 7 日为 5 分钟粒度。
+            </p>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

@@ -85,15 +85,15 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "admin_pass must be at least 8 characters"})
 		return
 	}
-	if body.DevLAN == "" || body.DevWAN == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_lan and dev_wan required"})
+	if body.DevWAN == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_wan required"})
 		return
 	}
-	if body.DevLAN == body.DevWAN {
+	if body.DevLAN != "" && body.DevLAN == body.DevWAN {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_lan and dev_wan must differ"})
 		return
 	}
-	if !route.LinkExists(body.DevLAN) {
+	if body.DevLAN != "" && !route.LinkExists(body.DevLAN) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_lan: interface %q not found", body.DevLAN)})
 		return
 	}
@@ -133,9 +133,11 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 			st.System.Hostname = body.Hostname
 		}
 		st.Shaper.PolicyCIDR = body.PolicyRoutes[0]
-		st.DHCP.Interface = body.DevLAN
-		if body.EnableDHCP {
-			st.DHCP.Enabled = true
+		if body.DevLAN != "" {
+			st.DHCP.Interface = body.DevLAN
+			if body.EnableDHCP {
+				st.DHCP.Enabled = true
+			}
 		}
 	})
 	if err := srv.store.Save(); err != nil {
@@ -153,6 +155,9 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	envWrite.AdminPass = ""
 	if err := WriteRuntimeEnv(envWrite); err != nil {
 		log.Printf("write env: %v", err)
+	}
+	if err := WriteDevRoles(body.DevLAN, body.DevWAN); err != nil {
+		log.Printf("write dev roles: %v", err)
 	}
 	srv.reloadEnv()
 

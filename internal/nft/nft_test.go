@@ -28,3 +28,17 @@ func TestRenderSNATAndFilter(t *testing.T) {
 		t.Fatal("missing filter drop rule")
 	}
 }
+
+func TestRenderWANOnly(t *testing.T) {
+	st := store.DefaultState()
+	body, err := Render(Config{DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "ens19") {
+		t.Fatal("WAN-only render should not reference LAN")
+	}
+	if !strings.Contains(body, `oifname "ens18" masquerade`) {
+		t.Fatal("missing WAN masquerade")
+	}
+}

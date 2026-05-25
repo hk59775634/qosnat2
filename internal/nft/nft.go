@@ -41,8 +41,8 @@ func ResolveSharedIPs(cfg Config, st store.State) (ips []string, autoFromWAN boo
 
 // Render 根据 state 生成 inet qosnat 规则（无 flowtable，宿主机 WAN）
 func Render(cfg Config, st store.State) (string, error) {
-	if cfg.DevLAN == "" || cfg.DevWAN == "" {
-		return "", fmt.Errorf("DEV_LAN and DEV_WAN required")
+	if cfg.DevWAN == "" {
+		return "", fmt.Errorf("DEV_WAN required")
 	}
 	routes := st.PolicyRoutes
 	if len(routes) == 0 {
@@ -107,14 +107,16 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        type filter hook forward priority filter; policy accept;\n")
 	b.WriteString("        ct state established,related accept\n")
 	writeFilterRules(&b, "forward", st.Firewall.FilterRules)
-	b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevLAN, cfg.DevWAN))
-	b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevWAN, cfg.DevLAN))
-	// 非对称回程：公网源直达 LAN 内网段丢弃
-	for _, cidr := range routes {
-		b.WriteString(fmt.Sprintf(
-			"        iifname \"%s\" oifname \"%s\" ip daddr %s ip saddr != %s drop\n",
-			cfg.DevWAN, cfg.DevLAN, cidr, cidr,
-		))
+	if cfg.DevLAN != "" {
+		b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevLAN, cfg.DevWAN))
+		b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevWAN, cfg.DevLAN))
+		// 非对称回程：公网源直达 LAN 内网段丢弃
+		for _, cidr := range routes {
+			b.WriteString(fmt.Sprintf(
+				"        iifname \"%s\" oifname \"%s\" ip daddr %s ip saddr != %s drop\n",
+				cfg.DevWAN, cfg.DevLAN, cidr, cidr,
+			))
+		}
 	}
 	b.WriteString("    }\n\n")
 
@@ -124,7 +126,9 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        iifname \"lo\" accept\n")
 	b.WriteString("        ct state established,related accept\n")
 	writeFilterRules(&b, "input", st.Firewall.FilterRules)
-	b.WriteString(fmt.Sprintf("        iifname \"%s\" accept\n", cfg.DevLAN))
+	if cfg.DevLAN != "" {
+		b.WriteString(fmt.Sprintf("        iifname \"%s\" accept\n", cfg.DevLAN))
+	}
 	b.WriteString("    }\n}\n")
 	return b.String(), nil
 }

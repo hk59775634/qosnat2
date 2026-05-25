@@ -1,6 +1,9 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+
+const { t } = useI18n()
 import PageHeader from '@/components/PageHeader.vue'
 
 const cfg = ref(null)
@@ -22,6 +25,12 @@ function defaultPeerForm() {
 
 const peerForm = ref(defaultPeerForm())
 const serverEndpoint = ref('')
+const activeTab = ref('server')
+
+const tabs = computed(() => [
+  { id: 'server', label: t('vpn.wg.tabServer') },
+  { id: 'peers', label: t('vpn.wg.tabPeers') },
+])
 
 async function load() {
   const d = await api.get('/api/v1/vpn/wireguard')
@@ -143,19 +152,29 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="WireGuard"
-      description="Peer 限速按隧道 IP（/32 模板）在 wg0 + IFB 上 HTB 整形；下行/上行相对服务端视角。"
-    />
+    <PageHeader :title="t('vpn.wg.title')" :description="t('vpn.wg.description')" />
     <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
+    <nav v-if="cfg" class="flex flex-wrap gap-1 mb-4 border-b border-slate-200">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        type="button"
+        class="px-4 py-2 text-sm border-b-2 -mb-px transition-colors"
+        :class="activeTab === tab.id ? 'border-blue-600 text-blue-700 font-medium' : 'border-transparent text-slate-600 hover:text-slate-900'"
+        @click="activeTab = tab.id"
+      >
+        {{ tab.label }}
+      </button>
+    </nav>
+
     <div v-if="cfg" class="space-y-6">
-      <section class="card p-4">
-        <h3 class="font-medium mb-3">服务端</h3>
+      <section v-if="activeTab === 'server'" class="card p-4">
+        <h3 class="font-medium mb-3">{{ t('vpn.wg.tabServer') }}</h3>
         <div class="grid sm:grid-cols-2 gap-3 text-sm">
           <label class="flex items-center gap-2">
-            <input v-model="cfg.enabled" type="checkbox" /> 启用
+            <input v-model="cfg.enabled" type="checkbox" /> {{ t('vpn.wg.enable') }}
           </label>
           <div>
             <span class="text-slate-500">状态</span>
@@ -179,14 +198,15 @@ onMounted(load)
           </div>
         </div>
         <div class="flex gap-2 mt-4">
-          <button type="button" class="btn-secondary" @click="genKeys">生成服务端密钥</button>
-          <button type="button" class="btn-primary" @click="save">保存并 wg-quick apply</button>
+          <button type="button" class="btn-secondary" @click="genKeys">{{ t('vpn.wg.genKeys') }}</button>
+          <button type="button" class="btn-primary" @click="save">{{ t('vpn.wg.saveApply') }}</button>
         </div>
         <p class="text-xs text-slate-400 mt-2 font-mono truncate">公钥: {{ cfg.public_key || '—' }}</p>
       </section>
 
+      <template v-if="activeTab === 'peers'">
       <section class="card p-4">
-        <h3 class="font-medium mb-3">添加 Peer</h3>
+        <h3 class="font-medium mb-3">{{ t('vpn.wg.addPeer') }}</h3>
         <p class="text-xs text-slate-500 mb-3">
           可手动填写客户端私钥/公钥，或点「自动生成密钥对」；仅填公钥可导入已有客户端（无法下载 conf）。
         </p>
@@ -235,12 +255,13 @@ onMounted(load)
           </div>
         </div>
         <div class="flex flex-wrap gap-2 mt-4">
-          <button type="button" class="btn-secondary" @click="genPeerKeys">自动生成密钥对</button>
-          <button type="button" class="btn-primary" @click="addPeer">添加 Peer</button>
+          <button type="button" class="btn-secondary" @click="genPeerKeys">{{ t('vpn.wg.autoKeypair') }}</button>
+          <button type="button" class="btn-primary" @click="addPeer">{{ t('vpn.wg.addPeer') }}</button>
         </div>
       </section>
 
       <section class="card table-wrap p-4">
+        <h3 class="font-medium mb-3">Peer 列表</h3>
         <table class="data w-full">
           <thead>
             <tr>
@@ -274,13 +295,17 @@ onMounted(load)
                 />
               </td>
               <td class="whitespace-nowrap">
-                <button type="button" class="text-blue-600 text-xs mr-2" @click='downloadConf(p.name)'>下载 conf</button>
-                <button type="button" class="text-red-600 text-xs" @click='delPeer(p.name)'>删除</button>
+                <button type="button" class="text-blue-600 text-xs mr-2" @click="downloadConf(p.name)">{{ t('vpn.wg.downloadConf') }}</button>
+                <button type="button" class="text-red-600 text-xs" @click="delPeer(p.name)">{{ t('common.delete') }}</button>
               </td>
             </tr>
           </tbody>
         </table>
       </section>
+      <div class="flex justify-end">
+        <button type="button" class="btn-primary" @click="save">保存并 wg-quick apply</button>
+      </div>
+      </template>
     </div>
   </div>
 </template>

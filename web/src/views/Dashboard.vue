@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { useWidgetOrder } from '@/composables/useWidgetOrder'
 import StatCard from '@/components/StatCard.vue'
@@ -9,6 +10,7 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import TrafficSparkline from '@/components/TrafficSparkline.vue'
 
+const { t } = useI18n()
 const data = ref(null)
 const health = ref(null)
 const dhcp = ref(null)
@@ -50,6 +52,15 @@ const { order: bottomOrder, moveUp: bottomUp, moveDown: bottomDown } = useWidget
   'qosnat2-dash-bottom',
 )
 
+const quickLinks = computed(() => [
+  { path: '/network/interfaces', label: t('dashboard.linkInterfaces'), desc: t('dashboard.linkInterfacesDesc') },
+  { path: '/nat/forwards', label: t('dashboard.linkForwards'), desc: t('dashboard.linkForwardsDesc') },
+  { path: '/shaper/profiles', label: t('dashboard.linkProfiles'), desc: t('dashboard.linkProfilesDesc') },
+  { path: '/network/dhcp', label: t('dashboard.linkDhcp'), desc: t('dashboard.linkDhcpDesc') },
+  { path: '/vpn/wireguard', label: t('dashboard.linkWg'), desc: t('dashboard.linkWgDesc') },
+  { path: '/diagnostics/capture', label: t('dashboard.linkCapture'), desc: t('dashboard.linkCaptureDesc') },
+])
+
 function mainIdx(id) {
   return mainOrder.value.indexOf(id)
 }
@@ -67,15 +78,6 @@ function canDownBottom(id) {
   const i = bottomOrder.value.indexOf(id)
   return i >= 0 && i < bottomOrder.value.length - 1
 }
-
-const quickLinks = [
-  { path: '/network/interfaces', label: '接口', desc: 'LAN/WAN 状态' },
-  { path: '/nat/forwards', label: '端口转发', desc: 'DNAT 规则' },
-  { path: '/shaper/profiles', label: 'QoS 模板', desc: 'profile_lpm' },
-  { path: '/network/dhcp', label: 'DHCP', desc: 'dnsmasq' },
-  { path: '/vpn/wireguard', label: 'WireGuard', desc: 'VPN 隧道' },
-  { path: '/diagnostics/capture', label: '抓包', desc: 'tcpdump' },
-]
 
 async function load() {
   try {
@@ -104,17 +106,14 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div class="page-stack">
-    <PageHeader
-      title="Dashboard"
-      description="系统、网络、服务与 QoS 概览。小组件可折叠；标题栏 ↑↓ 调整顺序（保存在浏览器）。"
-    />
+    <PageHeader :title="t('nav.dashboard')" :description="t('dashboard.description')" />
     <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
 
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
-      <StatCard label="活跃 Per-IP" :value="data?.active_hosts ?? '—'" sub="eBPF active_host" />
-      <StatCard label="Conntrack" :value="data?.system?.conntrack ?? '—'" sub="会话表项" />
-      <StatCard label="QoS 规则" :value="data?.shaper?.profile_rules ?? '—'" sub="网段模板数" />
-      <StatCard :label="`阶段 ${phase}`" :value="health?.bpf ? 'BPF ON' : 'BPF —'" :sub="uptime" />
+      <StatCard :label="t('nav.activePerIp')" :value="data?.active_hosts ?? '—'" sub="eBPF active_host" />
+      <StatCard :label="t('dashboard.conntrackEntries')" :value="data?.system?.conntrack ?? '—'" sub="conntrack" />
+      <StatCard :label="t('dashboard.profileTemplates')" :value="data?.shaper?.profile_rules ?? '—'" sub="profile_lpm" />
+      <StatCard :label="phase" :value="health?.bpf ? 'BPF ON' : 'BPF —'" :sub="uptime" />
     </div>
 
     <div class="grid lg:grid-cols-2 gap-3">
@@ -122,7 +121,7 @@ onUnmounted(() => clearInterval(timer))
       <DashboardWidget
         v-if="wid === 'system'"
         id="system"
-        title="系统状态"
+        :title="t('dashboard.systemStatus')"
         reorderable
         :can-move-up="canUpMain('system')"
         :can-move-down="canDownMain('system')"
@@ -135,20 +134,21 @@ onUnmounted(() => clearInterval(timer))
           :color="cpuColor"
         />
         <ProgressBar
-          label="内存"
+          :label="t('dashboard.memory')"
           :value="data?.system?.mem_percent ?? 0"
           :color="memColor"
         />
         <p class="text-xs text-slate-500 mt-2">
-          运行时间 <span class="font-mono">{{ uptime }}</span>
-          · 控制面 <span class="font-mono">{{ health?.service || 'qosnatd' }}</span>
+          {{ t('dashboard.uptime') }}
+          <span class="font-mono">{{ uptime }}</span>
+          · <span class="font-mono">{{ health?.service || 'qosnatd' }}</span>
         </p>
       </DashboardWidget>
 
       <DashboardWidget
         v-else-if="wid === 'network'"
         id="network"
-        title="网络状态"
+        :title="t('dashboard.networkStatus')"
         reorderable
         :can-move-up="canUpMain('network')"
         :can-move-down="canDownMain('network')"
@@ -159,13 +159,13 @@ onUnmounted(() => clearInterval(timer))
           <TrafficSparkline
             :history="data?.traffic_history"
             field="lan_rx_mbps"
-            label="LAN 下行"
+            :label="t('dashboard.lanRx')"
             color="bg-emerald-400"
           />
           <TrafficSparkline
             :history="data?.traffic_history"
             field="wan_tx_mbps"
-            label="WAN 上行"
+            :label="t('dashboard.wanTx')"
             color="bg-sky-400"
           />
         </div>
@@ -179,7 +179,7 @@ onUnmounted(() => clearInterval(timer))
               · ↑ <span class="font-mono">{{ data?.lan?.tx_mbps?.toFixed(2) ?? 0 }}</span> Mbps
             </p>
             <p class="text-xs text-slate-400 mt-1">
-              RSS {{ data?.interfaces?.lan?.channels ?? 0 }} 队列
+              {{ t('dashboard.rssQueues', { n: data?.interfaces?.lan?.channels ?? 0 }) }}
             </p>
           </div>
           <div>
@@ -191,47 +191,47 @@ onUnmounted(() => clearInterval(timer))
               · ↑ <span class="font-mono">{{ data?.wan?.tx_mbps?.toFixed(2) ?? 0 }}</span> Mbps
             </p>
             <p class="text-xs text-slate-400 mt-1">
-              RSS {{ data?.interfaces?.wan?.channels ?? 0 }} 队列
+              {{ t('dashboard.rssQueues', { n: data?.interfaces?.wan?.channels ?? 0 }) }}
             </p>
           </div>
         </div>
         <router-link to="/network/interfaces" class="text-xs text-blue-600 hover:underline mt-3 inline-block">
-          查看接口详情 →
+          {{ t('dashboard.viewInterfaces') }}
         </router-link>
       </DashboardWidget>
 
       <DashboardWidget
         v-else-if="wid === 'services'"
         id="services"
-        title="服务状态"
+        :title="t('dashboard.serviceStatus')"
         reorderable
         :can-move-up="canUpMain('services')"
         :can-move-down="canDownMain('services')"
         @move-up="mainUp('services')"
         @move-down="mainDown('services')"
       >
-        <StatusBadge label="qosnatd / eBPF" :ok="!!health?.bpf" :detail="health?.tc_attach ? 'TC 已附加' : ''" />
+        <StatusBadge label="qosnatd / eBPF" :ok="!!health?.bpf" :detail="health?.tc_attach ? t('dashboard.tcAttached') : ''" />
         <StatusBadge
           label="DHCP (dnsmasq)"
           :ok="!!dhcp?.status?.active"
-          :detail="dhcp?.config?.enabled ? dhcp?.config?.interface : '未启用'"
+          :detail="dhcp?.config?.enabled ? dhcp?.config?.interface : t('common.inactive')"
         />
         <StatusBadge
           label="WireGuard"
           :ok="!!wg?.status?.up"
-          :detail="wg?.config?.enabled ? wg?.config?.interface : '未启用'"
+          :detail="wg?.config?.enabled ? wg?.config?.interface : t('common.inactive')"
         />
         <StatusBadge
-          label="Mark 隔离审计"
+          :label="t('nav.markIsolation')"
           :ok="data?.mark_policy?.rules_ok"
-          :detail="data?.mark_policy?.rules_ok ? 'nft 规则正常' : '请检查规则'"
+          :detail="data?.mark_policy?.rules_ok ? t('dashboard.nftOk') : t('dashboard.nftCheck')"
         />
       </DashboardWidget>
 
       <DashboardWidget
         v-else-if="wid === 'qos'"
         id="qos"
-        title="流量整形 (QoS)"
+        :title="t('dashboard.qosShaper')"
         reorderable
         :can-move-up="canUpMain('qos')"
         :can-move-down="canDownMain('qos')"
@@ -239,16 +239,16 @@ onUnmounted(() => clearInterval(timer))
         @move-down="mainDown('qos')"
       >
         <dl class="grid grid-cols-2 gap-2 text-sm">
-          <dt class="text-slate-500">策略网段</dt>
+          <dt class="text-slate-500">{{ t('dashboard.policyCidrs') }}</dt>
           <dd class="font-mono text-right">{{ data?.shaper?.policy_cidr || '—' }}</dd>
-          <dt class="text-slate-500">空闲超时</dt>
+          <dt class="text-slate-500">{{ t('dashboard.idleTimeout') }}</dt>
           <dd class="font-mono text-right">{{ data?.shaper?.idle_timeout_sec ?? '—' }}s</dd>
-          <dt class="text-slate-500">eBPF Map</dt>
-          <dd class="text-right">{{ data?.ebpf?.loaded ? '已加载' : '—' }}</dd>
+          <dt class="text-slate-500">{{ t('dashboard.ebpfMap') }}</dt>
+          <dd class="text-right">{{ data?.ebpf?.loaded ? t('dashboard.ebpfLoaded') : '—' }}</dd>
         </dl>
         <div class="flex flex-wrap gap-2 mt-3">
-          <router-link to="/shaper/profiles" class="text-xs text-blue-600 hover:underline">QoS 策略</router-link>
-          <router-link to="/status/active" class="text-xs text-blue-600 hover:underline">活跃池</router-link>
+          <router-link to="/shaper/profiles" class="text-xs text-blue-600 hover:underline">{{ t('dashboard.qosPolicy') }}</router-link>
+          <router-link to="/status/active" class="text-xs text-blue-600 hover:underline">{{ t('dashboard.activePool') }}</router-link>
         </div>
       </DashboardWidget>
       </template>
@@ -259,7 +259,7 @@ onUnmounted(() => clearInterval(timer))
       <DashboardWidget
         v-if="wid === 'quick'"
         id="quick"
-        title="快捷入口"
+        :title="t('dashboard.quickLinks')"
         class="lg:col-span-1"
         reorderable
         :can-move-up="canUpBottom('quick')"
@@ -283,7 +283,7 @@ onUnmounted(() => clearInterval(timer))
       <DashboardWidget
         v-else-if="wid === 'top_hosts'"
         id="top_hosts"
-        title="Top 活跃主机"
+        :title="t('dashboard.topHosts')"
         class="lg:col-span-2"
         reorderable
         :can-move-up="canUpBottom('top_hosts')"
@@ -296,9 +296,9 @@ onUnmounted(() => clearInterval(timer))
             <thead>
               <tr>
                 <th>IP</th>
-                <th>下行 Mbps</th>
-                <th>上行 Mbps</th>
-                <th>累计</th>
+                <th>{{ t('dashboard.colDownMbps') }}</th>
+                <th>{{ t('dashboard.colUpMbps') }}</th>
+                <th>{{ t('dashboard.colTotal') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -311,7 +311,7 @@ onUnmounted(() => clearInterval(timer))
                 </td>
               </tr>
               <tr v-if="!(data?.top_hosts?.length)">
-                <td colspan="4" class="text-slate-400 py-4 text-center">暂无活跃流量</td>
+                <td colspan="4" class="text-slate-400 py-4 text-center">{{ t('dashboard.noActiveTraffic') }}</td>
               </tr>
             </tbody>
           </table>

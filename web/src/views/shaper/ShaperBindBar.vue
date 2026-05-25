@@ -1,12 +1,15 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
+
 defineProps({
   bindDevice: { type: String, default: '' },
   devLan: { type: String, default: '' },
   devWan: { type: String, default: '' },
   attached: { type: Array, default: () => [] },
-  /** 嵌入父卡片时不重复 card 外框 */
   embedded: { type: Boolean, default: false },
 })
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -19,7 +22,7 @@ defineProps({
   >
     <div class="flex flex-wrap gap-x-4 gap-y-0.5">
       <span>
-        整形网卡：
+        {{ t('shaper.bindBar') }}
         <strong class="font-mono text-blue-800">{{ bindDevice || devLan }}</strong>
       </span>
       <span class="text-slate-500">LAN <span class="font-mono">{{ devLan }}</span></span>
