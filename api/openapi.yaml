@@ -306,10 +306,25 @@ components:
         password: { type: string, description: 仅 POST 创建/改密；GET 不返回 }
         group: { type: string }
         comment: { type: string }
+    OCServRadius:
+      type: object
+      properties:
+        server: { type: string, description: RADIUS 服务器地址 }
+        auth_port: { type: integer, example: 1812 }
+        acct_port: { type: integer, example: 1813 }
+        secret: { type: string, description: 共享密钥；GET 不返回 }
+        groupconfig: { type: boolean, description: 从 RADIUS 读取用户/组配置 }
+        nas_identifier: { type: string }
+        acct_enabled: { type: boolean }
+        stats_report_time: { type: integer, example: 360 }
+        config_path: { type: string }
     OCServConfig:
       type: object
       properties:
         enabled: { type: boolean }
+        auth_method: { type: string, enum: [plain, radius] }
+        radius:
+          $ref: '#/components/schemas/OCServRadius'
         tcp_port: { type: integer, example: 443 }
         udp_port: { type: integer }
         device: { type: string, example: vpns }

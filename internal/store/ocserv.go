@@ -8,6 +8,25 @@ import (
 	"strings"
 )
 
+// OCServAuthMethod 认证方式：plain（本地 ocpasswd）或 radius
+const (
+	OCServAuthPlain  = "plain"
+	OCServAuthRadius = "radius"
+)
+
+// OCServRadius RADIUS 参数（radcli；Apply 时写入 /etc/radcli）
+type OCServRadius struct {
+	Server          string `json:"server"`                      // RADIUS 主机名或 IP
+	AuthPort        int    `json:"auth_port,omitempty"`         // 默认 1812
+	AcctPort        int    `json:"acct_port,omitempty"`         // 默认 1813
+	Secret          string `json:"secret,omitempty"`            // 共享密钥；GET 不返回
+	GroupConfig     bool   `json:"groupconfig,omitempty"`       // 从 RADIUS 读取 per-user 配置
+	NASIdentifier   string `json:"nas_identifier,omitempty"`    // NAS-Identifier 属性
+	AcctEnabled     bool   `json:"acct_enabled,omitempty"`      // RADIUS 计费
+	StatsReportTime int    `json:"stats_report_time,omitempty"` // 计费上报间隔（秒），默认 360
+	ConfigPath      string `json:"config_path,omitempty"`       // 覆盖 radcli 配置路径
+}
+
 // OCServUser OpenConnect 用户（plain 认证，Apply 时写入 ocpasswd）
 type OCServUser struct {
 	Username string `json:"username"`
@@ -19,6 +38,8 @@ type OCServUser struct {
 // OCServState ocserv 服务端配置（持久化在 state.json）
 type OCServState struct {
 	Enabled        bool         `json:"enabled"`
+	AuthMethod     string       `json:"auth_method,omitempty"` // plain | radius
+	Radius         OCServRadius `json:"radius,omitempty"`
 	TCPPort        int          `json:"tcp_port"`
 	UDPPort        int          `json:"udp_port"`
 	Device         string       `json:"device"` // tun 设备名前缀，默认 vpns
@@ -37,6 +58,13 @@ type OCServState struct {
 func DefaultOCServ() OCServState {
 	return OCServState{
 		Enabled:        false,
+		AuthMethod:     OCServAuthPlain,
+		Radius: OCServRadius{
+			AuthPort:        1812,
+			AcctPort:        1813,
+			GroupConfig:     true,
+			StatsReportTime: 360,
+		},
 		TCPPort:        443,
 		UDPPort:        443,
 		Device:         "vpns",
@@ -51,10 +79,21 @@ func DefaultOCServ() OCServState {
 	}
 }
 
+// OCServUsesRadius 是否使用 RADIUS 认证
+func OCServUsesRadius(o OCServState) bool {
+	return strings.TrimSpace(o.AuthMethod) == OCServAuthRadius
+}
+
 // NormalizeOCServ 校验 ocserv 配置
 func NormalizeOCServ(o *OCServState) error {
 	if o == nil {
 		return fmt.Errorf("ocserv nil")
+	}
+	am := strings.TrimSpace(o.AuthMethod)
+	if am == "" {
+		o.AuthMethod = OCServAuthPlain
+	} else if am != OCServAuthPlain && am != OCServAuthRadius {
+		return fmt.Errorf("auth_method must be plain or radius")
 	}
 	if o.TCPPort <= 0 {
 		o.TCPPort = 443
@@ -82,6 +121,26 @@ func NormalizeOCServ(o *OCServState) error {
 	}
 	if o.MaxClients <= 0 {
 		o.MaxClients = 128
+	}
+	if o.Radius.AuthPort <= 0 {
+		o.Radius.AuthPort = 1812
+	}
+	if o.Radius.AcctPort <= 0 {
+		o.Radius.AcctPort = 1813
+	}
+	if o.Radius.StatsReportTime <= 0 {
+		o.Radius.StatsReportTime = 360
+	}
+	if OCServUsesRadius(*o) {
+		if strings.TrimSpace(o.Radius.Server) == "" {
+			return fmt.Errorf("radius server required")
+		}
+		if strings.TrimSpace(o.Radius.Secret) == "" {
+			return fmt.Errorf("radius secret required")
+		}
+		o.Users = nil
+	} else {
+		o.Radius.Secret = ""
 	}
 	for i := range o.Users {
 		u := strings.TrimSpace(o.Users[i].Username)

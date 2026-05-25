@@ -33,6 +33,7 @@ install_build_deps() {
     libpam0g-dev libcurl4-gnutls-dev libhttp-parser-dev \
     libprotobuf-c-dev protobuf-c-compiler libtalloc-dev \
     libjansson-dev \
+    libradcli-dev \
     || die "apt 安装依赖失败"
 }
 
@@ -52,7 +53,7 @@ build_install() {
   cd "${BUILD_DIR}/ocserv"
   log "autoreconf..."
   autoreconf -fvi
-  log "configure..."
+  log "configure (with RADIUS/radcli if available)..."
   if ! ./configure \
     --prefix="${OCSERV_PREFIX}" \
     --sysconfdir="${OCSERV_SYSCONFDIR}" \
@@ -149,7 +150,12 @@ main() {
   seed_config
   enable_ip_forward
   log "完成。二进制: ${OCSERV_BIN}"
-  log "下一步: 在 qosnat2 Web「VPN → OpenConnect」配置用户与证书，并 Apply。"
+  if ldd "${OCSERV_BIN}" 2>/dev/null | grep -qE 'radcli|radiusclient'; then
+    log "RADIUS: 已链接 radcli/radiusclient"
+  else
+    warn "RADIUS: 未检测到 radcli 链接；请确认已安装 libradcli-dev 后重新运行本脚本"
+  fi
+  log "下一步: 在 qosnat2 Web「VPN → OpenConnect」配置认证（本地或 RADIUS）与证书，并 Apply。"
   "${OCSERV_BIN}" --version 2>/dev/null || true
 }
 
