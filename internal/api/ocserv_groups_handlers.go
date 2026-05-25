@@ -106,7 +106,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		st := srv.store.Get()
-		writeJSON(w, http.StatusOK, map[string]any{"vhosts": st.VPN.OCServ.Vhosts})
+		writeJSON(w, http.StatusOK, map[string]any{"vhosts": ocservPublicVhosts(st.VPN.OCServ.Vhosts)})
 	case http.MethodPost, http.MethodPut:
 		var body store.OCServVhost
 		if err := readJSON(r, &body); err != nil {
@@ -115,6 +115,16 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		}
 		body.Enabled = true
 		st := srv.store.Get().VPN.OCServ
+		prev := findOCServVhost(st.Vhosts, body.Domain)
+		mergeOCServVhostSecrets(&body, prev)
+		if body.Radius != nil {
+			tmp := store.OCServState{AuthMethod: store.OCServAuthRadius, Radius: *body.Radius}
+			if err := ocserv.NormalizeRadiusConfig(&tmp); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			body.Radius = &tmp.Radius
+		}
 		if err := store.NormalizeOCServVhosts(&[]store.OCServVhost{body}, st.AuthMethod); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -139,6 +149,10 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		st = srv.store.Get().VPN.OCServ
 		if err := store.NormalizeOCServ(&st); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := ocserv.WriteVhostRadcliConfig(body); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		if err := ocserv.WriteConf(st); err != nil {
@@ -179,5 +193,46 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+type ocservVhostPublic struct {
+	store.OCServVhost
+	RadiusSecretSet     bool `json:"radius_secret_set"`
+	CamouflageSecretSet bool `json:"camouflage_secret_set"`
+}
+
+func ocservPublicVhosts(vhosts []store.OCServVhost) []ocservVhostPublic {
+	out := make([]ocservVhostPublic, 0, len(vhosts))
+	for _, v := range vhosts {
+		p := ocservVhostPublic{OCServVhost: v}
+		if v.Radius != nil {
+			p.RadiusSecretSet = strings.TrimSpace(v.Radius.Secret) != ""
+			r := *v.Radius
+			r.Secret = ""
+			p.Radius = &r
+		}
+		p.CamouflageSecretSet = strings.TrimSpace(v.CamouflageSecret) != ""
+		p.CamouflageSecret = ""
+		out = append(out, p)
+	}
+	return out
+}
+
+func findOCServVhost(vhosts []store.OCServVhost, domain string) store.OCServVhost {
+	for _, v := range vhosts {
+		if strings.EqualFold(v.Domain, domain) {
+			return v
+		}
+	}
+	return store.OCServVhost{}
+}
+
+func mergeOCServVhostSecrets(body *store.OCServVhost, prev store.OCServVhost) {
+	if body.Radius != nil && body.Radius.Secret == "" && prev.Radius != nil && prev.Radius.Secret != "" {
+		body.Radius.Secret = prev.Radius.Secret
+	}
+	if body.CamouflageSecret == "" && prev.CamouflageSecret != "" {
+		body.CamouflageSecret = prev.CamouflageSecret
 	}
 }

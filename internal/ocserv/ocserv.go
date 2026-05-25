@@ -128,14 +128,24 @@ func WriteConf(o store.OCServState) error {
 		}
 	}
 	if store.OCServUsesRadius(o) {
-		if err := WriteRadcliConfig(o); err != nil {
+		o2 := o
+		if err := NormalizeRadiusConfig(&o2); err != nil {
+			return err
+		}
+		if err := WriteRadcliConfig(o2); err != nil {
 			return err
 		}
 		if !RadiusLinked() {
 			return fmt.Errorf("ocserv 未编译 RADIUS 支持，请重装: sudo %s（需 libradcli-dev）", InstallScriptPath())
 		}
-	} else if err := SyncUsers(o.Users); err != nil {
+	}
+	if err := SyncVhostRadcliConfigs(o.Vhosts); err != nil {
 		return err
+	}
+	if !store.OCServUsesRadius(o) {
+		if err := SyncUsers(o.Users); err != nil {
+			return err
+		}
 	}
 	if err := WriteGroupConfigs(o); err != nil {
 		return err

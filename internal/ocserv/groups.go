@@ -25,17 +25,20 @@ func configPerGroupDir(o store.OCServState) string {
 }
 
 func renderGroupGlobals(b *bytes.Buffer, o store.OCServState) {
-	if d := configPerGroupDir(o); d != "" {
-		fmt.Fprintf(b, "config-per-group = %s\n", d)
-	}
-	if p := strings.TrimSpace(o.ConfigPerUser); p != "" {
-		fmt.Fprintf(b, "config-per-user = %s\n", p)
-	}
-	if p := strings.TrimSpace(o.DefaultGroupConfig); p != "" {
-		fmt.Fprintf(b, "default-group-config = %s\n", p)
-	}
-	if p := strings.TrimSpace(o.DefaultUserConfig); p != "" {
-		fmt.Fprintf(b, "default-user-config = %s\n", p)
+	// ocserv 在 auth=radius 时 supplemental config 已是 radius，不能再写 config-per-group/user
+	if !store.OCServUsesRadius(o) {
+		if d := configPerGroupDir(o); d != "" {
+			fmt.Fprintf(b, "config-per-group = %s\n", d)
+		}
+		if p := strings.TrimSpace(o.ConfigPerUser); p != "" {
+			fmt.Fprintf(b, "config-per-user = %s\n", p)
+		}
+		if p := strings.TrimSpace(o.DefaultGroupConfig); p != "" {
+			fmt.Fprintf(b, "default-group-config = %s\n", p)
+		}
+		if p := strings.TrimSpace(o.DefaultUserConfig); p != "" {
+			fmt.Fprintf(b, "default-user-config = %s\n", p)
+		}
 	}
 	if o.AutoSelectGroup {
 		b.WriteString("auto-select-group = true\n")
@@ -85,8 +88,11 @@ func renderGroupConf(g store.OCServGroup) string {
 	return b.String()
 }
 
-// WriteGroupConfigs 同步组配置目录与默认组配置
+// WriteGroupConfigs 同步组配置目录与默认组配置（仅 plain 认证；RADIUS 用 groupconfig）
 func WriteGroupConfigs(o store.OCServState) error {
+	if store.OCServUsesRadius(o) {
+		return nil
+	}
 	dir := configPerGroupDir(o)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -132,52 +138,6 @@ func renderVhosts(b *bytes.Buffer, o store.OCServState) {
 		if !v.Enabled {
 			continue
 		}
-		domain := strings.TrimSpace(v.Domain)
-		if domain == "" {
-			continue
-		}
-		fmt.Fprintf(b, "\n[vhost:%s]\n", domain)
-		switch strings.TrimSpace(v.AuthMethod) {
-		case store.OCServAuthPlain:
-			fmt.Fprintf(b, "auth = \"plain[passwd=%s]\"\n", PasswdPath)
-		case store.OCServAuthRadius:
-			b.WriteString(radiusAuthDirective(o))
-		case "certificate":
-			b.WriteString("auth = \"certificate\"\n")
-		}
-		cert, key, ca := resolveCertPaths(o)
-		if p := strings.TrimSpace(v.ServerCertPath); p != "" {
-			cert = p
-		}
-		if p := strings.TrimSpace(v.ServerKeyPath); p != "" {
-			key = p
-		}
-		if p := strings.TrimSpace(v.CaCertPath); p != "" {
-			ca = p
-		}
-		if cert != "" {
-			fmt.Fprintf(b, "server-cert = %s\n", cert)
-		}
-		if key != "" {
-			fmt.Fprintf(b, "server-key = %s\n", key)
-		}
-		if ca != "" {
-			fmt.Fprintf(b, "ca-cert = %s\n", ca)
-		}
-		if n := strings.TrimSpace(v.IPv4Network); n != "" {
-			fmt.Fprintf(b, "ipv4-network = %s\n", n)
-		}
-		if m := strings.TrimSpace(v.IPv4Netmask); m != "" {
-			fmt.Fprintf(b, "ipv4-netmask = %s\n", m)
-		}
-		for _, d := range v.DNS {
-			fmt.Fprintf(b, "dns = %s\n", d)
-		}
-		for _, r := range v.Routes {
-			fmt.Fprintf(b, "route = %s\n", r)
-		}
-		if oid := strings.TrimSpace(v.CertUserOID); oid != "" {
-			fmt.Fprintf(b, "cert-user-oid = %s\n", oid)
-		}
+		renderVhostBlock(b, v, o)
 	}
 }

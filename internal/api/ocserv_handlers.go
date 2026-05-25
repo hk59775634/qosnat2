@@ -14,8 +14,18 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		st := srv.store.Get()
 		o := st.VPN.OCServ
+		pub := ocservPublicConfig(o)
+		for i := range pub.Vhosts {
+			if pub.Vhosts[i].Radius != nil {
+				r := *pub.Vhosts[i].Radius
+				r.Secret = ""
+				pub.Vhosts[i].Radius = &r
+			}
+			pub.Vhosts[i].CamouflageSecret = ""
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"config":                ocservPublicConfig(o),
+			"config":                pub,
+			"vhosts_meta":           ocservPublicVhosts(o.Vhosts),
 			"status":                ocserv.InstallInfo(),
 			"install_script":        ocserv.InstallScriptPath(),
 			"install_job":           ocserv.GetInstallStatus(),
@@ -34,6 +44,10 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		mergeOCServRadiusSecret(&body, prev)
 		mergeOCServCamouflageSecret(&body, prev)
 		if err := store.NormalizeOCServ(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := ocserv.PrepareAndWriteRadcli(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
@@ -63,8 +77,20 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := srv.store.Get()
-	up := st.VPN.OCServ.Enabled
-	mode, err := ocserv.Apply(st.VPN.OCServ, up)
+	o := st.VPN.OCServ
+	if err := ocserv.PrepareAndWriteRadcli(&o); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if o.Radius.Server != st.VPN.OCServ.Radius.Server || o.Radius.AuthPort != st.VPN.OCServ.Radius.AuthPort {
+		_ = srv.store.Update(func(s *store.State) {
+			s.VPN.OCServ.Radius.Server = o.Radius.Server
+			s.VPN.OCServ.Radius.AuthPort = o.Radius.AuthPort
+		})
+		_ = srv.store.Save()
+	}
+	up := o.Enabled
+	mode, err := ocserv.Apply(o, up)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

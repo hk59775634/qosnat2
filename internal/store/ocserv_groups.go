@@ -24,22 +24,6 @@ type OCServGroup struct {
 	TunnelAllDNS bool     `json:"tunnel_all_dns,omitempty"`
 }
 
-// OCServVhost 虚拟主机 [vhost:domain] 段
-type OCServVhost struct {
-	Enabled        bool     `json:"enabled"`
-	Domain         string   `json:"domain"`
-	AuthMethod     string   `json:"auth_method,omitempty"` // 空=继承全局；plain|radius|certificate
-	ServerCertPath string   `json:"server_cert_path,omitempty"`
-	ServerKeyPath  string   `json:"server_key_path,omitempty"`
-	CaCertPath     string   `json:"ca_cert_path,omitempty"`
-	IPv4Network    string   `json:"ipv4_network,omitempty"`
-	IPv4Netmask    string   `json:"ipv4_netmask,omitempty"`
-	DNS            []string `json:"dns,omitempty"`
-	Routes         []string `json:"routes,omitempty"`
-	CertUserOID    string   `json:"cert_user_oid,omitempty"`
-	Comment        string   `json:"comment,omitempty"`
-}
-
 func normalizeOCServGroupName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -115,12 +99,28 @@ func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 		if am != "" && am != OCServAuthPlain && am != OCServAuthRadius && am != "certificate" {
 			return fmt.Errorf("vhost auth must be plain, radius, certificate or empty")
 		}
-		if am == OCServAuthRadius && authMethod != OCServAuthRadius {
-			return fmt.Errorf("vhost %s: radius auth requires global RADIUS", d)
+		if am == OCServAuthRadius && !VhostUsesOwnRadius(v) && authMethod != OCServAuthRadius {
+			return fmt.Errorf("vhost %s: radius auth requires global RADIUS or per-vhost radius.server", d)
+		}
+		if am == OCServAuthRadius && VhostUsesOwnRadius(v) {
+			if err := normalizeVhostRadius(v.Radius); err != nil {
+				return fmt.Errorf("vhost %s: %w", d, err)
+			}
+		}
+		if am == OCServAuthPlain && strings.TrimSpace(v.PlainPasswdPath) == "" {
+			v.PlainPasswdPath = ""
+		}
+		rm := strings.TrimSpace(v.RekeyMethod)
+		if rm != "" && rm != "ssl" && rm != "new-tunnel" {
+			return fmt.Errorf("vhost %s: rekey_method must be ssl or new-tunnel", d)
 		}
 		v.AuthMethod = am
 		v.DNS = trimStringList(v.DNS)
+		v.NBNS = trimStringList(v.NBNS)
 		v.Routes = trimStringList(v.Routes)
+		v.NoRoutes = trimStringList(v.NoRoutes)
+		v.IRoutes = trimStringList(v.IRoutes)
+		v.SelectGroups = trimStringList(v.SelectGroups)
 		out = append(out, v)
 	}
 	*vhosts = out

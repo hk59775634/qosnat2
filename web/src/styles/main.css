@@ -27,8 +27,44 @@ body {
   @apply inline-flex items-center justify-center px-3 py-1.5 min-w-[4.5rem] text-sm font-medium bg-red-600 text-white rounded shadow-sm hover:bg-red-700 active:bg-red-800 disabled:opacity-50;
 }
 
-.input-field {
-  @apply border border-slate-300 rounded px-2.5 py-1.5 text-sm w-full focus:ring-2 focus:ring-blue-400 focus:outline-none;
+.input-field,
+.input {
+  @apply block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm;
+  @apply placeholder:text-slate-400;
+  @apply focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30;
+}
+
+.input:disabled,
+.input-field:disabled {
+  @apply cursor-not-allowed bg-slate-100 text-slate-500;
+}
+
+textarea.input {
+  @apply min-h-[2.75rem] resize-y;
+}
+
+select.input {
+  @apply cursor-pointer;
+}
+
+/* vhost 高级设置：字段标签与分组 */
+.vhost-form label.vhost-field {
+  @apply block text-sm font-medium text-slate-700;
+}
+
+.vhost-form label.vhost-field > .input,
+.vhost-form label.vhost-field > input:not([type='checkbox']),
+.vhost-form label.vhost-field > select,
+.vhost-form label.vhost-field > textarea {
+  @apply mt-1.5;
+}
+
+.vhost-form .vhost-panel {
+  @apply rounded-lg border border-slate-200 bg-slate-50/90 p-4 space-y-3;
+}
+
+.vhost-form .vhost-hint {
+  @apply text-xs text-slate-600 leading-relaxed;
 }
 
 .card {

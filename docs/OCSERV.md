@@ -58,7 +58,7 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh
 
 基础区另支持：**DNS**、**route / no-route**（多行）、**证书路径**（`server-cert`/`server-key`/`ca-cert`）、**socket-file**、**tls-priorities**、**cert-user-oid**、**default-domain**。
 
-**组（config-per-group）**：每组对应 `/etc/ocserv/config-per-group/<name>.conf`；全局 `config-per-group`、`default-group-config`、`auto-select-group` 与 `select-group` 由面板写入主配置。
+**组（config-per-group）**：仅 **本地 (plain)** 认证时写入 `config-per-group` 与每组 `.conf` 文件。**RADIUS** 模式使用 `radius[groupconfig=true]` 从 RADIUS 拉取组/用户配置，不可同时写 `config-per-group`（否则 ocserv 拒绝启动）；仍可配置 `select-group` 供登录时选择组名发给 RADIUS。
 
 **虚拟主机（vhost）**：在 `ocserv.conf` 末尾追加 `[vhost:example.com]`，可为不同域名指定证书、认证方式与地址池。
 
@@ -67,7 +67,7 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh
 | 方式 | 说明 |
 |------|------|
 | **本地用户** | `ocpasswd`，在 UI 管理用户列表 |
-| **RADIUS** | 使用 radcli，Apply 时生成 `/etc/radcli/radiusclient.conf`、`servers`、`dictionary` |
+| **RADIUS** | 使用 radcli；**保存或应用** OCServ 配置时生成 `/etc/radcli/radiusclient.conf`、`servers`、`dictionary`。`servers` 仅写主机/IP（无端口），端口在 `authserver`/`acctserver` 行。更新 `qosnatd` 后需 `systemctl restart qosnatd`。 |
 
 RADIUS 常用参数：服务器地址、认证/计费端口（1812/1813）、共享密钥、groupconfig、NAS-Identifier、计费（acct）与上报间隔。
 

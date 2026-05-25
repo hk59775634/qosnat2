@@ -1,11 +1,15 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import SnmpTrafficChart from '@/components/SnmpTrafficChart.vue'
+import { buildVhostPayload, emptyBasicVhost, emptyVhostForm } from '@/lib/ocservVhostForm'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 
 const cfg = ref(null)
 const status = ref(null)
@@ -38,10 +42,7 @@ const groupFormDns = ref('')
 const groupFormRoutes = ref('')
 const groupFormNoRoutes = ref('')
 const groupSearch = ref('')
-const editingVhost = ref(null)
-const vhostForm = ref(emptyVhostForm())
-const vhostFormDns = ref('')
-const vhostFormRoutes = ref('')
+const basicVhostForm = ref(emptyBasicVhost())
 const vhostSearch = ref('')
 
 const tabs = computed(() => [
@@ -90,21 +91,6 @@ function emptyGroupForm() {
     tunnel_all_dns: false,
     rx_mbps: 0,
     tx_mbps: 0,
-  }
-}
-
-function emptyVhostForm() {
-  return {
-    enabled: true,
-    domain: '',
-    auth_method: '',
-    server_cert_path: '',
-    server_key_path: '',
-    ca_cert_path: '',
-    ipv4_network: '',
-    ipv4_netmask: '',
-    cert_user_oid: '',
-    comment: '',
   }
 }
 
@@ -310,6 +296,17 @@ async function load() {
   radiusSecretSet.value = !!d.radius_secret_set
   camouflageSecret.value = ''
   camouflageSecretSet.value = !!d.camouflage_secret_set
+}
+
+function openVhostAdvanced(v) {
+  router.push({
+    name: 'vpn-ocserv-vhost',
+    params: { domain: encodeURIComponent(v.domain) },
+  })
+}
+
+function resetBasicVhostForm() {
+  basicVhostForm.value = emptyBasicVhost()
 }
 
 function stopInstallPoll() {
@@ -524,51 +521,21 @@ async function delGroup(name) {
   }
 }
 
-function startEditVhost(v) {
-  editingVhost.value = v.domain
-  vhostForm.value = {
-    enabled: true,
-    domain: v.domain,
-    auth_method: v.auth_method || '',
-    server_cert_path: v.server_cert_path || '',
-    server_key_path: v.server_key_path || '',
-    ca_cert_path: v.ca_cert_path || '',
-    ipv4_network: v.ipv4_network || '',
-    ipv4_netmask: v.ipv4_netmask || '',
-    cert_user_oid: v.cert_user_oid || '',
-    comment: v.comment || '',
-  }
-  vhostFormDns.value = listToText(v.dns)
-  vhostFormRoutes.value = listToText(v.routes)
-}
-
-function cancelEditVhost() {
-  editingVhost.value = null
-  vhostForm.value = emptyVhostForm()
-  vhostFormDns.value = ''
-  vhostFormRoutes.value = ''
-}
-
-async function saveVhost() {
+async function addVhost() {
   err.value = ''
-  if (!vhostForm.value.domain.trim()) {
+  if (!basicVhostForm.value.domain.trim()) {
     err.value = t('ocserv.vhostDomainRequired')
     return
   }
   try {
-    const body = {
-      ...vhostForm.value,
-      domain: vhostForm.value.domain.trim(),
-      dns: textToList(vhostFormDns.value),
-      routes: textToList(vhostFormRoutes.value),
-    }
-    if (editingVhost.value) {
-      await api.put('/api/v1/vpn/ocserv/vhosts', body)
-    } else {
-      await api.post('/api/v1/vpn/ocserv/vhosts', body)
-    }
-    cancelEditVhost()
-    ok.value = t('ocserv.vhostSaved')
+    const body = buildVhostPayload({
+      ...emptyVhostForm(),
+      ...basicVhostForm.value,
+      domain: basicVhostForm.value.domain.trim(),
+    })
+    await api.post('/api/v1/vpn/ocserv/vhosts', body)
+    resetBasicVhostForm()
+    ok.value = t('ocserv.vhostAdded')
     await load()
   } catch (e) {
     err.value = e.message
@@ -809,6 +776,11 @@ watch(activeTab, async (t) => {
 })
 
 onMounted(async () => {
+  const tab = route.query.tab
+  const validTabs = ['overview', 'sessions', 'config', 'groups', 'vhosts', 'users', 'certs', 'advanced']
+  if (typeof tab === 'string' && validTabs.includes(tab)) {
+    activeTab.value = tab
+  }
   await load()
   if (installJob.value?.state === 'running') startInstallPoll()
 })
@@ -1078,64 +1050,25 @@ onUnmounted(() => {
 
     <div v-if="cfg && activeTab === 'vhosts'" class="card p-4 space-y-4">
       <h3 class="font-medium">{{ t('ocserv.vhostsTitle') }}</h3>
-      <p class="text-xs text-slate-500">{{ t('ocserv.vhostsHint') }}</p>
-      <div class="border rounded-lg p-4 space-y-3 bg-blue-50/30">
-        <h4 class="text-sm font-medium">{{ editingVhost ? t('ocserv.editVhost', { domain: editingVhost }) : t('ocserv.addVhost') }}</h4>
+      <p class="text-xs text-slate-500">{{ t('ocserv.vhostsListHint') }}</p>
+      <div class="border rounded-lg p-4 space-y-3 bg-slate-50/50 max-w-xl">
+        <h4 class="text-sm font-medium">{{ t('ocserv.addVhost') }}</h4>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-          <label>
+          <label class="sm:col-span-2">
             {{ t('ocserv.vhostDomain') }}
-            <input v-model="vhostForm.domain" class="input w-full mt-1" :disabled="!!editingVhost" placeholder="vpn.example.com" />
-          </label>
-          <label>
-            {{ t('ocserv.vhostAuth') }}
-            <select v-model="vhostForm.auth_method" class="input w-full mt-1">
-              <option value="">{{ t('ocserv.vhostAuthEmpty') }}</option>
-              <option value="plain">{{ t('ocserv.authPlain') }}</option>
-              <option value="radius">{{ t('ocserv.authRadius') }}</option>
-              <option value="certificate">{{ t('ocserv.authCert') }}</option>
-            </select>
-          </label>
-          <label class="sm:col-span-2">
-            {{ t('ocserv.serverCert') }}
-            <input v-model="vhostForm.server_cert_path" class="input w-full mt-1 font-mono text-xs" />
-          </label>
-          <label class="sm:col-span-2">
-            {{ t('ocserv.serverKey') }}
-            <input v-model="vhostForm.server_key_path" class="input w-full mt-1 font-mono text-xs" />
-          </label>
-          <label class="sm:col-span-2">
-            {{ t('ocserv.caCert') }}
-            <input v-model="vhostForm.ca_cert_path" class="input w-full mt-1 font-mono text-xs" />
-          </label>
-          <label>
-            {{ t('ocserv.groupNet') }}
-            <input v-model="vhostForm.ipv4_network" class="input w-full mt-1 font-mono" />
-          </label>
-          <label>
-            {{ t('ocserv.groupMask') }}
-            <input v-model="vhostForm.ipv4_netmask" class="input w-full mt-1 font-mono" />
-          </label>
-          <label class="sm:col-span-2">
-            {{ t('ocserv.certUserOid') }}
-            <input v-model="vhostForm.cert_user_oid" class="input w-full mt-1 font-mono text-xs" />
-          </label>
-          <label class="sm:col-span-2">
-            {{ t('ocserv.dnsLines') }}
-            <textarea v-model="vhostFormDns" class="input w-full mt-1 font-mono text-xs" rows="2" />
-          </label>
-          <label class="sm:col-span-2">
-            {{ t('ocserv.routesLines') }}
-            <textarea v-model="vhostFormRoutes" class="input w-full mt-1 font-mono text-xs" rows="2" />
+            <input
+              v-model="basicVhostForm.domain"
+              class="input w-full mt-1 font-mono"
+              placeholder="vpn.example.com"
+            />
           </label>
           <label class="sm:col-span-2">
             {{ t('common.comment') }}
-            <input v-model="vhostForm.comment" class="input w-full mt-1" />
+            <input v-model="basicVhostForm.comment" class="input w-full mt-1" />
           </label>
         </div>
-        <div class="flex gap-2">
-          <button type="button" class="btn-primary text-sm" @click="saveVhost">{{ editingVhost ? t('ocserv.update') : t('common.add') }}</button>
-          <button v-if="editingVhost" type="button" class="btn-secondary text-sm" @click="cancelEditVhost">{{ t('common.cancel') }}</button>
-        </div>
+        <p class="text-xs text-slate-500">{{ t('ocserv.vhostAddHint') }}</p>
+        <button type="button" class="btn-primary text-sm" @click="addVhost">{{ t('common.add') }}</button>
       </div>
       <input
         v-model="vhostSearch"
@@ -1161,7 +1094,9 @@ onUnmounted(() => {
               <td class="font-mono text-xs">{{ v.ipv4_network ? `${v.ipv4_network}/${v.ipv4_netmask || ''}` : '—' }}</td>
               <td>{{ v.comment || '—' }}</td>
               <td class="whitespace-nowrap space-x-2">
-                <button type="button" class="text-blue-600 text-sm" @click="startEditVhost(v)">{{ t('common.edit') }}</button>
+                <button type="button" class="text-blue-600 text-sm font-medium" @click="openVhostAdvanced(v)">
+                  {{ t('ocserv.vhostAdvanced') }}
+                </button>
                 <button type="button" class="text-red-600 text-sm" @click="delVhost(v.domain)">{{ t('common.delete') }}</button>
               </td>
             </tr>

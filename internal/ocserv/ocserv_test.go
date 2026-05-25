@@ -33,6 +33,12 @@ func TestRenderConfRadius(t *testing.T) {
 	if strings.Contains(conf, "plain[passwd") {
 		t.Fatal("should not use plain auth")
 	}
+	if strings.Contains(conf, "config-per-group") {
+		t.Fatalf("radius must not set config-per-group (conflicts with radius supplemental config):\n%s", conf)
+	}
+	if strings.Contains(conf, "config-per-user") {
+		t.Fatalf("radius must not set config-per-user:\n%s", conf)
+	}
 }
 
 func TestRenderConfAdvancedOff(t *testing.T) {
