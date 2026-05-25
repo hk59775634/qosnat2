@@ -40,6 +40,7 @@ reference/                # 旧项目对照（勿部署）
 
 ```bash
 cd /opt/qosnat2
+apt install -y golang-go clang libbpf-dev npm
 go mod tidy
 go build -o bin/qosnatd ./cmd/qosnatd
 make bpf                               # 需 clang + libbpf → bpf/classify.bpf.o
