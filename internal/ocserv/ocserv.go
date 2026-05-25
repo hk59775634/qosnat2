@@ -20,7 +20,7 @@ const (
 	QoSnatTLSCert  = "/etc/qosnat2/tls.crt"
 	QoSnatTLSKey   = "/etc/qosnat2/tls.key"
 	BinaryPath     = "/usr/local/sbin/ocserv"
-	OcpasswdPath   = "/usr/local/sbin/ocpasswd"
+	OcpasswdPath   = "/usr/local/bin/ocpasswd"
 )
 
 // Status 运行状态

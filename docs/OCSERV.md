@@ -8,7 +8,7 @@ AnyConnect 兼容 SSL VPN，使用 **ocserv** 服务端，**从源码安装**（
 sudo /opt/qosnat2/scripts/install-ocserv.sh
 ```
 
-脚本会安装 **libradcli-dev** 并编译带 RADIUS 支持的 ocserv。安装完成后可用 `ldd /usr/local/sbin/ocserv | grep radcli` 确认。
+脚本会安装 **Meson/Ninja**、**libradcli-dev** 等依赖；**ocserv ≥ 1.4** 使用 Meson 构建（1.3.x 仍走 Autotools）。安装完成后可用 `ldd /usr/local/sbin/ocserv | grep radcli` 确认。
 
 可选环境变量：
 
