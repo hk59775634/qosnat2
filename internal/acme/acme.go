@@ -118,7 +118,7 @@ func setupClient(cfg Config) (*lego.Client, string, error) {
 	if email == "" {
 		return nil, "", fmt.Errorf("ACME 邮箱必填（Let's Encrypt 账户）")
 	}
-	client, err := newClient(email, cfg.Staging)
+	client, err := newClient(email, cfg.Staging, false)
 	if err != nil {
 		return nil, "", err
 	}
@@ -147,7 +147,7 @@ func resultFromResource(res *certificate.Resource) (*Result, error) {
 	}, nil
 }
 
-func newClient(email string, staging bool) (*lego.Client, error) {
+func newClient(email string, staging bool, disableCN bool) (*lego.Client, error) {
 	if err := os.MkdirAll(filepath.Dir(AccountKeyPath), 0750); err != nil {
 		return nil, err
 	}
@@ -161,6 +161,7 @@ func newClient(email string, staging bool) (*lego.Client, error) {
 	}
 	config := lego.NewConfig(user)
 	config.Certificate.KeyType = certcrypto.RSA2048
+	config.Certificate.DisableCommonName = disableCN
 	if staging {
 		config.CADirURL = lego.LEDirectoryStaging
 	} else {

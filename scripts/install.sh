@@ -160,6 +160,9 @@ main() {
     export PUBLIC_IP="${PUBLIC_IP:-$(detect_public_ipv4 || true)}"
     [[ -n "${PUBLIC_IP:-}" ]] || die "无法探测公网 IPv4，请设置 PUBLIC_IP=..."
     [[ -n "${ACME_EMAIL:-}" ]] || die "ipssl 模式需设置 ACME_EMAIL（Let's Encrypt 账户邮箱）"
+    if [[ "${ACME_EMAIL}" == *@example.com ]] || [[ "${ACME_EMAIL}" == *@example.org ]]; then
+      die "ACME_EMAIL 不能使用 example.com/example.org（Let's Encrypt 会拒绝），请填写真实邮箱"
+    fi
     check_port80_for_ipssl
     log "ipssl：将为公网 IP ${PUBLIC_IP} 申请 Let's Encrypt 短期证书（约 6 天，自动续期）"
   fi

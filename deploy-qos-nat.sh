@@ -326,9 +326,28 @@ cmd_start() {
   log "=========================================="
   local scheme=http
   [[ "${IPSSL}" == "1" ]] && scheme=https
-  log "打开浏览器: ${scheme}://$(hostname -I 2>/dev/null | awk '{print $1}'):${ADMIN_PORT}/#/login"
+  local access_ip
+  access_ip="$(detect_public_ipv4 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')"
+  log "打开浏览器: ${scheme}://${access_ip}:${ADMIN_PORT}/#/login"
   log "登录后进入「初始设置」向导"
-  curl -sf "http://127.0.0.1:${ADMIN_PORT}/api/v1/health" 2>/dev/null | head -c 200 || warn "health 暂不可达"
+  local health_url health_warn
+  if [[ "${IPSSL}" == "1" ]] && [[ -f "${CONFIG_DIR}/env" ]] && grep -q '^TLS_CERT=' "${CONFIG_DIR}/env" 2>/dev/null; then
+    health_url="https://127.0.0.1:${ADMIN_PORT}/api/v1/health"
+    health_warn="health(HTTPS) 暂不可达"
+  else
+    health_url="http://127.0.0.1:${ADMIN_PORT}/api/v1/health"
+    health_warn="health 暂不可达"
+  fi
+  local i out curl_flags=(-sf)
+  [[ "${health_url}" == https:* ]] && curl_flags=(-ksf)
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if out="$(curl "${curl_flags[@]}" "${health_url}" 2>/dev/null)"; then
+      echo "${out}" | head -c 200
+      break
+    fi
+    [[ "${i}" -eq 10 ]] && warn "${health_warn}"
+    sleep 1
+  done
   echo
 }
 
