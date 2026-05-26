@@ -153,7 +153,9 @@ func (srv *Server) routes() {
 	m.HandleFunc("/", srv.serveStatic)
 }
 
-func (srv *Server) Handler() http.Handler { return srv.mux }
+func (srv *Server) Handler() http.Handler {
+	return srv.withSecurityHeaders(srv.mux)
+}
 
 // ApplyAll 启动/回放：sysctl → tc → nft（未完成引导时跳过）
 func (srv *Server) ApplyAll() error {
@@ -299,21 +301,24 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	complete := srv.setupComplete()
 	st := srv.store.Get()
 	tlsActive := srv.env.TLSCert != "" && srv.env.TLSKey != ""
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":              true,
-		"service":         "qosnatd",
-		"phase":           phase,
-		"setup_complete":  complete,
-		"setup_required":  !complete,
-		"dev_lan":         srv.env.DevLAN,
-		"dev_wan":         srv.env.DevWAN,
-		"bpf":             srv.bpf != nil && srv.bpf.Ready(),
-		"tc_attach":       srv.bpf != nil && srv.bpf.AttachedDev() != "",
-		"tls_enabled":     st.System.TLSEnabled,
-		"tls_active":      tlsActive,
-		"suggest_https":   st.System.TLSEnabled && !tlsActive,
-		"admin_port":      srv.env.AdminPort,
-	})
+	resp := map[string]any{
+		"ok":             true,
+		"service":        "qosnatd",
+		"phase":          phase,
+		"setup_complete": complete,
+		"setup_required": !complete,
+		"bpf":            srv.bpf != nil && srv.bpf.Ready(),
+		"tc_attach":      srv.bpf != nil && srv.bpf.AttachedDev() != "",
+		"tls_enabled":    st.System.TLSEnabled,
+		"tls_active":     tlsActive,
+		"suggest_https":  st.System.TLSEnabled && !tlsActive,
+	}
+	if complete {
+		resp["dev_lan"] = srv.env.DevLAN
+		resp["dev_wan"] = srv.env.DevWAN
+		resp["admin_port"] = srv.env.AdminPort
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {

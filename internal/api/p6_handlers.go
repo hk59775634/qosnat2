@@ -26,7 +26,7 @@ func (srv *Server) handleWireGuard(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, map[string]any{
-			"config": st.VPN.WireGuard,
+			"config": wireGuardPublic(st.VPN.WireGuard),
 			"status": wg.ShowStatus(st.VPN.WireGuard.Interface),
 		})
 	case http.MethodPut:
@@ -35,6 +35,8 @@ func (srv *Server) handleWireGuard(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 			return
 		}
+		prev := srv.store.Get().VPN.WireGuard
+		mergeWireGuardSecrets(&body, prev)
 		_ = srv.store.Update(func(s *store.State) {
 			s.VPN.WireGuard = body
 		})

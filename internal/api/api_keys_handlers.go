@@ -46,10 +46,15 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		key := "qk_" + hex.EncodeToString(raw)
+		keyHash, err := store.HashAPIKey(key)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "hash error"})
+			return
+		}
 		ak := store.APIKey{
 			ID:        "key-" + hex.EncodeToString(raw[:8]),
 			Name:      body.Name,
-			KeyHash:   store.HashAPIKey(key),
+			KeyHash:   keyHash,
 			KeyPrefix: store.APIKeyPrefix(key),
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		}

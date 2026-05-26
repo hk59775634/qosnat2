@@ -202,6 +202,9 @@ onMounted(load)
           <button type="button" class="btn-primary" @click="save">{{ t('vpn.wg.saveApply') }}</button>
         </div>
         <p class="text-xs text-slate-400 mt-2 font-mono truncate">公钥: {{ cfg.public_key || '—' }}</p>
+        <p v-if="cfg.server_private_key_set" class="text-xs text-slate-500 mt-1">
+          服务端私钥已配置（GET 不返回明文；留空保存则保留原密钥，或点「生成密钥」轮换）
+        </p>
       </section>
 
       <template v-if="activeTab === 'peers'">

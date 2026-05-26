@@ -25,7 +25,16 @@
 ## 其他
 
 - ocserv 安装状态文件权限 `0600`
-- 详见 `docs/PRE-SECURITY-FIX.md` 中未纳入本版的项（API Key KDF、WireGuard 脱敏等）
+
+## p12 第二批（`p13-security-hardening`）
+
+- API Key：**bcrypt** 存储；遗留 SHA-256 首次校验通过后自动升级
+- WireGuard GET：**不返回**服务端/Peer 私钥；`server_private_key_set` / `private_key_set` 标志；PUT 留空合并原密钥
+- 防火墙规则：网卡名、CIDR、协议、别名名校验
+- 前缀 NAT mapping：CIDR 校验
+- HTTP 响应：**安全头**（nosniff、DENY frame、HSTS 在 TLS 下）
+- `health`：未完成引导时不返回 `dev_lan`/`dev_wan`/`admin_port`
+- systemd：`PrivateTmp` 等轻量加固（仍 root 运行）
 
 ## 升级步骤
 

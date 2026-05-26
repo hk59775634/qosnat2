@@ -49,9 +49,51 @@ func NormalizeFilterRule(r *FilterRule) error {
 	}
 	r.Iif = strings.TrimSpace(r.Iif)
 	r.Oif = strings.TrimSpace(r.Oif)
+	if r.Iif != "" {
+		if err := ValidateIfaceName(r.Iif); err != nil {
+			return fmt.Errorf("iif: %w", err)
+		}
+	}
+	if r.Oif != "" {
+		if err := ValidateIfaceName(r.Oif); err != nil {
+			return fmt.Errorf("oif: %w", err)
+		}
+	}
 	r.Proto = strings.ToLower(strings.TrimSpace(r.Proto))
+	if r.Proto != "" && r.Proto != "all" {
+		switch r.Proto {
+		case "tcp", "udp", "icmp", "icmpv6", "sctp", "udplite":
+		default:
+			return fmt.Errorf("unsupported proto %q", r.Proto)
+		}
+	}
 	r.SrcAddr = strings.TrimSpace(r.SrcAddr)
 	r.DstAddr = strings.TrimSpace(r.DstAddr)
+	if r.SrcAddr != "" {
+		if err := ValidateIPv4OrCIDR(r.SrcAddr); err != nil {
+			return fmt.Errorf("src_addr: %w", err)
+		}
+	}
+	if r.DstAddr != "" {
+		if err := ValidateIPv4OrCIDR(r.DstAddr); err != nil {
+			return fmt.Errorf("dst_addr: %w", err)
+		}
+	}
+	r.SrcAlias = strings.TrimSpace(r.SrcAlias)
+	r.DstAlias = strings.TrimSpace(r.DstAlias)
+	if r.SrcAlias != "" {
+		if err := ValidateAliasName(r.SrcAlias); err != nil {
+			return fmt.Errorf("src_alias: %w", err)
+		}
+	}
+	if r.DstAlias != "" {
+		if err := ValidateAliasName(r.DstAlias); err != nil {
+			return fmt.Errorf("dst_alias: %w", err)
+		}
+	}
+	if strings.ContainsAny(r.Comment, "\n\r") {
+		return fmt.Errorf("comment must not contain newlines")
+	}
 	r.Comment = strings.TrimSpace(r.Comment)
 	return nil
 }

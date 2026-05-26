@@ -149,6 +149,16 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner/outer required"})
 			return
 		}
+		body.Inner = strings.TrimSpace(body.Inner)
+		body.Outer = strings.TrimSpace(body.Outer)
+		if err := store.ValidateCIDR(body.Inner); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner: " + err.Error()})
+			return
+		}
+		if err := store.ValidateCIDR(body.Outer); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "outer: " + err.Error()})
+			return
+		}
 		_ = srv.store.Update(func(st *store.State) {
 			st.PrefixMappings[body.Inner] = body.Outer
 		})

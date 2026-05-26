@@ -2,7 +2,6 @@ package api
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -104,15 +103,29 @@ func (srv *Server) checkAPIKey(r *http.Request) bool {
 	if key == "" {
 		return false
 	}
-	hash := store.HashAPIKey(key)
 	st := srv.store.Get()
 	for _, k := range st.APIKeys {
 		if k.KeyHash == "" {
 			continue
 		}
-		if subtle.ConstantTimeCompare([]byte(k.KeyHash), []byte(hash)) == 1 {
-			return true
+		if !store.VerifyAPIKey(key, k.KeyHash) {
+			continue
 		}
+		if store.IsLegacyAPIKeyHash(k.KeyHash) {
+			if nh, err := store.HashAPIKey(key); err == nil {
+				id := k.ID
+				_ = srv.store.Update(func(s *store.State) {
+					for j := range s.APIKeys {
+						if s.APIKeys[j].ID == id {
+							s.APIKeys[j].KeyHash = nh
+							break
+						}
+					}
+				})
+				_ = srv.store.Save()
+			}
+		}
+		return true
 	}
 	return false
 }

@@ -61,6 +61,14 @@ func NormalizeAlias(a *AliasSet) error {
 	return nil
 }
 
+// ValidateAliasName 校验防火墙别名引用名（字母数字下划线，最长 32）。
+func ValidateAliasName(s string) error {
+	if !isValidAliasName(strings.TrimSpace(s)) {
+		return fmt.Errorf("invalid alias name %q", s)
+	}
+	return nil
+}
+
 func isValidAliasName(s string) bool {
 	if len(s) == 0 || len(s) > 32 {
 		return false

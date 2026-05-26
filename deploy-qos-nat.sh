@@ -196,6 +196,12 @@ EnvironmentFile=${CONFIG_DIR}/env
 ExecStart=${QOSNATD_BIN}
 Restart=on-failure
 RestartSec=3
+# 控制面需 root 写 TC/nft/sysctl；仅启用不影响数据面的轻量加固
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LimitNOFILE=65535
 
 [Install]
 WantedBy=multi-user.target
