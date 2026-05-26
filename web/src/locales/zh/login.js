@@ -1,5 +1,5 @@
 export default {
-  title: 'qosnat2 登录',
+  titleTpl: '{name} 登录',
   subtitle: '管理控制台',
   username: '用户名',
   password: '密码',

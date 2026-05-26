@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hk59775634/qosnat2/internal/acme"
 	"github.com/hk59775634/qosnat2/internal/certs"
 	"github.com/hk59775634/qosnat2/internal/ocserv"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -91,8 +92,14 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 			mc.CertPath, mc.KeyPath, mc.CaPath = certPath, keyPath, caPath
 			mc.Subject, mc.NotAfter = certs.ParseMeta(certPath)
 		case store.CertTypeACME:
+			var mcPtr *store.ManagedCertificate
+			var err error
 			certAcmeMu.Lock()
-			mcPtr, err := certs.ObtainACME(body.Domain, body.Email, body.Staging)
+			if _, ipErr := acme.NormalizeIP(body.Domain); ipErr == nil {
+				mcPtr, err = certs.ObtainACMEIP(body.Domain, body.Email, body.Staging)
+			} else {
+				mcPtr, err = certs.ObtainACME(body.Domain, body.Email, body.Staging)
+			}
 			certAcmeMu.Unlock()
 			if err != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

@@ -1,5 +1,5 @@
 export default {
-  title: 'qosnat2 初始设置',
+  titleTpl: '{name} 初始设置',
   steps: { welcome: '欢迎', admin: '管理员', iface: '网卡', nat: 'NAT（可选）', done: '完成' },
   stepOf: '步骤 {n} / {m}',
   passMin: '密码至少 8 位',

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 )
@@ -13,6 +14,8 @@ const (
 	CertTypeACME   = "acme"
 	// DefaultAcmeAutoRenewDays 证书管理库内独立 ACME 自动续期（天）
 	DefaultAcmeAutoRenewDays = 30
+	// DefaultIPAcmeAutoRenewDays 公网 IP 短期证书（约 6 天有效）建议提前续期天数
+	DefaultIPAcmeAutoRenewDays = 3
 	// ServiceAutoRenewDays Web UI / ocserv 绑定证书自动续期（天）
 	ServiceAutoRenewDays = 7
 )
@@ -163,10 +166,21 @@ func ManagedCertUsages(id string, st State) []CertUsage {
 	return out
 }
 
+// ManagedCertIsIP 证书是否以公网 IP 为标识（短期 IP 证书）
+func ManagedCertIsIP(c ManagedCertificate) bool {
+	if len(c.Domains) == 0 {
+		return false
+	}
+	return net.ParseIP(strings.TrimSpace(c.Domains[0])) != nil
+}
+
 // CertAcmeRenewBeforeDays 自动续期触发阈值（天）
 func CertAcmeRenewBeforeDays(c ManagedCertificate) int {
 	if c.AcmeRenewDays > 0 {
 		return c.AcmeRenewDays
+	}
+	if ManagedCertIsIP(c) {
+		return DefaultIPAcmeAutoRenewDays
 	}
 	return DefaultAcmeAutoRenewDays
 }

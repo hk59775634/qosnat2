@@ -12,9 +12,15 @@ import (
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	if len(os.Args) > 1 && os.Args[1] == "apply-state" {
-		runApplyState()
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "apply-state":
+			runApplyState()
+			return
+		case "acme-ip-ssl":
+			runAcmeIPSSL()
+			return
+		}
 	}
 	runServer()
 }

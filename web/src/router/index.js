@@ -1,5 +1,8 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { api } from '@/api/client'
+import { refreshBrandingFromHealth } from '@/composables/useBranding'
+
+refreshBrandingFromHealth(api).catch(() => {})
 
 const routes = [
   { path: '/setup', name: 'setup', component: () => import('@/views/Setup.vue') },

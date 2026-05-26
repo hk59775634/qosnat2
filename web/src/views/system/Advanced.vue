@@ -81,9 +81,7 @@ async function load() {
   } catch (e) {
     data.value = null
     err.value =
-      e.status === 404
-        ? '接口不存在：请重新编译并部署 qosnatd（需包含 /api/v1/system/tuning）'
-        : e.message || '加载失败'
+      e.status === 404 ? t('system.advanced.apiNotFound') : e.message || t('system.advanced.loadFailed')
   } finally {
     loading.value = false
   }
@@ -127,7 +125,11 @@ async function applyHardwareRecommend() {
     const res = await api.system.tuning.put({ ...buildBody(true), apply_recommended: true })
     const b = data.value?.recommended?.memory_budget
     const extra = b
-      ? `；conntrack max ${b.conntrack_max?.toLocaleString()} / buckets ${b.conntrack_buckets?.toLocaleString()}（优化内存 ${b.optimization_mb}MB）`
+      ? t('system.advanced.conntrackExtra', {
+          max: b.conntrack_max?.toLocaleString(),
+          buckets: b.conntrack_buckets?.toLocaleString(),
+          mb: b.optimization_mb,
+        })
       : ''
     ok.value = t('system.advanced.appliedHw') + (data.value?.hardware_tier_label || res.tier || '') + extra
     await load()
@@ -185,16 +187,24 @@ onMounted(load)
           v-if="data.recommended?.memory_budget"
           class="text-xs text-slate-600 mt-2 font-mono bg-white/80 rounded px-2 py-1.5"
         >
-          优化专用 {{ data.recommended.memory_budget.optimization_mb }} MB（总内存 50%）· conntrack 预算
-          {{ data.recommended.memory_budget.conntrack_mem_mb }} MB → max
-          {{ data.recommended.memory_budget.conntrack_max?.toLocaleString() }} · buckets
-          {{ data.recommended.memory_budget.conntrack_buckets?.toLocaleString() }}
-          （≈{{ data.recommended.memory_budget.bytes_per_entry }} B/连接）
+          {{
+            t('system.advanced.memoryBudget', {
+              optMb: data.recommended.memory_budget.optimization_mb,
+              ctMb: data.recommended.memory_budget.conntrack_mem_mb,
+              max: data.recommended.memory_budget.conntrack_max?.toLocaleString(),
+              buckets: data.recommended.memory_budget.conntrack_buckets?.toLocaleString(),
+              bpe: data.recommended.memory_budget.bytes_per_entry,
+            })
+          }}
         </p>
         <p class="text-xs text-slate-500 mt-2">
-          LAN <span class="font-mono">{{ data.dev_lan || '—' }}</span> · WAN
-          <span class="font-mono">{{ data.dev_wan || '—' }}</span> · 配置
-          <span class="font-mono">{{ data.conf_path }}</span>
+          {{
+            t('system.advanced.ifaceSummary', {
+              lan: data.dev_lan || '—',
+              wan: data.dev_wan || '—',
+              path: data.conf_path,
+            })
+          }}
         </p>
         <div class="flex flex-wrap gap-2 mt-3">
           <button type="button" class="btn-secondary text-sm" @click="fillRecommendedToForm">{{ t('system.advanced.fillRecommended') }}</button>
@@ -242,8 +252,12 @@ onMounted(load)
                 v-if="row.key.startsWith('system.txqueuelen') && data.live_txqueuelen_lan"
                 class="text-xs text-slate-400 mt-1"
               >
-                当前内核 txqueuelen — LAN {{ data.live_txqueuelen_lan }} / WAN
-                {{ data.live_txqueuelen_wan || '—' }}
+                {{
+                  t('system.advanced.liveTxqueuelen', {
+                    lan: data.live_txqueuelen_lan,
+                    wan: data.live_txqueuelen_wan || '—',
+                  })
+                }}
               </p>
             </div>
           </div>

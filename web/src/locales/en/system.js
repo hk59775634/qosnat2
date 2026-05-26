@@ -5,6 +5,9 @@ export default {
     basic: 'Basic',
     adminSection: 'Administrator',
     hostname: 'Hostname',
+    displayName: 'System display name',
+    displayNameHint: 'Shown on the sign-in page, header, and similar UI only. Does not change API paths, certificates, or firewall behavior.',
+    displayNameDefault: 'Leave empty to use the default name qosnat2',
     adminPort: 'Web admin port',
     adminPortHint: 'Use the new port after saving; WAN firewall input is updated automatically.',
     newPassword: 'New password (leave empty to keep)',
@@ -32,6 +35,9 @@ export default {
     saved: 'Saved',
     certRequested: 'Certificate requested',
     certRenewed: 'Certificate renewed',
+    httpsSection: 'HTTPS',
+    pemCert: 'PEM certificate',
+    pemKey: 'PEM private key',
   },
   advanced: {
     title: 'Advanced · system tuning',
@@ -59,6 +65,13 @@ export default {
     savedApplied: 'Saved and applied',
     filledRec: 'Filled recommended values',
     appliedHw: 'Applied hardware-based recommendation',
+    apiNotFound: 'API not found: rebuild and deploy qosnatd (requires /api/v1/system/tuning)',
+    loadFailed: 'Load failed',
+    conntrackExtra: '; conntrack max {max} / buckets {buckets} (tuning RAM {mb} MB)',
+    memoryBudget:
+      'Dedicated {optMb} MB (50% of RAM) · conntrack budget {ctMb} MB → max {max} · buckets {buckets} (~{bpe} B/entry)',
+    ifaceSummary: 'LAN {lan} · WAN {wan} · config {path}',
+    liveTxqueuelen: 'Kernel txqueuelen — LAN {lan} / WAN {wan}',
   },
   apiKeys: {
     title: 'API keys',

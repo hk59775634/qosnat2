@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import { displayName } from '@/composables/useBranding'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
@@ -33,6 +34,8 @@ const loading = ref(false)
 const httpsHint = ref('')
 const tlsPending = ref(false)
 
+const loginTitle = computed(() => t('login.titleTpl', { name: displayName.value }))
+
 async function submit() {
   err.value = ''
   loading.value = true
@@ -58,7 +61,7 @@ async function submit() {
       <LanguageSwitcher />
     </div>
     <form class="card w-full max-w-md p-8" @submit.prevent="submit">
-      <h1 class="text-xl font-semibold text-pfsense-nav mb-1">{{ t('login.title') }}</h1>
+      <h1 class="text-xl font-semibold text-pfsense-nav mb-1">{{ loginTitle }}</h1>
       <p class="text-sm text-slate-500 mb-3">{{ t('login.subtitle') }}</p>
       <p
         v-if="httpsHint"

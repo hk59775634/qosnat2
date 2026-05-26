@@ -1,6 +1,6 @@
 export default {
   outbound: {
-    title: 'Outbound NAT',
+    title: '出站 NAT',
     description: '策略路由网段、共享 SNAT、1:1 与网段映射',
     policyCidrs: '策略路由网段',
     sharedPool: '共享公网 IP 池',

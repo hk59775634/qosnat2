@@ -19,6 +19,15 @@ export default {
     dragSort: 'Drag to reorder',
     noProfiles: 'No profiles',
     confirmDelete: 'Delete profile {cidr}?',
+    tcApplied: 'Leaf qdisc applied',
+    profileAdded: 'Added profile {cidr}',
+    profileUpdated: 'Updated profile {cidr}',
+    orderSaved: 'Order saved (IDs updated)',
+    fqFlowsTitle: 'fq_codel only',
+    cidrLabel: 'CIDR',
+    cidrPh: '10.0.0.0/24 or 10.0.0.100/32',
+    helpPrefix:
+      'Subnet templates like {ex24}; per-host caps use {ex32} (overrides subnet defaults, longest prefix wins). Submitting the same CIDR again updates the profile.',
   },
   tenants: {
     title: 'QoS tenants',

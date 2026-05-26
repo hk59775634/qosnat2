@@ -316,6 +316,7 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{
 		"ok":             true,
 		"service":        "qosnatd",
+		"display_name":   store.EffectiveDisplayName(st.System.DisplayName),
 		"phase":          phase,
 		"setup_complete": complete,
 		"setup_required": !complete,

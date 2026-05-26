@@ -19,6 +19,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 		st := srv.store.Get()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"hostname":       st.System.Hostname,
+			"display_name": st.System.DisplayName,
 			"admin_user":     st.AdminUser,
 			"admin_port":     srv.env.AdminPort,
 			"dev_lan":        srv.env.DevLAN,
@@ -29,6 +30,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var body struct {
 			Hostname         string `json:"hostname"`
+			DisplayName      *string `json:"display_name"`
 			AdminPort        string `json:"admin_port"`
 			NewPassword      string `json:"new_password"`
 			CurrentPassword  string `json:"current_password"`
@@ -242,6 +244,17 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				_ = exec.Command("hostnamectl", "set-hostname", h).Run()
 			}
 			srv.auditLog(r, "system.hostname", h)
+		}
+		if body.DisplayName != nil {
+			dn := strings.TrimSpace(*body.DisplayName)
+			if strings.ContainsAny(dn, "\n\r\x00") {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "display_name invalid"})
+				return
+			}
+			_ = srv.store.Update(func(st *store.State) {
+				st.System.DisplayName = dn
+			})
+			srv.auditLog(r, "system.display_name", store.EffectiveDisplayName(dn))
 		}
 		_ = srv.store.Save()
 		resp := map[string]any{"ok": true, "tls": srv.tlsStatusWithAcme(), "admin_port": srv.env.AdminPort}

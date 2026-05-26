@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+import { setDisplayName } from '@/composables/useBranding'
 import PageHeader from '@/components/PageHeader.vue'
 import CertSelect from '@/components/CertSelect.vue'
 
@@ -9,6 +10,7 @@ const { t } = useI18n()
 const cfg = ref(null)
 const form = ref({
   hostname: '',
+  display_name: '',
   admin_port: '',
   new_password: '',
   current_password: '',
@@ -31,6 +33,7 @@ async function load() {
   cfg.value = await api.system.general.get()
   const tlsCfg = cfg.value.tls || {}
   form.value.hostname = cfg.value.hostname || ''
+  form.value.display_name = cfg.value.display_name || ''
   form.value.admin_port = cfg.value.admin_port || ''
   form.value.tls_enabled = tlsCfg.tls_enabled ?? false
   form.value.tls_domain = tlsCfg.domain || ''
@@ -59,6 +62,7 @@ function readFile(e, field) {
 function buildPutBody() {
   return {
     hostname: form.value.hostname,
+    display_name: form.value.display_name,
     admin_port: form.value.admin_port || undefined,
     new_password: form.value.new_password || undefined,
     current_password: form.value.current_password || undefined,
@@ -115,6 +119,7 @@ async function save() {
     form.value.current_password = ''
     form.value.tls_cert = ''
     form.value.tls_key = ''
+    setDisplayName(form.value.display_name)
     await load()
   } catch (e) {
     err.value = e.data?.error || e.message
@@ -197,6 +202,11 @@ onMounted(load)
           <input v-model="form.hostname" class="input-field mt-1 font-mono" />
         </div>
         <div>
+          <label class="text-xs text-slate-500">{{ t('system.general.displayName') }}</label>
+          <input v-model="form.display_name" class="input-field mt-1" maxlength="64" :placeholder="t('system.general.displayNameDefault')" />
+          <p class="text-xs text-slate-500 mt-1">{{ t('system.general.displayNameHint') }}</p>
+        </div>
+        <div>
           <label class="text-xs text-slate-500">{{ t('system.general.adminPort') }}</label>
           <input
             v-model="form.admin_port"
@@ -218,7 +228,7 @@ onMounted(load)
       </section>
 
       <section class="space-y-4 pt-4 border-t border-slate-200">
-        <h3 class="text-sm font-semibold text-slate-800">HTTPS</h3>
+        <h3 class="text-sm font-semibold text-slate-800">{{ t('system.general.httpsSection') }}</h3>
         <div v-if="cfg.tls" class="text-xs text-slate-600 space-y-1 bg-slate-50 rounded p-3">
           <p>
             <span :class="cfg.tls.tls_active ? 'text-green-700' : 'text-slate-500'">
@@ -307,12 +317,12 @@ onMounted(load)
         <template v-else>
           <p class="text-xs text-slate-500">{{ t('system.general.manualPem') }}</p>
           <div>
-            <label class="text-xs text-slate-500">PEM</label>
+            <label class="text-xs text-slate-500">{{ t('system.general.pemCert') }}</label>
             <textarea v-model="form.tls_cert" class="input-field mt-1 font-mono text-xs h-24" spellcheck="false" />
             <input type="file" accept=".pem,.crt,.cer" class="text-xs mt-1" @change="readFile($event, 'tls_cert')" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">PEM key</label>
+            <label class="text-xs text-slate-500">{{ t('system.general.pemKey') }}</label>
             <textarea v-model="form.tls_key" class="input-field mt-1 font-mono text-xs h-24" spellcheck="false" />
             <input type="file" accept=".pem,.key" class="text-xs mt-1" @change="readFile($event, 'tls_key')" />
           </div>

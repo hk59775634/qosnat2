@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 
@@ -35,17 +35,17 @@ const ratesCapChoice = ref('auto')
 let ratesPollTimer = null
 
 const RATES_CAP_STORAGE = 'qosnat2.iface_rates_cap'
-const RATES_CAP_OPTIONS = [
-  { value: 'auto', label: '自动（协商线速）' },
-  { value: '10', label: '10 Mbps' },
-  { value: '100', label: '100 Mbps' },
-  { value: '1000', label: '1 Gbps (1000 Mbps)' },
-  { value: '2500', label: '2.5 Gbps (2500 Mbps)' },
-  { value: '10000', label: '10 Gbps (10000 Mbps)' },
-  { value: '25000', label: '25 Gbps (25000 Mbps)' },
-  { value: '40000', label: '40 Gbps (40000 Mbps)' },
-  { value: '100000', label: '100 Gbps (100000 Mbps)' },
-]
+const ratesCapOptions = computed(() => [
+  { value: 'auto', label: t('network.interfaces.autoNegotiate') },
+  { value: '10', label: t('network.interfaces.cap10') },
+  { value: '100', label: t('network.interfaces.cap100') },
+  { value: '1000', label: t('network.interfaces.cap1g') },
+  { value: '2500', label: t('network.interfaces.cap2_5g') },
+  { value: '10000', label: t('network.interfaces.cap10g') },
+  { value: '25000', label: t('network.interfaces.cap25g') },
+  { value: '40000', label: t('network.interfaces.cap40g') },
+  { value: '100000', label: t('network.interfaces.cap100g') },
+])
 
 function loadRatesCapPrefs() {
   try {
@@ -100,7 +100,7 @@ async function saveRoles() {
       apply: true,
     })
     if (res.apply_error) {
-      err.value = `角色已保存，但应用失败: ${res.apply_error}`
+      err.value = `${t('network.interfaces.rolesSavedApplyFail')}: ${res.apply_error}`
     } else {
       ok.value = t('network.interfaces.rolesApplied')
     }
@@ -186,7 +186,7 @@ async function saveRing() {
   err.value = ''
   try {
     await api.setEthtool(editDev.value, { rx_ring: ringRx.value, tx_ring: ringTx.value })
-    ok.value = 'Ring 缓冲已更新'
+    ok.value = t('network.interfaces.ringSaved')
     await loadEthtool(editDev.value)
   } catch (e) {
     err.value = e.message
@@ -208,7 +208,7 @@ async function saveOffloads() {
         rx_checksum: offRx.value,
       },
     })
-    ok.value = 'Offload 已更新'
+    ok.value = t('network.interfaces.offloadSaved')
     await loadEthtool(editDev.value)
   } catch (e) {
     err.value = e.message
@@ -218,7 +218,8 @@ async function saveOffloads() {
 }
 
 function roleLabel(iface) {
-  if (iface.role) return iface.role
+  if (iface.role === 'LAN') return t('security.firewall.roleLan')
+  if (iface.role === 'WAN') return t('security.firewall.roleWan')
   return ''
 }
 
@@ -291,7 +292,7 @@ onUnmounted(() => {
           </select>
         </div>
       </div>
-      <p class="text-xs text-slate-500 mt-2">保存后将写入运行配置并尝试应用 nft/TC（需已走完初始引导）。</p>
+      <p class="text-xs text-slate-500 mt-2">{{ t('network.interfaces.rolesApplyHint') }}</p>
       <button
         type="button"
         class="btn-primary mt-3"
@@ -333,7 +334,7 @@ onUnmounted(() => {
         </div>
 
         <dl class="mt-3 text-sm">
-          <dt class="text-slate-500 text-xs">地址</dt>
+          <dt class="text-slate-500 text-xs">{{ t('network.interfaces.address') }}</dt>
           <dd class="font-mono text-xs break-all mt-0.5">{{ addrLines(iface) }}</dd>
         </dl>
 
@@ -342,28 +343,28 @@ onUnmounted(() => {
             tall
             :history="trafficHistory"
             :field="historyFields(iface).rx"
-            label="近 4 小时 · 接收"
+            :label="t('network.interfaces.traffic4hRx')"
             color="bg-blue-400"
           />
           <TrafficSparkline
             tall
             :history="trafficHistory"
             :field="historyFields(iface).tx"
-            label="近 4 小时 · 发送"
+            :label="t('network.interfaces.traffic4hTx')"
             color="bg-amber-400"
           />
         </div>
-        <p v-else class="text-xs text-slate-400 mt-3">近 4 小时趋势仅统计 LAN/WAN 口</p>
+        <p v-else class="text-xs text-slate-400 mt-3">{{ t('network.interfaces.traffic4hRolesOnly') }}</p>
 
         <button
           type="button"
           class="btn-secondary text-xs mt-3 w-full"
           @click="openRatesModal(iface, $event)"
         >
-          实时速率
+          {{ t('network.interfaces.liveRate') }}
         </button>
 
-        <p class="text-xs text-slate-400 mt-2">RSS 队列 {{ iface.rss_channels ?? 0 }}</p>
+        <p class="text-xs text-slate-400 mt-2">{{ t('network.interfaces.rssQueues') }} {{ iface.rss_channels ?? 0 }}</p>
       </div>
     </div>
 
@@ -381,12 +382,12 @@ onUnmounted(() => {
             <div>
               <h3 class="text-lg font-mono font-semibold">{{ ratesModal.name }}</h3>
               <p class="text-xs text-slate-500 mt-0.5">
-                <span v-if="ratesModal.role">{{ ratesModal.role }} · </span>
+                <span v-if="roleLabel(ratesModal)">{{ roleLabel(ratesModal) }} · </span>
                 {{ ratesModal.operstate }}
                 <span v-if="ratesModal.link_speed_mbps > 0" class="ml-1">
-                  · 协商 {{ ratesModal.link_speed_mbps }} Mbps
+                  · {{ t('network.interfaces.negotiateMbps', { n: ratesModal.link_speed_mbps }) }}
                 </span>
-                <span v-else class="ml-1 text-amber-700">· 协商未知</span>
+                <span v-else class="ml-1 text-amber-700">· {{ t('network.interfaces.negotiateUnknown') }}</span>
               </p>
             </div>
             <button type="button" class="text-slate-400 hover:text-slate-600 text-xl leading-none" @click="closeRatesModal">
@@ -395,14 +396,14 @@ onUnmounted(() => {
           </div>
 
           <div class="mb-4">
-            <label class="text-xs text-slate-500 block mb-1">基准线速（占比分母）</label>
+            <label class="text-xs text-slate-500 block mb-1">{{ t('network.interfaces.baseline') }}</label>
             <select
               v-model="ratesCapChoice"
               class="input-field w-full text-sm"
               @change="onRatesCapChange"
             >
               <option
-                v-for="opt in RATES_CAP_OPTIONS"
+                v-for="opt in ratesCapOptions"
                 :key="opt.value"
                 :value="opt.value"
               >
@@ -410,55 +411,64 @@ onUnmounted(() => {
               </option>
             </select>
             <p class="text-xs text-slate-400 mt-1">
-              当前基准 <span class="font-mono text-slate-600">{{ capMbps(ratesModal) }} Mbps</span>
-              <span v-if="ratesCapChoice === 'auto'">（自动）</span>
-              <span v-else>（手动）</span>
+              {{ t('network.interfaces.currentBaseline') }}
+              <span class="font-mono text-slate-600">{{ capMbps(ratesModal) }} Mbps</span>
+              <span v-if="ratesCapChoice === 'auto'">{{ t('network.interfaces.baselineAuto') }}</span>
+              <span v-else>{{ t('network.interfaces.baselineManual') }}</span>
             </p>
           </div>
 
           <div class="space-y-2">
             <ProgressBar
-              label="RX（占线速）"
+              :label="t('network.interfaces.rxPctCap')"
               :traffic-mbps="ratesModal.traffic?.rx_mbps ?? 0"
               :cap-mbps="capMbps(ratesModal)"
               color="blue"
             />
             <ProgressBar
-              label="TX（占线速）"
+              :label="t('network.interfaces.txPctCap')"
               :traffic-mbps="ratesModal.traffic?.tx_mbps ?? 0"
               :cap-mbps="capMbps(ratesModal)"
               color="amber"
             />
           </div>
 
-          <p class="text-xs text-slate-400 mt-4 text-center">
-            每 2 秒刷新；无流量时显示 0（首次打开约需 0.2s 建立基线）
-          </p>
+          <p class="text-xs text-slate-400 mt-4 text-center">{{ t('network.interfaces.refreshHint') }}</p>
         </div>
       </div>
     </Teleport>
 
-    <DashboardWidget v-if="editDev" id="iface-ethtool" title="ethtool 环缓冲" class="mb-3">
+    <DashboardWidget v-if="editDev" id="iface-ethtool" :title="t('network.interfaces.ethtoolRing')" class="mb-3">
       <p class="text-sm text-slate-600 mb-3">
-        设备 <span class="font-mono">{{ editDev }}</span>
-        <span v-if="eth?.ring"> · 当前 RX {{ eth.ring.rx_current }} / TX {{ eth.ring.tx_current }}</span>
+        {{ t('network.interfaces.device') }} <span class="font-mono">{{ editDev }}</span>
+        <span v-if="eth?.ring">
+          ·
+          {{
+            t('network.interfaces.currentRing', {
+              rx: eth.ring.rx_current,
+              tx: eth.ring.tx_current,
+            })
+          }}
+        </span>
       </p>
       <div class="flex flex-wrap gap-3 items-end text-sm">
         <div>
-          <label class="text-xs text-slate-500">RX ring</label>
+          <label class="text-xs text-slate-500">{{ t('network.interfaces.rxRing') }}</label>
           <input v-model.number="ringRx" type="number" class="input-field mt-1 w-28" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">TX ring</label>
+          <label class="text-xs text-slate-500">{{ t('network.interfaces.txRing') }}</label>
           <input v-model.number="ringTx" type="number" class="input-field mt-1 w-28" />
         </div>
-        <button type="button" class="btn-secondary" :disabled="saving" @click="saveRing">应用 ring</button>
+        <button type="button" class="btn-secondary" :disabled="saving" @click="saveRing">
+          {{ t('network.interfaces.applyRingBtn') }}
+        </button>
       </div>
       <div class="mt-4 pt-3 border-t border-slate-200">
-        <p class="text-xs text-slate-500 mb-2">Offload（ethtool -K，选 on / off）</p>
+        <p class="text-xs text-slate-500 mb-2">{{ t('network.interfaces.offloadSection') }}</p>
         <div class="flex flex-wrap gap-3 items-end text-sm">
           <div>
-            <label class="text-xs text-slate-500">GRO</label>
+            <label class="text-xs text-slate-500">{{ t('network.interfaces.gro') }}</label>
             <select v-model="offGRO" class="input-field mt-1 w-24">
               <option value="">—</option>
               <option value="on">on</option>
@@ -466,7 +476,7 @@ onUnmounted(() => {
             </select>
           </div>
           <div>
-            <label class="text-xs text-slate-500">GSO</label>
+            <label class="text-xs text-slate-500">{{ t('network.interfaces.gso') }}</label>
             <select v-model="offGSO" class="input-field mt-1 w-24">
               <option value="">—</option>
               <option value="on">on</option>
@@ -474,7 +484,7 @@ onUnmounted(() => {
             </select>
           </div>
           <div>
-            <label class="text-xs text-slate-500">TX csum</label>
+            <label class="text-xs text-slate-500">{{ t('network.interfaces.txCsum') }}</label>
             <select v-model="offTx" class="input-field mt-1 w-24">
               <option value="">—</option>
               <option value="on">on</option>
@@ -482,49 +492,58 @@ onUnmounted(() => {
             </select>
           </div>
           <div>
-            <label class="text-xs text-slate-500">RX csum</label>
+            <label class="text-xs text-slate-500">{{ t('network.interfaces.rxCsum') }}</label>
             <select v-model="offRx" class="input-field mt-1 w-24">
               <option value="">—</option>
               <option value="on">on</option>
               <option value="off">off</option>
             </select>
           </div>
-          <button type="button" class="btn-secondary" :disabled="saving" @click="saveOffloads">应用 offload</button>
+          <button type="button" class="btn-secondary" :disabled="saving" @click="saveOffloads">
+            {{ t('network.interfaces.applyOffloadBtn') }}
+          </button>
         </div>
       </div>
     </DashboardWidget>
 
     <div class="grid lg:grid-cols-2 gap-4">
-      <DashboardWidget id="iface-links-lan" title="LAN 相关配置">
+      <DashboardWidget id="iface-links-lan" :title="t('network.interfaces.linksLanTitle')">
         <ul class="text-sm space-y-2">
           <li>
-            <router-link to="/network/dhcp" class="text-blue-600 hover:underline">DHCP 服务</router-link>
-            <span class="text-slate-500"> — 通常绑定 {{ devLan || '内网口' }}</span>
+            <router-link to="/network/dhcp" class="text-blue-600 hover:underline">{{ t('nav.dhcp') }}</router-link>
+            <span class="text-slate-500">
+              —
+              {{
+                t('network.interfaces.dhcpBindHint', {
+                  iface: devLan || t('network.interfaces.lanIfacePlaceholder'),
+                })
+              }}
+            </span>
           </li>
           <li>
-            <router-link to="/shaper/profiles" class="text-blue-600 hover:underline">QoS 策略</router-link>
+            <router-link to="/shaper/profiles" class="text-blue-600 hover:underline">{{ t('nav.qosProfiles') }}</router-link>
           </li>
           <li>
-            <router-link to="/interfaces/queues" class="text-blue-600 hover:underline">RSS / 多队列</router-link>
+            <router-link to="/interfaces/queues" class="text-blue-600 hover:underline">{{ t('nav.rssQueues') }}</router-link>
           </li>
         </ul>
       </DashboardWidget>
 
-      <DashboardWidget id="iface-links-wan" title="WAN / NAT">
+      <DashboardWidget id="iface-links-wan" :title="t('network.interfaces.linksWanTitle')">
         <ul class="text-sm space-y-2">
           <li>
-            <router-link to="/nat/outbound" class="text-blue-600 hover:underline">Outbound NAT</router-link>
+            <router-link to="/nat/outbound" class="text-blue-600 hover:underline">{{ t('nav.outboundNat') }}</router-link>
           </li>
           <li>
-            <router-link to="/nat/forwards" class="text-blue-600 hover:underline">端口转发</router-link>
+            <router-link to="/nat/forwards" class="text-blue-600 hover:underline">{{ t('nav.portForwards') }}</router-link>
           </li>
           <li>
-            <router-link to="/network/routes" class="text-blue-600 hover:underline">静态路由</router-link>
+            <router-link to="/network/routes" class="text-blue-600 hover:underline">{{ t('nav.routes') }}</router-link>
           </li>
         </ul>
       </DashboardWidget>
     </div>
 
-    <p class="text-xs text-slate-400 mt-2">流量历史每 5 秒采样，保留约 4 小时（LAN/WAN）</p>
+    <p class="text-xs text-slate-400 mt-2">{{ t('network.interfaces.historyHint') }}</p>
   </div>
 </template>

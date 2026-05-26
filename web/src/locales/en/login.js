@@ -1,5 +1,5 @@
 export default {
-  title: 'qosnat2 sign in',
+  titleTpl: '{name} sign in',
   subtitle: 'Management console',
   username: 'Username',
   password: 'Password',

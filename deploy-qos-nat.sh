@@ -13,6 +13,7 @@ STATE_DIR="${STATE_DIR:-/var/lib/qosnat2}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/qosnat2}"
 SKIP_WEB_BUILD="${SKIP_WEB_BUILD:-0}"
 BUILD_WEB="${BUILD_WEB:-0}"
+IPSSL="${IPSSL:-0}"
 
 QOSNATD_SRC="${ROOT}/cmd/qosnatd"
 QOSNATD_BIN="/usr/local/bin/qosnatd"
@@ -44,11 +45,26 @@ EOF
 }
 
 install_deps() {
+  if [[ "${ONE_CLICK_INSTALL:-0}" == "1" ]]; then
+    log "一键安装已预装依赖，跳过 apt 重复安装"
+    return 0
+  fi
+  local deps_sh="${ROOT}/scripts/install-deps.sh"
+  if [[ -f "${deps_sh}" ]]; then
+  # shellcheck source=/dev/null
+    source "${deps_sh}"
+    if qosnat_apt_install_packages; then
+      log "依赖包已安装"
+      return 0
+    fi
+    warn "install-deps.sh 安装失败，尝试内联包列表"
+  fi
   if command -v apt-get &>/dev/null; then
     DEBIAN_FRONTEND=noninteractive apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-      iproute2 nftables golang-go clang llvm libbpf-dev make \
-      wireguard-tools tcpdump conntrack dnsmasq \
+      ca-certificates curl git gnupg \
+      iproute2 nftables golang-go clang llvm libbpf-dev make pkg-config build-essential \
+      wireguard-tools tcpdump conntrack dnsmasq nodejs npm \
       || warn "apt 安装部分失败，请手动安装依赖"
   fi
 }
@@ -118,6 +134,40 @@ pick_admin_port_if_unset() {
   done
   ADMIN_PORT=18080
   warn "未能探测空闲端口，使用 ${ADMIN_PORT}"
+}
+
+detect_public_ipv4() {
+  if [[ -n "${PUBLIC_IP:-}" ]]; then
+    echo "${PUBLIC_IP}"
+    return 0
+  fi
+  local ip url
+  for url in https://api.ipify.org https://ifconfig.me/ip https://ipv4.icanhazip.com; do
+    ip="$(curl -4 -fsS --max-time 10 "${url}" 2>/dev/null | tr -d '[:space:]')" || continue
+    if [[ "${ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      echo "${ip}"
+      return 0
+    fi
+  done
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  [[ "${ip}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo "${ip}"
+}
+
+configure_ipssl_https() {
+  local ip email
+  ip="$(detect_public_ipv4)" || die "ipssl: 无法探测公网 IPv4（请设置 PUBLIC_IP）"
+  email="${ACME_EMAIL:-}"
+  [[ -n "${email}" ]] || die "ipssl: 请设置 ACME_EMAIL（Let's Encrypt 账户邮箱）"
+  if command -v ss &>/dev/null && ss -tlnH 2>/dev/null | grep -qE ':80$'; then
+    warn "TCP 80 已被占用，IP 证书 HTTP-01 可能失败"
+  fi
+  log "ipssl: 申请 Let's Encrypt IP 证书 ${ip} (profile shortlived, HTTP-01 :80) ..."
+  local staging_arg=()
+  [[ "${ACME_STAGING:-0}" == "1" ]] && staging_arg=(--staging)
+  PUBLIC_IP="${ip}" ACME_EMAIL="${email}" \
+    "${QOSNATD_BIN}" acme-ip-ssl --ip "${ip}" --email "${email}" "${staging_arg[@]}" \
+    || die "IP 证书申请失败（需公网 IP、80 端口可达、有效邮箱）"
+  log "ipssl: HTTPS 已配置，管理端口 ${ADMIN_PORT} 将使用 TLS"
 }
 
 gen_admin_password() {
@@ -263,6 +313,9 @@ cmd_start() {
   init_state
   save_deploy_env
   install_systemd
+  if [[ "${IPSSL}" == "1" ]]; then
+    configure_ipssl_https
+  fi
   systemctl restart qosnatd.service || systemctl start qosnatd.service || die "qosnatd 启动失败"
   log "安装完成：仅 Web UI 已启动（数据面未加载，直至首次引导完成）"
   log "=========================================="
@@ -271,7 +324,9 @@ cmd_start() {
   log "  口令: ${ADMIN_PASS}"
   log "  已写入: ${INITIAL_ADMIN_FILE} （权限 0600，用后请删除）"
   log "=========================================="
-  log "打开浏览器: http://$(hostname -I 2>/dev/null | awk '{print $1}'):${ADMIN_PORT}/#/login"
+  local scheme=http
+  [[ "${IPSSL}" == "1" ]] && scheme=https
+  log "打开浏览器: ${scheme}://$(hostname -I 2>/dev/null | awk '{print $1}'):${ADMIN_PORT}/#/login"
   log "登录后进入「初始设置」向导"
   curl -sf "http://127.0.0.1:${ADMIN_PORT}/api/v1/health" 2>/dev/null | head -c 200 || warn "health 暂不可达"
   echo
@@ -315,6 +370,12 @@ usage() {
 可选环境变量:
   DEV_LAN=... DEV_WAN=... ADMIN_USER=admin ADMIN_PASS=...（不设则随机 20 位）
   ADMIN_PORT=（不设则自动选取未占用端口）  SKIP_WEB_BUILD=1  BUILD_WEB=1
+  IPSSL=1  ACME_EMAIL=you@example.com  PUBLIC_IP=1.2.3.4  ACME_STAGING=1
+
+一键安装（从 GitHub 拉取，仅验证 Ubuntu 24.04，推荐 Ubuntu 24.04）:
+  curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash
+  export ACME_EMAIL=you@example.com
+  curl -ksSL .../install.sh | bash -s -- ipssl   # 需 80 端口公网可达
 EOF
 }
 
@@ -323,6 +384,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -BuildWeb) BUILD_WEB=1; shift ;;
     -SkipWeb)  SKIP_WEB_BUILD=1; shift ;;
+    ipssl|IPSSL) IPSSL=1; shift ;;
     start|stop|status) CMD="$1"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "未知参数: $1（$0 -h 查看帮助）" ;;

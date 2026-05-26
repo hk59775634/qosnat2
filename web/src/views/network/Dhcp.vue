@@ -25,6 +25,11 @@ const bindIface = computed({
   },
 })
 
+const dnsmasqStatusLabel = computed(() => {
+  if (!status.value?.installed) return t('network.dhcp.statusNotInstalled')
+  return status.value.active ? t('network.dhcp.statusRunning') : t('network.dhcp.statusStopped')
+})
+
 async function load() {
   const d = await api.get('/api/v1/dhcp')
   cfg.value = d.config || {}
@@ -52,7 +57,7 @@ async function save(applyAfter) {
     ok.value = t('network.dhcp.saved')
     if (applyAfter) {
       await api.post('/api/v1/dhcp/apply', {})
-      ok.value = cfg.value.enabled ? '已保存并启动 dnsmasq' : '已保存并停止 DHCP'
+      ok.value = cfg.value.enabled ? t('network.dhcp.savedStarted') : t('network.dhcp.savedStopped')
     }
     await load()
   } catch (e) {
@@ -99,65 +104,65 @@ onMounted(load)
               {{ iface.up ? '' : ' (down)' }}
             </option>
           </select>
-          <p class="text-xs text-slate-400 mt-1">留空时默认使用 DEV_LAN（{{ devLan }}）</p>
+          <p class="text-xs text-slate-400 mt-1">{{ t('network.dhcp.bindIfaceDefault', { lan: devLan }) }}</p>
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('network.dhcp.gateway') }}</label>
           <input v-model="cfg.router" class="input-field font-mono" placeholder="192.168.1.1" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">地址池起始</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.poolStart') }}</label>
           <input v-model="cfg.range_start" class="input-field font-mono" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">地址池结束</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.poolEnd') }}</label>
           <input v-model="cfg.range_end" class="input-field font-mono" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">子网掩码</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.netmask') }}</label>
           <input v-model="cfg.netmask" class="input-field font-mono" placeholder="255.255.255.0" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">租约时间（秒）</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.leaseTimeSec') }}</label>
           <input v-model.number="cfg.lease_time_sec" type="number" class="input-field" />
         </div>
         <div class="sm:col-span-2">
-          <label class="text-xs text-slate-500">DNS 服务器（每行一个或逗号分隔）</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.dnsServersMultiline') }}</label>
           <textarea v-model="dnsText" class="input-field font-mono h-16" rows="2" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">域名（可选）</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.domainOptional') }}</label>
           <input v-model="cfg.domain" class="input-field" />
         </div>
         <label class="flex items-center gap-2 sm:col-span-2 text-sm">
-          <input v-model="cfg.authoritative" type="checkbox" /> authoritative（本网段唯一 DHCP）
+          <input v-model="cfg.authoritative" type="checkbox" /> {{ t('network.dhcp.authoritativeCheck') }}
         </label>
       </div>
 
       <div class="border-t border-slate-200 pt-4 space-y-3">
-        <h3 class="font-medium text-sm">IPv6 / RA（dnsmasq）</h3>
+        <h3 class="font-medium text-sm">{{ t('network.dhcp.ipv6Section') }}</h3>
         <label class="flex items-center gap-2 text-sm">
-          <input v-model="cfg.ipv6_enabled" type="checkbox" /> 启用 DHCPv6 地址池
+          <input v-model="cfg.ipv6_enabled" type="checkbox" /> {{ t('network.dhcp.ipv6Enable') }}
         </label>
         <div v-if="cfg.ipv6_enabled" class="grid sm:grid-cols-2 gap-3 text-sm">
           <div class="sm:col-span-2">
-            <label class="text-xs text-slate-500">前缀（如 2001:db8::/64）</label>
+            <label class="text-xs text-slate-500">{{ t('network.dhcp.ipv6Prefix') }}</label>
             <input v-model="cfg.ipv6_prefix" class="input-field mt-1 font-mono" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">起始</label>
+            <label class="text-xs text-slate-500">{{ t('network.dhcp.ipv6Start') }}</label>
             <input v-model="cfg.ipv6_start" class="input-field mt-1 font-mono" placeholder="2001:db8::100" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">结束</label>
+            <label class="text-xs text-slate-500">{{ t('network.dhcp.ipv6End') }}</label>
             <input v-model="cfg.ipv6_end" class="input-field mt-1 font-mono" placeholder="2001:db8::200" />
           </div>
         </div>
         <label class="flex items-center gap-2 text-sm">
-          <input v-model="cfg.ra_enabled" type="checkbox" /> 路由器通告 (RA)
+          <input v-model="cfg.ra_enabled" type="checkbox" /> {{ t('network.dhcp.raEnable') }}
         </label>
         <div v-if="cfg.ra_enabled" class="text-sm max-w-xs">
-          <label class="text-xs text-slate-500">RA 间隔（秒，可选）</label>
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.raInterval') }}</label>
           <input v-model.number="cfg.ra_interval_sec" type="number" class="input-field mt-1" />
         </div>
       </div>
@@ -170,7 +175,7 @@ onMounted(load)
       <p class="text-xs text-slate-500">
         dnsmasq:
         <span :class="status?.active ? 'text-green-700' : 'text-slate-500'">
-          {{ status?.installed ? (status.active ? '运行中' : '已停止') : '未安装' }}
+          {{ dnsmasqStatusLabel }}
         </span>
         <span v-if="status?.config"> · {{ status.config }}</span>
       </p>
@@ -182,21 +187,27 @@ onMounted(load)
         <div class="grid sm:grid-cols-2 gap-2 text-sm mb-3">
           <input v-model="staticForm.mac" class="input-field font-mono text-xs" placeholder="aa:bb:cc:dd:ee:ff" />
           <input v-model="staticForm.ip" class="input-field font-mono text-xs" placeholder="192.168.1.50" />
-          <input v-model="staticForm.hostname" class="input-field text-xs" placeholder="hostname" />
+          <input v-model="staticForm.hostname" class="input-field text-xs" :placeholder="t('network.dhcp.hostname')" />
           <button type="button" class="btn-secondary text-xs" @click="addStatic">{{ t('common.add') }}</button>
         </div>
         <table class="data w-full text-xs">
           <thead>
-            <tr><th>MAC</th><th>IP</th><th></th></tr>
+            <tr>
+              <th>{{ t('network.dhcp.mac') }}</th>
+              <th>{{ t('network.dhcp.ip') }}</th>
+              <th></th>
+            </tr>
           </thead>
           <tbody>
             <tr v-for="(sl, i) in cfg.static_leases" :key="i">
               <td class="font-mono">{{ sl.mac }}</td>
               <td class="font-mono">{{ sl.ip }}</td>
-              <td><button type="button" class="text-red-600" @click="removeStatic(i)">删除</button></td>
+              <td>
+                <button type="button" class="text-red-600" @click="removeStatic(i)">{{ t('common.delete') }}</button>
+              </td>
             </tr>
             <tr v-if="!cfg.static_leases?.length">
-              <td colspan="3" class="text-center text-slate-400 py-3">无</td>
+              <td colspan="3" class="text-center text-slate-400 py-3">{{ t('network.dhcp.none') }}</td>
             </tr>
           </tbody>
         </table>
@@ -207,7 +218,11 @@ onMounted(load)
         <table class="data w-full text-xs">
           <thead>
             <tr>
-              <th>类型</th><th>IP</th><th>MAC</th><th>主机名</th><th>到期</th>
+              <th>{{ t('network.dhcp.leaseType') }}</th>
+              <th>{{ t('network.dhcp.ip') }}</th>
+              <th>{{ t('network.dhcp.mac') }}</th>
+              <th>{{ t('network.dhcp.hostname') }}</th>
+              <th>{{ t('network.dhcp.expires') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -227,8 +242,10 @@ onMounted(load)
           v-if="status?.leases_raw"
           class="text-xs font-mono bg-slate-50 p-2 rounded overflow-auto max-h-24 mt-2 text-slate-500"
         >{{ status.leases_raw }}</pre>
-        <h3 class="font-medium mt-4 mb-2 text-sm">生成的配置预览</h3>
-        <pre class="text-xs font-mono bg-slate-50 p-2 rounded overflow-auto max-h-40">{{ rendered || '# 启用后显示' }}</pre>
+        <h3 class="font-medium mt-4 mb-2 text-sm">{{ t('network.dhcp.previewConfig') }}</h3>
+        <pre class="text-xs font-mono bg-slate-50 p-2 rounded overflow-auto max-h-40">{{
+          rendered || t('network.dhcp.previewEmpty')
+        }}</pre>
       </section>
     </div>
   </div>

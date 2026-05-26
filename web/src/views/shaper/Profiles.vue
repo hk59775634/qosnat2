@@ -47,7 +47,7 @@ async function saveTC() {
       fq_quantum: tcQuantum.value,
       apply: true,
     })
-    ok.value = 'TC 叶子 qdisc 已应用'
+    ok.value = t('shaper.profiles.tcApplied')
     await load()
   } catch (e) {
     err.value = e.message
@@ -62,8 +62,8 @@ async function submit() {
   try {
     const res = await api.shaper.wizard(form.value)
     ok.value = res.added
-      ? `已添加模板 ${res.cidr}`
-      : `已更新模板 ${res.cidr}`
+      ? t('shaper.profiles.profileAdded', { cidr: res.cidr })
+      : t('shaper.profiles.profileUpdated', { cidr: res.cidr })
     await load()
   } catch (e) {
     err.value = e.message
@@ -99,7 +99,7 @@ async function onDrop(targetIdx) {
     const res = await api.shaper.reorderProfiles(arr.map((p) => p.cidr))
     profiles.value = res.profiles || arr
     bindDevice.value = res.bind_device || bindDevice.value
-    ok.value = '排序已保存（id 已更新）'
+    ok.value = t('shaper.profiles.orderSaved')
   } catch (e) {
     err.value = e.message
     await load()
@@ -132,11 +132,11 @@ onMounted(load)
           </select>
         </div>
         <div>
-          <label class="text-xs text-slate-500" title="仅 fq_codel 生效">fq flows</label>
+          <label class="text-xs text-slate-500" :title="t('shaper.profiles.fqFlowsTitle')">{{ t('shaper.profiles.fqFlows') }}</label>
           <input v-model.number="tcFlows" type="number" min="0" class="input-field mt-0.5 w-20" />
         </div>
         <div>
-          <label class="text-xs text-slate-500" title="仅 fq_codel 生效">fq quantum</label>
+          <label class="text-xs text-slate-500" :title="t('shaper.profiles.fqFlowsTitle')">{{ t('shaper.profiles.fqQuantum') }}</label>
           <input v-model.number="tcQuantum" type="number" min="0" class="input-field mt-0.5 w-20" />
         </div>
         <button type="button" class="btn-secondary" :disabled="tcSaving" @click="saveTC">
@@ -147,8 +147,8 @@ onMounted(load)
 
     <form class="card card-body grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 items-end" @submit.prevent="submit">
       <div class="lg:col-span-2">
-        <label class="text-xs text-slate-600">CIDR</label>
-        <input v-model="form.cidr" class="input-field mt-0.5 font-mono" placeholder="10.0.0.0/24 或 10.0.0.100/32" />
+        <label class="text-xs text-slate-600">{{ t('shaper.profiles.cidrLabel') }}</label>
+        <input v-model="form.cidr" class="input-field mt-0.5 font-mono" :placeholder="t('shaper.profiles.cidrPh')" />
       </div>
       <div>
         <label class="text-xs text-slate-600">{{ t('shaper.profiles.colDown') }}</label>
@@ -178,8 +178,10 @@ onMounted(load)
     </form>
 
     <p class="page-hint">
-      网段模板如 <code class="bg-slate-100 px-1 rounded">10.0.0.0/24</code>；单主机限速用
-      <code class="bg-slate-100 px-1 rounded">x.x.x.x/32</code>（覆盖网段默认速率，最长前缀优先）。相同 CIDR 再次提交为更新。
+      <i18n-t keypath="shaper.profiles.helpPrefix" tag="span">
+        <template #ex24><code class="bg-slate-100 px-1 rounded">10.0.0.0/24</code></template>
+        <template #ex32><code class="bg-slate-100 px-1 rounded">x.x.x.x/32</code></template>
+      </i18n-t>
     </p>
 
     <p v-if="savingOrder" class="text-xs text-slate-500">{{ t('security.firewall.savingOrder') }}</p>
@@ -191,7 +193,7 @@ onMounted(load)
             <th class="w-7"></th>
             <th class="w-10">ID</th>
             <th>{{ t('shaper.profiles.colIface') }}</th>
-            <th>CIDR</th>
+            <th>{{ t('shaper.profiles.cidrLabel') }}</th>
             <th>{{ t('shaper.profiles.colDown') }}</th>
             <th>{{ t('shaper.profiles.colUp') }}</th>
             <th class="w-24 text-right">{{ t('common.actions') }}</th>

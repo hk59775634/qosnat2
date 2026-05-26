@@ -19,10 +19,10 @@ export function formatDestination(r) {
 
 export function formatIface(name, devLan, devWan) {
   const n = String(name || '').trim()
-  if (!n) return { name: '—', role: '' }
-  if (n === devLan) return { name: n, role: 'LAN' }
-  if (n === devWan) return { name: n, role: 'WAN' }
-  return { name: n, role: '' }
+  if (!n) return { name: '—', roleKey: '' }
+  if (n === devLan) return { name: n, roleKey: 'lan' }
+  if (n === devWan) return { name: n, roleKey: 'wan' }
+  return { name: n, roleKey: '' }
 }
 
 export function actionMeta(action) {

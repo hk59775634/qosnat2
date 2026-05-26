@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
+import { displayName, refreshBrandingFromHealth } from '@/composables/useBranding'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 
 const router = useRouter()
@@ -32,6 +33,7 @@ const form = ref({
 })
 
 const progress = computed(() => Math.round(((step.value + 1) / steps.value.length) * 100))
+const setupTitle = computed(() => t('setup.titleTpl', { name: displayName.value }))
 
 onMounted(async () => {
   try {
@@ -127,7 +129,7 @@ async function finish() {
     </div>
     <div class="card w-full max-w-xl p-8 shadow-xl">
       <div class="mb-3">
-        <h1 class="text-2xl font-semibold text-pfsense-nav">{{ t('setup.title') }}</h1>
+        <h1 class="text-2xl font-semibold text-pfsense-nav">{{ setupTitle }}</h1>
         <div class="mt-4 h-2 bg-slate-200 rounded-full overflow-hidden">
           <div class="h-full bg-blue-600 transition-all" :style="{ width: progress + '%' }" />
         </div>

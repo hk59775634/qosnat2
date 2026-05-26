@@ -119,6 +119,7 @@ const camouflageSecret = ref('')
 const dnsText = ref('')
 const routesText = ref('')
 const noRoutesText = ref('')
+const connectionInfo = ref(null)
 /** 带宽 M = Mbps，保存时换算为 ocserv 的 B/s（×125000） */
 const downMbps = ref(0)
 const upMbps = ref(0)
@@ -302,6 +303,26 @@ async function load() {
   radiusSecretSet.value = !!d.radius_secret_set
   camouflageSecret.value = ''
   camouflageSecretSet.value = !!d.camouflage_secret_set
+  connectionInfo.value = d.connection || null
+}
+
+const connectUrlIssueText = computed(() => {
+  const issue = connectionInfo.value?.issue
+  if (issue === 'no_cert') return t('ocserv.connectUrlIssueNoCert')
+  if (issue === 'no_hostname') return t('ocserv.connectUrlIssueNoHostname')
+  if (issue === 'camouflage_secret_missing') return t('ocserv.connectUrlIssueCamoSecret')
+  return ''
+})
+
+async function copyConnectUrl() {
+  const url = connectionInfo.value?.url
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    ok.value = t('ocserv.connectUrlCopyOk')
+  } catch {
+    opsErr.value = t('common.copyFailed')
+  }
 }
 
 function openVhostAdvanced(v) {
@@ -867,6 +888,7 @@ function sessOnlineDuration(s) {
 async function loadOverview() {
   opsErr.value = ''
   try {
+    await load()
     detail.value = await api.get('/api/v1/vpn/ocserv/status/detail')
   } catch (e) {
     opsErr.value = e.data?.error || e.message
@@ -996,6 +1018,37 @@ onUnmounted(() => {
     <p v-if="opsErr && !isSettingsTab" class="text-sm text-amber-700 mb-2">{{ opsErr }}</p>
 
     <div v-if="activeTab === 'overview'" class="space-y-4">
+      <div
+        v-if="connectionInfo"
+        class="card p-4 border border-blue-200 bg-blue-50/50 space-y-2"
+      >
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <h3 class="text-sm font-semibold text-slate-800">{{ t('ocserv.connectUrlTitle') }}</h3>
+          <button
+            v-if="connectionInfo.url"
+            type="button"
+            class="btn-secondary text-xs shrink-0"
+            @click="copyConnectUrl"
+          >
+            {{ t('common.copy') }}
+          </button>
+        </div>
+        <p v-if="connectUrlIssueText" class="text-xs text-amber-800">{{ connectUrlIssueText }}</p>
+        <p v-if="connectionInfo.url" class="font-mono text-sm break-all text-blue-900 select-all">
+          {{ connectionInfo.url }}
+        </p>
+        <p class="text-xs text-slate-600">{{ t('ocserv.connectUrlHint') }}</p>
+        <dl v-if="connectionInfo.cert_hostnames?.length" class="text-xs text-slate-600 grid gap-1">
+          <div class="flex flex-wrap gap-x-2">
+            <dt class="text-slate-500">{{ t('ocserv.connectUrlCertNames') }}:</dt>
+            <dd class="font-mono">{{ connectionInfo.cert_hostnames.join(', ') }}</dd>
+          </div>
+          <div v-if="connectionInfo.camouflage_enabled && connectionInfo.camouflage_secret" class="flex flex-wrap gap-x-2">
+            <dt class="text-slate-500">{{ t('ocserv.connectUrlCamo') }}:</dt>
+            <dd class="font-mono break-all">{{ connectionInfo.camouflage_secret }}</dd>
+          </div>
+        </dl>
+      </div>
       <p v-if="!useOcctl" class="text-sm text-slate-600">
         {{ t('ocserv.occtlHint') }}
       </p>
@@ -1388,17 +1441,26 @@ onUnmounted(() => {
           <span v-if="radiusSecretSet && !radiusSecret" class="text-xs text-green-700">{{ t('ocserv.radiusSecretSaved') }}</span>
         </label>
         <label class="text-sm">
-          NAS 标识符
-          <input v-model="cfg.radius.nas_identifier" class="input w-full mt-1" placeholder="NAS-Identifier，可选" />
-          <span class="text-xs text-slate-500">发往 RADIUS 的 NAS-Identifier 属性</span>
+          {{ t('ocserv.radiusNas') }}
+          <input
+            v-model="cfg.radius.nas_identifier"
+            class="input w-full mt-1"
+            :placeholder="t('ocserv.radiusNasPh')"
+          />
+          <span class="text-xs text-slate-500">{{ t('ocserv.radiusNasHint') }}</span>
         </label>
         <label class="flex gap-2 text-sm">
           <input v-model="cfg.radius.groupconfig" type="checkbox" />
-          <span>从 RADIUS 读取每组配置 <span class="text-slate-500">（groupconfig）</span></span>
+          <span>
+            {{ t('ocserv.radiusGroupconfigEnable') }}
+            <span class="text-slate-500">{{ t('ocserv.radiusGroupconfigTag') }}</span>
+          </span>
         </label>
-        <label class="flex gap-2 text-sm"><input v-model="cfg.radius.acct_enabled" type="checkbox" /> 启用 RADIUS 计费（acct）</label>
+        <label class="flex gap-2 text-sm">
+          <input v-model="cfg.radius.acct_enabled" type="checkbox" /> {{ t('ocserv.radiusAcctEnable') }}
+        </label>
         <label v-if="cfg.radius.acct_enabled" class="text-sm">
-          计费上报间隔（秒）
+          {{ t('ocserv.radiusStats') }}
           <input v-model.number="cfg.radius.stats_report_time" type="number" class="input w-full mt-1 max-w-xs" />
           <span class="text-xs text-slate-500">stats-report-time</span>
         </label>
@@ -1446,24 +1508,26 @@ onUnmounted(() => {
         <label class="text-sm col-span-2">{{ t('ocserv.caCert') }}<input v-model="cfg.ca_cert_path" class="input w-full mt-1 font-mono text-xs" /><span class="text-xs text-slate-500">ca-cert</span></label>
       </div>
       <label class="text-sm">
-        证书用户 OID
+        {{ t('ocserv.certUserOidLabel') }}
         <input v-model="cfg.advanced.cert_user_oid" class="input w-full mt-1 font-mono text-xs" />
-        <span class="text-xs text-slate-500">cert-user-oid：客户端证书登录时从证书提取用户名</span>
+        <span class="text-xs text-slate-500">{{ t('ocserv.certUserOidHint') }}</span>
       </label>
       <label class="text-sm">
-        TLS 算法优先级
+        {{ t('ocserv.tlsPrioritiesLabel') }}
         <input v-model="cfg.advanced.tls_priorities" class="input w-full mt-1 font-mono text-xs" />
-        <span class="text-xs text-slate-500">tls-priorities：OpenSSL 优先级字符串</span>
+        <span class="text-xs text-slate-500">{{ t('ocserv.tlsPrioritiesHint') }}</span>
       </label>
       <div class="flex gap-2 pt-2">
-        <button type="button" class="btn-primary" @click="save">保存</button>
-        <button type="button" class="btn-secondary" :disabled="!status?.installed" @click="apply">保存并应用</button>
+        <button type="button" class="btn-primary" @click="save">{{ t('common.save') }}</button>
+        <button type="button" class="btn-secondary" :disabled="!status?.installed" @click="apply">
+          {{ t('common.saveAndApply') }}
+        </button>
       </div>
     </div>
 
     <div v-if="cfg && activeTab === 'advanced'" class="card p-4 space-y-4">
-      <h3 class="text-sm font-medium">高级设置</h3>
-      <p class="text-xs text-slate-500">协议特性、限速、封禁与 occtl；修改后请保存并应用。</p>
+      <h3 class="text-sm font-medium">{{ t('ocserv.advancedTitle') }}</h3>
+      <p class="text-xs text-slate-500">{{ t('ocserv.advancedHint') }}</p>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <label v-for="f in featureToggles" :key="f.key" class="flex gap-2 text-sm p-2 border rounded cursor-pointer">
           <input v-model="cfg.advanced[f.key]" type="checkbox" class="mt-0.5" />
@@ -1472,20 +1536,20 @@ onUnmounted(() => {
       </div>
       <div v-if="cfg.advanced.camouflage" class="grid grid-cols-2 gap-4 p-3 bg-amber-50/50 rounded border border-amber-100">
         <label class="text-sm col-span-2">
-          伪装密钥
+          {{ t('ocserv.camoSecret') }}
           <input
             v-model="camouflageSecret"
             type="password"
             class="input w-full mt-1"
-            :placeholder="camouflageSecretSet ? '已设置，留空则不修改' : '启用伪装时必填'"
+            :placeholder="camouflageSecretSet ? t('ocserv.camoSecretPhKeep') : t('ocserv.camoSecretPhRequired')"
             autocomplete="new-password"
           />
           <span class="text-xs text-slate-500">camouflage-secret</span>
         </label>
         <label class="text-sm col-span-2">
-          伪装站点提示语
+          {{ t('ocserv.camoRealm') }}
           <input v-model="cfg.advanced.camouflage_realm" class="input w-full mt-1" placeholder="Restricted Content" />
-          <span class="text-xs text-slate-500">camouflage-realm：HTTPS 伪装页显示的 Realm</span>
+          <span class="text-xs text-slate-500">{{ t('ocserv.camoRealmHint') }}</span>
         </label>
       </div>
       <div class="grid grid-cols-2 gap-4 p-3 bg-slate-50/80 rounded border">
@@ -1510,26 +1574,28 @@ onUnmounted(() => {
       </div>
       <div class="grid grid-cols-2 gap-4">
         <label class="text-sm">
-          重密钥方式
+          {{ t('ocserv.rekeyMethod') }}
           <select v-model="cfg.advanced.rekey_method" class="input w-full mt-1">
-            <option value="ssl">SSL 重协商（ssl）</option>
-            <option value="new-tunnel">新建隧道（new-tunnel）</option>
+            <option value="ssl">{{ t('ocserv.rekeySsl') }}</option>
+            <option value="new-tunnel">{{ t('ocserv.rekeyTunnel') }}</option>
           </select>
           <span class="text-xs text-slate-500">rekey-method</span>
         </label>
         <label class="text-sm">
-          默认域名
+          {{ t('ocserv.defaultDomain') }}
           <input v-model="cfg.advanced.default_domain" class="input w-full mt-1" />
-          <span class="text-xs text-slate-500">default-domain：下发给客户端的 DNS 域</span>
+          <span class="text-xs text-slate-500">default-domain</span>
         </label>
       </div>
       <div class="flex gap-2 pt-2">
-        <button type="button" class="btn-primary" @click="save">保存</button>
-        <button type="button" class="btn-secondary" :disabled="!status?.installed" @click="apply">保存并应用</button>
+        <button type="button" class="btn-primary" @click="save">{{ t('common.save') }}</button>
+        <button type="button" class="btn-secondary" :disabled="!status?.installed" @click="apply">
+          {{ t('common.saveAndApply') }}
+        </button>
       </div>
     </div>
 
-    <!-- 用户流量统计悬浮窗 -->
+    <!-- traffic modal -->
     <Teleport to="body">
       <div
         v-if="trafficModal"
@@ -1543,18 +1609,18 @@ onUnmounted(() => {
         >
           <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white z-10">
             <h3 id="traffic-modal-title" class="font-medium">
-              流量统计 · <span class="font-mono text-blue-700">{{ trafficModal }}</span>
+              {{ t('ocserv.trafficTitle', { user: trafficModal }) }}
             </h3>
             <button type="button" class="text-slate-500 hover:text-slate-800 text-xl leading-none px-2" @click="closeUserTraffic">×</button>
           </div>
           <div class="p-4 space-y-4">
             <div class="flex flex-wrap items-center gap-2 text-sm">
-              <span class="text-slate-600">时间范围</span>
+              <span class="text-slate-600">{{ t('ocserv.trafficRange') }}</span>
               <select v-model="trafficPeriod" class="input text-sm py-1 w-auto" :disabled="trafficLiveEnabled">
-                <option value="24h">近 24 小时</option>
-                <option value="7d">近 7 天</option>
-                <option value="30d">近 30 天</option>
-                <option value="365d">近 1 年</option>
+                <option value="24h">{{ t('ocserv.period24h') }}</option>
+                <option value="7d">{{ t('ocserv.period7d') }}</option>
+                <option value="30d">{{ t('ocserv.period30d') }}</option>
+                <option value="365d">{{ t('ocserv.period365d') }}</option>
               </select>
               <span
                 v-if="trafficData"
@@ -1571,36 +1637,36 @@ onUnmounted(() => {
               </span>
             </div>
             <p v-if="trafficErr" class="text-sm text-red-600">{{ trafficErr }}</p>
-            <p v-else-if="trafficLoading" class="text-sm text-slate-500">加载中…</p>
+            <p v-else-if="trafficLoading" class="text-sm text-slate-500">{{ t('common.loading') }}</p>
             <template v-else-if="trafficData">
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                 <div class="rounded-lg border p-2 bg-slate-50">
-                  <p class="text-xs text-slate-500">今日下行</p>
+                  <p class="text-xs text-slate-500">{{ t('ocserv.todayRx') }}</p>
                   <p class="font-mono font-medium">{{ formatBytes(trafficData.summary?.today_rx_bytes) }}</p>
                 </div>
                 <div class="rounded-lg border p-2 bg-slate-50">
-                  <p class="text-xs text-slate-500">今日上行</p>
+                  <p class="text-xs text-slate-500">{{ t('ocserv.todayTx') }}</p>
                   <p class="font-mono font-medium">{{ formatBytes(trafficData.summary?.today_tx_bytes) }}</p>
                 </div>
                 <div class="rounded-lg border p-2 bg-slate-50">
-                  <p class="text-xs text-slate-500">区间下行</p>
+                  <p class="text-xs text-slate-500">{{ t('ocserv.periodRx') }}</p>
                   <p class="font-mono font-medium">{{ formatBytes(trafficData.summary?.period_rx_bytes) }}</p>
                 </div>
                 <div class="rounded-lg border p-2 bg-slate-50">
-                  <p class="text-xs text-slate-500">区间上行</p>
+                  <p class="text-xs text-slate-500">{{ t('ocserv.periodTx') }}</p>
                   <p class="font-mono font-medium">{{ formatBytes(trafficData.summary?.period_tx_bytes) }}</p>
                 </div>
                 <div class="rounded-lg border p-2 bg-emerald-50/50 sm:col-span-2">
-                  <p class="text-xs text-slate-500">累计下行（约 1 年内 hourly 汇总）</p>
+                  <p class="text-xs text-slate-500">{{ t('ocserv.totalRx') }}</p>
                   <p class="font-mono font-medium text-emerald-800">{{ formatBytes(trafficData.summary?.total_rx_bytes) }}</p>
                 </div>
                 <div class="rounded-lg border p-2 bg-sky-50/50 sm:col-span-2">
-                  <p class="text-xs text-slate-500">累计上行</p>
+                  <p class="text-xs text-slate-500">{{ t('ocserv.totalTx') }}</p>
                   <p class="font-mono font-medium text-sky-800">{{ formatBytes(trafficData.summary?.total_tx_bytes) }}</p>
                 </div>
               </div>
               <div v-if="trafficData.online && trafficData.current" class="text-sm rounded border border-emerald-100 bg-emerald-50/40 p-3">
-                <p class="text-xs text-slate-600 mb-1">当前会话（occtl）</p>
+                <p class="text-xs text-slate-600 mb-1">{{ t('ocserv.currentSession') }}</p>
                 <p>
                   RX {{ formatTraffic(trafficData.current._RX, trafficData.current.RX ?? trafficData.current.rx) }}
                   · TX {{ formatTraffic(trafficData.current._TX, trafficData.current.TX ?? trafficData.current.tx) }}

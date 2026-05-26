@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import NotificationTray from '@/components/NotificationTray.vue'
+import { displayName } from '@/composables/useBranding'
 
 const router = useRouter()
 const route = useRoute()
@@ -172,7 +173,7 @@ function isActive(path, current = route.path) {
 }
 
 const asideWidthClass = computed(() =>
-  sidebarCollapsed.value ? 'w-12' : 'w-56',
+  sidebarCollapsed.value ? 'w-12' : 'w-64',
 )
 
 const flyoutGroup = ref(null)
@@ -235,7 +236,7 @@ const groupShort = computed(() => ({
               <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <h1 class="text-lg font-semibold tracking-tight">qosnat2</h1>
+          <h1 class="text-lg font-semibold tracking-tight">{{ displayName }}</h1>
           <span class="text-xs text-blue-200 hidden sm:inline">QoS · NAT · eBPF</span>
         </div>
         <div class="flex items-center gap-2">
@@ -245,9 +246,9 @@ const groupShort = computed(() => ({
         </div>
       </div>
       <div class="bg-pfsense-bar px-4 py-1.5 text-xs text-blue-100 hidden sm:flex gap-4">
-        <span>HTB / IFB</span>
-        <span>nftables</span>
-        <span>profile_lpm</span>
+        <span>{{ t('common.techHtb') }}</span>
+        <span>{{ t('common.techNft') }}</span>
+        <span>{{ t('common.techEbpf') }}</span>
         <span class="text-blue-200">{{ t('common.apiFirstControl') }}</span>
       </div>
     </header>
@@ -261,16 +262,16 @@ const groupShort = computed(() => ({
           mobileOpen ? 'fixed inset-y-0 left-0 z-40 top-[var(--header-h,0)] shadow-xl lg:static lg:shadow-none' : 'hidden lg:block',
         ]"
       >
-        <nav class="py-2 text-sm" :class="sidebarCollapsed ? 'px-1' : 'px-0'">
+        <nav class="app-sidebar-nav" :class="sidebarCollapsed ? 'px-1' : 'px-0'">
           <div
             v-if="!sidebarCollapsed"
-            class="flex items-center justify-between gap-1 px-3 py-1.5 mb-1 border-b border-slate-700/80"
+            class="flex items-center justify-between gap-1 px-3 py-2 mb-1 border-b border-slate-700/80"
           >
-            <span class="text-[10px] uppercase tracking-widest text-slate-500">{{ t('common.navigation') }}</span>
+            <span class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ t('common.navigation') }}</span>
             <div class="flex gap-0.5">
               <button
                 type="button"
-                class="text-[10px] text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-700"
+                class="app-sidebar-toolbar"
                 :title="t('nav.expandGroupTitle')"
                 @click="expandAllGroups"
               >
@@ -278,7 +279,7 @@ const groupShort = computed(() => ({
               </button>
               <button
                 type="button"
-                class="text-[10px] text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-slate-700"
+                class="app-sidebar-toolbar"
                 :title="t('nav.collapseGroupTitle')"
                 @click="collapseAllGroups"
               >
@@ -292,7 +293,7 @@ const groupShort = computed(() => ({
               <div class="relative mx-0.5">
                 <button
                   type="button"
-                  class="w-full flex items-center justify-center py-2 rounded text-xs font-semibold transition-colors"
+                  class="w-full flex items-center justify-center py-2.5 rounded text-sm font-semibold transition-colors"
                   :class="
                     group.items.some((it) => isActive(it.path))
                       ? 'bg-slate-700 text-white ring-1 ring-blue-400/60'
@@ -303,18 +304,15 @@ const groupShort = computed(() => ({
                 >
                   {{ groupShort[group.title] || group.title[0] }}
                 </button>
-                <div
-                  v-if="flyoutGroup === group.title"
-                  class="absolute left-full top-0 ml-1 z-50 min-w-[11rem] py-1 rounded-md bg-slate-800 border border-slate-600 shadow-xl"
-                >
-                  <div class="px-3 py-1.5 text-[10px] uppercase tracking-widest text-slate-500 border-b border-slate-700">
+                <div v-if="flyoutGroup === group.title" class="app-sidebar-flyout">
+                  <div class="app-sidebar-flyout-title">
                     {{ group.title }}
                   </div>
                   <router-link
                     v-for="item in group.items"
                     :key="item.path"
                     :to="item.path"
-                    class="block px-3 py-2 text-sm hover:bg-slate-700/80"
+                    class="app-sidebar-flyout-item"
                     :class="isActive(item.path) ? 'text-white bg-slate-700/60' : 'text-slate-300'"
                     @click="closeFlyout"
                   >
@@ -327,31 +325,31 @@ const groupShort = computed(() => ({
             <template v-else>
               <button
                 type="button"
-                class="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-slate-700/50 transition-colors"
+                class="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-700/50 transition-colors"
                 @click="toggleGroup(group.title)"
               >
                 <svg
-                  class="w-3 h-3 shrink-0 text-slate-500 transition-transform"
+                  class="w-3.5 h-3.5 shrink-0 text-slate-500 transition-transform"
                   :class="isGroupExpanded(group.title) ? 'rotate-90' : ''"
                   viewBox="0 0 24 24"
                   fill="currentColor"
                 >
                   <path d="M8 5v14l11-7z" />
                 </svg>
-                <span class="flex-1 text-[10px] uppercase tracking-widest text-slate-500 font-semibold">
+                <span class="app-sidebar-group-title">
                   {{ group.title }}
                 </span>
-                <span class="text-[10px] text-slate-600 tabular-nums">{{ group.items.length }}</span>
+                <span class="app-sidebar-group-count">{{ group.items.length }}</span>
               </button>
               <div v-show="isGroupExpanded(group.title)" class="pb-1">
                 <router-link
                   v-for="item in group.items"
                   :key="item.path"
                   :to="item.path"
-                  class="block px-4 py-1.5 pl-8 hover:bg-slate-700/80 transition-colors"
+                  class="app-sidebar-item"
                   :class="
                     isActive(item.path)
-                      ? 'bg-slate-700 text-white border-l-4 border-blue-400 pl-7'
+                      ? 'bg-slate-700 text-white border-l-4 border-blue-400 !pl-8'
                       : 'border-l-4 border-transparent text-slate-300'
                   "
                 >

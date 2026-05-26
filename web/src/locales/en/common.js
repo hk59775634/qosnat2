@@ -61,6 +61,7 @@ export default {
   download: 'Download',
   upload: 'Upload',
   copy: 'Copy',
+  copyFailed: 'Copy failed',
   close: 'Close',
   open: 'Open',
   show: 'Show',
@@ -70,4 +71,9 @@ export default {
   expandNav: 'Expand navigation',
   collapseNav: 'Collapse navigation',
   apiFirstControl: 'API-first control plane',
+  techHtb: 'HTB / IFB',
+  techNft: 'nftables',
+  techEbpf: 'profile_lpm',
+  langEn: 'EN',
+  langZh: 'ZH',
 }

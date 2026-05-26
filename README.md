@@ -50,11 +50,33 @@ cd web && npm install && npm run build # 产出 web/dist（部署前必须）
 
 浏览器访问 `http://<host>:8080/`（Vue 3 + hash 路由）。
 
-## 部署
+## 一键安装（curl | bash）
+
+> **平台说明**：一键安装脚本会自动安装必要 apt 软件包（Go、clang/BPF、nftables、Node/npm 等）。该流程**仅在 Ubuntu 24.04 上完成安装验证**，**强烈推荐使用 Ubuntu 24.04**。其他版本可设置 `QOSNAT_SKIP_OS_CHECK=1` 强制继续（不保证成功）。
+
+从 GitHub 拉取源码并执行 `deploy-qos-nat.sh`（需 **root**）：
+
+```bash
+# 默认 HTTP（管理端口自动选取未占用端口）
+curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash
+
+# 启用 HTTPS：为公网 IPv4 申请 Let's Encrypt 短期 IP 证书（profile shortlived，约 6 天有效，自动续期）
+# 要求：ACME_EMAIL、本机 TCP/80 从公网可达、IP 为公网地址
+export ACME_EMAIL=you@example.com
+curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash -s -- ipssl
+```
+
+可选：`PUBLIC_IP=1.2.3.4`、`ACME_STAGING=1`（测试环境）、`QOSNAT_INSTALL_DIR=/opt/qosnat2`、`QOSNAT_SKIP_OS_CHECK=1`（非 24.04 时）。
+
+## 部署（本地仓库）
 
 ```bash
 sudo ./deploy-qos-nat.sh start
-# 打开 http://<host>:8080/ → 自动进入 /#/setup
+# 打开 http://<host>:<ADMIN_PORT>/ → 自动进入 /#/setup
+
+# 本地仓库 + ipssl（需已编译 qosnatd）
+export ACME_EMAIL=you@example.com
+sudo IPSSL=1 ./deploy-qos-nat.sh start
 ```
 
 | 路径 | 说明 |

@@ -1,5 +1,5 @@
 export default {
-  title: 'qosnat2 initial setup',
+  titleTpl: '{name} initial setup',
   steps: { welcome: 'Welcome', admin: 'Admin', iface: 'Interfaces', nat: 'NAT (optional)', done: 'Done' },
   stepOf: 'Step {n} / {m}',
   passMin: 'Password must be at least 8 characters',

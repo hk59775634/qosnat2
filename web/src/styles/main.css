@@ -90,3 +90,36 @@ table.data td {
 .link-card {
   @apply block px-2.5 py-1.5 rounded border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-sm;
 }
+
+/* 左侧导航（展开宽约 16rem，字号随栏宽可读） */
+.app-sidebar-nav {
+  @apply py-2 text-[0.9375rem] leading-snug;
+}
+
+.app-sidebar-toolbar {
+  @apply text-xs text-slate-400 hover:text-slate-200 px-2 py-1 rounded hover:bg-slate-700;
+}
+
+.app-sidebar-group-title {
+  @apply flex-1 text-xs font-semibold uppercase tracking-wide text-slate-500;
+}
+
+.app-sidebar-group-count {
+  @apply text-xs text-slate-600 tabular-nums;
+}
+
+.app-sidebar-item {
+  @apply block py-2 pl-9 pr-3 hover:bg-slate-700/80 transition-colors;
+}
+
+.app-sidebar-flyout {
+  @apply absolute left-full top-0 ml-1 z-50 min-w-[13.5rem] py-1.5 rounded-md bg-slate-800 border border-slate-600 shadow-xl text-[0.9375rem] leading-snug;
+}
+
+.app-sidebar-flyout-title {
+  @apply px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 border-b border-slate-700;
+}
+
+.app-sidebar-flyout-item {
+  @apply block px-3 py-2.5 hover:bg-slate-700/80;
+}

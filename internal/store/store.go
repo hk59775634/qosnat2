@@ -56,10 +56,26 @@ type FirewallState struct {
 	Aliases         []AliasSet `json:"aliases"`
 }
 
+// DefaultDisplayName 控制台 UI 默认产品名（非功能标识）
+const DefaultDisplayName = "qosnat2"
+
+// EffectiveDisplayName 返回用于 UI 展示的系统名称
+func EffectiveDisplayName(name string) string {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return DefaultDisplayName
+	}
+	if len(n) > 64 {
+		return n[:64]
+	}
+	return n
+}
+
 // SystemState 系统可调项
 type SystemState struct {
 	Sysctl        map[string]string `json:"sysctl"`
 	Hostname      string            `json:"hostname,omitempty"`
+	DisplayName   string            `json:"display_name,omitempty"` // UI 品牌名，不影响服务标识
 	TxQueueLenLAN int               `json:"txqueuelen_lan,omitempty"`
 	TxQueueLenWAN int               `json:"txqueuelen_wan,omitempty"`
 	RpsLAN             bool   `json:"rps_lan,omitempty"`

@@ -5,6 +5,9 @@ export default {
     basic: '基本',
     adminSection: '管理员',
     hostname: '主机名',
+    displayName: '系统名称（UI 显示）',
+    displayNameHint: '用于登录页标题、控制台左上角等界面展示，不影响服务路径、证书或防火墙等功能。',
+    displayNameDefault: '留空则显示默认名称 qosnat2',
     adminPort: 'Web 管理端口',
     adminPortHint: '修改后需使用新端口访问；将同步更新防火墙 WAN 入站放行规则。',
     newPassword: '新密码（留空不修改）',
@@ -32,6 +35,9 @@ export default {
     saved: '已保存',
     certRequested: '证书申请成功',
     certRenewed: '证书续期成功',
+    httpsSection: 'HTTPS',
+    pemCert: 'PEM 证书',
+    pemKey: 'PEM 私钥',
   },
   advanced: {
     title: '高级设置 · 系统优化',
@@ -59,6 +65,14 @@ export default {
     savedApplied: '已保存并应用',
     filledRec: '已填入推荐值',
     appliedHw: '已按当前硬件应用推荐',
+    apiNotFound: '接口不存在：请重新编译并部署 qosnatd（需包含 /api/v1/system/tuning）',
+    loadFailed: '加载失败',
+    conntrackExtra:
+      '；conntrack max {max} / buckets {buckets}（优化内存 {mb}MB）',
+    memoryBudget:
+      '优化专用 {optMb} MB（总内存 50%）· conntrack 预算 {ctMb} MB → max {max} · buckets {buckets}（≈{bpe} B/连接）',
+    ifaceSummary: 'LAN {lan} · WAN {wan} · 配置 {path}',
+    liveTxqueuelen: '当前内核 txqueuelen — LAN {lan} / WAN {wan}',
   },
   apiKeys: {
     title: 'API 密钥',

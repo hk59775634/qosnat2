@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { saveLocale } from '@/i18n'
 
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 
 const current = computed({
   get: () => locale.value,
@@ -27,7 +27,7 @@ function setLang(code) {
       :class="current === 'en' ? 'bg-white/20 text-white' : 'text-blue-100 hover:text-white hover:bg-white/10'"
       @click="setLang('en')"
     >
-      EN
+      {{ t('common.langEn') }}
     </button>
     <button
       type="button"
@@ -35,7 +35,7 @@ function setLang(code) {
       :class="current === 'zh' ? 'bg-white/20 text-white' : 'text-blue-100 hover:text-white hover:bg-white/10'"
       @click="setLang('zh')"
     >
-      中文
+      {{ t('common.langZh') }}
     </button>
   </div>
 </template>

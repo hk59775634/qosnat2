@@ -55,7 +55,7 @@ async function genKeys() {
     if (!cfg.value) await load()
     cfg.value.private_key = kp.private_key
     cfg.value.public_key = kp.public_key
-    ok.value = '已生成服务端密钥'
+    ok.value = t('vpn.wg.keysGenerated')
   } catch (e) {
     err.value = e.message
   }
@@ -68,21 +68,21 @@ async function save() {
     cfg.value.server_endpoint = serverEndpoint.value
     cfg.value.peers = peers.value
     await api.put('/api/v1/vpn/wireguard', cfg.value)
-    ok.value = '配置已保存'
+    ok.value = t('vpn.wg.configSaved')
     if (cfg.value.enabled) {
       try {
         await api.post('/api/v1/vpn/wireguard/apply', {})
-        ok.value = '已保存并应用'
+        ok.value = t('vpn.wg.savedApplied')
       } catch (e) {
-        err.value = `保存成功，但 wg-quick 应用失败: ${e.message}`
+        err.value = `${t('vpn.wg.saveApplyFailed')}: ${e.message}`
       }
     } else {
       try {
         await api.post('/api/v1/vpn/wireguard/apply', {})
       } catch {
-        /* down 时接口可能本就不存在 */
+        /* interface may not exist when down */
       }
-      ok.value = '已保存（WireGuard 未启用）'
+      ok.value = t('vpn.wg.savedDisabled')
     }
     await load()
   } catch (e) {
@@ -96,7 +96,7 @@ async function genPeerKeys() {
     const kp = await api.post('/api/v1/vpn/wireguard/keys', {})
     peerForm.value.private_key = kp.private_key
     peerForm.value.public_key = kp.public_key
-    ok.value = '已生成 Peer 密钥对（客户端私钥 + 公钥）'
+    ok.value = t('vpn.wg.peerKeysGenerated')
   } catch (e) {
     err.value = e.message
   }
@@ -107,7 +107,7 @@ async function addPeer() {
   ok.value = ''
   try {
     if (!peerForm.value.name?.trim()) {
-      err.value = '请填写 Peer 名称'
+      err.value = t('vpn.wg.peerNameRequired')
       return
     }
     const body = {
@@ -126,7 +126,7 @@ async function addPeer() {
     await api.post('/api/v1/vpn/wireguard/peers', body)
     peerForm.value = defaultPeerForm()
     await load()
-    ok.value = 'Peer 已添加'
+    ok.value = t('vpn.wg.peerAdded')
   } catch (e) {
     err.value = e.message
   }
@@ -137,7 +137,7 @@ async function delPeer(name) {
   try {
     await api.del(`/api/v1/vpn/wireguard/peers?name=${encodeURIComponent(name)}`)
     await load()
-    ok.value = '已删除 Peer'
+    ok.value = t('vpn.wg.peerDeleted')
   } catch (e) {
     err.value = e.message
   }
@@ -177,23 +177,29 @@ onMounted(load)
             <input v-model="cfg.enabled" type="checkbox" /> {{ t('vpn.wg.enable') }}
           </label>
           <div>
-            <span class="text-slate-500">状态</span>
-            {{ status?.installed ? (status?.up ? '运行中' : '已安装') : '未安装 wg' }}
+            <span class="text-slate-500">{{ t('vpn.wg.statusLabel') }}</span>
+            {{
+              status?.installed
+                ? status?.up
+                  ? t('vpn.wg.running')
+                  : t('vpn.wg.installed')
+                : t('vpn.wg.notInstalled')
+            }}
           </div>
           <div>
-            <label class="text-xs text-slate-500">接口</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.iface') }}</label>
             <input v-model="cfg.interface" class="input-field" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">监听端口</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.listen') }}</label>
             <input v-model.number="cfg.listen_port" type="number" class="input-field" />
           </div>
           <div class="sm:col-span-2">
-            <label class="text-xs text-slate-500">隧道地址</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.tunnelAddress') }}</label>
             <input v-model="cfg.address" class="input-field font-mono" />
           </div>
           <div class="sm:col-span-2">
-            <label class="text-xs text-slate-500">客户端 Endpoint（公网 IP:端口）</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.serverEndpointPublic') }}</label>
             <input v-model="serverEndpoint" class="input-field font-mono" placeholder="157.15.107.249:51820" />
           </div>
         </div>
@@ -201,58 +207,54 @@ onMounted(load)
           <button type="button" class="btn-secondary" @click="genKeys">{{ t('vpn.wg.genKeys') }}</button>
           <button type="button" class="btn-primary" @click="save">{{ t('vpn.wg.saveApply') }}</button>
         </div>
-        <p class="text-xs text-slate-400 mt-2 font-mono truncate">公钥: {{ cfg.public_key || '—' }}</p>
-        <p v-if="cfg.server_private_key_set" class="text-xs text-slate-500 mt-1">
-          服务端私钥已配置（GET 不返回明文；留空保存则保留原密钥，或点「生成密钥」轮换）
-        </p>
+        <p class="text-xs text-slate-400 mt-2 font-mono truncate">{{ t('vpn.wg.serverPubkey') }}: {{ cfg.public_key || '—' }}</p>
+        <p v-if="cfg.server_private_key_set" class="text-xs text-slate-500 mt-1">{{ t('vpn.wg.serverKeyHint') }}</p>
       </section>
 
       <template v-if="activeTab === 'peers'">
       <section class="card p-4">
         <h3 class="font-medium mb-3">{{ t('vpn.wg.addPeer') }}</h3>
-        <p class="text-xs text-slate-500 mb-3">
-          可手动填写客户端私钥/公钥，或点「自动生成密钥对」；仅填公钥可导入已有客户端（无法下载 conf）。
-        </p>
+        <p class="text-xs text-slate-500 mb-3">{{ t('vpn.wg.peerFormHint') }}</p>
         <div class="grid sm:grid-cols-2 gap-3 text-sm max-w-3xl">
           <div>
-            <label class="text-xs text-slate-500">名称 *</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.peerName') }} *</label>
             <input v-model="peerForm.name" class="input-field" placeholder="client-1" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">隧道地址 (AllowedIPs)</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.peerAllowedLabel') }}</label>
             <input v-model="peerForm.allowed_ips" class="input-field font-mono text-xs" placeholder="10.200.0.10/32" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">下行限速</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.rateDown') }}</label>
             <input v-model="peerForm.rate.down" class="input-field font-mono text-xs" placeholder="8mbit" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">上行限速</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.rateUp') }}</label>
             <input v-model="peerForm.rate.up" class="input-field font-mono text-xs" placeholder="8mbit" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">Keepalive (秒)</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.keepaliveSec') }}</label>
             <input v-model.number="peerForm.persistent_keepalive" type="number" class="input-field" />
           </div>
           <div>
-            <label class="text-xs text-slate-500">Endpoint（可选，客户端源地址）</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.peerEndpointOpt') }}</label>
             <input v-model="peerForm.endpoint" class="input-field font-mono text-xs" placeholder="203.0.113.50:51820" />
           </div>
           <div class="sm:col-span-2">
-            <label class="text-xs text-slate-500">客户端私钥 (PrivateKey)</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.clientPrivKey') }}</label>
             <textarea
               v-model="peerForm.private_key"
               class="input-field font-mono text-xs min-h-[4rem]"
-              placeholder="留空则添加时自动生成，或仅填公钥导入已有设备"
+              :placeholder="t('vpn.wg.privKeyPh')"
               spellcheck="false"
             />
           </div>
           <div class="sm:col-span-2">
-            <label class="text-xs text-slate-500">客户端公钥 (PublicKey，服务端 Peer 必填)</label>
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.clientPubKey') }}</label>
             <textarea
               v-model="peerForm.public_key"
               class="input-field font-mono text-xs min-h-[4rem]"
-              placeholder="可只填公钥；若已填私钥可留空由服务端推导"
+              :placeholder="t('vpn.wg.pubKeyPh')"
               spellcheck="false"
             />
           </div>
@@ -264,15 +266,15 @@ onMounted(load)
       </section>
 
       <section class="card table-wrap p-4">
-        <h3 class="font-medium mb-3">Peer 列表</h3>
+        <h3 class="font-medium mb-3">{{ t('vpn.wg.peerList') }}</h3>
         <table class="data w-full">
           <thead>
             <tr>
-              <th>名称</th>
-              <th>公钥</th>
-              <th>AllowedIPs</th>
-              <th>下行</th>
-              <th>上行</th>
+              <th>{{ t('vpn.wg.colName') }}</th>
+              <th>{{ t('vpn.wg.colPubkey') }}</th>
+              <th>{{ t('vpn.wg.colAllowed') }}</th>
+              <th>{{ t('vpn.wg.colDown') }}</th>
+              <th>{{ t('vpn.wg.colUp') }}</th>
               <th></th>
             </tr>
           </thead>
@@ -306,7 +308,7 @@ onMounted(load)
         </table>
       </section>
       <div class="flex justify-end">
-        <button type="button" class="btn-primary" @click="save">保存并 wg-quick apply</button>
+        <button type="button" class="btn-primary" @click="save">{{ t('vpn.wg.saveApply') }}</button>
       </div>
       </template>
     </div>

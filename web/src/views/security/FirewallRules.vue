@@ -226,12 +226,12 @@ onMounted(load)
     <div class="fw-iface-bar card card-body flex flex-wrap items-center gap-3 text-sm">
       <span class="text-slate-500">{{ t('security.firewall.ifaceRoles') }}</span>
       <span v-if="devLan" class="fw-iface-pill fw-iface-lan">
-        <span class="fw-iface-tag">LAN</span>
+        <span class="fw-iface-tag">{{ t('security.firewall.roleLan') }}</span>
         <span class="font-mono">{{ devLan }}</span>
       </span>
       <span v-else class="text-slate-400 text-xs">{{ t('security.firewall.noLan') }}</span>
       <span v-if="devWan" class="fw-iface-pill fw-iface-wan">
-        <span class="fw-iface-tag">WAN</span>
+        <span class="fw-iface-tag">{{ t('security.firewall.roleWan') }}</span>
         <span class="font-mono">{{ devWan }}</span>
       </span>
       <span class="ml-auto flex flex-wrap gap-2">
@@ -361,8 +361,10 @@ onMounted(load)
               </td>
               <td>
                 <span v-if="formatIface(r.iif, devLan, devWan).name !== '—'" class="fw-iface-cell">
-                  <span v-if="formatIface(r.iif, devLan, devWan).role" class="fw-mini-tag">{{
-                    formatIface(r.iif, devLan, devWan).role
+                  <span v-if="formatIface(r.iif, devLan, devWan).roleKey" class="fw-mini-tag">{{
+                    formatIface(r.iif, devLan, devWan).roleKey === 'lan'
+                      ? t('security.firewall.roleLan')
+                      : t('security.firewall.roleWan')
                   }}</span>
                   <span class="font-mono text-xs">{{ formatIface(r.iif, devLan, devWan).name }}</span>
                 </span>
@@ -370,8 +372,10 @@ onMounted(load)
               </td>
               <td v-if="showOutCol">
                 <span v-if="formatIface(r.oif, devLan, devWan).name !== '—'" class="fw-iface-cell">
-                  <span v-if="formatIface(r.oif, devLan, devWan).role" class="fw-mini-tag">{{
-                    formatIface(r.oif, devLan, devWan).role
+                  <span v-if="formatIface(r.oif, devLan, devWan).roleKey" class="fw-mini-tag">{{
+                    formatIface(r.oif, devLan, devWan).roleKey === 'lan'
+                      ? t('security.firewall.roleLan')
+                      : t('security.firewall.roleWan')
                   }}</span>
                   <span class="font-mono text-xs">{{ formatIface(r.oif, devLan, devWan).name }}</span>
                 </span>
@@ -469,8 +473,8 @@ onMounted(load)
         <div>
           <label class="text-xs text-slate-500">{{ t('security.firewall.chain') }}</label>
           <select v-model="form.chain" class="input-field mt-1">
-            <option value="forward">forward</option>
-            <option value="input">input</option>
+            <option value="forward">{{ t('security.firewall.chainForward') }}</option>
+            <option value="input">{{ t('security.firewall.chainInput') }}</option>
           </select>
         </div>
         <div>
@@ -485,8 +489,8 @@ onMounted(load)
           <label class="text-xs text-slate-500">{{ t('security.firewall.inIface') }}</label>
           <select v-model="form.iif_mode" class="input-field mt-1">
             <option value="any">{{ t('security.firewall.optAny') }}</option>
-            <option v-if="devLan" value="lan">LAN ({{ devLan }})</option>
-            <option v-if="devWan" value="wan">WAN ({{ devWan }})</option>
+            <option v-if="devLan" value="lan">{{ t('security.firewall.roleLan') }} ({{ devLan }})</option>
+            <option v-if="devWan" value="wan">{{ t('security.firewall.roleWan') }} ({{ devWan }})</option>
             <option value="custom">{{ t('security.firewall.optCustomIface') }}</option>
           </select>
           <input
@@ -500,8 +504,8 @@ onMounted(load)
           <label class="text-xs text-slate-500">{{ t('security.firewall.outIface') }}</label>
           <select v-model="form.oif_mode" class="input-field mt-1">
             <option value="any">{{ t('security.firewall.optAny') }}</option>
-            <option v-if="devLan" value="lan">LAN ({{ devLan }})</option>
-            <option v-if="devWan" value="wan">WAN ({{ devWan }})</option>
+            <option v-if="devLan" value="lan">{{ t('security.firewall.roleLan') }} ({{ devLan }})</option>
+            <option v-if="devWan" value="wan">{{ t('security.firewall.roleWan') }} ({{ devWan }})</option>
             <option value="custom">{{ t('security.firewall.optCustomIface') }}</option>
           </select>
           <input

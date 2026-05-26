@@ -118,25 +118,72 @@ func ObtainACME(domain, email string, staging bool) (*store.ManagedCertificate, 
 	return mc, nil
 }
 
+// ObtainACMEIP 为公网 IPv4 申请 Let's Encrypt 短期 IP 证书（profile shortlived）
+func ObtainACMEIP(ip, email string, staging bool) (*store.ManagedCertificate, error) {
+	ip, err := acme.NormalizeIP(ip)
+	if err != nil {
+		return nil, err
+	}
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil, fmt.Errorf("ACME email required")
+	}
+	res, err := acme.ObtainIP(acme.Config{Email: email, Staging: staging}, ip)
+	if err != nil {
+		return nil, err
+	}
+	mc := &store.ManagedCertificate{
+		ID:               store.NewManagedCertID(),
+		Name:             ip,
+		Type:             store.CertTypeACME,
+		Domains:          []string{ip},
+		AcmeEmail:        email,
+		AcmeStaging:      staging,
+		AcmeRenewDays:    store.DefaultIPAcmeAutoRenewDays,
+		AutoRenewEnabled: true,
+		AcmeLastOK:       time.Now().UTC().Format(time.RFC3339),
+		AcmeLastError:    "",
+	}
+	certPath, keyPath, _, err := SavePEM(mc.ID, res.CertPEM, res.KeyPEM, "")
+	if err != nil {
+		_ = RemoveDir(mc.ID)
+		return nil, err
+	}
+	mc.CertPath = certPath
+	mc.KeyPath = keyPath
+	if !res.NotAfter.IsZero() {
+		mc.NotAfter = res.NotAfter.UTC().Format(time.RFC3339)
+	}
+	mc.Subject, mc.NotAfter = ParseMeta(certPath)
+	return mc, nil
+}
+
 // RenewACME 续签 ACME 证书
 func RenewACME(mc store.ManagedCertificate) (*store.ManagedCertificate, error) {
 	if mc.Type != store.CertTypeACME || len(mc.Domains) == 0 {
 		return nil, fmt.Errorf("not an ACME certificate")
 	}
 	domain := mc.Domains[0]
-	certPEM, err := os.ReadFile(mc.CertPath)
-	if err != nil {
-		return nil, err
-	}
-	keyPEM, err := os.ReadFile(mc.KeyPath)
-	if err != nil {
-		return nil, err
-	}
-	res, err := acme.Renew(acme.Config{
+	cfg := acme.Config{
 		Domain:  domain,
 		Email:   mc.AcmeEmail,
 		Staging: mc.AcmeStaging,
-	}, string(certPEM), string(keyPEM))
+	}
+	var res *acme.Result
+	var err error
+	if store.ManagedCertIsIP(mc) {
+		res, err = acme.RenewIP(cfg, domain)
+	} else {
+		certPEM, rerr := os.ReadFile(mc.CertPath)
+		if rerr != nil {
+			return nil, rerr
+		}
+		keyPEM, rerr := os.ReadFile(mc.KeyPath)
+		if rerr != nil {
+			return nil, rerr
+		}
+		res, err = acme.Renew(cfg, string(certPEM), string(keyPEM))
+	}
 	if err != nil {
 		mc.AcmeLastError = err.Error()
 		return &mc, err

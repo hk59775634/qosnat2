@@ -34,6 +34,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 			"conf_path":             ocserv.ConfPath,
 			"radius_secret_set":     strings.TrimSpace(o.Radius.Secret) != "",
 			"camouflage_secret_set": strings.TrimSpace(o.Advanced.CamouflageSecret) != "",
+			"connection":            ocserv.BuildConnectionInfo(o, st.Certificates),
 		})
 	case http.MethodPut:
 		var body store.OCServState
