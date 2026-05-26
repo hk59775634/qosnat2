@@ -10,6 +10,7 @@ export function emptyVhostForm() {
     auth_method: '',
     plain_passwd_path: '',
     radius: null,
+    managed_cert_id: '',
     server_cert_path: '',
     server_key_path: '',
     ca_cert_path: '',

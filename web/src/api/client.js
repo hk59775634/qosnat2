@@ -84,6 +84,32 @@ export const api = {
     audit: {
       list: () => request('/api/v1/system/audit'),
     },
+    notifications: {
+      list: () => request('/api/v1/system/notifications'),
+      dismiss: (ids) =>
+        request('/api/v1/system/notifications', {
+          method: 'POST',
+          body: JSON.stringify({ ids }),
+        }),
+      dismissAll: () =>
+        request('/api/v1/system/notifications', {
+          method: 'POST',
+          body: JSON.stringify({ dismiss_all: true }),
+        }),
+    },
+    certificates: {
+      list: () => request('/api/v1/system/certificates'),
+      create: (body) =>
+        request('/api/v1/system/certificates', { method: 'POST', body: JSON.stringify(body) }),
+      renew: (id) =>
+        request('/api/v1/system/certificates/renew', { method: 'POST', body: JSON.stringify({ id }) }),
+      setAutoRenew: (id, enabled) =>
+        request('/api/v1/system/certificates/auto-renew', {
+          method: 'POST',
+          body: JSON.stringify({ id, enabled, resume: enabled }),
+        }),
+      del: (id) => request(`/api/v1/system/certificates?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
     apiKeys: {
       list: () => request('/api/v1/api-keys'),
       create: (name) => request('/api/v1/api-keys', { method: 'POST', body: JSON.stringify({ name }) }),

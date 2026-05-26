@@ -92,10 +92,13 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Save()
 	}
 	up := o.Enabled
-	mode, err := ocserv.Apply(o, up)
+	mode, err := ocserv.Apply(o, st.Certificates, up)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if srv.setupComplete() {
+		_ = srv.reloadNft()
 	}
 	srv.auditLog(r, "vpn.ocserv.apply", map[bool]string{true: "up", false: "down"}[up])
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "apply_mode": mode})

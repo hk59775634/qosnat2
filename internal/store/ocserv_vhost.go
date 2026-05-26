@@ -21,6 +21,7 @@ type OCServVhost struct {
 	Radius *OCServRadius `json:"radius,omitempty"`
 
 	// TLS / 证书
+	ManagedCertID  string `json:"managed_cert_id,omitempty"`
 	ServerCertPath string `json:"server_cert_path,omitempty"`
 	ServerKeyPath  string `json:"server_key_path,omitempty"`
 	CaCertPath     string `json:"ca_cert_path,omitempty"`

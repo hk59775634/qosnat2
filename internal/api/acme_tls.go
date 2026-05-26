@@ -32,6 +32,7 @@ func (srv *Server) tlsStatusWithAcme() TLSStatus {
 	s.AcmeRenewDays = acmeRenewBeforeDays(st)
 	s.AcmeLastOK = st.TLSAcmeLastOK
 	s.AcmeLastError = st.TLSAcmeLastError
+	s.ManagedCertID = strings.TrimSpace(st.TLSManagedCertID)
 	return s
 }
 
@@ -73,21 +74,26 @@ func (srv *Server) runACMEObtain() error {
 		srv.recordAcmeResult(err)
 		return err
 	}
-	needRestart, err := srv.applyTLS(true, res.CertPEM, res.KeyPEM)
-	if err != nil {
+	if _, err := srv.applyTLS(true, res.CertPEM, res.KeyPEM); err != nil {
 		srv.recordAcmeResult(err)
 		return err
 	}
-	srv.recordAcmeResult(nil)
-	if needRestart {
-		scheduleQoSnatdRestart()
+	if _, err := srv.upsertSystemTLSManagedCert(res.CertPEM, res.KeyPEM, true, cfg.Domain, cfg.Email, cfg.Staging); err != nil {
+		log.Printf("upsert system tls cert: %v", err)
 	}
+	srv.recordAcmeResult(nil)
 	return nil
 }
 
 func (srv *Server) runACMERenew() error {
 	acmeOpMu.Lock()
 	defer acmeOpMu.Unlock()
+	st := srv.store.Get()
+	if id := strings.TrimSpace(st.System.TLSManagedCertID); id != "" {
+		if mc, ok := store.FindManagedCert(st.Certificates, id); ok && mc.Type == store.CertTypeACME {
+			return srv.renewSystemManagedCertACME()
+		}
+	}
 	cfg, err := srv.acmeConfigFromStore()
 	if err != nil {
 		return err
@@ -105,22 +111,27 @@ func (srv *Server) runACMERenew() error {
 		srv.recordAcmeResult(err)
 		return err
 	}
-	needRestart, err := srv.applyTLS(true, res.CertPEM, res.KeyPEM)
-	if err != nil {
+	if _, err := srv.applyTLS(true, res.CertPEM, res.KeyPEM); err != nil {
 		srv.recordAcmeResult(err)
 		return err
 	}
-	srv.recordAcmeResult(nil)
-	if needRestart {
-		scheduleQoSnatdRestart()
+	if _, err := srv.upsertSystemTLSManagedCert(res.CertPEM, res.KeyPEM, true, cfg.Domain, cfg.Email, cfg.Staging); err != nil {
+		log.Printf("upsert system tls cert: %v", err)
 	}
+	srv.recordAcmeResult(nil)
 	return nil
 }
 
 func (srv *Server) maybeAutoRenewACME() {
 	st := srv.store.Get()
 	sys := st.System
-	if !sys.TLSEnabled || !sys.TLSAcmeEnabled || strings.TrimSpace(sys.TLSDomain) == "" {
+	if !sys.TLSEnabled || !sys.TLSAcmeEnabled {
+		return
+	}
+	if strings.TrimSpace(sys.TLSManagedCertID) != "" {
+		return
+	}
+	if strings.TrimSpace(sys.TLSDomain) == "" {
 		return
 	}
 	if !tlsFileExists(defaultTLSCertPath) {
@@ -130,10 +141,14 @@ func (srv *Server) maybeAutoRenewACME() {
 	if err != nil || days < 0 {
 		return
 	}
-	if days > acmeRenewBeforeDays(sys) {
+	renewBefore := store.ServiceAutoRenewDays
+	if sys.TLSAcmeRenewDays > 0 && sys.TLSAcmeRenewDays < renewBefore {
+		renewBefore = sys.TLSAcmeRenewDays
+	}
+	if days > renewBefore {
 		return
 	}
-	log.Printf("acme: cert expires in %d days, renewing %s", days, sys.TLSDomain)
+	log.Printf("acme: legacy system TLS expires in %d days, renewing %s", days, sys.TLSDomain)
 	if err := srv.runACMERenew(); err != nil {
 		log.Printf("acme renew: %v", err)
 	}

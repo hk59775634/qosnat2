@@ -50,6 +50,8 @@ type Server struct {
 	ocservTrafficCancel  context.CancelFunc
 	mux             *http.ServeMux
 	loginLim        *loginLimiter
+	tlsReloader     *tlsCertReloader
+	httpListen      *httpListener
 }
 
 func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
@@ -111,6 +113,10 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
 	m.HandleFunc("/api/v1/system/tls/acme", srv.requireAuth(srv.handleTLSAcme))
+	m.HandleFunc("/api/v1/system/notifications", srv.requireAuth(srv.handleNotifications))
+	m.HandleFunc("/api/v1/system/certificates/auto-renew", srv.requireAuth(srv.handleCertificateAutoRenew))
+	m.HandleFunc("/api/v1/system/certificates/renew", srv.requireAuth(srv.handleCertificateRenew))
+	m.HandleFunc("/api/v1/system/certificates", srv.requireAuth(srv.handleCertificates))
 	m.HandleFunc("/api/v1/system/audit", srv.requireAuth(srv.handleSystemAudit))
 	m.HandleFunc("/api/v1/firewall/rules/order", srv.requireAuth(srv.handleFirewallRulesOrder))
 	m.HandleFunc("/api/v1/firewall/rules", srv.requireAuth(srv.handleFirewallRules))
@@ -180,7 +186,7 @@ func (srv *Server) ApplyAll() error {
 			return fmt.Errorf("shaper: %w", err)
 		}
 	}
-	cfg := nft.Config{DevLAN: srv.env.DevLAN, DevWAN: srv.env.DevWAN}
+	cfg := srv.nftCfg()
 	if ips, auto := nft.ResolveSharedIPs(cfg, st); len(ips) == 0 {
 		log.Printf("warn: shared_ips empty and no IPv4 on WAN %s, nft SNAT uses masquerade only", srv.env.DevWAN)
 	} else if auto {
@@ -251,6 +257,7 @@ func (srv *Server) StartBackground() {
 	}
 	go shaper.StartLoop(ctx.Done(), interval, gc)
 	srv.startACMEBackground()
+	srv.startManagedCertsBackground()
 	go func() {
 		t := time.NewTicker(30 * time.Second)
 		defer t.Stop()
@@ -266,11 +273,16 @@ func (srv *Server) StartBackground() {
 }
 
 func (srv *Server) reloadNft() error {
-	return nft.Apply(nft.Config{DevLAN: srv.env.DevLAN, DevWAN: srv.env.DevWAN}, srv.store.Get())
+	return nft.Apply(srv.nftCfg(), srv.store.Get())
 }
 
 func (srv *Server) nftCfg() nft.Config {
-	return nft.Config{DevLAN: srv.env.DevLAN, DevWAN: srv.env.DevWAN}
+	return nft.Config{
+		DevLAN:    srv.env.DevLAN,
+		DevWAN:    srv.env.DevWAN,
+		AdminPort: srv.env.AdminPort,
+		VPN:       nft.VPNFirewallFromState(srv.store.Get()),
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -458,19 +470,15 @@ func isDir(p string) bool {
 	return err == nil && fi.IsDir()
 }
 
-// Listen 启动 HTTP
+// Listen 启动 HTTP/HTTPS（支持运行中切换模式，无需重启进程）
 func (srv *Server) Listen() error {
 	_ = srv.sessions.load()
 	srv.startMetricsSampler()
 	srv.startOCServTrafficSampler()
-	addr := srv.listenAddr()
-	h := srv.Handler()
-	if srv.tlsActive() {
-		log.Printf("qosnatd listening HTTPS on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
-		return http.ListenAndServeTLS(addr, srv.env.TLSCert, srv.env.TLSKey, h)
-	}
-	log.Printf("qosnatd listening on %s (LAN=%s WAN=%s)", addr, srv.env.DevLAN, srv.env.DevWAN)
-	return http.ListenAndServe(addr, h)
+	srv.initHTTPListener()
+	srv.httpListen.started = true
+	go srv.listenerSupervisor()
+	return <-srv.httpListen.fatalErr
 }
 
 func (srv *Server) startOCServTrafficSampler() {

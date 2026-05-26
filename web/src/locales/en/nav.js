@@ -28,6 +28,7 @@ export default {
   capture: 'Packet capture',
   system: 'System',
   general: 'General',
+  certificates: 'Certificates',
   advanced: 'Advanced',
   apiKeys: 'API keys',
   audit: 'Audit log',

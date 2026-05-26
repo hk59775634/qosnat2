@@ -171,6 +171,34 @@ components:
         acme_renew_days: { type: integer }
         acme_last_ok: { type: string }
         acme_last_error: { type: string }
+        managed_cert_id: { type: string, description: 关联的证书库条目 ID }
+    ManagedCertificate:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [manual, acme] }
+        domains: { type: array, items: { type: string } }
+        cert_path: { type: string }
+        key_path: { type: string }
+        ca_path: { type: string }
+        subject: { type: string }
+        not_after: { type: string, format: date-time }
+        acme_email: { type: string }
+        acme_staging: { type: boolean }
+        acme_renew_days: { type: integer, description: 库内独立证书到期前自动续期天数，默认 30；HTTPS/ocserv 绑定为 7 天 }
+        acme_last_error: { type: string }
+        auto_renew_enabled: { type: boolean }
+        auto_renew_paused: { type: boolean }
+        auto_renew_pause_reason: { type: string, description: 暂停原因（含 DNS 解析说明） }
+        days_until_expiry: { type: integer }
+        in_use:
+          type: array
+          items:
+            type: object
+            properties:
+              place: { type: string }
+              label: { type: string }
     GeneralSettings:
       type: object
       properties:
@@ -195,6 +223,7 @@ components:
         tls_acme_email: { type: string }
         tls_acme_staging: { type: boolean }
         tls_acme_renew_days: { type: integer }
+        tls_managed_cert_id: { type: string, description: 使用证书库中的证书；空字符串表示本页 ACME/上传 }
     IfaceAddr:
       type: object
       properties:
@@ -406,6 +435,7 @@ components:
             $ref: '#/components/schemas/OCServUser'
         radius:
           $ref: '#/components/schemas/OCServRadius'
+        managed_cert_id: { type: string, description: 证书库条目 ID；空则继承全局或使用路径字段 }
         server_cert_path: { type: string }
         server_key_path: { type: string }
         ca_cert_path: { type: string }
@@ -562,6 +592,7 @@ components:
         socket_file: { type: string }
         max_clients: { type: integer }
         use_qosnat_tls: { type: boolean, description: 使用 /etc/qosnat2/tls.* 作为服务端证书 }
+        managed_cert_id: { type: string, description: 证书库条目 ID }
         server_cert: { type: string }
         server_key: { type: string }
         users:
@@ -1378,6 +1409,85 @@ paths:
                   message: { type: string }
                   tls:
                     $ref: '#/components/schemas/TLSStatus'
+
+  /api/v1/system/certificates:
+    get:
+      tags: [system]
+      summary: 列出证书库
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  certificates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ManagedCertificate'
+    post:
+      tags: [system]
+      summary: 添加证书（manual PEM 或 ACME，需 root）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [manual, acme] }
+                name: { type: string }
+                domain: { type: string }
+                email: { type: string }
+                staging: { type: boolean }
+                cert_pem: { type: string }
+                key_pem: { type: string }
+                ca_pem: { type: string }
+      responses:
+        '200':
+          description: 已创建
+    delete:
+      tags: [system]
+      summary: 删除证书
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '409':
+          description: 证书仍被 ocserv 引用
+
+  /api/v1/system/certificates/auto-renew:
+    post:
+      tags: [system]
+      summary: 开启/恢复 ACME 自动续期（DNS 暂停后需手动恢复）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
+                enabled: { type: boolean }
+                resume: { type: boolean }
+
+  /api/v1/system/certificates/renew:
+    post:
+      tags: [system]
+      summary: ACME 续签证书库条目（需 root）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
+      responses:
+        '200':
+          description: 已续签
 
   /api/v1/system/audit:
     get:

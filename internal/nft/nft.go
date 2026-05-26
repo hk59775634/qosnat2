@@ -18,10 +18,12 @@ const (
 	TableName = "qosnat"
 )
 
-// Config 运行期网卡名（来自环境变量）
+// Config 运行期网卡名与管理端口（来自环境变量 / state）
 type Config struct {
-	DevLAN string
-	DevWAN string
+	DevLAN    string
+	DevWAN    string
+	AdminPort string
+	VPN       VPNFirewall
 }
 
 // ResolveSharedIPs 返回生效的共享 SNAT 地址：未配置时使用 WAN 口首个全球 IPv4
@@ -129,6 +131,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	if cfg.DevLAN != "" {
 		b.WriteString(fmt.Sprintf("        iifname \"%s\" accept\n", cfg.DevLAN))
 	}
+	writeWANInputPolicy(&b, cfg)
 	b.WriteString("    }\n}\n")
 	return b.String(), nil
 }

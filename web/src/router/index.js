@@ -37,6 +37,7 @@ const routes = [
       { path: 'diagnostics/capture', name: 'diag-capture', component: () => import('@/views/diagnostics/Capture.vue') },
       { path: 'diagnostics/conntrack', name: 'diag-conntrack', component: () => import('@/views/diagnostics/Conntrack.vue') },
       { path: 'system/general', name: 'system-general', component: () => import('@/views/system/General.vue') },
+      { path: 'system/certificates', name: 'system-certificates', component: () => import('@/views/system/Certificates.vue') },
       { path: 'system/advanced', name: 'system-advanced', component: () => import('@/views/system/Advanced.vue') },
       { path: 'system/api-keys', name: 'system-api-keys', component: () => import('@/views/system/ApiKeys.vue') },
       { path: 'system/audit', name: 'system-audit', component: () => import('@/views/system/Audit.vue') },

@@ -17,7 +17,7 @@ func TestRenderConfRadius(t *testing.T) {
 		GroupConfig: true,
 		AcctEnabled: true,
 	}
-	conf := RenderConf(o)
+	conf := RenderConf(o, nil)
 	if !strings.Contains(conf, `auth = "radius[config=/etc/radcli/radiusclient.conf,groupconfig=true]"`) {
 		t.Fatalf("missing radius auth: %s", conf)
 	}
@@ -46,7 +46,7 @@ func TestRenderConfAdvancedOff(t *testing.T) {
 	o.Advanced = store.DefaultOCServAdvanced()
 	o.Advanced.Udp = false
 	o.Advanced.DtlsLegacy = false
-	conf := RenderConf(o)
+	conf := RenderConf(o, nil)
 	if strings.Contains(conf, "udp-port") {
 		t.Fatal("udp should be disabled")
 	}
@@ -58,13 +58,14 @@ func TestRenderConfAdvancedOff(t *testing.T) {
 func TestRenderConfExtras(t *testing.T) {
 	o := store.DefaultOCServ()
 	o.NoRoutes = []string{"192.168.5.0/255.255.255.0"}
+	o.UseQoSnatTLS = false
 	o.ServerCertPath = "/etc/ocserv/certs/server-cert.pem"
 	o.Advanced.Camouflage = true
 	o.Advanced.CamouflageSecret = "secret"
 	o.Advanced.CamouflageRealm = "Restricted"
 	o.Advanced.RxDataPerSec = 1250000
 	o.Advanced.RateLimitMs = 100
-	conf := RenderConf(o)
+	conf := RenderConf(o, nil)
 	for _, want := range []string{
 		"no-route = 192.168.5.0/255.255.255.0",
 		"server-cert = /etc/ocserv/certs/server-cert.pem",
@@ -79,9 +80,24 @@ func TestRenderConfExtras(t *testing.T) {
 	}
 }
 
+func TestRenderConfManagedCert(t *testing.T) {
+	o := store.DefaultOCServ()
+	o.UseQoSnatTLS = false
+	o.ManagedCertID = "cert-abc"
+	certs := []store.ManagedCertificate{{
+		ID:       "cert-abc",
+		CertPath: "/var/lib/qosnat2/certs/cert-abc/fullchain.pem",
+		KeyPath:  "/var/lib/qosnat2/certs/cert-abc/privkey.pem",
+	}}
+	conf := RenderConf(o, certs)
+	if !strings.Contains(conf, "server-cert = /var/lib/qosnat2/certs/cert-abc/fullchain.pem") {
+		t.Fatalf("expected managed cert path: %s", conf)
+	}
+}
+
 func TestRenderConfPlain(t *testing.T) {
 	o := store.DefaultOCServ()
-	conf := RenderConf(o)
+	conf := RenderConf(o, nil)
 	if !strings.Contains(conf, `plain[passwd=`) {
 		t.Fatalf("%s", conf)
 	}

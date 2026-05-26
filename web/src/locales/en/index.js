@@ -14,6 +14,8 @@ import diagnostics from './diagnostics'
 import status from './status'
 import components from './components'
 import docs from './docs'
+import certificates from './certificates'
+import notifications from './notifications'
 
 export default {
   common,
@@ -32,4 +34,6 @@ export default {
   status,
   components,
   docs,
+  certificates,
+  notifications,
 }

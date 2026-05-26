@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import NotificationTray from '@/components/NotificationTray.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -71,6 +72,7 @@ const menu = computed(() => [
     title: t('nav.system'),
     items: [
       { path: '/system/general', label: t('nav.general') },
+      { path: '/system/certificates', label: t('nav.certificates') },
       { path: '/system/advanced', label: t('nav.advanced') },
       { path: '/system/api-keys', label: t('nav.apiKeys') },
       { path: '/system/audit', label: t('nav.audit') },
@@ -236,7 +238,8 @@ const groupShort = computed(() => ({
           <h1 class="text-lg font-semibold tracking-tight">qosnat2</h1>
           <span class="text-xs text-blue-200 hidden sm:inline">QoS · NAT · eBPF</span>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <NotificationTray />
           <LanguageSwitcher />
           <button type="button" class="text-sm text-blue-100 hover:text-white" @click="logout">{{ t('common.logout') }}</button>
         </div>

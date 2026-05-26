@@ -75,6 +75,7 @@ type SystemState struct {
 	TLSAcmeRenewDays      int    `json:"tls_acme_renew_days,omitempty"` // 到期前 N 天续期，默认 30
 	TLSAcmeLastOK         string `json:"tls_acme_last_ok,omitempty"`
 	TLSAcmeLastError      string `json:"tls_acme_last_error,omitempty"`
+	TLSManagedCertID      string `json:"tls_managed_cert_id,omitempty"`
 }
 
 // APIKey 持久化 API Key（仅存 key_hash；创建时明文仅返回一次）
@@ -103,7 +104,9 @@ type State struct {
 	DHCP           DHCPState         `json:"dhcp"`
 	Network        NetworkState      `json:"network"`
 	VPN            VPNState          `json:"vpn"`
-	APIKeys        []APIKey          `json:"api_keys"`
+	APIKeys        []APIKey             `json:"api_keys"`
+	Certificates   []ManagedCertificate `json:"certificates,omitempty"`
+	Notifications  []UINotification     `json:"notifications,omitempty"`
 }
 
 // Store 线程安全状态
@@ -152,7 +155,9 @@ func DefaultState() State {
 			},
 			OCServ: DefaultOCServ(),
 		},
-		APIKeys: []APIKey{},
+		APIKeys:      []APIKey{},
+		Certificates:  []ManagedCertificate{},
+		Notifications: []UINotification{},
 	}
 }
 

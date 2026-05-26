@@ -8,16 +8,19 @@ import (
 
 	"github.com/hk59775634/qosnat2/internal/acme"
 	"github.com/hk59775634/qosnat2/internal/audit"
+	"github.com/hk59775634/qosnat2/internal/netutil"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		srv.ensureSystemTLSLinkedToLibrary()
 		st := srv.store.Get()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"hostname":       st.System.Hostname,
 			"admin_user":     st.AdminUser,
+			"admin_port":     srv.env.AdminPort,
 			"dev_lan":        srv.env.DevLAN,
 			"dev_wan":        srv.env.DevWAN,
 			"setup_complete": st.SetupComplete,
@@ -26,6 +29,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var body struct {
 			Hostname         string `json:"hostname"`
+			AdminPort        string `json:"admin_port"`
 			NewPassword      string `json:"new_password"`
 			CurrentPassword  string `json:"current_password"`
 			TLSEnabled       *bool  `json:"tls_enabled"`
@@ -36,16 +40,19 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			TLSAcmeEmail     string `json:"tls_acme_email"`
 			TLSAcmeStaging   *bool  `json:"tls_acme_staging"`
 			TLSAcmeRenewDays *int   `json:"tls_acme_renew_days"`
+			TLSManagedCertID *string `json:"tls_managed_cert_id"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 			return
 		}
 		st := srv.store.Get()
+		portWarn := ""
 		acmeTouched := body.TLSDomain != "" || body.TLSAcmeEnabled != nil || body.TLSAcmeEmail != "" ||
 			body.TLSAcmeStaging != nil || body.TLSAcmeRenewDays != nil
+		managedCertTouched := body.TLSManagedCertID != nil
 		tlsModeTouched := body.TLSEnabled != nil || strings.TrimSpace(body.TLSCert) != "" ||
-			strings.TrimSpace(body.TLSKey) != ""
+			strings.TrimSpace(body.TLSKey) != "" || managedCertTouched
 		if acmeTouched || tlsModeTouched {
 			if !srv.verifyAdmin(st.AdminUser, body.CurrentPassword) {
 				writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password required to change HTTPS settings"})
@@ -87,6 +94,41 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			if body.TLSEnabled != nil {
 				enabled = *body.TLSEnabled
 			}
+			if managedCertTouched {
+				certID := strings.TrimSpace(*body.TLSManagedCertID)
+				if !enabled {
+					if _, applyErr := srv.applyTLS(false, "", ""); applyErr != nil {
+						writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
+						return
+					}
+					_ = srv.store.Update(func(s *store.State) {
+						s.System.TLSManagedCertID = ""
+						s.System.TLSEnabled = false
+					})
+					_ = srv.store.Save()
+					writeJSON(w, http.StatusOK, map[string]any{
+						"ok":      true,
+						"warning": "已切换为 HTTP 监听（未重启 qosnatd）。请使用 http:// 访问。",
+						"tls":     srv.tlsStatusWithAcme(),
+					})
+					return
+				}
+				if certID != "" {
+					if _, applyErr := srv.applyTLSFromManagedCertID(certID); applyErr != nil {
+						writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
+						return
+					}
+					srv.auditLog(r, "system.tls", "managed_cert:"+certID)
+					writeJSON(w, http.StatusOK, map[string]any{
+						"ok":      true,
+						"warning": "已启用 HTTPS（证书库），监听已热切换。请使用 https:// 访问。",
+						"tls":     srv.tlsStatusWithAcme(),
+					})
+					return
+				}
+				_ = srv.store.Update(func(s *store.State) { s.System.TLSManagedCertID = "" })
+				_ = srv.store.Save()
+			}
 			useAcme := st.System.TLSAcmeEnabled
 			if body.TLSAcmeEnabled != nil {
 				useAcme = *body.TLSAcmeEnabled
@@ -113,60 +155,65 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			if enabled {
 				cert := strings.TrimSpace(body.TLSCert)
 				key := strings.TrimSpace(body.TLSKey)
-				var needRestart bool
-				var applyErr error
-				if cert == "" || key == "" {
-					if !tlsFileExists(defaultTLSCertPath) || !tlsFileExists(defaultTLSKeyPath) {
-						writeJSON(w, http.StatusBadRequest, map[string]string{"error": "paste or upload certificate and private key PEM"})
-						return
-					}
-					srv.env.TLSCert = defaultTLSCertPath
-					srv.env.TLSKey = defaultTLSKeyPath
-					applyErr = writeRuntimeEnvMerged(srv.env)
-					if applyErr == nil {
-						_ = srv.store.Update(func(s *store.State) {
-							s.System.TLSEnabled = true
-							s.System.TLSAcmeEnabled = false
-						})
-						_ = srv.store.Save()
-						srv.reloadEnv()
-						needRestart = true
-					}
-				} else {
-					_ = srv.store.Update(func(s *store.State) { s.System.TLSAcmeEnabled = false })
-					_ = srv.store.Save()
-					needRestart, applyErr = srv.applyTLS(true, cert, key)
-				}
-				if applyErr != nil {
+				_ = srv.store.Update(func(s *store.State) { s.System.TLSAcmeEnabled = false })
+				_ = srv.store.Save()
+				if _, applyErr := srv.applyTLS(true, cert, key); applyErr != nil {
 					writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
 					return
+				}
+				if cert != "" && key != "" {
+					if _, err := srv.upsertSystemTLSManagedCert(cert, key, false, "", "", false); err != nil {
+						writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+						return
+					}
 				}
 				srv.auditLog(r, "system.tls", "enabled")
 				writeJSON(w, http.StatusOK, map[string]any{
 					"ok":      true,
-					"warning": "qosnatd 正在重启以启用 HTTPS，约 2 秒后请使用 https:// 访问",
+					"warning": "已启用 HTTPS，监听已热切换（未重启 qosnatd）。请使用 https:// 访问。",
 					"tls":     srv.tlsStatusWithAcme(),
 				})
-				if needRestart {
-					scheduleQoSnatdRestart()
-				}
 				return
 			}
-			needRestart, applyErr := srv.applyTLS(false, "", "")
-			if applyErr != nil {
+			if _, applyErr := srv.applyTLS(false, "", ""); applyErr != nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
 				return
 			}
 			srv.auditLog(r, "system.tls", "disabled")
 			writeJSON(w, http.StatusOK, map[string]any{
 				"ok":      true,
-				"warning": "qosnatd 正在重启以关闭 HTTPS",
+				"warning": "已关闭 HTTPS，监听已切回 HTTP（未重启 qosnatd）。请使用 http:// 访问。",
 				"tls":     srv.tlsStatusWithAcme(),
 			})
-			if needRestart {
-				scheduleQoSnatdRestart()
-			}
 			return
+		}
+		if p := strings.TrimSpace(body.AdminPort); p != "" && p != srv.env.AdminPort {
+			if !srv.verifyAdmin(st.AdminUser, body.CurrentPassword) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password required to change admin port"})
+				return
+			}
+			validPort, err := netutil.ValidateListenPort(p)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			srv.env.AdminPort = validPort
+			if err := writeRuntimeEnvMerged(srv.env); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			if err := srv.reloadHTTPListener(); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			if srv.setupComplete() {
+				if err := srv.reloadNft(); err != nil {
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+					return
+				}
+			}
+			portWarn = "管理端口已更新，请使用新端口访问 Web UI。"
+			srv.auditLog(r, "system.admin_port", validPort)
 		}
 		if body.NewPassword != "" {
 			if len(body.NewPassword) < 8 {
@@ -197,7 +244,11 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			srv.auditLog(r, "system.hostname", h)
 		}
 		_ = srv.store.Save()
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tls": srv.tlsStatusWithAcme()})
+		resp := map[string]any{"ok": true, "tls": srv.tlsStatusWithAcme(), "admin_port": srv.env.AdminPort}
+		if portWarn != "" {
+			resp["warning"] = portWarn
+		}
+		writeJSON(w, http.StatusOK, resp)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

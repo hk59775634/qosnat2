@@ -23,6 +23,23 @@ type FilterRule struct {
 	DstPort int    `json:"dst_port,omitempty"`
 	Comment string `json:"comment,omitempty"`
 	Enabled bool   `json:"enabled"`
+	// System 为 true 时表示平台内置/受管规则，禁止通过 API 修改或删除。
+	System bool `json:"system,omitempty"`
+}
+
+// FilterRuleMutable 是否允许用户修改或删除（系统规则及保留 ID 前缀不可变）。
+func FilterRuleMutable(r FilterRule) bool {
+	if r.System {
+		return false
+	}
+	id := strings.TrimSpace(r.ID)
+	if id == "" {
+		return false
+	}
+	if strings.HasPrefix(id, "sys-") || strings.HasPrefix(id, "auto-") {
+		return false
+	}
+	return true
 }
 
 // NormalizeFilterRule 校验并填充默认值
@@ -34,6 +51,8 @@ func NormalizeFilterRule(r *FilterRule) error {
 		b := make([]byte, 6)
 		_, _ = rand.Read(b)
 		r.ID = "fr-" + hex.EncodeToString(b)
+	} else if err := validateFilterRuleID(r.ID); err != nil {
+		return err
 	}
 	chain := strings.ToLower(strings.TrimSpace(r.Chain))
 	if chain != "forward" && chain != "input" {
@@ -49,6 +68,9 @@ func NormalizeFilterRule(r *FilterRule) error {
 	}
 	r.Iif = strings.TrimSpace(r.Iif)
 	r.Oif = strings.TrimSpace(r.Oif)
+	if chain == "input" {
+		r.Oif = ""
+	}
 	if r.Iif != "" {
 		if err := ValidateIfaceName(r.Iif); err != nil {
 			return fmt.Errorf("iif: %w", err)
@@ -96,6 +118,28 @@ func NormalizeFilterRule(r *FilterRule) error {
 	}
 	r.Comment = strings.TrimSpace(r.Comment)
 	return nil
+}
+
+func validateFilterRuleID(id string) error {
+	id = strings.TrimSpace(id)
+	if strings.HasPrefix(id, "sys-") || strings.HasPrefix(id, "auto-") {
+		return fmt.Errorf("rule id prefix reserved for system rules")
+	}
+	return nil
+}
+
+// RepairFilterRuleIDs 为缺少 id 的历史规则补全 ID（返回是否有修复）。
+func RepairFilterRuleIDs(rules []FilterRule) ([]FilterRule, bool) {
+	changed := false
+	out := make([]FilterRule, len(rules))
+	for i, r := range rules {
+		if strings.TrimSpace(r.ID) == "" {
+			_ = NormalizeFilterRule(&r)
+			changed = true
+		}
+		out[i] = r
+	}
+	return out, changed
 }
 
 // NftRuleLine 生成单行 nft 规则（不含前导空格）

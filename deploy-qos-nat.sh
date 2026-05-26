@@ -8,7 +8,7 @@ DEV_WAN="${DEV_WAN:-}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-}"
 INITIAL_ADMIN_FILE="${CONFIG_DIR}/initial-admin.txt"
-ADMIN_PORT="${ADMIN_PORT:-8080}"
+ADMIN_PORT="${ADMIN_PORT:-}"
 STATE_DIR="${STATE_DIR:-/var/lib/qosnat2}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/qosnat2}"
 SKIP_WEB_BUILD="${SKIP_WEB_BUILD:-0}"
@@ -96,6 +96,30 @@ resolve_web_root() {
   fi
 }
 
+pick_admin_port_if_unset() {
+  if [[ -n "${ADMIN_PORT:-}" ]]; then
+    return 0
+  fi
+  local p
+  for _ in $(seq 1 80); do
+    p=$((10240 + RANDOM % 55300))
+    if command -v ss &>/dev/null; then
+      if ss -tlnH 2>/dev/null | grep -qE ":${p}\$"; then
+        continue
+      fi
+    elif command -v nc &>/dev/null; then
+      if nc -z 127.0.0.1 "$p" 2>/dev/null; then
+        continue
+      fi
+    fi
+    ADMIN_PORT=$p
+    log "自动选择未占用管理端口: ${ADMIN_PORT}"
+    return 0
+  done
+  ADMIN_PORT=18080
+  warn "未能探测空闲端口，使用 ${ADMIN_PORT}"
+}
+
 gen_admin_password() {
   if [[ -n "${ADMIN_PASS}" ]]; then
     return 0
@@ -113,6 +137,7 @@ write_initial_admin_notice() {
 # qosnat2 初始管理员（安装时生成，请妥善保存后删除本文件）
 ADMIN_USER=${ADMIN_USER}
 ADMIN_PASS=${ADMIN_PASS}
+ADMIN_PORT=${ADMIN_PORT}
 EOF
   chmod 0600 "${INITIAL_ADMIN_FILE}"
 }
@@ -228,6 +253,7 @@ EOF
 cmd_start() {
   require_root
   [[ -f "${DEPLOY_ENV}" ]] && set -a && source "${DEPLOY_ENV}" && set +a
+  pick_admin_port_if_unset
   install_deps
   build_bpf
   build_web
@@ -260,6 +286,10 @@ cmd_stop() {
 }
 
 cmd_status() {
+  if [[ -z "${ADMIN_PORT:-}" && -f "${CONFIG_DIR}/env" ]]; then
+    ADMIN_PORT="$(grep -E '^ADMIN_PORT=' "${CONFIG_DIR}/env" 2>/dev/null | tail -1 | cut -d= -f2-)"
+  fi
+  ADMIN_PORT="${ADMIN_PORT:-8080}"
   systemctl status qosnatd.service --no-pager 2>/dev/null || true
   curl -sf "http://127.0.0.1:${ADMIN_PORT}/api/v1/health" 2>/dev/null || warn "health 不可达"
   echo
@@ -284,7 +314,7 @@ usage() {
 
 可选环境变量:
   DEV_LAN=... DEV_WAN=... ADMIN_USER=admin ADMIN_PASS=...（不设则随机 20 位）
-  ADMIN_PORT=8080  SKIP_WEB_BUILD=1  BUILD_WEB=1
+  ADMIN_PORT=（不设则自动选取未占用端口）  SKIP_WEB_BUILD=1  BUILD_WEB=1
 EOF
 }
 

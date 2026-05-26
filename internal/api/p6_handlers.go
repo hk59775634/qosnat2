@@ -78,6 +78,9 @@ func (srv *Server) handleWireGuardApply(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	srv.setupWGShaper()
+	if srv.setupComplete() {
+		_ = srv.reloadNft()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "up": up})
 }
 

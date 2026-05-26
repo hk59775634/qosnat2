@@ -8,6 +8,7 @@ import SnmpTrafficChart from '@/components/SnmpTrafficChart.vue'
 import { buildVhostPayload, emptyBasicVhost, vhostFormFromGlobal } from '@/lib/ocservVhostForm'
 import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
 import OCServRadiusHelpModal from '@/components/OCServRadiusHelpModal.vue'
+import CertSelect from '@/components/CertSelect.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -70,6 +71,10 @@ const tabs = computed(() => [
 
 const isSettingsTab = computed(() =>
   ['config', 'groups', 'vhosts', 'users', 'certs', 'advanced'].includes(activeTab.value),
+)
+
+const showCustomCertPaths = computed(
+  () => cfg.value && !cfg.value.managed_cert_id && !cfg.value.use_qosnat_tls,
 )
 
 const groupOptions = computed(() => cfg.value?.groups || [])
@@ -1428,8 +1433,14 @@ onUnmounted(() => {
     <div v-if="cfg && activeTab === 'certs'" class="card p-4 space-y-4">
       <h3 class="text-sm font-medium">{{ t('ocserv.certsTitle') }}</h3>
       <p class="text-xs text-slate-500">{{ t('ocserv.certsHint') }}</p>
-      <label class="flex gap-2 text-sm"><input v-model="cfg.use_qosnat_tls" type="checkbox" /> {{ t('ocserv.useQosnatTls') }}</label>
-      <div class="grid grid-cols-2 gap-4">
+      <CertSelect
+        v-model="cfg.managed_cert_id"
+        :use-qosnat-tls="!!cfg.use_qosnat_tls"
+        allow-qosnat-tls
+        @update:use-qosnat-tls="cfg.use_qosnat_tls = $event"
+      />
+      <p class="text-xs text-slate-500">{{ t('certificates.managedCertHint') }}</p>
+      <div v-if="showCustomCertPaths" class="grid grid-cols-2 gap-4">
         <label class="text-sm">{{ t('ocserv.serverCert') }} <input v-model="cfg.server_cert_path" class="input w-full mt-1 font-mono text-xs" /><span class="text-xs text-slate-500">server-cert</span></label>
         <label class="text-sm">{{ t('ocserv.serverKey') }} <input v-model="cfg.server_key_path" class="input w-full mt-1 font-mono text-xs" /><span class="text-xs text-slate-500">server-key</span></label>
         <label class="text-sm col-span-2">{{ t('ocserv.caCert') }}<input v-model="cfg.ca_cert_path" class="input w-full mt-1 font-mono text-xs" /><span class="text-xs text-slate-500">ca-cert</span></label>

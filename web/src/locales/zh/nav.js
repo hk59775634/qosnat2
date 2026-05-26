@@ -28,6 +28,7 @@ export default {
   capture: '抓包',
   system: 'System',
   general: '常规设置',
+  certificates: '证书管理',
   advanced: '高级设置',
   apiKeys: 'API 密钥',
   audit: '审计日志',

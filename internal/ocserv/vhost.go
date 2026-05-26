@@ -63,7 +63,7 @@ func vhostRadiusAuthDirective(v store.OCServVhost, global store.OCServState) str
 	return radiusAuthDirective(global)
 }
 
-func renderVhostBlock(b *bytes.Buffer, v store.OCServVhost, global store.OCServState) {
+func renderVhostBlock(b *bytes.Buffer, v store.OCServVhost, global store.OCServState, managed []store.ManagedCertificate) {
 	domain := strings.TrimSpace(v.Domain)
 	if domain == "" {
 		return
@@ -88,16 +88,7 @@ func renderVhostBlock(b *bytes.Buffer, v store.OCServVhost, global store.OCServS
 		b.WriteString("auth = \"certificate\"\n")
 	}
 
-	cert, key, ca := resolveCertPaths(global)
-	if p := strings.TrimSpace(v.ServerCertPath); p != "" {
-		cert = p
-	}
-	if p := strings.TrimSpace(v.ServerKeyPath); p != "" {
-		key = p
-	}
-	if p := strings.TrimSpace(v.CaCertPath); p != "" {
-		ca = p
-	}
+	cert, key, ca := store.ResolveOCServVhostCerts(v, global, managed)
 	if cert != "" {
 		fmt.Fprintf(b, "server-cert = %s\n", cert)
 	}

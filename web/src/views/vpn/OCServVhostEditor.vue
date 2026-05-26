@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { emptyVhostRadius } from '@/lib/ocservVhostForm'
 import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
 import OCServRadiusHelpModal from '@/components/OCServRadiusHelpModal.vue'
+import CertSelect from '@/components/CertSelect.vue'
 import VhostPlainUsers from '@/views/vpn/VhostPlainUsers.vue'
 
 const props = defineProps({
@@ -139,6 +140,20 @@ function textToList(s) {
 function patch(partial) {
   emit('update:modelValue', { ...v.value, ...partial })
 }
+
+function onVhostCertSelect(id) {
+  if (id) {
+    patch({
+      managed_cert_id: id,
+      server_cert_path: '',
+      server_key_path: '',
+      ca_cert_path: '',
+    })
+  } else {
+    patch({ managed_cert_id: '' })
+  }
+}
+
 function patchRadius(partial) {
   const r = { ...(v.value.radius || {}), ...partial }
   patch({ radius: r })
@@ -375,7 +390,14 @@ function patchRadius(partial) {
     </div>
 
     <!-- TLS -->
-    <div v-show="vhostTab === 'tls'" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+    <div v-show="vhostTab === 'tls'" class="space-y-3 text-sm">
+      <CertSelect
+        :model-value="v.managed_cert_id || ''"
+        allow-inherit
+        @update:model-value="onVhostCertSelect"
+      />
+      <p class="text-xs text-slate-500">{{ t('certificates.managedCertHint') }}</p>
+      <div v-if="!v.managed_cert_id" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
       <label class="sm:col-span-2">
         {{ t('ocserv.serverCert') }}
         <input :value="v.server_cert_path" class="input w-full mt-1 font-mono text-xs" @input="patch({ server_cert_path: $event.target.value })" />
@@ -408,6 +430,7 @@ function patchRadius(partial) {
         cert-group-oid
         <input :value="v.cert_group_oid" class="input w-full mt-1 font-mono text-xs" @input="patch({ cert_group_oid: $event.target.value })" />
       </label>
+      </div>
     </div>
 
     <!-- Network -->

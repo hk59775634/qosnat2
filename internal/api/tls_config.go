@@ -35,7 +35,8 @@ type TLSStatus struct {
 	AcmeStaging   bool   `json:"acme_staging,omitempty"`
 	AcmeRenewDays int    `json:"acme_renew_days,omitempty"`
 	AcmeLastOK    string `json:"acme_last_ok,omitempty"`
-	AcmeLastError string `json:"acme_last_error,omitempty"`
+	AcmeLastError    string `json:"acme_last_error,omitempty"`
+	ManagedCertID    string `json:"managed_cert_id,omitempty"`
 }
 
 func (srv *Server) tlsStatus() TLSStatus {
@@ -121,15 +122,20 @@ func removeTLSFiles() {
 	_ = os.Remove(defaultTLSKeyPath)
 }
 
-// applyTLS 写入证书、更新 env；enabled=false 时清除 env 中的 TLS 行（保留磁盘文件可选）
-// 调用方在 HTTP 响应写出后再 restart（避免中断当前请求）。
+// applyTLS 写入证书、更新 env，并热切换 HTTP/HTTPS 监听（不重启 qosnatd）。
+// 仅更新证书文件且模式不变时，tlsCertReloader 按 mtime 加载，可跳过监听重建。
 func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart bool, err error) {
+	wasActive := srv.tlsActive()
 	if enabled {
-		if err := validateCertKeyPair(certPEM, keyPEM); err != nil {
-			return false, err
-		}
-		if err := writeTLSCertFiles(certPEM, keyPEM); err != nil {
-			return false, err
+		if certPEM != "" && keyPEM != "" {
+			if err := validateCertKeyPair(certPEM, keyPEM); err != nil {
+				return false, err
+			}
+			if err := writeTLSCertFiles(certPEM, keyPEM); err != nil {
+				return false, err
+			}
+		} else if !tlsFileExists(defaultTLSCertPath) || !tlsFileExists(defaultTLSKeyPath) {
+			return false, fmt.Errorf("certificate and private key PEM are required")
 		}
 		srv.env.TLSCert = defaultTLSCertPath
 		srv.env.TLSKey = defaultTLSKeyPath
@@ -145,7 +151,14 @@ func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart 
 	})
 	_ = srv.store.Save()
 	srv.reloadEnv()
-	return true, nil
+	nowActive := srv.tlsActive()
+	if enabled && wasActive && nowActive {
+		return false, nil
+	}
+	if err := srv.reloadHTTPListener(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 // scheduleQoSnatdRestart 在响应返回后重启，使 TLS 监听生效

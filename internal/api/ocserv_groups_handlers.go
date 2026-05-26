@@ -179,7 +179,8 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err := ocserv.WriteConf(st); err != nil {
+		full := srv.store.Get()
+		if err := ocserv.WriteConf(st, full.Certificates); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
@@ -208,8 +209,8 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = srv.store.Save()
-		st := srv.store.Get().VPN.OCServ
-		if err := ocserv.WriteConf(st); err != nil {
+		full := srv.store.Get()
+		if err := ocserv.WriteConf(full.VPN.OCServ, full.Certificates); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}

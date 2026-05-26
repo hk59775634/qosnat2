@@ -53,22 +53,21 @@ func InstallInfo() Status {
 	return st
 }
 
-func resolveCertPaths(o store.OCServState) (cert, key, ca string) {
+func defaultCertDestPaths(o store.OCServState) (cert, key string) {
 	cert = strings.TrimSpace(o.ServerCertPath)
 	key = strings.TrimSpace(o.ServerKeyPath)
-	ca = strings.TrimSpace(o.CaCertPath)
 	if cert == "" {
 		cert = DefaultCert
 	}
 	if key == "" {
 		key = DefaultKey
 	}
-	return cert, key, ca
+	return cert, key
 }
 
 // RenderConf 生成 ocserv.conf
-func RenderConf(o store.OCServState) string {
-	cert, key, ca := resolveCertPaths(o)
+func RenderConf(o store.OCServState, managed []store.ManagedCertificate) string {
+	cert, key, ca := store.ResolveOCServGlobalCerts(o, managed)
 	sock := strings.TrimSpace(o.SocketFile)
 	if sock == "" {
 		sock = "/var/run/ocserv-socket"
@@ -108,22 +107,22 @@ func RenderConf(o store.OCServState) string {
 	b.WriteString(fmt.Sprintf("max-clients = %d\n", o.MaxClients))
 	renderGroupGlobals(&b, o)
 	renderAdvanced(&b, o)
-	renderVhosts(&b, o)
+	renderVhosts(&b, o, managed)
 	return b.String()
 }
 
 // WriteConf 写 ocserv.conf 并同步证书
-func WriteConf(o store.OCServState) error {
+func WriteConf(o store.OCServState, managed []store.ManagedCertificate) error {
 	if err := os.MkdirAll(SysconfDir, 0755); err != nil {
 		return err
 	}
-	certPath, keyPath, _ := resolveCertPaths(o)
-	if o.UseQoSnatTLS {
-		if err := syncCertsToPaths(certPath, keyPath); err != nil {
+	destCert, destKey := defaultCertDestPaths(o)
+	if strings.TrimSpace(o.ManagedCertID) == "" && o.UseQoSnatTLS {
+		if err := syncCertsToPaths(destCert, destKey); err != nil {
 			return err
 		}
 	} else if o.ServerCert != "" && o.ServerKey != "" {
-		if err := writePEMFiles(certPath, keyPath, o.ServerCert, o.ServerKey); err != nil {
+		if err := writePEMFiles(destCert, destKey, o.ServerCert, o.ServerKey); err != nil {
 			return err
 		}
 	}
@@ -150,7 +149,7 @@ func WriteConf(o store.OCServState) error {
 	if err := WriteGroupConfigs(o); err != nil {
 		return err
 	}
-	return os.WriteFile(ConfPath, []byte(RenderConf(o)), 0644)
+	return os.WriteFile(ConfPath, []byte(RenderConf(o, managed)), 0644)
 }
 
 func syncCertsToPaths(certPath, keyPath string) error {
@@ -268,12 +267,12 @@ func SyncPlainUsers(o store.OCServState) error {
 
 // Apply 写配置；运行中优先 systemctl reload（不踢下线），否则 restart/stop。
 // 返回值 applyMode：reload | restart | start | stop
-func Apply(o store.OCServState, up bool) (applyMode string, err error) {
+func Apply(o store.OCServState, managed []store.ManagedCertificate, up bool) (applyMode string, err error) {
 	st := InstallInfo()
 	if !st.Installed {
 		return "", fmt.Errorf("ocserv not installed; run: sudo /opt/qosnat2/scripts/install-ocserv.sh")
 	}
-	if err := WriteConf(o); err != nil {
+	if err := WriteConf(o, managed); err != nil {
 		return "", err
 	}
 	var out []byte

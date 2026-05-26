@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -15,10 +17,38 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 		if rules == nil {
 			rules = []store.FilterRule{}
 		}
+		if fixed, ok := store.RepairFilterRuleIDs(rules); ok {
+			rules = fixed
+			_ = srv.store.Update(func(s *store.State) {
+				s.Firewall.FilterRules = rules
+			})
+			_ = srv.store.Save()
+		}
+		aliases := st.Firewall.Aliases
+		if aliases == nil {
+			aliases = []store.AliasSet{}
+		}
+		aliasNames := make([]string, 0, len(aliases))
+		for _, a := range aliases {
+			if n := strings.TrimSpace(a.Name); n != "" {
+				aliasNames = append(aliasNames, n)
+			}
+		}
+		sort.Strings(aliasNames)
+		vp := nft.VPNFirewallFromState(st)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"rules":    rules,
-			"dev_lan":  srv.env.DevLAN,
-			"dev_wan":  srv.env.DevWAN,
+			"rules":      rules,
+			"dev_lan":    srv.env.DevLAN,
+			"dev_wan":    srv.env.DevWAN,
+			"admin_port": srv.env.AdminPort,
+			"alias_names": aliasNames,
+			"vpn": map[string]any{
+				"ocserv_enabled":    vp.OCServEnabled,
+				"ocserv_tcp_port":   vp.OCServTCP,
+				"ocserv_udp_port":   vp.OCServUDP,
+				"wireguard_enabled": vp.WGEnabled,
+				"wireguard_port":    vp.WGUDP,
+			},
 			"rendered": srv.firewallRendered(),
 		})
 	case http.MethodPost:
@@ -27,6 +57,7 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 			return
 		}
+		body.System = false
 		if err := store.NormalizeFilterRule(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -43,7 +74,7 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		srv.auditLog(r, "firewall.rule.add", body.ID+" "+body.Action)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": body.ID})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": body.ID, "rule": body})
 	case http.MethodPut:
 		id := r.URL.Query().Get("id")
 		if id == "" {
@@ -56,17 +87,14 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		body.ID = id
-		if err := store.NormalizeFilterRule(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
 		found := false
+		var prev store.FilterRule
 		_ = srv.store.Update(func(st *store.State) {
-			for i, rule := range st.Firewall.FilterRules {
+			for _, rule := range st.Firewall.FilterRules {
 				if rule.ID == id {
-					st.Firewall.FilterRules[i] = body
+					prev = rule
 					found = true
-					break
+					return
 				}
 			}
 		})
@@ -74,17 +102,50 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
 			return
 		}
+		if !store.FilterRuleMutable(prev) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "system rule cannot be modified"})
+			return
+		}
+		body.System = prev.System
+		if err := store.NormalizeFilterRule(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		_ = srv.store.Update(func(st *store.State) {
+			for i, rule := range st.Firewall.FilterRules {
+				if rule.ID == id {
+					st.Firewall.FilterRules[i] = body
+					break
+				}
+			}
+		})
 		_ = srv.store.Save()
 		if err := srv.reloadNft(); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
 		srv.auditLog(r, "firewall.rule.put", id)
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "rule": body})
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id query required"})
+			return
+		}
+		var target *store.FilterRule
+		st := srv.store.Get()
+		for i := range st.Firewall.FilterRules {
+			if st.Firewall.FilterRules[i].ID == id {
+				target = &st.Firewall.FilterRules[i]
+				break
+			}
+		}
+		if target == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
+			return
+		}
+		if !store.FilterRuleMutable(*target) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "system rule cannot be deleted"})
 			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
@@ -147,7 +208,7 @@ func (srv *Server) handleFirewallRulesOrder(w http.ResponseWriter, r *http.Reque
 
 func (srv *Server) firewallRendered() string {
 	st := srv.store.Get()
-	body, err := nft.Render(nft.Config{DevLAN: srv.env.DevLAN, DevWAN: srv.env.DevWAN}, st)
+	body, err := nft.Render(srv.nftCfg(), st)
 	if err != nil {
 		return ""
 	}

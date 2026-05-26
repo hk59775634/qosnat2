@@ -133,11 +133,11 @@ func WriteGroupConfigs(o store.OCServState) error {
 	return nil
 }
 
-func renderVhosts(b *bytes.Buffer, o store.OCServState) {
+func renderVhosts(b *bytes.Buffer, o store.OCServState, managed []store.ManagedCertificate) {
 	for _, v := range o.Vhosts {
 		if !v.Enabled {
 			continue
 		}
-		renderVhostBlock(b, v, o)
+		renderVhostBlock(b, v, o, managed)
 	}
 }

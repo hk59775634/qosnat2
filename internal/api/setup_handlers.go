@@ -30,6 +30,7 @@ func (srv *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 		"setup_required": !complete,
 		"setup_complete": complete,
 		"admin_user":     user,
+		"admin_port":     srv.env.AdminPort,
 		"has_admin":      st.AdminPassHash != "",
 	})
 }

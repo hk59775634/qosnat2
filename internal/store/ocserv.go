@@ -54,7 +54,8 @@ type OCServState struct {
 	MaxClients     int            `json:"max_clients,omitempty"`
 	IsolateWorkers bool           `json:"isolate_workers,omitempty"` // 已迁移至 advanced，仅作旧 state 兼容
 	Advanced       OCServAdvanced `json:"advanced,omitempty"`
-	UseQoSnatTLS   bool           `json:"use_qosnat_tls,omitempty"`
+	UseQoSnatTLS    bool   `json:"use_qosnat_tls,omitempty"`
+	ManagedCertID   string `json:"managed_cert_id,omitempty"`
 	ServerCertPath string         `json:"server_cert_path,omitempty"`
 	ServerKeyPath  string         `json:"server_key_path,omitempty"`
 	CaCertPath     string         `json:"ca_cert_path,omitempty"`
