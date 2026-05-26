@@ -120,12 +120,23 @@ const dnsText = ref('')
 const routesText = ref('')
 const noRoutesText = ref('')
 const connectionInfo = ref(null)
+const vhostsMeta = ref([])
 /** 带宽 M = Mbps，保存时换算为 ocserv 的 B/s（×125000） */
 const downMbps = ref(0)
 const upMbps = ref(0)
 
 const isRadius = computed(() => cfg.value?.auth_method === 'radius')
 const useOcctl = computed(() => !!cfg.value?.advanced?.use_occtl)
+
+const needsCiscoSvcUdp443 = computed(() => {
+  if (!cfg.value?.advanced?.cisco_svc_client_compat) return false
+  return !cfg.value.advanced?.udp || cfg.value.udp_port !== 443
+})
+
+function usesCiscoSvcCompatAnywhere() {
+  if (cfg.value?.advanced?.cisco_svc_client_compat) return true
+  return (cfg.value?.vhosts || []).some((v) => v.cisco_svc_client_compat)
+}
 
 const overviewCards = computed(() => {
   const d = detail.value?.detail || {}
@@ -304,6 +315,12 @@ async function load() {
   camouflageSecret.value = ''
   camouflageSecretSet.value = !!d.camouflage_secret_set
   connectionInfo.value = d.connection || null
+  vhostsMeta.value = d.vhosts_meta || []
+}
+
+function vhostConnectUrl(domain) {
+  const m = vhostsMeta.value.find((x) => x.domain === domain)
+  return m?.connection?.url || ''
 }
 
 const connectUrlIssueText = computed(() => {
@@ -385,6 +402,15 @@ async function runInstall() {
   }
 }
 
+function validateCiscoSvcUdp443() {
+  if (!usesCiscoSvcCompatAnywhere()) return true
+  if (!cfg.value?.advanced?.udp || cfg.value.udp_port !== 443) {
+    err.value = t('ocserv.ciscoSvcUdp443Required')
+    return false
+  }
+  return true
+}
+
 async function save() {
   err.value = ''
   ok.value = ''
@@ -394,6 +420,7 @@ async function save() {
       err.value = t('ocserv.needTcpUdp')
       return
     }
+    if (!validateCiscoSvcUdp443()) return
     if (isRadius.value) {
       body.users = []
       if (radiusSecret.value) body.radius = { ...body.radius, secret: radiusSecret.value }
@@ -776,12 +803,43 @@ watch(trafficPeriod, () => {
   if (trafficModal.value && !trafficLiveEnabled.value) loadUserTraffic()
 })
 
+watch(
+  () => cfg.value?.advanced?.cisco_svc_client_compat,
+  (on) => {
+    if (!on || !cfg.value) return
+    cfg.value.advanced.udp = true
+    cfg.value.udp_port = 443
+  },
+)
+
 function sessVal(s, ...keys) {
   for (const k of keys) {
     const v = s[k]
     if (v != null && v !== '') return v
   }
   return '—'
+}
+
+/** occtl 会话唯一标识（用户名可能为空或重复，断开必须用 id） */
+function sessionId(s) {
+  const v = s?.ID ?? s?.id
+  if (v == null || v === '') return null
+  return String(v)
+}
+
+function sessionVhostDomain(s) {
+  const d = s?.vhost_domain
+  if (d != null && String(d).trim() !== '') return String(d)
+  return 'unknown'
+}
+
+function sessionVhostTitle(s) {
+  const host = s?.vhost_hostname
+  const label = sessionVhostDomain(s)
+  if (host && label !== host) return `${label} (${host})`
+  if (host) return String(host)
+  if (s?.vhost_raw) return `occtl: ${s.vhost_raw}`
+  return ''
 }
 
 /** 字节数自动换算 B / KB / MB / GB */
@@ -833,6 +891,7 @@ function formatDuration(sec) {
 
 function sessionRowText(s) {
   return [
+    sessionVhostDomain(s),
     sessVal(s, 'Username', 'username'),
     sessVal(s, 'ID', 'id'),
     sessVal(s, 'IPv4', 'VPN IPv4', 'ip'),
@@ -920,14 +979,17 @@ function startSessionsPoll() {
 }
 
 async function disconnectSession(s) {
-  const name = s.Username ?? s.username
-  const idRaw = s.ID ?? s.id
-  const label = name || (idRaw != null ? String(idRaw) : '?')
+  const id = sessionId(s)
+  if (id == null) {
+    opsErr.value = t('ocserv.disconnectNeedId')
+    return
+  }
+  const user = sessVal(s, 'Username', 'username')
+  const label = user !== '—' ? `ID ${id} (${user})` : `ID ${id}`
   if (!confirm(t('ocserv.disconnectConfirm', { label }))) return
   opsErr.value = ''
   try {
-    const body = name ? { username: String(name) } : { id: String(idRaw) }
-    await api.post('/api/v1/vpn/ocserv/sessions/disconnect', body)
+    await api.post('/api/v1/vpn/ocserv/sessions/disconnect', { id })
     ok.value = t('ocserv.disconnected')
     await loadSessions()
   } catch (e) {
@@ -1081,10 +1143,13 @@ onUnmounted(() => {
         </span>
       </div>
       <p v-if="!useOcctl" class="text-sm text-slate-600 mb-3">{{ t('ocserv.occtlHint') }}</p>
+      <p v-else-if="isRadius" class="text-sm text-slate-600 mb-3">{{ t('ocserv.sessionsRadiusTraffic') }}</p>
+      <p v-if="useOcctl" class="text-xs text-slate-500 mb-3">{{ t('ocserv.colVhostHint') }}</p>
       <div class="table-wrap overflow-x-auto">
         <table class="data w-full text-sm">
           <thead>
             <tr>
+              <th>{{ t('ocserv.colVhost') }}</th>
               <th>{{ t('ocserv.colUser') }}</th>
               <th>{{ t('ocserv.colId') }}</th>
               <th>{{ t('ocserv.colIp') }}</th>
@@ -1097,7 +1162,14 @@ onUnmounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(s, i) in paginatedSessions" :key="sessVal(s, 'ID', 'id') + '-' + i">
+            <tr v-for="s in paginatedSessions" :key="sessionId(s) ?? `row-${sessVal(s, 'VPN IPv4', 'IPv4', 'ip')}`">
+              <td
+                class="font-mono text-xs"
+                :class="sessionVhostDomain(s) === 'unknown' ? 'text-slate-500' : 'text-violet-800'"
+                :title="sessionVhostTitle(s) || undefined"
+              >
+                {{ sessionVhostDomain(s) }}
+              </td>
               <td>{{ sessVal(s, 'Username', 'username') }}</td>
               <td class="font-mono">{{ sessVal(s, 'ID', 'id') }}</td>
               <td class="font-mono">{{ sessVal(s, 'VPN IPv4', 'IPv4', 'ip') }}</td>
@@ -1106,12 +1178,28 @@ onUnmounted(() => {
               <td>{{ sessTraffic(s, 'tx') }}</td>
               <td class="whitespace-nowrap">{{ sessVal(s, 'Session started at', 'Last connected at', 'connected_at') }}</td>
               <td class="whitespace-nowrap text-slate-600">{{ sessOnlineDuration(s) }}</td>
-              <td>
-                <button type="button" class="text-red-600 text-sm" @click="disconnectSession(s)">{{ t('ocserv.disconnect') }}</button>
+              <td class="whitespace-nowrap space-x-2">
+                <button
+                  v-if="useOcctl && sessVal(s, 'Username', 'username')"
+                  type="button"
+                  class="text-emerald-700 text-sm"
+                  @click="openUserTraffic(String(sessVal(s, 'Username', 'username')))"
+                >
+                  {{ t('ocserv.traffic') }}
+                </button>
+                <button
+                  type="button"
+                  class="text-red-600 text-sm disabled:opacity-40"
+                  :disabled="sessionId(s) == null"
+                  :title="sessionId(s) == null ? t('ocserv.disconnectNeedId') : undefined"
+                  @click="disconnectSession(s)"
+                >
+                  {{ t('ocserv.disconnect') }}
+                </button>
               </td>
             </tr>
             <tr v-if="!paginatedSessions.length">
-              <td colspan="9" class="text-center text-slate-400 py-6">
+              <td colspan="10" class="text-center text-slate-400 py-6">
                 {{ sessions.length && sessionSearch.trim() ? t('ocserv.noSessionsMatch') : t('ocserv.noSessions') }}
               </td>
             </tr>
@@ -1298,6 +1386,7 @@ onUnmounted(() => {
             <tr>
               <th>{{ t('ocserv.vhostDomain') }}</th>
               <th>{{ t('ocserv.colAuth') }}</th>
+              <th>{{ t('ocserv.connectUrlTitle') }}</th>
               <th>{{ t('ocserv.groupNet') }}</th>
               <th>{{ t('common.comment') }}</th>
               <th></th>
@@ -1307,6 +1396,9 @@ onUnmounted(() => {
             <tr v-for="v in filteredVhosts" :key="v.domain">
               <td class="font-mono">{{ v.domain }}</td>
               <td>{{ v.auth_method || t('ocserv.inherit') }}</td>
+              <td class="font-mono text-xs max-w-[14rem] truncate" :title="vhostConnectUrl(v.domain)">
+                {{ vhostConnectUrl(v.domain) || '—' }}
+              </td>
               <td class="font-mono text-xs">{{ v.ipv4_network ? `${v.ipv4_network}/${v.ipv4_netmask || ''}` : '—' }}</td>
               <td>{{ v.comment || '—' }}</td>
               <td class="whitespace-nowrap space-x-2">
@@ -1317,7 +1409,7 @@ onUnmounted(() => {
               </td>
             </tr>
             <tr v-if="!filteredVhosts.length">
-              <td colspan="5" class="text-center text-slate-400 py-6">{{ t('ocserv.noVhosts') }}</td>
+              <td colspan="6" class="text-center text-slate-400 py-6">{{ t('ocserv.noVhosts') }}</td>
             </tr>
           </tbody>
         </table>
@@ -1466,9 +1558,27 @@ onUnmounted(() => {
         </label>
       </div>
 
+      <div
+        v-if="usesCiscoSvcCompatAnywhere()"
+        class="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded p-3"
+      >
+        {{ t('ocserv.ciscoSvcUdp443Banner') }}
+      </div>
       <div class="grid grid-cols-2 gap-4">
         <label class="text-sm">{{ t('ocserv.tcpPort') }} <input v-model.number="cfg.tcp_port" type="number" class="input w-full mt-1" :disabled="!cfg.advanced?.tcp" /></label>
-        <label class="text-sm">{{ t('ocserv.udpPort') }} <input v-model.number="cfg.udp_port" type="number" class="input w-full mt-1" :disabled="!cfg.advanced?.udp" /></label>
+        <label class="text-sm">
+          {{ t('ocserv.udpPort') }}
+          <input
+            v-model.number="cfg.udp_port"
+            type="number"
+            class="input w-full mt-1"
+            :disabled="!cfg.advanced?.udp"
+            :class="usesCiscoSvcCompatAnywhere() && cfg.udp_port !== 443 ? 'border-amber-500' : ''"
+          />
+          <span v-if="usesCiscoSvcCompatAnywhere()" class="text-xs text-amber-700 block mt-1">
+            {{ t('ocserv.udpPortCiscoSvcHint') }}
+          </span>
+        </label>
         <label class="text-sm">{{ t('ocserv.ipv4Net') }} <input v-model="cfg.ipv4_network" class="input w-full mt-1" /></label>
         <label class="text-sm">{{ t('ocserv.ipv4Mask') }} <input v-model="cfg.ipv4_netmask" class="input w-full mt-1" /></label>
         <label class="text-sm">{{ t('ocserv.device') }} <input v-model="cfg.device" class="input w-full mt-1" /></label>
@@ -1528,8 +1638,19 @@ onUnmounted(() => {
     <div v-if="cfg && activeTab === 'advanced'" class="card p-4 space-y-4">
       <h3 class="text-sm font-medium">{{ t('ocserv.advancedTitle') }}</h3>
       <p class="text-xs text-slate-500">{{ t('ocserv.advancedHint') }}</p>
+      <p
+        v-if="needsCiscoSvcUdp443"
+        class="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded p-3"
+      >
+        {{ t('ocserv.ciscoSvcUdp443Banner') }}
+      </p>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <label v-for="f in featureToggles" :key="f.key" class="flex gap-2 text-sm p-2 border rounded cursor-pointer">
+        <label
+          v-for="f in featureToggles"
+          :key="f.key"
+          class="flex gap-2 text-sm p-2 border rounded cursor-pointer"
+          :class="f.key === 'cisco_svc_client_compat' && cfg.advanced.cisco_svc_client_compat ? 'border-amber-300 bg-amber-50/40' : ''"
+        >
           <input v-model="cfg.advanced[f.key]" type="checkbox" class="mt-0.5" />
           <span><span class="font-medium">{{ f.label }}</span><span class="block text-xs text-slate-500">{{ f.desc }}</span></span>
         </label>

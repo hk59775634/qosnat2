@@ -16,18 +16,9 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		st := srv.store.Get()
 		o := st.VPN.OCServ
 		pub := ocservPublicConfig(o)
-		for i := range pub.Vhosts {
-			if pub.Vhosts[i].Radius != nil {
-				r := *pub.Vhosts[i].Radius
-				r.Secret = ""
-				pub.Vhosts[i].Radius = &r
-			}
-			pub.Vhosts[i].CamouflageSecret = ""
-			pub.Vhosts[i].Users = ocservPublicVhostUsers(pub.Vhosts[i].Users)
-		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"config":                pub,
-			"vhosts_meta":           ocservPublicVhosts(o.Vhosts),
+			"vhosts_meta":           ocservPublicVhosts(o.Vhosts, o, st.Certificates),
 			"status":                ocserv.InstallInfo(),
 			"install_script":        ocserv.InstallScriptPath(),
 			"install_job":           ocserv.GetInstallStatus(),
@@ -46,7 +37,12 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		mergeOCServPasswords(&body, prev)
 		mergeOCServRadiusSecret(&body, prev)
 		mergeOCServCamouflageSecret(&body, prev)
+		mergeAllOCServVhostSecrets(&body, prev)
 		if err := store.NormalizeOCServ(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := ocserv.ValidateState(body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
@@ -91,6 +87,10 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 			s.VPN.OCServ.Radius.AuthPort = o.Radius.AuthPort
 		})
 		_ = srv.store.Save()
+	}
+	if err := ocserv.ValidateState(o); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 	up := o.Enabled
 	mode, err := ocserv.Apply(o, st.Certificates, up)
@@ -280,6 +280,20 @@ func ocservPublicConfig(o store.OCServState) store.OCServState {
 	out.Radius.Secret = ""
 	out.Advanced.CamouflageSecret = ""
 	out.Users = ocservPublicUsers(o.Users)
+	if len(o.Vhosts) > 0 {
+		out.Vhosts = make([]store.OCServVhost, len(o.Vhosts))
+		for i, v := range o.Vhosts {
+			vh := v
+			if vh.Radius != nil {
+				r := *vh.Radius
+				r.Secret = ""
+				vh.Radius = &r
+			}
+			vh.CamouflageSecret = ""
+			vh.Users = ocservPublicVhostUsers(vh.Users)
+			out.Vhosts[i] = vh
+		}
+	}
 	return out
 }
 
@@ -342,6 +356,8 @@ func (srv *Server) handleOCServSessions(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 		return
 	}
+	o := srv.store.Get().VPN.OCServ
+	users = ocserv.EnrichSessionsVhost(users, o)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"sessions":    users,
 		"use_occtl":   cfg.UseOcctl,
@@ -355,29 +371,20 @@ func (srv *Server) handleOCServSessionsDisconnect(w http.ResponseWriter, r *http
 		return
 	}
 	var body struct {
-		Username string `json:"username"`
-		ID       string `json:"id"`
+		ID string `json:"id"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 		return
 	}
-	body.Username = strings.TrimSpace(body.Username)
 	body.ID = strings.TrimSpace(body.ID)
-	if body.Username == "" && body.ID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username or id required"})
+	if body.ID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session id required"})
 		return
 	}
 	cfg := ocserv.OcctlFromState(srv.store.Get().VPN.OCServ)
-	var err error
-	var target string
-	if body.Username != "" {
-		err = cfg.DisconnectUser(body.Username)
-		target = body.Username
-	} else {
-		err = cfg.DisconnectID(body.ID)
-		target = body.ID
-	}
+	target := "id:" + body.ID
+	err := cfg.DisconnectID(body.ID)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

@@ -115,7 +115,9 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		st := srv.store.Get()
-		writeJSON(w, http.StatusOK, map[string]any{"vhosts": ocservPublicVhosts(st.VPN.OCServ.Vhosts)})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"vhosts": ocservPublicVhosts(st.VPN.OCServ.Vhosts, st.VPN.OCServ, st.Certificates),
+		})
 	case http.MethodPost, http.MethodPut:
 		var body store.OCServVhost
 		if err := readJSON(r, &body); err != nil {
@@ -223,11 +225,12 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 
 type ocservVhostPublic struct {
 	store.OCServVhost
-	RadiusSecretSet     bool `json:"radius_secret_set"`
-	CamouflageSecretSet bool `json:"camouflage_secret_set"`
+	RadiusSecretSet     bool                    `json:"radius_secret_set"`
+	CamouflageSecretSet bool                    `json:"camouflage_secret_set"`
+	Connection          ocserv.ConnectionInfo   `json:"connection,omitempty"`
 }
 
-func ocservPublicVhosts(vhosts []store.OCServVhost) []ocservVhostPublic {
+func ocservPublicVhosts(vhosts []store.OCServVhost, global store.OCServState, managed []store.ManagedCertificate) []ocservVhostPublic {
 	out := make([]ocservVhostPublic, 0, len(vhosts))
 	for _, v := range vhosts {
 		p := ocservVhostPublic{OCServVhost: v}
@@ -240,6 +243,7 @@ func ocservPublicVhosts(vhosts []store.OCServVhost) []ocservVhostPublic {
 		p.CamouflageSecretSet = strings.TrimSpace(v.CamouflageSecret) != ""
 		p.CamouflageSecret = ""
 		p.Users = ocservPublicVhostUsers(v.Users)
+		p.Connection = ocserv.BuildVhostConnectionInfo(v, global, managed)
 		out = append(out, p)
 	}
 	return out
@@ -255,11 +259,19 @@ func findOCServVhost(vhosts []store.OCServVhost, domain string) store.OCServVhos
 }
 
 func mergeOCServVhostSecrets(body *store.OCServVhost, prev store.OCServVhost) {
-	if body.Radius != nil && body.Radius.Secret == "" && prev.Radius != nil && prev.Radius.Secret != "" {
+	if body.Radius != nil && strings.TrimSpace(body.Radius.Secret) == "" && prev.Radius != nil && strings.TrimSpace(prev.Radius.Secret) != "" {
 		body.Radius.Secret = prev.Radius.Secret
 	}
-	if body.CamouflageSecret == "" && prev.CamouflageSecret != "" {
+	if strings.TrimSpace(body.CamouflageSecret) == "" && strings.TrimSpace(prev.CamouflageSecret) != "" {
 		body.CamouflageSecret = prev.CamouflageSecret
+	}
+}
+
+func mergeAllOCServVhostSecrets(body *store.OCServState, prev store.OCServState) {
+	for i := range body.Vhosts {
+		if p := findOCServVhost(prev.Vhosts, body.Vhosts[i].Domain); p.Domain != "" {
+			mergeOCServVhostSecrets(&body.Vhosts[i], p)
+		}
 	}
 }
 

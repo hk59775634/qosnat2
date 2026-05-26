@@ -58,6 +58,60 @@ func BuildConnectionInfo(o store.OCServState, managed []store.ManagedCertificate
 	return out
 }
 
+// BuildVhostConnectionInfo 按 vhost 域名与证书生成客户端连接 URL（端口继承全局 tcp-port）。
+func BuildVhostConnectionInfo(v store.OCServVhost, global store.OCServState, managed []store.ManagedCertificate) ConnectionInfo {
+	port := global.TCPPort
+	if port <= 0 {
+		port = 443
+	}
+	domain := strings.TrimSpace(v.Domain)
+	camouflage := v.Camouflage || global.Advanced.Camouflage
+	secret := strings.TrimSpace(v.CamouflageSecret)
+	if secret == "" && camouflage {
+		secret = strings.TrimSpace(global.Advanced.CamouflageSecret)
+	}
+
+	var candidates []string
+	if domain != "" {
+		candidates = append(candidates, domain)
+	}
+	if id := strings.TrimSpace(v.ManagedCertID); id != "" {
+		if c, ok := store.FindManagedCert(managed, id); ok {
+			candidates = append(candidates, c.Domains...)
+		}
+	}
+	certPath, _, _ := store.ResolveOCServVhostCerts(v, global, managed)
+	if certPath != "" {
+		if fromFile, err := certs.HostnamesFromCertFile(certPath); err == nil {
+			candidates = append(candidates, fromFile...)
+		}
+	}
+	all := uniqueStrings(candidates)
+	host := certs.PrimaryConnectHostname(all)
+	if host == "" {
+		host = domain
+	}
+	out := ConnectionInfo{
+		Port:             port,
+		PortInURL:        port != 443,
+		Camouflage:       camouflage,
+		CamouflageSecret: secret,
+		CertHostnames:    all,
+		Host:             host,
+	}
+	if host == "" {
+		out.Issue = "no_hostname"
+		return out
+	}
+	if camouflage && secret == "" {
+		out.Issue = "camouflage_secret_missing"
+		out.URL = buildConnectURL(host, port, false, "")
+		return out
+	}
+	out.URL = buildConnectURL(host, port, camouflage, secret)
+	return out
+}
+
 func resolveConnectHost(o store.OCServState, managed []store.ManagedCertificate) (host string, all []string, issue string) {
 	var candidates []string
 	if id := strings.TrimSpace(o.ManagedCertID); id != "" {

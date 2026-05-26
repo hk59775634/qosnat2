@@ -6,7 +6,8 @@
 #   sudo /opt/qosnat2/deploy-qos-nat.sh uninstall
 #
 # 远程（未克隆仓库时，需已有 /opt/qosnat2 或仅清理已安装组件）：
-#   curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/uninstall.sh | bash
+#   curl -fsSL -H 'Cache-Control: no-cache' \
+#     "https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/uninstall.sh?t=$(date +%s)" | bash
 #
 # 环境变量：
 #   QOSNAT_INSTALL_DIR=/opt/qosnat2   源码目录（--purge-repo 时删除）
@@ -19,6 +20,7 @@
 
 set -euo pipefail
 
+QOSNAT_INSTALL_RAW_URL="${QOSNAT_INSTALL_RAW_URL:-https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/uninstall.sh}"
 QOSNAT_INSTALL_DIR="${QOSNAT_INSTALL_DIR:-/opt/qosnat2}"
 CONFIG_DIR="${QOSNAT_CONFIG_DIR:-/etc/qosnat2}"
 STATE_DIR="${QOSNAT_STATE_DIR:-/var/lib/qosnat2}"
@@ -37,6 +39,31 @@ ASSUME_YES=0
 log()  { echo "[$(date '+%F %T')] $*"; }
 warn() { echo "[$(date '+%F %T')] WARN: $*" >&2; }
 die()  { echo "[$(date '+%F %T')] ERROR: $*" >&2; exit 1; }
+
+should_refresh_uninstall_script() {
+  [[ "${QOSNAT_SKIP_SCRIPT_REFRESH:-0}" == "1" ]] && return 1
+  [[ -n "${QOSNAT_INSTALL_REFRESHED:-}" ]] && return 1
+  local src="${BASH_SOURCE[0]:-}"
+  [[ -f "${src}" ]] && [[ "${src}" == */uninstall.sh ]] && return 1
+  return 0
+}
+
+bootstrap_refresh_uninstall_script() {
+  should_refresh_uninstall_script || return 0
+  command -v curl &>/dev/null || return 0
+  local tmp
+  tmp="$(mktemp /tmp/qosnat2-uninstall.XXXXXX.sh)"
+  if ! curl -fsSL -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+      "${QOSNAT_INSTALL_RAW_URL}?t=$(date +%s)" -o "${tmp}" 2>/dev/null; then
+    rm -f "${tmp}"
+    warn "无法从 GitHub 拉取最新 uninstall.sh，将使用当前脚本继续"
+    return 0
+  fi
+  chmod 700 "${tmp}"
+  log "已拉取最新 uninstall.sh，继续卸载…"
+  export QOSNAT_INSTALL_REFRESHED=1
+  exec env QOSNAT_INSTALL_REFRESHED=1 bash "${tmp}" "$@"
+}
 
 usage() {
   cat <<EOF
@@ -213,6 +240,7 @@ remove_installed_files() {
 main() {
   parse_args "$@"
   require_root
+  bootstrap_refresh_uninstall_script "$@"
   confirm
   echo ""
   log "========== qosnat2 卸载开始 =========="
@@ -222,7 +250,7 @@ main() {
   teardown_dataplane
   remove_installed_files
   log "========== qosnat2 已卸载 =========="
-  log "如需重新安装: curl -ksSL .../scripts/install.sh | bash"
+  log "如需重新安装: curl -fsSL -H 'Cache-Control: no-cache' \".../install.sh?t=\$(date +%s)\" | bash"
 }
 
 main "$@"

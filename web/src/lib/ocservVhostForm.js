@@ -169,11 +169,18 @@ export function buildVhostPayload(form, { radiusSecret = '', camouflageSecret = 
   if (body.radius && !String(body.radius.server || '').trim()) {
     body.radius = null
   }
-  if (body.radius && radiusSecret) {
-    body.radius = { ...body.radius, secret: radiusSecret }
+  if (body.radius) {
+    if (radiusSecret) {
+      body.radius = { ...body.radius, secret: radiusSecret }
+    } else {
+      const { secret: _s, ...rest } = body.radius
+      body.radius = rest
+    }
   }
   if (camouflageSecret) {
     body.camouflage_secret = camouflageSecret
+  } else if (body.camouflage_secret === '') {
+    delete body.camouflage_secret
   }
   return body
 }

@@ -28,8 +28,8 @@ func DefaultMarkPolicy() MarkPolicy {
 	return MarkPolicy{
 		NftAllowedMax: NftMarkAllowedMax,
 		QosReserved:   QosMarkReserved,
-		IFBMethod:     "bpf_redirect(ifb0) — 不用 skb->mark",
-		TCClassIDUse:  "BPF classify 写 tc_classid → HTB",
+		IFBMethod:     "bpf_redirect(ifb0) — does not use skb->mark",
+		TCClassIDUse:  "BPF classify sets tc_classid → HTB",
 		RulesOK:       true,
 	}
 }
@@ -53,7 +53,7 @@ func AuditMarkIsolation() MarkPolicy {
 			low := strings.ToLower(trim)
 			if strings.Contains(low, "flowtable") {
 				p.RulesOK = false
-				p.Issues = append(p.Issues, "禁止 flowtable: "+trim)
+				p.Issues = append(p.Issues, "forbidden flowtable: "+trim)
 			}
 			if strings.Contains(low, "meta mark set") {
 				p.NftUsesMark = true

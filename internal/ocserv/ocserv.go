@@ -272,6 +272,9 @@ func Apply(o store.OCServState, managed []store.ManagedCertificate, up bool) (ap
 	if !st.Installed {
 		return "", fmt.Errorf("ocserv not installed; run: sudo /opt/qosnat2/scripts/install-ocserv.sh")
 	}
+	if err := ValidateState(o); err != nil {
+		return "", err
+	}
 	if err := WriteConf(o, managed); err != nil {
 		return "", err
 	}

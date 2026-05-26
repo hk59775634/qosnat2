@@ -22,6 +22,7 @@ const vhostRadiusSecret = ref('')
 const vhostRadiusSecretSet = ref(false)
 const vhostCamouflageSecret = ref('')
 const vhostCamouflageSecretSet = ref(false)
+const vhostConnection = ref(null)
 const loading = ref(true)
 const saving = ref(false)
 const err = ref('')
@@ -47,6 +48,7 @@ async function load() {
     vhostRadiusSecretSet.value = !!meta.radius_secret_set
     vhostCamouflageSecret.value = ''
     vhostCamouflageSecretSet.value = !!meta.camouflage_secret_set
+    vhostConnection.value = meta.connection || null
   } catch (e) {
     err.value = e.message
   } finally {
@@ -56,6 +58,10 @@ async function load() {
 
 function goBack() {
   router.push({ name: 'vpn-ocserv', query: { tab: 'vhosts' } })
+}
+
+function onConnectCopied() {
+  ok.value = t('ocserv.connectUrlCopyOk')
 }
 
 async function save() {
@@ -114,11 +120,13 @@ onMounted(load)
         :global-cfg="globalCfg"
         :editing="true"
         domain-readonly
+        :connection="vhostConnection"
         v-model:radius-secret="vhostRadiusSecret"
         :radius-secret-set="vhostRadiusSecretSet"
         v-model:camouflage-secret="vhostCamouflageSecret"
         :camouflage-secret-set="vhostCamouflageSecretSet"
         @users-changed="load"
+        @connect-copied="onConnectCopied"
       />
 
       <div class="flex gap-2 pt-2 border-t border-slate-100">

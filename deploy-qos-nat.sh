@@ -399,11 +399,14 @@ usage() {
   （ipssl 未设 ACME_EMAIL 时默认 hk59775634@gmail.com）
 
 一键安装（从 GitHub 拉取，仅验证 Ubuntu 24.04，推荐 Ubuntu 24.04）:
-  curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash
-  curl -ksSL .../install.sh | bash -s -- ipssl   # 需 80 端口公网可达
+  curl -fsSL -H 'Cache-Control: no-cache' \\
+    "https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh?t=\$(date +%s)" | bash
+  curl -fsSL -H 'Cache-Control: no-cache' \\
+    ".../install.sh?t=\$(date +%s)" | bash -s -- ipssl   # 需 80 端口公网可达
 
 一键卸载:
-  curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/uninstall.sh | bash -s -- -y
+  curl -fsSL -H 'Cache-Control: no-cache' \\
+    ".../uninstall.sh?t=\$(date +%s)" | bash -s -- -y
   sudo $0 uninstall -y --purge-repo
 EOF
 }

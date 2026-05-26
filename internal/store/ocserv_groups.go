@@ -102,7 +102,7 @@ func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 		if am == OCServAuthRadius && !VhostUsesOwnRadius(v) && authMethod != OCServAuthRadius {
 			return fmt.Errorf("vhost %s: radius auth requires global RADIUS or per-vhost radius.server", d)
 		}
-		if am == OCServAuthRadius && VhostUsesOwnRadius(v) {
+		if VhostUsesOwnRadius(v) {
 			if err := normalizeVhostRadius(v.Radius); err != nil {
 				return fmt.Errorf("vhost %s: %w", d, err)
 			}

@@ -2207,15 +2207,16 @@ paths:
   /api/v1/vpn/ocserv/sessions/disconnect:
     post:
       tags: [vpn]
-      summary: 断开在线会话（occtl disconnect user|id）
+      summary: 断开在线会话（occtl disconnect id；用户名可能为空或重复）
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [id]
               properties:
-                username: { type: string }
-                id: { type: string }
+                id: { type: string, description: occtl 会话 ID（唯一） }
       responses:
         '200':
           content:
