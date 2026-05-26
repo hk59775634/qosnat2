@@ -2,6 +2,7 @@ package usertraffic
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,11 +28,16 @@ func StartSampler(ctx context.Context, getState func() store.OCServState) {
 		s := DefaultStore()
 		for _, u := range users {
 			name := fieldString(u, "Username", "username", "User", "user")
-			if name == "" {
+			if name == "" || name == "(none)" {
 				continue
 			}
-			rx := fieldUint(u, "RX", "rx", "Rx")
-			tx := fieldUint(u, "TX", "tx", "Tx")
+			// show users -j 不含 RX/TX，需 show user NAME 才有 tun 口统计
+			detail, err := cfg.ShowUser(name)
+			if err != nil || len(detail) == 0 {
+				continue
+			}
+			rx := fieldUint(detail[0], "raw_rx", "RX", "rx", "Rx")
+			tx := fieldUint(detail[0], "raw_tx", "TX", "tx", "Tx")
 			_ = s.RecordCounters(name, rx, tx, now)
 		}
 	}
@@ -79,7 +85,10 @@ func fieldUint(m map[string]any, keys ...string) uint64 {
 		case uint64:
 			return n
 		case string:
-			// 忽略已格式化的 _RX/_TX
+			s := strings.TrimSpace(n)
+			if v, err := strconv.ParseUint(s, 10, 64); err == nil {
+				return v
+			}
 		}
 	}
 	return 0

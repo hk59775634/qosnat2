@@ -1,6 +1,43 @@
 package store
 
-import "net"
+import (
+	"fmt"
+	"net"
+	"strings"
+)
+
+// ValidateCIDR 校验 IPv4 CIDR，拒绝换行/引号等可破坏 nft 配置的字符。
+func ValidateCIDR(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fmt.Errorf("empty cidr")
+	}
+	if strings.ContainsAny(s, "\n\r\t\"'\\") {
+		return fmt.Errorf("invalid characters in cidr")
+	}
+	if _, _, err := net.ParseCIDR(s); err != nil {
+		return fmt.Errorf("invalid cidr: %w", err)
+	}
+	return nil
+}
+
+// ValidateIPv4OrCIDR 校验 IPv4 地址或 CIDR。
+func ValidateIPv4OrCIDR(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fmt.Errorf("empty")
+	}
+	if strings.ContainsAny(s, "\n\r\t\"'\\") {
+		return fmt.Errorf("invalid characters")
+	}
+	if strings.Contains(s, "/") {
+		return ValidateCIDR(s)
+	}
+	if ip := net.ParseIP(s); ip == nil || ip.To4() == nil {
+		return fmt.Errorf("invalid ipv4: %s", s)
+	}
+	return nil
+}
 
 // IPInCIDR 判断 IPv4 是否落在 cidr 内
 func IPInCIDR(ip, cidr string) bool {

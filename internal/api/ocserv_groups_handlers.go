@@ -91,10 +91,19 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "group not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		st := srv.store.Get().VPN.OCServ
-		_ = ocserv.WriteGroupConfigs(st)
-		_ = ocserv.SyncPlainUsers(st)
+		if err := ocserv.WriteGroupConfigs(st); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if err := ocserv.SyncPlainUsers(st); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		srv.auditLog(r, "vpn.ocserv.group.delete", name)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:
@@ -146,7 +155,9 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			s.VPN.OCServ.Vhosts = append(s.VPN.OCServ.Vhosts, body)
+			if r.Method != http.MethodPut {
+				s.VPN.OCServ.Vhosts = append(s.VPN.OCServ.Vhosts, body)
+			}
 		})
 		if r.Method == http.MethodPut && !found {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})

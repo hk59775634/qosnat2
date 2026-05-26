@@ -2,7 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import { api } from '@/api/client'
 
 const routes = [
-  { path: '/setup', name: 'setup', component: () => import('@/views/Setup.vue'), meta: { public: true } },
+  { path: '/setup', name: 'setup', component: () => import('@/views/Setup.vue') },
   { path: '/login', name: 'login', component: () => import('@/views/Login.vue'), meta: { public: true } },
   {
     path: '/',
@@ -50,29 +50,43 @@ const router = createRouter({
   routes,
 })
 
+async function hasSession() {
+  try {
+    await api.session()
+    return true
+  } catch {
+    return false
+  }
+}
+
 router.beforeEach(async (to) => {
   let setupRequired = false
   try {
     const h = await api.health()
     setupRequired = h.setup_required === true
   } catch {
-    if (!to.meta.public) return { name: 'setup' }
+    if (to.name !== 'login') return { name: 'login' }
+    return true
   }
 
+  if (to.name === 'login') return true
+
+  const authed = await hasSession()
+
   if (setupRequired) {
+    if (!authed) {
+      return { name: 'login', query: { redirect: to.name === 'setup' ? '/setup' : to.fullPath } }
+    }
     if (to.name !== 'setup') return { name: 'setup' }
     return true
   }
 
-  if (to.name === 'setup') return { name: 'login' }
+  if (to.name === 'setup') return { name: 'dashboard' }
 
-  if (to.meta.public) return true
-  try {
-    await api.session()
-    return true
-  } catch {
+  if (!authed) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
+  return true
 })
 
 export default router

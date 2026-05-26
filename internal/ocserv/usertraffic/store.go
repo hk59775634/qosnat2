@@ -232,6 +232,18 @@ func sumAll(buckets []Bucket) (rx, tx uint64) {
 	return rx, tx
 }
 
+// TotalBytes 返回用户历史累计 RX/TX（hourly 桶汇总，保留约 1 年）
+func (s *Store) TotalBytes(username string) (rx, tx uint64) {
+	username = normalizeUsername(username)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := s.data.Users[username]
+	if u == nil {
+		return 0, 0
+	}
+	return sumAll(u.Hourly)
+}
+
 // Query 查询用户流量与图表序列
 func (s *Store) Query(username, period string) Response {
 	username = normalizeUsername(username)
@@ -240,6 +252,11 @@ func (s *Store) Query(username, period string) Response {
 
 	s.mu.Lock()
 	u := s.data.Users[username]
+	var hourly, fiveMin []Bucket
+	if u != nil {
+		hourly = append([]Bucket(nil), u.Hourly...)
+		fiveMin = append([]Bucket(nil), u.FiveMin...)
+	}
 	s.mu.Unlock()
 
 	resp := Response{
@@ -254,19 +271,19 @@ func (s *Store) Query(username, period string) Response {
 	}
 
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
-	resp.Summary.TotalRxBytes, resp.Summary.TotalTxBytes = sumAll(u.Hourly)
-	resp.Summary.TodayRxBytes, resp.Summary.TodayTxBytes = sumBuckets(u.Hourly, todayStart)
+	resp.Summary.TotalRxBytes, resp.Summary.TotalTxBytes = sumAll(hourly)
+	resp.Summary.TodayRxBytes, resp.Summary.TodayTxBytes = sumBuckets(hourly, todayStart)
 	// 近 7 日 5 分钟桶更细，今日以 5 分钟桶为准（避免与 hourly 重复相加）
-	if rx5, tx5 := sumBuckets(u.FiveMin, todayStart); rx5 > 0 || tx5 > 0 {
+	if rx5, tx5 := sumBuckets(fiveMin, todayStart); rx5 > 0 || tx5 > 0 {
 		resp.Summary.TodayRxBytes = rx5
 		resp.Summary.TodayTxBytes = tx5
 	}
 
 	var buckets []Bucket
 	if res == "5min" {
-		buckets = u.FiveMin
+		buckets = fiveMin
 	} else {
-		buckets = u.Hourly
+		buckets = hourly
 	}
 	for _, b := range buckets {
 		if b.Ts < since {

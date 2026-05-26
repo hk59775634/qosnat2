@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -85,6 +86,16 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 		}
 		if err := readJSON(r, &body); err != nil || body.Inner == "" || body.Outer == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner/outer required"})
+			return
+		}
+		body.Inner = strings.TrimSpace(body.Inner)
+		body.Outer = strings.TrimSpace(body.Outer)
+		if err := store.ValidateIPv4OrCIDR(body.Inner); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner: " + err.Error()})
+			return
+		}
+		if err := store.ValidateIPv4OrCIDR(body.Outer); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "outer: " + err.Error()})
 			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
@@ -182,6 +193,11 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := readJSON(r, &body); err != nil || body.CIDR == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr required"})
+			return
+		}
+		body.CIDR = strings.TrimSpace(body.CIDR)
+		if err := store.ValidateCIDR(body.CIDR); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		if err := srv.store.Update(func(st *store.State) {

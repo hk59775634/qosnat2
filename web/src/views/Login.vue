@@ -12,7 +12,6 @@ const { t } = useI18n()
 onMounted(async () => {
   try {
     const h = await api.health()
-    if (h.setup_required) router.replace({ name: 'setup' })
     if (h.suggest_https) {
       tlsPending.value = true
       const port = h.admin_port || location.port || '8080'
@@ -39,7 +38,12 @@ async function submit() {
   loading.value = true
   try {
     await api.login(user.value, pass.value)
-    router.push(route.query.redirect || '/')
+    const h = await api.health().catch(() => ({}))
+    if (h.setup_required) {
+      router.push('/setup')
+    } else {
+      router.push(route.query.redirect || '/')
+    }
   } catch (e) {
     err.value = e.message || t('login.failed')
   } finally {

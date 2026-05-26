@@ -9,6 +9,8 @@ export default {
   dhcpNeedsLan: '启用 DHCP 需先选择 LAN 网卡',
   apiUnreachable: '无法连接 API',
   setupFailed: '设置失败',
+  welcomeHint: '您已使用安装时生成的口令登录。请配置 LAN/WAN 与 NAT；可在最后一步可选修改管理员密码。',
+  optionalNewPass: '可选：设置新的管理员密码（至少 8 位，留空则继续使用安装口令）',
   adminUser: '管理员用户名',
   password: '密码（至少 8 位）',
   confirmPassword: '确认密码',

@@ -125,12 +125,16 @@ func (srv *Server) putSystemTuning(w http.ResponseWriter, r *http.Request) {
 			if sys.Sysctl == nil {
 				sys.Sysctl = map[string]string{}
 			}
+			allowed := sysctlKeySet()
 			for k, v := range body.Sysctl {
 				if v == "" {
 					delete(sys.Sysctl, k)
-				} else {
-					sys.Sysctl[k] = v
+					continue
 				}
+				if !allowed[k] {
+					continue
+				}
+				sys.Sysctl[k] = v
 			}
 		}
 		tuning.ApplyAppValues(st, body.App)
@@ -233,6 +237,14 @@ func catalogKeys() []string {
 		}
 	}
 	return keys
+}
+
+func sysctlKeySet() map[string]bool {
+	m := map[string]bool{}
+	for _, k := range catalogKeys() {
+		m[k] = true
+	}
+	return m
 }
 
 func liveTxQLen(dev string) int {

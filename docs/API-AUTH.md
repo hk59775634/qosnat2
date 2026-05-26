@@ -2,8 +2,9 @@
 
 ## 安全策略
 
-- **初始账号**（未完成引导且 `state` 无 `admin_pass_hash`）：`admin` / `password`（可用 `ADMIN_USER` / `ADMIN_PASS` 覆盖 env）
-- **引导完成后**：仅 `state.json` 中 bcrypt 口令；初始口令失效
+- **初始账号**：`deploy-qos-nat.sh start` 生成随机 `ADMIN_PASS`（20 位），写入 `/etc/qosnat2/env` 与 `initial-admin.txt`；无默认弱口令
+- **引导前**：须先 `POST /api/v1/login`，再访问需鉴权的 `/api/v1/setup/*` 与 Web 引导页
+- **引导完成后**：`env` 中明文 `ADMIN_PASS` 已清除；仅 `state.json` 中 bcrypt 口令有效
 - **API Key**：仅存 `key_hash`；创建时明文仅返回一次
 - **监听**：默认 `0.0.0.0:ADMIN_PORT`（HTTP）；启用 TLS 后为 HTTPS
 

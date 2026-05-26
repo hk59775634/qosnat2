@@ -7,6 +7,8 @@ const { t } = useI18n()
 const props = defineProps({
   series: { type: Array, default: () => [] },
   height: { type: Number, default: 220 },
+  emptyLabel: { type: String, default: '' },
+  footerLabel: { type: String, default: '' },
 })
 
 const hoverIdx = ref(-1)
@@ -95,7 +97,13 @@ function formatTime(ts) {
   const da = String(d.getDate()).padStart(2, '0')
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  if (plot.value?.data?.length > 48) {
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  const pts = plot.value?.data || []
+  const spanSec = pts.length >= 2 ? Math.abs(pts[pts.length - 1].ts - pts[0].ts) : 0
+  if (spanSec > 0 && spanSec <= 600) {
+    return `${hh}:${mm}:${ss}`
+  }
+  if (pts.length > 48) {
     return `${mo}-${da}`
   }
   return `${mo}-${da} ${hh}:${mm}`
@@ -147,7 +155,7 @@ const tooltip = computed(() => {
       </div>
     </div>
     <div v-if="!plot" class="text-sm text-slate-500 py-12 text-center">
-      {{ t('components.snmpEmpty') }}
+      {{ emptyLabel || t('components.snmpEmpty') }}
     </div>
     <svg
       v-else
@@ -224,6 +232,6 @@ const tooltip = computed(() => {
         <text :x="Math.min(tooltip.x + 14, W - 124)" y="52" font-size="9" fill="#0369a1">TX {{ tooltip.tx.toFixed(2) }} Mbps</text>
       </g>
     </svg>
-    <p class="text-[10px] text-slate-500 px-3 py-1 border-t border-slate-100">{{ t('components.snmpFooter') }}</p>
+    <p class="text-[10px] text-slate-500 px-3 py-1 border-t border-slate-100">{{ footerLabel || t('components.snmpFooter') }}</p>
   </div>
 </template>

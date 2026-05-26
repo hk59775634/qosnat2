@@ -22,14 +22,15 @@ func (srv *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	complete := srv.setupComplete()
 	st := srv.store.Get()
+	user := srv.env.AdminUser
+	if user == "" {
+		user = defaultAdminUser
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"setup_required":  !complete,
-		"setup_complete":  complete,
-		"dev_lan":         srv.env.DevLAN,
-		"dev_wan":         srv.env.DevWAN,
-		"has_admin":       st.AdminPassHash != "",
-		"initial_login":   st.AdminPassHash == "",
-		"initial_user":    defaultAdminUser,
+		"setup_required": !complete,
+		"setup_complete": complete,
+		"admin_user":     user,
+		"has_admin":      st.AdminPassHash != "",
 	})
 }
 
@@ -78,12 +79,19 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	body.DevLAN = strings.TrimSpace(body.DevLAN)
 	body.DevWAN = strings.TrimSpace(body.DevWAN)
 	if body.AdminUser == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "admin_user required"})
-		return
+		body.AdminUser = strings.TrimSpace(srv.env.AdminUser)
+		if body.AdminUser == "" {
+			body.AdminUser = defaultAdminUser
+		}
 	}
-	if len(body.AdminPass) < 8 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "admin_pass must be at least 8 characters"})
-		return
+	passToHash := body.AdminPass
+	if len(passToHash) < 8 {
+		if p := srv.env.AdminPass; len(p) >= 8 {
+			passToHash = p
+		} else {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "admin_pass must be at least 8 characters (or set a new password in wizard)"})
+			return
+		}
 	}
 	if body.DevWAN == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_wan required"})
@@ -101,13 +109,20 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_wan: interface %q not found", body.DevWAN)})
 		return
 	}
-	hash, err := hashPassword(body.AdminPass)
+	hash, err := hashPassword(passToHash)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
 		return
 	}
 	if len(body.PolicyRoutes) == 0 {
 		body.PolicyRoutes = []string{"10.0.0.0/8"}
+	}
+	for i, cidr := range body.PolicyRoutes {
+		if err := store.ValidateCIDR(cidr); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "policy_routes: " + err.Error()})
+			return
+		}
+		body.PolicyRoutes[i] = strings.TrimSpace(cidr)
 	}
 	for _, ip := range body.SharedIPs {
 		ip = strings.TrimSpace(ip)
@@ -159,6 +174,8 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	if err := WriteDevRoles(body.DevLAN, body.DevWAN); err != nil {
 		log.Printf("write dev roles: %v", err)
 	}
+	_ = ClearAdminPassFromEnv()
+	srv.env.AdminPass = ""
 	srv.reloadEnv()
 
 	var applyErr string

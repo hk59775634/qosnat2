@@ -7,6 +7,18 @@ import (
 	"time"
 )
 
+func TestTotalBytes(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(filepath.Join(dir, "traffic.json"))
+	now := time.Now().Truncate(time.Minute)
+	_ = s.RecordCounters("bob", 100, 50, now)
+	_ = s.RecordCounters("bob", 300, 150, now.Add(time.Hour))
+	rx, tx := s.TotalBytes("bob")
+	if rx != 300 || tx != 150 {
+		t.Fatalf("total: rx=%d tx=%d", rx, tx)
+	}
+}
+
 func TestRecordAndPrune(t *testing.T) {
 	dir := t.TempDir()
 	s := NewStore(filepath.Join(dir, "traffic.json"))

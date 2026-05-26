@@ -2,11 +2,29 @@ openapi: 3.0.3
 info:
   title: qosnat2 API
   description: |
-    单机双网卡 QoS（HTB + eBPF + IFB）+ NAT（nftables）控制面。
+    单机双网卡 QoS（HTB + eBPF + IFB）+ NAT（nftables）+ VPN（WireGuard / ocserv）控制面 REST API。
 
-    **鉴权**：除 `GET /api/v1/health`、`/api/v1/setup/*` 与 `POST /api/v1/login` 外，需 Session Cookie `qosnat_sess` 或请求头 `X-API-Key`（`X-API-Key` 为实验性，见 `/api/v1/api-keys`）。
+    **鉴权**：除 `GET /api/v1/health`、`GET /openapi.yaml`、`/api/v1/setup/*` 与 `POST /api/v1/login` 外，需 Session Cookie `qosnat_sess` 或请求头 `X-API-Key`（实验性，见 `/api/v1/api-keys`）。
 
-    **交互文档**：Web UI → 开发 → API (Scalar)，或 `GET /openapi.yaml`。
+    **交互文档**：Web UI → 开发 → API (Scalar)，或 `GET /openapi.yaml`。中文说明索引见仓库 `docs/API-ZH.md`。
+
+    **功能域（tags）**：
+    - `health` / `setup` / `auth`：健康检查、首次引导、登录与会话
+    - `network`：网卡、VLAN/VXLAN、多 WAN、netplan 预览与应用
+    - `nat`：SNAT/DNAT、防火墙规则与别名对象组
+    - `shaper`：QoS 模板、租户、HTB 叶子队列
+    - `stats` / `ebpf` / `system`：仪表盘、BPF、sysctl/HTTPS/审计
+    - `vpn`：WireGuard、ocserv（OpenConnect）含虚拟主机与独立用户
+    - `diagnostics`：tcpdump 抓包、conntrack 列表
+
+    **ocserv 常用流程**：
+    1. `GET /api/v1/vpn/ocserv` 读取配置与 `install_job` / `status`
+    2. `PUT` 保存 state（密码/RADIUS 密钥留空表示不修改）
+    3. `POST /api/v1/vpn/ocserv/apply` 写入 `ocserv.conf` 并 `systemctl` 启停
+    4. 虚拟主机：`/api/v1/vpn/ocserv/vhosts`；独立密码文件用户：`/api/v1/vpn/ocserv/vhosts/users?domain=`
+    5. 安装：`POST .../install`（202，需 root）→ 轮询 `GET .../install/status`
+
+    **带宽字段（ocserv）**：`rx-data-per-sec` / `tx-data-per-sec` 为**服务端视角**（限制客户端上行用 `tx-data-per-sec`）。Web UI 已按「客户端上/下行」展示并映射到上述字段。
   version: 1.0.0
   contact:
     name: qosnat2
@@ -17,16 +35,27 @@ servers:
 
 tags:
   - name: health
+    description: 健康检查与 OpenAPI 规范下载
   - name: auth
+    description: 登录、会话、API Key（实验性）
   - name: setup
+    description: 首次引导（无需登录）
   - name: network
+    description: 网卡、角色、VLAN/VXLAN、多 WAN、netplan
   - name: nat
+    description: SNAT/DNAT 策略、防火墙 filter 规则与别名
   - name: shaper
+    description: QoS 模板、租户、活动主机、TC 叶子队列
   - name: stats
+    description: 仪表盘聚合指标
   - name: ebpf
+    description: BPF Map/程序状态与重载
   - name: system
+    description: sysctl 调优、常规设置、HTTPS/ACME、审计、RSS 队列
   - name: vpn
+    description: WireGuard 与 ocserv（OpenConnect），含 vhost 与流量统计
   - name: diagnostics
+    description: 抓包与 conntrack 诊断
 
 components:
   securitySchemes:
@@ -336,30 +365,117 @@ components:
           items: { type: string }
         ipv4_network: { type: string }
         ipv4_netmask: { type: string }
-        rx_data_per_sec: { type: integer }
-        tx_data_per_sec: { type: integer }
+        rx_data_per_sec: { type: integer, description: 服务端下行限速（字节/秒，0=不限） }
+        tx_data_per_sec: { type: integer, description: 服务端上行限速（限制客户端上传） }
         mtu: { type: integer }
         tunnel_all_dns: { type: boolean }
+    OCServInstallJobStatus:
+      type: object
+      description: ocserv 源码安装后台任务（GET install/status 与 GET ocserv 内 install_job）
+      properties:
+        state:
+          type: string
+          enum: [idle, running, ok, failed]
+          description: idle=无任务；running=安装中；ok/failed=已结束
+        message: { type: string, description: 人类可读状态说明 }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        log_tail: { type: string, description: 安装日志末尾约 80 行 }
+        script: { type: string, description: 执行的 bash 安装脚本路径 }
     OCServVhost:
       type: object
+      description: |
+        ocserv 虚拟主机 `[vhost:domain]`。新建时服务端可用全局配置种子化默认值（`VhostFromGlobal`）。
+        认证：`auth_method` 空=继承全局；`plain` 可设 `plain_passwd_path` 独立 ocpasswd；`radius` 且 `radius.server` 非空则写 `/etc/radcli/vhosts/<domain>.conf`。
       required: [domain]
       properties:
-        enabled: { type: boolean }
-        domain: { type: string }
-        auth_method: { type: string, enum: ['', plain, radius, certificate] }
+        enabled: { type: boolean, description: 是否启用该 vhost }
+        domain: { type: string, description: 客户端连接域名（SNI/Host） }
+        comment: { type: string }
+        auth_method:
+          type: string
+          enum: ['', plain, radius, certificate]
+          description: 空=继承全局 auth_method
+        plain_passwd_path:
+          type: string
+          description: plain 专用密码文件；空则使用全局 ocpasswd。非空时可用 vhosts/users API 管理用户
+        users:
+          type: array
+          description: 仅 plain_passwd_path 非空时写入该文件；GET 列表不返回密码
+          items:
+            $ref: '#/components/schemas/OCServUser'
+        radius:
+          $ref: '#/components/schemas/OCServRadius'
         server_cert_path: { type: string }
         server_key_path: { type: string }
         ca_cert_path: { type: string }
+        crl_path: { type: string }
+        dh_params_path: { type: string }
+        tls_priorities: { type: string }
+        cert_user_oid: { type: string }
+        cert_group_oid: { type: string }
         ipv4_network: { type: string }
         ipv4_netmask: { type: string }
+        ipv6_network: { type: string }
+        ipv6_prefix: { type: integer }
         dns:
           type: array
           items: { type: string }
+        nbns:
+          type: array
+          items: { type: string }
+        default_domain: { type: string }
+        tunnel_all_dns: { type: boolean }
+        mtu: { type: integer }
         routes:
           type: array
           items: { type: string }
-        cert_user_oid: { type: string }
-        comment: { type: string }
+        no_routes:
+          type: array
+          items: { type: string }
+        iroutes:
+          type: array
+          items: { type: string }
+        expose_iroutes: { type: boolean }
+        rx_data_per_sec: { type: integer, description: 服务端下行限速（字节/秒） }
+        tx_data_per_sec: { type: integer, description: 服务端上行限速（限制客户端上传） }
+        pkt_mtu_size: { type: integer }
+        idle_timeout: { type: integer }
+        session_timeout: { type: integer }
+        mobile_idle_timeout: { type: integer }
+        max_same_clients: { type: integer }
+        keepalive: { type: integer }
+        dpd: { type: integer }
+        mobile_dpd: { type: integer }
+        cookie_timeout: { type: integer }
+        deny_roaming: { type: boolean }
+        persistent_cookies: { type: boolean }
+        rekey_time: { type: integer }
+        rekey_method: { type: string }
+        compression: { type: boolean }
+        predictable_ips: { type: boolean }
+        dtls_legacy: { type: boolean }
+        cisco_client_compat: { type: boolean }
+        cisco_svc_client_compat: { type: boolean }
+        no_udp: { type: boolean }
+        banner: { type: string }
+        pre_login_banner: { type: string }
+        camouflage: { type: boolean }
+        camouflage_secret: { type: string, description: GET 不返回；PUT 留空不修改 }
+        camouflage_realm: { type: string }
+        config_per_user: { type: string }
+        config_per_group: { type: string }
+        default_user_config: { type: string }
+        default_group_config: { type: string }
+        select_groups:
+          type: array
+          items: { type: string }
+        auto_select_group: { type: boolean }
+        default_select_group: { type: string }
+        connect_script: { type: string }
+        disconnect_script: { type: string }
+        acct_enabled: { type: boolean, description: 空/false 可继承全局 RADIUS 计费 }
+        stats_report_time: { type: integer }
     OCServRadius:
       type: object
       properties:
@@ -403,8 +519,8 @@ components:
         ban_time: { type: integer }
         ban_reset_time: { type: integer }
         server_stats_reset_time: { type: integer }
-        rx_data_per_sec: { type: integer }
-        tx_data_per_sec: { type: integer }
+        rx_data_per_sec: { type: integer, description: 全局默认：服务端下行限速（字节/秒） }
+        tx_data_per_sec: { type: integer, description: 全局默认：服务端上行限速（限制客户端上传） }
         camouflage_realm: { type: string }
         default_domain: { type: string }
         config_per_group: { type: string }
@@ -1097,7 +1213,7 @@ paths:
   /api/v1/shaper/active:
     get:
       tags: [shaper]
-      summary: Iterate active_host
+      summary: 遍历 eBPF active_host 表（活动主机限速状态）
       responses:
         '200':
           content:
@@ -1282,6 +1398,86 @@ paths:
       tags: [nat]
       summary: 删除规则（query id）
 
+  /api/v1/firewall/rules/order:
+    put:
+      tags: [nat]
+      summary: 调整防火墙规则顺序
+      description: |
+        请求体 `order` 为规则 `id` 数组，按新顺序排列；保存 state 后 reload nft。
+        与 Web「防火墙规则」页拖动排序一致。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order]
+              properties:
+                order:
+                  type: array
+                  items: { type: string }
+                  description: 规则 id 列表，须包含全部现有 id
+      responses:
+        '200':
+          description: 排序成功，返回完整 rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  rules: { type: array, items: { type: object } }
+
+  /api/v1/firewall/aliases:
+    get:
+      tags: [nat]
+      summary: 防火墙别名（nft 对象组）列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  aliases: { type: array, items: { type: object } }
+    post:
+      tags: [nat]
+      summary: 添加或覆盖别名集
+      description: 同名则覆盖；保存后 reload nft。类型含 ipv4 网段集合或 asn 前缀集。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                type: { type: string, enum: [ipv4, asn] }
+                members: { type: array, items: { type: string } }
+                asn: { type: integer }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  name: { type: string }
+    delete:
+      tags: [nat]
+      summary: 删除别名（query name）
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
   /api/v1/system/mark-policy:
     get:
       tags: [system]
@@ -1336,6 +1532,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Ok'
+
+  /api/v1/interfaces/roles:
+    put:
+      tags: [network]
+      summary: 设置 LAN/WAN 网卡角色
+      description: |
+        写入 `/etc/qosnat2/dev_roles` 并更新进程内 `dev_lan` / `dev_wan`。
+        `apply` 默认为 true：同时 netplan apply 并回放 QoS/NFT 数据面。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dev_wan]
+              properties:
+                dev_lan: { type: string, description: 可为空（仅 WAN 场景） }
+                dev_wan: { type: string }
+                apply: { type: boolean, default: true }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '400':
+          description: 网卡不存在或 LAN/WAN 相同
 
   /api/v1/interfaces/queues:
     get:
@@ -1563,6 +1786,40 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ok'
 
+  /api/v1/network/netplan:
+    get:
+      tags: [network]
+      summary: 预览合并后的 netplan YAML
+      description: |
+        根据 state 中 VLAN/物理口配置渲染 `99-qosnat2.yaml` 内容（与 `50-cloud-init.yaml` 合并；同名 ethernets 以 qosnat2 为准）。
+        仅预览，不执行 apply。
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: { type: string, description: 写入路径 }
+                  yaml: { type: string }
+                  vlans: { type: integer }
+                  ifaces: { type: integer }
+                  note: { type: string }
+
+  /api/v1/network/netplan/apply:
+    post:
+      tags: [network]
+      summary: 应用 netplan（失败自动回滚）
+      description: 备份当前 netplan 与 state，执行 `netplan apply`；失败则恢复备份与 state。
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '400':
+          description: apply 失败（已回滚）
+
   /api/v1/shaper/tc:
     get:
       tags: [shaper]
@@ -1708,6 +1965,9 @@ paths:
     get:
       tags: [vpn]
       summary: ocserv（OpenConnect）配置与安装状态
+      description: |
+        返回脱敏后的 `config`（不含用户密码、RADIUS/伪装密钥、vhost 用户密码）、`vhosts_meta`（含是否可管理独立用户等元数据）、
+        `status`（二进制/服务是否已安装）、`install_job`（与 install/status 相同结构）。
       responses:
         '200':
           content:
@@ -1717,13 +1977,25 @@ paths:
                 properties:
                   config:
                     $ref: '#/components/schemas/OCServConfig'
+                  vhosts_meta:
+                    type: array
+                    description: 各 vhost 公开元数据（不含密钥）
+                    items: { type: object }
                   status:
                     type: object
+                    description: 安装检测结果（如 ocserv 是否在 PATH、unit 是否存在）
                   install_script: { type: string }
-                  conf_path: { type: string }
+                  install_job:
+                    $ref: '#/components/schemas/OCServInstallJobStatus'
+                  conf_path: { type: string, example: /etc/ocserv/ocserv.conf }
+                  radius_secret_set: { type: boolean }
+                  camouflage_secret_set: { type: boolean }
     put:
       tags: [vpn]
       summary: 保存 ocserv 配置
+      description: |
+        写入 state 并同步 ocpasswd、组配置、radcli。用户密码、全局 RADIUS secret、伪装密钥留空表示保留原值。
+        不自动 systemctl 重启，需再调用 `POST .../apply`。
       requestBody:
         content:
           application/json:
@@ -1740,17 +2012,22 @@ paths:
     post:
       tags: [vpn]
       summary: 写入 ocserv.conf、ocpasswd 并 systemctl start/stop ocserv
+      description: 根据 `enabled` 生成配置并 `systemctl start` 或 `stop` ocserv；同步 vhost radcli 与密码文件。
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Ok'
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  apply_mode: { type: string, description: 如 up / down }
 
   /api/v1/vpn/ocserv/install:
     post:
       tags: [vpn]
       summary: 后台执行源码安装脚本（需 root 运行 qosnatd）
+      description: 单实例任务；若已在安装中返回 409。完成后用 `GET .../install/status` 或本接口 GET 的 `install_job` 查看日志尾部。
       responses:
         '202':
           description: 安装已在后台启动
@@ -1765,10 +2042,24 @@ paths:
         '403':
           description: 非 root
 
+  /api/v1/vpn/ocserv/install/status:
+    get:
+      tags: [vpn]
+      summary: ocserv 安装任务状态（与 Web「概览」轮询一致）
+      description: 返回 `OCServInstallJobStatus`；`state=running` 时 `log_tail` 为安装日志末尾。
+      responses:
+        '200':
+          description: 当前安装进度或 idle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OCServInstallJobStatus'
+
   /api/v1/vpn/ocserv/status/detail:
     get:
       tags: [vpn]
       summary: ocserv 运行统计（occtl show status -j）
+      description: 需 `advanced.use_occtl=true` 且 occtl 可用；否则 503。
       responses:
         '200':
           content:
@@ -1787,6 +2078,7 @@ paths:
     get:
       tags: [vpn]
       summary: 在线会话（occtl show users -j）
+      description: 返回 `sessions` 数组；字段随 ocserv 版本略有差异。occtl 不可用时 503。
       responses:
         '200':
           content:
@@ -1888,6 +2180,7 @@ paths:
     get:
       tags: [vpn]
       summary: ocserv 虚拟主机列表
+      description: 返回脱敏 vhost（不含 radius.secret、camouflage_secret、用户密码）。
       responses:
         '200':
           content:
@@ -1901,7 +2194,11 @@ paths:
                       $ref: '#/components/schemas/OCServVhost'
     post:
       tags: [vpn]
-      summary: 添加 vhost（重写 ocserv.conf）
+      summary: 添加 vhost
+      description: |
+        合并写入 state；新建可从全局配置种子化（`VhostFromGlobal`）。
+        若指定 `plain_passwd_path` 且 `users` 非空，会同步到该密码文件。
+        需 `POST .../apply` 后 ocserv 才加载新 `[vhost:domain]`。
       requestBody:
         content:
           application/json:
@@ -1942,10 +2239,110 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ok'
 
+  /api/v1/vpn/ocserv/vhosts/users:
+    get:
+      tags: [vpn]
+      summary: vhost 独立密码文件用户列表
+      description: |
+        查询参数 `domain` 必填。仅当该 vhost 为 plain 认证且 `plain_passwd_path` 非空时可用（与 Web vhost「用户」Tab 一致）。
+        否则 400。
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                  passwd_path: { type: string }
+        '400':
+          description: 未配置独立密码文件或非 plain
+        '404':
+          description: vhost 不存在
+    post:
+      tags: [vpn]
+      summary: 添加或覆盖 vhost 本地用户（同步 ocpasswd 至该 vhost 密码文件）
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+                comment: { type: string }
+                group: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    put:
+      tags: [vpn]
+      summary: 更新 vhost 本地用户
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username]
+              properties:
+                username: { type: string }
+                password: { type: string }
+                comment: { type: string }
+                group: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [vpn]
+      summary: 删除 vhost 本地用户
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema: { type: string }
+        - name: username
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
   /api/v1/vpn/ocserv/users/traffic:
     get:
       tags: [vpn]
       summary: ocserv 用户流量统计与历史曲线
+      description: |
+        后台每 5 分钟采样在线用户流量；`period` 控制历史曲线范围。
+        `summary` 含累计/今日/周期字节；`series` 为 Mbps 时间序列（与仪表盘图表一致）。
       parameters:
         - name: username
           in: query
@@ -2071,6 +2468,7 @@ paths:
                 duration_sec: { type: integer }
     delete:
       tags: [diagnostics]
+      summary: 停止并删除抓包会话
       parameters:
         - name: id
           in: query

@@ -81,31 +81,71 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		entry.ID = id
 		var old store.RouteEntry
 		found := false
-		_ = srv.store.Update(func(st *store.State) {
-			for i, e := range st.Routes {
-				if e.ID == id {
-					old = e
-					entry.ID = id
-					st.Routes[i] = entry
-					found = true
-					break
-				}
+		for _, e := range srv.store.Get().Routes {
+			if e.ID == id {
+				old = e
+				found = true
+				break
 			}
-		})
+		}
 		if !found {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
-		_ = route.Delete(old)
-		if entry.Enabled {
-			if err := route.Apply(entry); err != nil {
+		prev, err := store.CloneState(srv.store.Get())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if old.Enabled {
+			if err := route.Delete(old); err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 				return
 			}
 		}
-		_ = srv.store.Save()
+		if entry.Enabled {
+			if err := route.Apply(entry); err != nil {
+				if old.Enabled {
+					_ = route.Apply(old)
+				}
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		updated := false
+		_ = srv.store.Update(func(st *store.State) {
+			for i, e := range st.Routes {
+				if e.ID == id {
+					st.Routes[i] = entry
+					updated = true
+					break
+				}
+			}
+		})
+		if !updated {
+			if old.Enabled {
+				_ = route.Apply(old)
+			}
+			if entry.Enabled {
+				_ = route.Delete(entry)
+			}
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if err := srv.store.Save(); err != nil {
+			srv.store.ReplaceState(prev)
+			if old.Enabled {
+				_ = route.Apply(old)
+			}
+			if entry.Enabled {
+				_ = route.Delete(entry)
+			}
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, entry)
 	case http.MethodDelete:
 		var old store.RouteEntry

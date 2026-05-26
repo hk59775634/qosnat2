@@ -10,7 +10,6 @@ const { t } = useI18n()
 const step = ref(0)
 const steps = computed(() => [
   t('setup.steps.welcome'),
-  t('setup.steps.admin'),
   t('setup.steps.iface'),
   t('setup.steps.nat'),
   t('setup.steps.done'),
@@ -18,9 +17,9 @@ const steps = computed(() => [
 const loading = ref(false)
 const err = ref('')
 const ifaces = ref([])
+const adminUser = ref('admin')
 
 const form = ref({
-  admin_user: 'admin',
   admin_pass: '',
   admin_pass2: '',
   dev_lan: '',
@@ -41,6 +40,7 @@ onMounted(async () => {
       router.replace('/')
       return
     }
+    if (st.admin_user) adminUser.value = st.admin_user
     const res = await api.setup.interfaces()
     ifaces.value = res.interfaces || []
     if (!form.value.dev_wan && ifaces.value.length) {
@@ -56,16 +56,6 @@ onMounted(async () => {
 function next() {
   err.value = ''
   if (step.value === 1) {
-    if (form.value.admin_pass.length < 8) {
-      err.value = t('setup.passMin')
-      return
-    }
-    if (form.value.admin_pass !== form.value.admin_pass2) {
-      err.value = t('setup.passMismatch')
-      return
-    }
-  }
-  if (step.value === 2) {
     if (!form.value.dev_wan) {
       err.value = t('setup.wanRequired')
       return
@@ -76,6 +66,17 @@ function next() {
     }
     if (form.value.enable_dhcp && !form.value.dev_lan) {
       err.value = t('setup.dhcpNeedsLan')
+      return
+    }
+  }
+  if (step.value === 3) {
+    const p = form.value.admin_pass
+    if (p && p.length < 8) {
+      err.value = t('setup.passMin')
+      return
+    }
+    if (p && p !== form.value.admin_pass2) {
+      err.value = t('setup.passMismatch')
       return
     }
   }
@@ -96,9 +97,8 @@ async function finish() {
       .map((s) => s.trim())
       .filter(Boolean)
     const shared = form.value.shared_ip.trim() ? [form.value.shared_ip.trim()] : []
-    await api.setup.complete({
-      admin_user: form.value.admin_user,
-      admin_pass: form.value.admin_pass,
+    const body = {
+      admin_user: adminUser.value,
       dev_lan: form.value.dev_lan,
       dev_wan: form.value.dev_wan,
       policy_routes: routes.length ? routes : ['10.0.0.0/8'],
@@ -106,7 +106,11 @@ async function finish() {
       hostname: form.value.hostname,
       enable_dhcp: form.value.enable_dhcp,
       apply_dataplane: form.value.apply_dataplane,
-    })
+    }
+    if (form.value.admin_pass.length >= 8) {
+      body.admin_pass = form.value.admin_pass
+    }
+    await api.setup.complete(body)
     router.replace('/')
   } catch (e) {
     err.value = e.message || t('setup.setupFailed')
@@ -133,25 +137,10 @@ async function finish() {
       </div>
 
       <div v-if="step === 0" class="space-y-3 text-sm text-slate-600">
-        <p>qosnat2</p>
+        <p>{{ t('setup.welcomeHint') }}</p>
       </div>
 
       <div v-else-if="step === 1" class="space-y-3">
-        <div>
-          <label class="block text-sm mb-1">{{ t('setup.adminUser') }}</label>
-          <input v-model="form.admin_user" class="input-field" autocomplete="username" />
-        </div>
-        <div>
-          <label class="block text-sm mb-1">{{ t('setup.password') }}</label>
-          <input v-model="form.admin_pass" type="password" class="input-field" autocomplete="new-password" />
-        </div>
-        <div>
-          <label class="block text-sm mb-1">{{ t('setup.confirmPassword') }}</label>
-          <input v-model="form.admin_pass2" type="password" class="input-field" autocomplete="new-password" />
-        </div>
-      </div>
-
-      <div v-else-if="step === 2" class="space-y-3">
         <div>
           <label class="block text-sm mb-1">{{ t('setup.wanIface') }} *</label>
           <select v-model="form.dev_wan" class="input-field">
@@ -180,7 +169,7 @@ async function finish() {
         </label>
       </div>
 
-      <div v-else-if="step === 3" class="space-y-3">
+      <div v-else-if="step === 2" class="space-y-3">
         <div>
           <label class="block text-sm mb-1">{{ t('setup.policyCidrs') }}</label>
           <textarea v-model="form.policy_routes" class="input-field h-20" />
@@ -195,14 +184,21 @@ async function finish() {
         </label>
       </div>
 
-      <div v-else class="space-y-2 text-sm text-slate-600">
-        <p><strong>{{ t('setup.summaryUser') }}：</strong>{{ form.admin_user }}</p>
+      <div v-else class="space-y-3 text-sm text-slate-600">
+        <p><strong>{{ t('setup.summaryUser') }}：</strong>{{ adminUser }}</p>
         <p>
           <strong>{{ t('setup.summaryLan') }}：</strong>{{ form.dev_lan || t('common.notSet') }}
           · <strong>{{ t('setup.summaryWan') }}：</strong>{{ form.dev_wan }}
         </p>
         <p><strong>{{ t('setup.summaryPolicy') }}：</strong>{{ form.policy_routes }}</p>
         <p v-if="form.shared_ip"><strong>{{ t('setup.summaryShared') }}：</strong>{{ form.shared_ip }}</p>
+        <div class="pt-2 border-t border-slate-200">
+          <p class="text-xs text-slate-500 mb-2">{{ t('setup.optionalNewPass') }}</p>
+          <label class="block text-sm mb-1">{{ t('setup.password') }}</label>
+          <input v-model="form.admin_pass" type="password" class="input-field mb-2" autocomplete="new-password" />
+          <label class="block text-sm mb-1">{{ t('setup.confirmPassword') }}</label>
+          <input v-model="form.admin_pass2" type="password" class="input-field" autocomplete="new-password" />
+        </div>
       </div>
 
       <p v-if="err" class="text-red-600 text-sm mt-4">{{ err }}</p>

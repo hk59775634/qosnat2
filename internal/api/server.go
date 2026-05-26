@@ -78,9 +78,9 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 func (srv *Server) routes() {
 	m := srv.mux
 	m.HandleFunc("/api/v1/health", srv.handleHealth)
-	m.HandleFunc("/api/v1/setup/status", srv.handleSetupStatus)
-	m.HandleFunc("/api/v1/setup/interfaces", srv.handleSetupInterfaces)
-	m.HandleFunc("/api/v1/setup/complete", srv.handleSetupComplete)
+	m.HandleFunc("/api/v1/setup/status", srv.requireAuth(srv.handleSetupStatus))
+	m.HandleFunc("/api/v1/setup/interfaces", srv.requireAuth(srv.handleSetupInterfaces))
+	m.HandleFunc("/api/v1/setup/complete", srv.requireAuth(srv.handleSetupComplete))
 	m.HandleFunc("/api/v1/login", srv.handleLogin)
 	m.HandleFunc("/api/v1/session", srv.requireAuth(srv.handleSession))
 	m.HandleFunc("/api/v1/logout", srv.requireAuth(srv.handleLogout))
@@ -329,17 +329,23 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 		return
 	}
-	if !srv.setupComplete() {
-		st := srv.store.Get()
-		if st.AdminPassHash != "" || !srv.verifyAdmin(body.User, body.Pass) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "complete initial setup first (or use initial admin/password)"})
-			return
-		}
-	}
 	ip := clientIP(r)
 	if !srv.loginLim.allow(ip) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many login attempts"})
 		return
+	}
+	if !srv.setupComplete() {
+		st := srv.store.Get()
+		if st.AdminPassHash != "" {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "initial setup already in progress; use configured admin account"})
+			return
+		}
+		if srv.env.AdminPass == "" {
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"error": "no initial admin password; reinstall or read /etc/qosnat2/initial-admin.txt",
+			})
+			return
+		}
 	}
 	if !srv.verifyAdmin(body.User, body.Pass) {
 		srv.loginLim.recordFail(ip)
@@ -536,7 +542,7 @@ func LoadEnv() Env {
 	InitFromEnvFile("/etc/qosnat2/env")
 	return Env{
 		AdminUser:   EnvOr("ADMIN_USER", "admin"),
-		AdminPass:   EnvOr("ADMIN_PASS", defaultAdminPass),
+		AdminPass:   EnvOr("ADMIN_PASS", ""),
 		AdminPort:   EnvOr("ADMIN_PORT", "8080"),
 		DevLAN:      EnvOr("DEV_LAN", ""),
 		DevWAN:      EnvOr("DEV_WAN", ""),

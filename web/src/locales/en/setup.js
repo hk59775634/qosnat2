@@ -9,6 +9,8 @@ export default {
   dhcpNeedsLan: 'Enable DHCP only after selecting LAN',
   apiUnreachable: 'Cannot reach API',
   setupFailed: 'Setup failed',
+  welcomeHint: 'You signed in with the install-time password. Configure LAN/WAN and NAT; you may set a new password on the last step.',
+  optionalNewPass: 'Optional: new admin password (min 8 chars; leave empty to keep install password)',
   adminUser: 'Admin username',
   password: 'Password (min 8 chars)',
   confirmPassword: 'Confirm password',

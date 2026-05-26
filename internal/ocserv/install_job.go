@@ -54,7 +54,7 @@ func loadInstallStatus() InstallJobStatus {
 func saveInstallStatus(st InstallJobStatus) {
 	_ = os.MkdirAll(filepath.Dir(installStatusFile), 0755)
 	b, _ := json.Marshal(st)
-	_ = os.WriteFile(installStatusFile, b, 0644)
+	_ = os.WriteFile(installStatusFile, b, 0600)
 }
 
 func tailLines(s string, max int) string {

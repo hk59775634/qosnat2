@@ -8,10 +8,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/shaper"
 )
 
-const (
-	defaultAdminUser = "admin"
-	defaultAdminPass = "password"
-)
+const defaultAdminUser = "admin"
 
 func hashPassword(pass string) (string, error) {
 	h, err := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.DefaultCost)
@@ -34,9 +31,6 @@ func (srv *Server) initialAdminCredentials() (user, pass string) {
 		user = defaultAdminUser
 	}
 	pass = srv.env.AdminPass
-	if pass == "" {
-		pass = defaultAdminPass
-	}
 	return user, pass
 }
 
@@ -44,7 +38,7 @@ func (srv *Server) setupComplete() bool {
 	return srv.store.Get().SetupComplete
 }
 
-// verifyAdmin 已设置 bcrypt 时用 state；否则使用初始账号（默认 admin/password，可由 env 覆盖）
+// verifyAdmin 已设置 bcrypt 时用 state；否则仅接受 env 中的安装随机口令（无默认弱口令）。
 func (srv *Server) verifyAdmin(user, pass string) bool {
 	user = strings.TrimSpace(user)
 	st := srv.store.Get()
@@ -52,20 +46,24 @@ func (srv *Server) verifyAdmin(user, pass string) bool {
 		return user == st.AdminUser && checkPassword(st.AdminPassHash, pass)
 	}
 	iu, ip := srv.initialAdminCredentials()
+	if ip == "" {
+		return false
+	}
 	return user == iu && pass == ip
 }
 
 func (srv *Server) reloadEnv() {
 	InitFromEnvFile("/etc/qosnat2/env")
+	lan, wan := syncDevRolesFromFile()
 	srv.env.AdminUser = EnvOr("ADMIN_USER", srv.env.AdminUser)
 	srv.env.AdminPass = EnvOr("ADMIN_PASS", srv.env.AdminPass)
 	srv.env.AdminPort = EnvOr("ADMIN_PORT", srv.env.AdminPort)
-	srv.env.DevLAN = EnvOr("DEV_LAN", "")
-	srv.env.DevWAN = EnvOr("DEV_WAN", "")
-	lan := srv.env.DevLAN
-	if lan == "" {
-		lan = "lo"
+	srv.env.DevLAN = lan
+	srv.env.DevWAN = wan
+	shaperLAN := srv.env.DevLAN
+	if shaperLAN == "" {
+		shaperLAN = "lo"
 	}
 	st := srv.store.Get()
-	srv.hosts = shaper.NewHostShaper(lan, st.Shaper.Leaf)
+	srv.hosts = shaper.NewHostShaper(shaperLAN, st.Shaper.Leaf)
 }

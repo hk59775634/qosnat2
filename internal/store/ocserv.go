@@ -29,10 +29,13 @@ type OCServRadius struct {
 
 // OCServUser OpenConnect 用户（plain 认证，Apply 时写入 ocpasswd）
 type OCServUser struct {
-	Username string `json:"username"`
-	Password string `json:"password,omitempty"` // 仅创建/改密时提交；列表 GET 不返回
-	Group    string `json:"group,omitempty"`
-	Comment  string `json:"comment,omitempty"`
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"` // 仅创建/改密时提交；列表 GET 不返回
+	Group        string `json:"group,omitempty"`
+	Comment      string `json:"comment,omitempty"`
+	TotalRxBytes uint64 `json:"total_rx_bytes,omitempty"` // GET 列表：历史累计下行（采样）
+	TotalTxBytes uint64 `json:"total_tx_bytes,omitempty"` // GET 列表：历史累计上行
+	TotalBytes   uint64 `json:"total_bytes,omitempty"`    // GET 列表：上下行合计
 }
 
 // OCServState ocserv 服务端配置（持久化在 state.json）
@@ -198,6 +201,9 @@ func NormalizeOCServ(o *OCServState) error {
 		}
 		o.Users[i].Username = u
 		o.Users[i].Group = strings.TrimSpace(o.Users[i].Group)
+		o.Users[i].TotalRxBytes = 0
+		o.Users[i].TotalTxBytes = 0
+		o.Users[i].TotalBytes = 0
 	}
 	if strings.TrimSpace(o.ConfigPerGroup) == "" && strings.TrimSpace(o.Advanced.ConfigPerGroup) != "" {
 		o.ConfigPerGroup = strings.TrimSpace(o.Advanced.ConfigPerGroup)

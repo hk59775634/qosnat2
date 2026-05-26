@@ -38,6 +38,16 @@ const trafficData = ref(null)
 const trafficPeriod = ref('7d')
 const trafficLoading = ref(false)
 const trafficErr = ref('')
+const trafficPoll = ref(null)
+const trafficLastUpdated = ref(null)
+const TRAFFIC_POLL_MS = 5000
+const trafficLiveEnabled = ref(false)
+const trafficLivePoll = ref(null)
+const trafficLiveSeries = ref([])
+const trafficLiveCounters = ref(null)
+const trafficLiveErr = ref('')
+const TRAFFIC_LIVE_POLL_MS = 2000
+const TRAFFIC_LIVE_WINDOW_SEC = 300
 const editingGroup = ref(null)
 const groupForm = ref(emptyGroupForm())
 const groupFormDns = ref('')
@@ -554,22 +564,157 @@ async function delUser(name) {
   }
 }
 
-async function loadUserTraffic() {
+function applyTrafficToUserList(data) {
+  if (!data?.username) return
+  const rx = Number(data.summary?.total_rx_bytes) || 0
+  const tx = Number(data.summary?.total_tx_bytes) || 0
+  const idx = users.value.findIndex((u) => u.username === data.username)
+  if (idx < 0) return
+  users.value[idx] = {
+    ...users.value[idx],
+    total_rx_bytes: rx,
+    total_tx_bytes: tx,
+    total_bytes: rx + tx,
+  }
+}
+
+async function loadUserTraffic(silent = false) {
   if (!trafficModal.value) return
-  trafficLoading.value = true
-  trafficErr.value = ''
+  if (!silent) {
+    trafficLoading.value = true
+    trafficErr.value = ''
+  }
   try {
     const q = new URLSearchParams({
       username: trafficModal.value,
       period: trafficPeriod.value,
     })
-    trafficData.value = await api.get(`/api/v1/vpn/ocserv/users/traffic?${q}`)
+    const data = await api.get(`/api/v1/vpn/ocserv/users/traffic?${q}`)
+    trafficData.value = data
+    trafficLastUpdated.value = Date.now()
+    applyTrafficToUserList(data)
+    if (trafficLiveEnabled.value && !data.online) {
+      stopTrafficLivePoll()
+      trafficLiveEnabled.value = false
+      resetTrafficLive()
+      trafficLiveErr.value = t('ocserv.trafficLiveOffline')
+    }
   } catch (e) {
-    trafficErr.value = e.message
-    trafficData.value = null
+    if (!silent) {
+      trafficErr.value = e.message
+      trafficData.value = null
+    }
   } finally {
-    trafficLoading.value = false
+    if (!silent) trafficLoading.value = false
   }
+}
+
+function parseOcctlCounterBytes(v) {
+  if (v == null || v === '') return 0
+  const n = Number(v)
+  if (Number.isFinite(n) && n >= 0) return n
+  const s = String(v).trim()
+  if (/^\d+$/.test(s)) return Number(s)
+  return 0
+}
+
+function resetTrafficLive() {
+  trafficLiveSeries.value = []
+  trafficLiveCounters.value = null
+  trafficLiveErr.value = ''
+}
+
+function stopTrafficLivePoll() {
+  if (trafficLivePoll.value) {
+    clearInterval(trafficLivePoll.value)
+    trafficLivePoll.value = null
+  }
+}
+
+function appendTrafficLiveSample(current) {
+  const rx = parseOcctlCounterBytes(current?.RX ?? current?.rx)
+  const tx = parseOcctlCounterBytes(current?.TX ?? current?.tx)
+  const now = Date.now()
+  const ts = Math.floor(now / 1000)
+  const prev = trafficLiveCounters.value
+  if (prev) {
+    const dtSec = Math.max(0.5, (now - prev.at) / 1000)
+    const drx = rx >= prev.rx ? rx - prev.rx : rx
+    const dtx = tx >= prev.tx ? tx - prev.tx : tx
+    const rxMbps = (drx * 8) / (dtSec * 1_000_000)
+    const txMbps = (dtx * 8) / (dtSec * 1_000_000)
+    const cut = ts - TRAFFIC_LIVE_WINDOW_SEC
+    trafficLiveSeries.value = [
+      ...trafficLiveSeries.value,
+      { ts, rx_mbps: rxMbps, tx_mbps: txMbps },
+    ].filter((p) => p.ts >= cut)
+  }
+  trafficLiveCounters.value = { rx, tx, at: now }
+}
+
+async function pollTrafficLive() {
+  if (!trafficModal.value || !trafficLiveEnabled.value) return
+  try {
+    const q = new URLSearchParams({
+      username: trafficModal.value,
+      period: '24h',
+    })
+    const data = await api.get(`/api/v1/vpn/ocserv/users/traffic?${q}`)
+    if (trafficData.value) {
+      trafficData.value.online = data.online
+      trafficData.value.current = data.current
+    }
+    if (!data.online || !data.current) {
+      trafficLiveErr.value = t('ocserv.trafficLiveOffline')
+      stopTrafficLivePoll()
+      trafficLiveEnabled.value = false
+      resetTrafficLive()
+      return
+    }
+    trafficLiveErr.value = ''
+    appendTrafficLiveSample(data.current)
+    trafficLastUpdated.value = Date.now()
+  } catch (e) {
+    trafficLiveErr.value = e.message || t('ocserv.trafficLiveFailed')
+  }
+}
+
+function startTrafficLivePoll() {
+  stopTrafficLivePoll()
+  resetTrafficLive()
+  pollTrafficLive()
+  trafficLivePoll.value = setInterval(pollTrafficLive, TRAFFIC_LIVE_POLL_MS)
+}
+
+function onTrafficLiveToggle() {
+  if (trafficLiveEnabled.value) {
+    if (!trafficData.value?.online) {
+      trafficLiveEnabled.value = false
+      trafficLiveErr.value = t('ocserv.trafficLiveOffline')
+      return
+    }
+    startTrafficLivePoll()
+  } else {
+    stopTrafficLivePoll()
+    resetTrafficLive()
+  }
+}
+
+const trafficChartSeries = computed(() => {
+  if (trafficLiveEnabled.value) return trafficLiveSeries.value
+  return trafficData.value?.series || []
+})
+
+function stopTrafficPoll() {
+  if (trafficPoll.value) {
+    clearInterval(trafficPoll.value)
+    trafficPoll.value = null
+  }
+}
+
+function startTrafficPoll() {
+  stopTrafficPoll()
+  trafficPoll.value = setInterval(() => loadUserTraffic(true), TRAFFIC_POLL_MS)
 }
 
 function openUserTraffic(username) {
@@ -577,17 +722,32 @@ function openUserTraffic(username) {
   trafficPeriod.value = '7d'
   trafficData.value = null
   trafficErr.value = ''
+  trafficLastUpdated.value = null
+  trafficLiveEnabled.value = false
+  resetTrafficLive()
+  stopTrafficLivePoll()
   loadUserTraffic()
+  startTrafficPoll()
 }
 
 function closeUserTraffic() {
+  stopTrafficPoll()
+  stopTrafficLivePoll()
+  trafficLiveEnabled.value = false
+  resetTrafficLive()
   trafficModal.value = null
   trafficData.value = null
   trafficErr.value = ''
+  trafficLastUpdated.value = null
+}
+
+function formatTrafficUpdatedAt(ts) {
+  if (!ts) return ''
+  return new Date(ts).toLocaleTimeString()
 }
 
 watch(trafficPeriod, () => {
-  if (trafficModal.value) loadUserTraffic()
+  if (trafficModal.value && !trafficLiveEnabled.value) loadUserTraffic()
 })
 
 function sessVal(s, ...keys) {
@@ -599,6 +759,11 @@ function sessVal(s, ...keys) {
 }
 
 /** 字节数自动换算 B / KB / MB / GB */
+function userTotalBytes(u) {
+  if (u?.total_bytes != null && u.total_bytes !== '') return Number(u.total_bytes)
+  return (Number(u?.total_rx_bytes) || 0) + (Number(u?.total_tx_bytes) || 0)
+}
+
 function formatBytes(n) {
   const num = Number(n)
   if (!Number.isFinite(num) || num < 0) return '—'
@@ -778,6 +943,8 @@ onMounted(async () => {
 onUnmounted(() => {
   stopInstallPoll()
   stopSessionsPoll()
+  stopTrafficPoll()
+  stopTrafficLivePoll()
 })
 </script>
 
@@ -1152,6 +1319,7 @@ onUnmounted(() => {
                 <th>{{ t('ocserv.colUser') }}</th>
                 <th>{{ t('ocserv.colComment') }}</th>
                 <th>{{ t('ocserv.colGroup') }}</th>
+                <th>{{ t('ocserv.colTotalTraffic') }}</th>
                 <th></th>
               </tr>
             </thead>
@@ -1160,6 +1328,7 @@ onUnmounted(() => {
                 <td class="font-mono">{{ u.username }}</td>
                 <td>{{ u.comment || '—' }}</td>
                 <td>{{ u.group || '—' }}</td>
+                <td class="font-mono text-slate-700">{{ formatBytes(userTotalBytes(u)) }}</td>
                 <td class="whitespace-nowrap space-x-2">
                   <button type="button" class="text-blue-600 text-sm" @click="startEditUser(u)">{{ t('common.edit') }}</button>
                   <button type="button" class="text-red-600 text-sm" @click="delUser(u.username)">{{ t('common.delete') }}</button>
@@ -1167,7 +1336,7 @@ onUnmounted(() => {
                 </td>
               </tr>
               <tr v-if="!filteredUsers.length">
-                <td colspan="4" class="text-center text-slate-400 py-6">
+                <td colspan="5" class="text-center text-slate-400 py-6">
                   {{ users.length && userSearch.trim() ? t('ocserv.noUsersMatch') : t('ocserv.noUsers') }}
                 </td>
               </tr>
@@ -1370,7 +1539,7 @@ onUnmounted(() => {
           <div class="p-4 space-y-4">
             <div class="flex flex-wrap items-center gap-2 text-sm">
               <span class="text-slate-600">时间范围</span>
-              <select v-model="trafficPeriod" class="input text-sm py-1 w-auto">
+              <select v-model="trafficPeriod" class="input text-sm py-1 w-auto" :disabled="trafficLiveEnabled">
                 <option value="24h">近 24 小时</option>
                 <option value="7d">近 7 天</option>
                 <option value="30d">近 30 天</option>
@@ -1381,7 +1550,13 @@ onUnmounted(() => {
                 class="text-xs px-2 py-0.5 rounded"
                 :class="trafficData.online ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'"
               >
-                {{ trafficData.online ? '当前在线' : '当前离线' }}
+                {{ trafficData.online ? t('ocserv.onlineNow') : t('ocserv.offlineNow') }}
+              </span>
+              <span
+                v-if="trafficData && trafficLastUpdated"
+                class="text-xs text-slate-500 ml-auto"
+              >
+                {{ t('ocserv.trafficLastUpdated', { time: formatTrafficUpdatedAt(trafficLastUpdated) }) }}
               </span>
             </div>
             <p v-if="trafficErr" class="text-sm text-red-600">{{ trafficErr }}</p>
@@ -1420,10 +1595,41 @@ onUnmounted(() => {
                   · TX {{ formatTraffic(trafficData.current._TX, trafficData.current.TX ?? trafficData.current.tx) }}
                 </p>
               </div>
-              <SnmpTrafficChart :series="trafficData.series || []" />
+              <div class="space-y-2">
+                <div class="flex flex-wrap items-center gap-3 text-sm rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                  <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      v-model="trafficLiveEnabled"
+                      type="checkbox"
+                      class="rounded"
+                      :disabled="!useOcctl || !trafficData.online"
+                      @change="onTrafficLiveToggle"
+                    />
+                    <span class="font-medium text-slate-700">{{ t('ocserv.trafficLive') }}</span>
+                  </label>
+                  <span v-if="trafficLiveEnabled" class="text-xs text-emerald-700">
+                    {{ t('ocserv.trafficLiveActive') }}
+                  </span>
+                  <span v-else-if="!trafficData.online" class="text-xs text-slate-500">
+                    {{ t('ocserv.trafficLiveNeedOnline') }}
+                  </span>
+                  <span v-else-if="!useOcctl" class="text-xs text-slate-500">
+                    {{ t('ocserv.occtlHint') }}
+                  </span>
+                </div>
+                <p v-if="trafficLiveErr" class="text-xs text-amber-700">{{ trafficLiveErr }}</p>
+                <p v-else-if="trafficLiveEnabled && trafficLiveSeries.length < 2" class="text-xs text-slate-500">
+                  {{ t('ocserv.trafficLiveWarming') }}
+                </p>
+                <SnmpTrafficChart
+                  :series="trafficChartSeries"
+                  :empty-label="trafficLiveEnabled ? t('ocserv.trafficLiveWarming') : undefined"
+                  :footer-label="trafficLiveEnabled ? t('ocserv.trafficLiveFooter') : undefined"
+                />
+              </div>
             </template>
             <p class="text-xs text-slate-500">
-              需开启 <strong>occtl</strong> 且用户曾在线；后台每 5 分钟采样一次，历史保留 1 年（按小时），近 7 日为 5 分钟粒度。
+              {{ t('ocserv.trafficFoot') }} · {{ t('ocserv.trafficAutoRefresh') }}
             </p>
           </div>
         </div>

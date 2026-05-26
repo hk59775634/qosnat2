@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/ocserv"
+	"github.com/hk59775634/qosnat2/internal/ocserv/usertraffic"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -141,15 +142,7 @@ func (srv *Server) handleOCServUsers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		st := srv.store.Get()
-		list := make([]map[string]string, 0, len(st.VPN.OCServ.Users))
-		for _, u := range st.VPN.OCServ.Users {
-			list = append(list, map[string]string{
-				"username": u.Username,
-				"comment":  u.Comment,
-				"group":    u.Group,
-			})
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"users": list})
+		writeJSON(w, http.StatusOK, map[string]any{"users": ocservPublicUsers(st.VPN.OCServ.Users)})
 	case http.MethodPost:
 		if store.OCServUsesRadius(srv.store.Get().VPN.OCServ) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "RADIUS 认证模式下请使用外部用户目录，勿添加本地用户"})
@@ -282,12 +275,22 @@ func ocservPublicConfig(o store.OCServState) store.OCServState {
 	out := o
 	out.Radius.Secret = ""
 	out.Advanced.CamouflageSecret = ""
-	out.Users = nil
-	for _, u := range o.Users {
-		out.Users = append(out.Users, store.OCServUser{
-			Username: u.Username,
-			Comment:  u.Comment,
-			Group:    u.Group,
+	out.Users = ocservPublicUsers(o.Users)
+	return out
+}
+
+func ocservPublicUsers(users []store.OCServUser) []store.OCServUser {
+	traffic := usertraffic.DefaultStore()
+	out := make([]store.OCServUser, 0, len(users))
+	for _, u := range users {
+		rx, tx := traffic.TotalBytes(u.Username)
+		out = append(out, store.OCServUser{
+			Username:     u.Username,
+			Comment:      u.Comment,
+			Group:        u.Group,
+			TotalRxBytes: rx,
+			TotalTxBytes: tx,
+			TotalBytes:   rx + tx,
 		})
 	}
 	return out

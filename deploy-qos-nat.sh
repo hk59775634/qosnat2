@@ -5,8 +5,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEV_LAN="${DEV_LAN:-}"
 DEV_WAN="${DEV_WAN:-}"
-ADMIN_USER="${ADMIN_USER:-}"
+ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-}"
+INITIAL_ADMIN_FILE="${CONFIG_DIR}/initial-admin.txt"
 ADMIN_PORT="${ADMIN_PORT:-8080}"
 STATE_DIR="${STATE_DIR:-/var/lib/qosnat2}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/qosnat2}"
@@ -95,7 +96,29 @@ resolve_web_root() {
   fi
 }
 
+gen_admin_password() {
+  if [[ -n "${ADMIN_PASS}" ]]; then
+    return 0
+  fi
+  if command -v openssl &>/dev/null; then
+    ADMIN_PASS="$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 20)"
+  else
+    ADMIN_PASS="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)"
+  fi
+}
+
+write_initial_admin_notice() {
+  mkdir -p "${CONFIG_DIR}"
+  cat > "${INITIAL_ADMIN_FILE}" <<EOF
+# qosnat2 初始管理员（安装时生成，请妥善保存后删除本文件）
+ADMIN_USER=${ADMIN_USER}
+ADMIN_PASS=${ADMIN_PASS}
+EOF
+  chmod 0600 "${INITIAL_ADMIN_FILE}"
+}
+
 write_env_file() {
+  gen_admin_password
   local web_root
   web_root="$(resolve_web_root)"
   mkdir -p "${CONFIG_DIR}"
@@ -107,12 +130,8 @@ SESSION_FILE=${STATE_DIR}/sessions.json
 OPENAPI_PATH=${ROOT}/api/openapi.yaml
 WEB_ROOT=${web_root}
 EOF
-  if [[ -n "${ADMIN_USER}" ]]; then
-    echo "ADMIN_USER=${ADMIN_USER}" >> "${CONFIG_DIR}/env"
-  fi
-  if [[ -n "${ADMIN_PASS}" ]]; then
-    echo "ADMIN_PASS=${ADMIN_PASS}" >> "${CONFIG_DIR}/env"
-  fi
+  echo "ADMIN_USER=${ADMIN_USER}" >> "${CONFIG_DIR}/env"
+  echo "ADMIN_PASS=${ADMIN_PASS}" >> "${CONFIG_DIR}/env"
   if [[ -n "${DEV_LAN}" ]]; then
     echo "DEV_LAN=${DEV_LAN}" >> "${CONFIG_DIR}/env"
   fi
@@ -208,13 +227,20 @@ cmd_start() {
   build_web
   build_qosnatd
   write_env_file
+  write_initial_admin_notice
   init_state
   save_deploy_env
   install_systemd
   systemctl restart qosnatd.service || systemctl start qosnatd.service || die "qosnatd 启动失败"
   log "安装完成：仅 Web UI 已启动（数据面未加载，直至首次引导完成）"
-  log "打开浏览器: http://$(hostname -I 2>/dev/null | awk '{print $1}'):${ADMIN_PORT}/"
-  log "将自动进入「初始设置」向导（类似 AdGuard Home）"
+  log "=========================================="
+  log "初始管理员（请先登录，再完成 Web 引导）"
+  log "  用户: ${ADMIN_USER}"
+  log "  口令: ${ADMIN_PASS}"
+  log "  已写入: ${INITIAL_ADMIN_FILE} （权限 0600，用后请删除）"
+  log "=========================================="
+  log "打开浏览器: http://$(hostname -I 2>/dev/null | awk '{print $1}'):${ADMIN_PORT}/#/login"
+  log "登录后进入「初始设置」向导"
   curl -sf "http://127.0.0.1:${ADMIN_PORT}/api/v1/health" 2>/dev/null | head -c 200 || warn "health 暂不可达"
   echo
 }
@@ -247,11 +273,11 @@ usage() {
   -BuildWeb     强制 npm run build（即使 web/dist 已存在）
   -SkipWeb      跳过前端构建（等同 SKIP_WEB_BUILD=1）
 
-首次安装后请用浏览器完成「初始设置」向导（管理员账号、LAN/WAN 网卡等）。
+首次安装会生成随机管理员口令（可用 ADMIN_PASS= 覆盖）；请先登录再完成「初始设置」向导。
 数据面在向导点击「完成」后才会 apply（并启用 qos-nat.service）。
 
 可选环境变量:
-  DEV_LAN=... DEV_WAN=... ADMIN_USER=... ADMIN_PASS=...
+  DEV_LAN=... DEV_WAN=... ADMIN_USER=admin ADMIN_PASS=...（不设则随机 20 位）
   ADMIN_PORT=8080  SKIP_WEB_BUILD=1  BUILD_WEB=1
 EOF
 }

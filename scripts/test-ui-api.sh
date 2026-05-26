@@ -7,6 +7,10 @@ PASS="${ADMIN_PASS:-${QOSNAT_PASS:-password}}"
 COOKIE=$(mktemp)
 trap 'rm -f "$COOKIE"' EXIT
 
+# 自签 HTTPS 需 -k（与 acceptance 脚本一致）
+CURL_K=()
+[[ "$BASE" == https:* ]] && CURL_K=(-k)
+
 fail=0
 ok=0
 
@@ -24,11 +28,11 @@ check() {
 req() {
   local method="$1" path="$2" data="${3:-}"
   if [ "$method" = GET ]; then
-    curl -s -o /tmp/out.json -w "%{http_code}" -b "$COOKIE" -c "$COOKIE" "$BASE$path"
+    curl "${CURL_K[@]}" -s -o /tmp/out.json -w "%{http_code}" -b "$COOKIE" -c "$COOKIE" "$BASE$path"
   elif [ "$method" = DELETE ]; then
-    curl -s -o /tmp/out.json -w "%{http_code}" -b "$COOKIE" -X DELETE "$BASE$path"
+    curl "${CURL_K[@]}" -s -o /tmp/out.json -w "%{http_code}" -b "$COOKIE" -X DELETE "$BASE$path"
   else
-    curl -s -o /tmp/out.json -w "%{http_code}" -b "$COOKIE" -c "$COOKIE" \
+    curl "${CURL_K[@]}" -s -o /tmp/out.json -w "%{http_code}" -b "$COOKIE" -c "$COOKIE" \
       -X "$method" -H 'Content-Type: application/json' -d "$data" "$BASE$path"
   fi
 }
@@ -50,11 +54,11 @@ if [ "$code" != "200" ]; then
     req() {
       local method="$1" path="$2" data="${3:-}"
       if [ "$method" = GET ]; then
-        curl -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" "$BASE$path"
+        curl "${CURL_K[@]}" -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" "$BASE$path"
       elif [ "$method" = DELETE ]; then
-        curl -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" -X DELETE "$BASE$path"
+        curl "${CURL_K[@]}" -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" -X DELETE "$BASE$path"
       else
-        curl -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" \
+        curl "${CURL_K[@]}" -s -o /tmp/out.json -w "%{http_code}" -H "X-API-Key: $QOSNAT_API_KEY" \
           -X "$method" -H 'Content-Type: application/json' -d "$data" "$BASE$path"
       fi
     }
@@ -67,6 +71,8 @@ fi
 echo "=== read APIs (UI pages) ==="
 for ep in \
   GET:/api/v1/health:200 \
+  GET:/api/v1/setup/status:200 \
+  GET:/api/v1/setup/interfaces:200 \
   GET:/api/v1/session:200 \
   GET:/api/v1/stats/dashboard:200 \
   GET:/api/v1/nat/policy-routes:200 \
@@ -79,6 +85,10 @@ for ep in \
   GET:/api/v1/routes:200 \
   GET:/api/v1/dhcp:200 \
   GET:/api/v1/vpn/wireguard:200 \
+  GET:/api/v1/vpn/ocserv:200 \
+  GET:/api/v1/vpn/ocserv/vhosts:200 \
+  GET:/api/v1/vpn/ocserv/groups:200 \
+  GET:/api/v1/vpn/ocserv/install/status:200 \
   GET:/api/v1/diagnostics/captures:200 \
   GET:/api/v1/diagnostics/conntrack?limit=5:200 \
   GET:/api/v1/ebpf/maps:200 \
@@ -93,12 +103,40 @@ for ep in \
   GET:/api/v1/network/vlans:200 \
   GET:/api/v1/network/wan-links:200 \
   GET:/api/v1/shaper/tc:200 \
-  GET:/api/v1/api-keys:200
+  GET:/api/v1/api-keys:200 \
+  GET:/api/v1/network/vxlan:200 \
+  GET:/api/v1/network/netplan:200 \
+  GET:/api/v1/firewall/aliases:200 \
+  GET:/api/v1/shaper/tenants:200
 do
   IFS=: read -r method path expect <<< "$ep"
   code=$(req "$method" "$path")
   check "$path" "$expect" "$code"
 done
+
+echo "=== optional ocserv detail (200 or 503) ==="
+code=$(req GET /api/v1/vpn/ocserv/status/detail)
+if [ "$code" = "200" ] || [ "$code" = "503" ]; then ok=$((ok + 1)); echo "OK   /api/v1/vpn/ocserv/status/detail ($code)"; else fail=$((fail + 1)); echo "FAIL /api/v1/vpn/ocserv/status/detail ($code)"; fi
+code=$(req GET /api/v1/vpn/ocserv/sessions)
+if [ "$code" = "200" ] || [ "$code" = "503" ]; then ok=$((ok + 1)); echo "OK   /api/v1/vpn/ocserv/sessions ($code)"; else fail=$((fail + 1)); echo "FAIL /api/v1/vpn/ocserv/sessions ($code)"; fi
+code=$(req GET '/api/v1/vpn/ocserv/users/traffic?username=_none_&period=24h')
+if [ "$code" = "200" ]; then ok=$((ok + 1)); echo "OK   ocserv users/traffic ($code)"; else fail=$((fail + 1)); echo "FAIL ocserv users/traffic ($code)"; fi
+code=$(req GET '/api/v1/vpn/ocserv/vhosts/users?domain=__no_such_vhost__.invalid')
+if [ "$code" = "404" ]; then ok=$((ok + 1)); echo "OK   vhosts/users missing vhost -> 404"; else fail=$((fail + 1)); echo "FAIL vhosts/users expected 404 got $code"; fi
+
+echo "=== interfaces ethtool (first device) ==="
+if command -v python3 >/dev/null; then
+  code=$(req GET /api/v1/interfaces)
+  dev=$(python3 -c "import json; d=json.load(open('/tmp/out.json')); print((d.get('interfaces') or [{}])[0].get('name','') or '')" 2>/dev/null || true)
+  if [ -n "$dev" ]; then
+    code=$(req GET "/api/v1/interfaces/ethtool?device=${dev}")
+    check "ethtool?device=$dev" 200 "$code"
+  else
+    echo "SKIP ethtool (no interface in GET /interfaces)"
+  fi
+else
+  echo "SKIP ethtool (no python3)"
+fi
 
 echo "=== NAT write ==="
 code=$(req POST /api/v1/nat/shared-ips '{"ip":"203.0.113.10"}')

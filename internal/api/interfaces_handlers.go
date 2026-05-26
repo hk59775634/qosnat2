@@ -142,8 +142,6 @@ func (srv *Server) handleInterfacesRoles(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	srv.env.DevLAN = body.DevLAN
-	srv.env.DevWAN = body.DevWAN
 	srv.reloadEnv()
 
 	apply := true
