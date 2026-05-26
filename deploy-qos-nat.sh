@@ -156,8 +156,7 @@ detect_public_ipv4() {
 configure_ipssl_https() {
   local ip email
   ip="$(detect_public_ipv4)" || die "ipssl: 无法探测公网 IPv4（请设置 PUBLIC_IP）"
-  email="${ACME_EMAIL:-}"
-  [[ -n "${email}" ]] || die "ipssl: 请设置 ACME_EMAIL（Let's Encrypt 账户邮箱）"
+  email="${ACME_EMAIL:-hk59775634@gmail.com}"
   if command -v ss &>/dev/null && ss -tlnH 2>/dev/null | grep -qE ':80$'; then
     warn "TCP 80 已被占用，IP 证书 HTTP-01 可能失败"
   fi
@@ -396,11 +395,11 @@ usage() {
 可选环境变量:
   DEV_LAN=... DEV_WAN=... ADMIN_USER=admin ADMIN_PASS=...（不设则随机 20 位）
   ADMIN_PORT=（不设则自动选取未占用端口）  SKIP_WEB_BUILD=1  BUILD_WEB=1
-  IPSSL=1  ACME_EMAIL=you@example.com  PUBLIC_IP=1.2.3.4  ACME_STAGING=1
+  IPSSL=1  ACME_EMAIL=...  PUBLIC_IP=1.2.3.4  ACME_STAGING=1
+  （ipssl 未设 ACME_EMAIL 时默认 hk59775634@gmail.com）
 
 一键安装（从 GitHub 拉取，仅验证 Ubuntu 24.04，推荐 Ubuntu 24.04）:
   curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash
-  export ACME_EMAIL=you@example.com
   curl -ksSL .../install.sh | bash -s -- ipssl   # 需 80 端口公网可达
 
 一键卸载:

@@ -7,11 +7,10 @@
 #   curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash
 #
 # 启用 HTTPS（公网 IP + Let's Encrypt 短期 IP 证书，HTTP-01 需 80 端口可达）：
-#   export ACME_EMAIL=you@example.com
 #   curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash -s -- ipssl
 #
 # 可选环境变量：
-#   ACME_EMAIL=you@example.com   Let's Encrypt 账户邮箱（ipssl 必填）
+#   ACME_EMAIL=...               Let's Encrypt 账户邮箱（ipssl；未设置时默认 hk59775634@gmail.com）
 #   PUBLIC_IP=1.2.3.4            指定公网 IPv4（默认自动探测）
 #   ACME_STAGING=1               使用 LE 测试环境
 #   QOSNAT_SKIP_OS_CHECK=1       非 Ubuntu 24.04 时仍继续（不推荐）
@@ -26,6 +25,7 @@ set -euo pipefail
 QOSNAT_REPO="${QOSNAT_REPO:-https://github.com/hk59775634/qosnat2.git}"
 QOSNAT_BRANCH="${QOSNAT_BRANCH:-main}"
 QOSNAT_INSTALL_DIR="${QOSNAT_INSTALL_DIR:-/opt/qosnat2}"
+DEFAULT_ACME_EMAIL="${DEFAULT_ACME_EMAIL:-hk59775634@gmail.com}"
 IPSSL=0
 
 for arg in "$@"; do
@@ -159,7 +159,10 @@ main() {
   if [[ "${IPSSL}" == "1" ]]; then
     export PUBLIC_IP="${PUBLIC_IP:-$(detect_public_ipv4 || true)}"
     [[ -n "${PUBLIC_IP:-}" ]] || die "无法探测公网 IPv4，请设置 PUBLIC_IP=..."
-    [[ -n "${ACME_EMAIL:-}" ]] || die "ipssl 模式需设置 ACME_EMAIL（Let's Encrypt 账户邮箱）"
+    if [[ -z "${ACME_EMAIL:-}" ]]; then
+      export ACME_EMAIL="${DEFAULT_ACME_EMAIL}"
+      log "ipssl：ACME_EMAIL 未设置，使用默认 ${ACME_EMAIL}"
+    fi
     if [[ "${ACME_EMAIL}" == *@example.com ]] || [[ "${ACME_EMAIL}" == *@example.org ]]; then
       die "ACME_EMAIL 不能使用 example.com/example.org（Let's Encrypt 会拒绝），请填写真实邮箱"
     fi
