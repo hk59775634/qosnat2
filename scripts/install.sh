@@ -18,6 +18,8 @@
 #   QOSNAT_INSTALL_DIR=/opt/qosnat2
 #   QOSNAT_REPO=https://github.com/hk59775634/qosnat2.git
 #   QOSNAT_BRANCH=main
+#
+# 卸载见 scripts/uninstall.sh 或 deploy-qos-nat.sh uninstall
 
 set -euo pipefail
 

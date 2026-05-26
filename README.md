@@ -68,6 +68,21 @@ curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/ins
 
 可选：`PUBLIC_IP=1.2.3.4`、`ACME_STAGING=1`（测试环境）、`QOSNAT_INSTALL_DIR=/opt/qosnat2`、`QOSNAT_SKIP_OS_CHECK=1`（非 24.04 时）。
 
+## 一键卸载
+
+停止服务，清理 TC / nft / BPF，并删除配置与状态（默认保留 `/opt/qosnat2` 源码，可加 `--purge-repo` 一并删除）：
+
+```bash
+# 远程
+curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/uninstall.sh | bash -s -- -y
+
+# 本地仓库
+sudo ./deploy-qos-nat.sh uninstall -y
+sudo ./deploy-qos-nat.sh uninstall -y --purge-repo   # 同时删除源码目录
+```
+
+保留配置重装：`sudo ./scripts/uninstall.sh -y --keep-data`
+
 ## 部署（本地仓库）
 
 ```bash

@@ -7,10 +7,10 @@ DEV_LAN="${DEV_LAN:-}"
 DEV_WAN="${DEV_WAN:-}"
 ADMIN_USER="${ADMIN_USER:-admin}"
 ADMIN_PASS="${ADMIN_PASS:-}"
-INITIAL_ADMIN_FILE="${CONFIG_DIR}/initial-admin.txt"
-ADMIN_PORT="${ADMIN_PORT:-}"
 STATE_DIR="${STATE_DIR:-/var/lib/qosnat2}"
 CONFIG_DIR="${CONFIG_DIR:-/etc/qosnat2}"
+INITIAL_ADMIN_FILE="${CONFIG_DIR}/initial-admin.txt"
+ADMIN_PORT="${ADMIN_PORT:-}"
 SKIP_WEB_BUILD="${SKIP_WEB_BUILD:-0}"
 BUILD_WEB="${BUILD_WEB:-0}"
 IPSSL="${IPSSL:-0}"
@@ -340,6 +340,12 @@ cmd_stop() {
   log "已停止 qosnatd / qos-nat"
 }
 
+cmd_uninstall() {
+  local uninstall_sh="${ROOT}/scripts/uninstall.sh"
+  [[ -f "${uninstall_sh}" ]] || die "未找到 ${uninstall_sh}"
+  exec bash "${uninstall_sh}" "$@"
+}
+
 cmd_status() {
   if [[ -z "${ADMIN_PORT:-}" && -f "${CONFIG_DIR}/env" ]]; then
     ADMIN_PORT="$(grep -E '^ADMIN_PORT=' "${CONFIG_DIR}/env" 2>/dev/null | tail -1 | cut -d= -f2-)"
@@ -354,11 +360,12 @@ cmd_status() {
 
 usage() {
   cat <<EOF
-用法: $0 [选项] {start|stop|status}
+用法: $0 [选项] {start|stop|status|uninstall}
 
-  start  — 编译安装 qosnatd + Web UI，仅启动控制面（不加载 NAT/QoS）
-  stop   — 停止服务
-  status — 服务与健康检查
+  start     — 编译安装 qosnatd + Web UI，仅启动控制面（不加载 NAT/QoS）
+  stop      — 停止服务并 flush nft ruleset
+  status    — 服务与健康检查
+  uninstall — 一键卸载（等同 scripts/uninstall.sh，支持 -y --purge-repo 等）
 
 选项:
   -BuildWeb     强制 npm run build（即使 web/dist 已存在）
@@ -376,6 +383,10 @@ usage() {
   curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash
   export ACME_EMAIL=you@example.com
   curl -ksSL .../install.sh | bash -s -- ipssl   # 需 80 端口公网可达
+
+一键卸载:
+  curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/uninstall.sh | bash -s -- -y
+  sudo $0 uninstall -y --purge-repo
 EOF
 }
 
@@ -385,6 +396,11 @@ while [[ $# -gt 0 ]]; do
     -BuildWeb) BUILD_WEB=1; shift ;;
     -SkipWeb)  SKIP_WEB_BUILD=1; shift ;;
     ipssl|IPSSL) IPSSL=1; shift ;;
+    uninstall|remove)
+      shift
+      cmd_uninstall "$@"
+      exit $?
+      ;;
     start|stop|status) CMD="$1"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "未知参数: $1（$0 -h 查看帮助）" ;;
