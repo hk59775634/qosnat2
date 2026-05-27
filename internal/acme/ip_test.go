@@ -13,4 +13,17 @@ func TestNormalizeIP(t *testing.T) {
 	if _, err := NormalizeIP("2001:db8::1"); err == nil {
 		t.Fatal("expected ipv4 only error")
 	}
+	if _, err := NormalizeIP("100.64.0.249"); err == nil {
+		t.Fatal("expected cgnat rejection")
+	}
+	if _, err := NormalizeIP("10.0.0.1"); err == nil {
+		t.Fatal("expected private rejection")
+	}
+}
+
+func TestNormalizeIPCIDR(t *testing.T) {
+	got, err := NormalizeIP("157.15.107.249/32")
+	if err != nil || got != "157.15.107.249" {
+		t.Fatalf("cidr strip: got %q err %v", got, err)
+	}
 }

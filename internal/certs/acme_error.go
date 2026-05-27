@@ -19,6 +19,15 @@ func ClassifyACMEError(err error) ACMEErrorInfo {
 	msg := strings.ToLower(err.Error())
 	info := ACMEErrorInfo{Summary: err.Error()}
 
+	if strings.Contains(msg, "invalid account url") || strings.Contains(msg, "keyid header") {
+		info.Summary = "ACME 账户环境与当前「测试(staging)」开关不一致。请取消勾选测试后重试，或删除 /var/lib/qosnat2/acme/account*.json 后重新申请。"
+		return info
+	}
+	if strings.Contains(msg, "not a public ipv4") || strings.Contains(msg, "cgnat") {
+		info.Summary = "Let's Encrypt IP 证书仅支持公网 IPv4（不可为 10.x、192.168.x、100.64.x 等内网/CGNAT 地址）。请填写从公网访问本机所用的 IP。"
+		return info
+	}
+
 	dnsPatterns := []string{
 		"dns problem",
 		"dnsproble",

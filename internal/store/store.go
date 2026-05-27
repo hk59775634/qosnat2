@@ -92,6 +92,9 @@ type SystemState struct {
 	TLSAcmeLastOK         string `json:"tls_acme_last_ok,omitempty"`
 	TLSAcmeLastError      string `json:"tls_acme_last_error,omitempty"`
 	TLSManagedCertID      string `json:"tls_managed_cert_id,omitempty"`
+	// AcmeTempAllowHTTP01 在执行 HTTP-01 验证期间临时放开 tcp/80 入站访问。
+	// 该值由服务端在完成 ACME obtain/renew 后会自动恢复，不建议手动修改。
+	AcmeTempAllowHTTP01 bool `json:"acme_temp_allow_http01,omitempty"`
 }
 
 // APIKey 持久化 API Key（仅存 key_hash；创建时明文仅返回一次）

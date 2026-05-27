@@ -67,9 +67,14 @@ func (srv *Server) executeManagedCertRenew(id string, mode renewApplyMode) error
 	if prev.Type != store.CertTypeACME {
 		return errCertNotACME
 	}
-	certAcmeMu.Lock()
-	renewed, err := certs.RenewACME(prev)
-	certAcmeMu.Unlock()
+	var renewed *store.ManagedCertificate
+	var err error
+	err = srv.withAcmeHTTP01Port80Open(func() error {
+		certAcmeMu.Lock()
+		defer certAcmeMu.Unlock()
+		renewed, err = certs.RenewACME(prev)
+		return err
+	})
 	if err != nil {
 		srv.recordCertRenewFailure(id, err)
 		return err

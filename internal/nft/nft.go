@@ -155,6 +155,10 @@ func Render(cfg Config, st store.State) (string, error) {
 	if cfg.DevLAN != "" {
 		b.WriteString(fmt.Sprintf("        iifname \"%s\" accept\n", cfg.DevLAN))
 	}
+	if st.System.AcmeTempAllowHTTP01 {
+		// ACME http-01 挑战需要公网 80 端口可达；临时放开所有接口 tcp/80 入站。
+		b.WriteString("        tcp dport 80 accept comment \"qosnat2-acme-http01-open80\"\n")
+	}
 	writeWANInputPolicy(&b, cfg)
 	b.WriteString("    }\n}\n")
 	return b.String(), nil

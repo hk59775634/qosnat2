@@ -6,7 +6,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -71,13 +70,21 @@ func NormalizeDomain(d string) (string, error) {
 
 // Obtain 通过 HTTP-01 申请证书（需公网 80 端口可达）
 func Obtain(cfg Config) (*Result, error) {
-	client, domain, err := setupClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-	res, err := client.Certificate.Obtain(certificate.ObtainRequest{
-		Domains: []string{domain},
-		Bundle:  true,
+	var res *certificate.Resource
+	err := withHTTP01PortOpen(func() error {
+		client, domain, err := setupClient(cfg)
+		if err != nil {
+			return err
+		}
+		res, err = client.Certificate.Obtain(certificate.ObtainRequest{
+			Domains: []string{domain},
+			Bundle:  true,
+		})
+		if err != nil {
+			return err
+		}
+		_ = domain
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -156,7 +163,7 @@ func newClient(email string, staging bool, disableCN bool) (*lego.Client, error)
 		return nil, err
 	}
 	user := &legoUser{email: email, key: accountKey}
-	if reg, err := loadRegistration(); err == nil && reg != nil && reg.URI != "" {
+	if reg, err := loadRegistration(staging); err == nil && reg != nil && reg.URI != "" {
 		user.registration = reg
 	}
 	config := lego.NewConfig(user)
@@ -177,7 +184,7 @@ func newClient(email string, staging bool, disableCN bool) (*lego.Client, error)
 			return nil, fmt.Errorf("acme register: %w", err)
 		}
 		user.registration = reg
-		_ = saveRegistration(reg)
+		_ = saveRegistration(reg, staging)
 	}
 	return client, nil
 }
@@ -204,22 +211,3 @@ func loadOrCreateAccountKey() (crypto.PrivateKey, error) {
 	return key, nil
 }
 
-func loadRegistration() (*registration.Resource, error) {
-	b, err := os.ReadFile(AccountRegPath)
-	if err != nil {
-		return nil, err
-	}
-	var reg registration.Resource
-	if err := json.Unmarshal(b, &reg); err != nil {
-		return nil, err
-	}
-	return &reg, nil
-}
-
-func saveRegistration(reg *registration.Resource) error {
-	b, err := json.Marshal(reg)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(AccountRegPath, b, 0600)
-}

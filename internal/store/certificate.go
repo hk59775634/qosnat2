@@ -81,7 +81,11 @@ func NormalizeManagedCertificate(c *ManagedCertificate) error {
 		c.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
 	if c.AcmeRenewDays <= 0 {
-		c.AcmeRenewDays = DefaultAcmeAutoRenewDays
+		if len(c.Domains) > 0 && net.ParseIP(strings.TrimSpace(c.Domains[0])) != nil {
+			c.AcmeRenewDays = DefaultIPAcmeAutoRenewDays
+		} else {
+			c.AcmeRenewDays = DefaultAcmeAutoRenewDays
+		}
 	}
 	if c.Type == CertTypeACME && !c.AutoRenewPaused {
 		c.AutoRenewEnabled = true

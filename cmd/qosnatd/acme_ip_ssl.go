@@ -9,6 +9,7 @@ import (
 
 	"github.com/hk59775634/qosnat2/internal/acme"
 	"github.com/hk59775634/qosnat2/internal/api"
+	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -43,6 +44,7 @@ func runAcmeIPSSL() {
 	if err := st.Load(); err != nil {
 		log.Fatalf("load state: %v", err)
 	}
+	_ = api.New(env, st, ebpf.New()) // 注册 ACME HTTP-01 临时放行 80 端口回调
 	log.Printf("requesting Let's Encrypt IP certificate for %s (profile shortlived, HTTP-01 on :80)", addr)
 	if err := api.InstallACMEIPSSL(st, env, addr, mail, *staging); err != nil {
 		log.Fatalf("acme ip ssl: %v", err)

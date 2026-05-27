@@ -94,15 +94,18 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 		case store.CertTypeACME:
 			var mcPtr *store.ManagedCertificate
 			var err error
-			certAcmeMu.Lock()
-			if _, ipErr := acme.NormalizeIP(body.Domain); ipErr == nil {
-				mcPtr, err = certs.ObtainACMEIP(body.Domain, body.Email, body.Staging)
-			} else {
-				mcPtr, err = certs.ObtainACME(body.Domain, body.Email, body.Staging)
-			}
-			certAcmeMu.Unlock()
+			err = srv.withAcmeHTTP01Port80Open(func() error {
+				certAcmeMu.Lock()
+				defer certAcmeMu.Unlock()
+				if _, ipErr := acme.NormalizeIP(body.Domain); ipErr == nil {
+					mcPtr, err = certs.ObtainACMEIP(body.Domain, body.Email, body.Staging)
+				} else {
+					mcPtr, err = certs.ObtainACME(body.Domain, body.Email, body.Staging)
+				}
+				return err
+			})
 			if err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				writeJSON(w, http.StatusBadRequest, renewErrorResponse(err))
 				return
 			}
 			mc = *mcPtr

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hk59775634/qosnat2/internal/acme"
 	"github.com/hk59775634/qosnat2/internal/capture"
 	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/nft"
@@ -74,7 +75,17 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 	}
 	s.mux = http.NewServeMux()
 	s.routes()
+	s.registerAcmeHooks()
 	return s
+}
+
+func (srv *Server) registerAcmeHooks() {
+	acme.SetHTTP01PortHook(func(open bool) error {
+		if srv.env.DevWAN == "" {
+			return nil
+		}
+		return srv.setAcmeTempAllowHTTP01(open)
+	})
 }
 
 func (srv *Server) routes() {

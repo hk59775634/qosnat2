@@ -55,6 +55,18 @@ func TestRenderEgressSNAT(t *testing.T) {
 	}
 }
 
+func TestRenderAcmeOpen80(t *testing.T) {
+	st := store.DefaultState()
+	st.System.AcmeTempAllowHTTP01 = true
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, `tcp dport 80 accept comment "qosnat2-acme-http01-open80"`) {
+		t.Fatalf("missing acme open80 rule in render")
+	}
+}
+
 func TestRenderWANOnly(t *testing.T) {
 	st := store.DefaultState()
 	body, err := Render(Config{DevWAN: "ens18"}, st)
