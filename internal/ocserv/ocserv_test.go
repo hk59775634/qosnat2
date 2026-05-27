@@ -33,11 +33,14 @@ func TestRenderConfRadius(t *testing.T) {
 	if strings.Contains(conf, "plain[passwd") {
 		t.Fatal("should not use plain auth")
 	}
-	if strings.Contains(conf, "config-per-group") {
-		t.Fatalf("radius must not set config-per-group (conflicts with radius supplemental config):\n%s", conf)
+	if strings.Contains(conf, "\nconfig-per-group = ") {
+		t.Fatalf("radius must comment out config-per-group:\n%s", conf)
 	}
-	if strings.Contains(conf, "config-per-user") {
-		t.Fatalf("radius must not set config-per-user:\n%s", conf)
+	if !strings.Contains(conf, "# config-per-group = /etc/ocserv/config-per-group/") {
+		t.Fatalf("missing commented config-per-group in radius mode:\n%s", conf)
+	}
+	if !strings.Contains(conf, "# default-group-config = /etc/ocserv/defaults/group.conf") {
+		t.Fatalf("missing commented default-group-config in radius mode:\n%s", conf)
 	}
 }
 

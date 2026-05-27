@@ -165,6 +165,18 @@ export const api = {
       add: (body) => request('/api/v1/network/wan-links', { method: 'POST', body: JSON.stringify(body) }),
       del: (id) => request(`/api/v1/network/wan-links?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
+    egressPolicies: {
+      list: () => request('/api/v1/network/egress-policies'),
+      add: (body) =>
+        request('/api/v1/network/egress-policies', { method: 'POST', body: JSON.stringify(body) }),
+      put: (id, body) =>
+        request(`/api/v1/network/egress-policies?id=${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        }),
+      del: (id) =>
+        request(`/api/v1/network/egress-policies?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
   },
   interfacesEthtool: (device) => request(`/api/v1/interfaces/ethtool?device=${encodeURIComponent(device)}`),
   setEthtool: (device, body) =>

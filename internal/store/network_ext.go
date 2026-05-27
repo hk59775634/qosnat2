@@ -39,10 +39,11 @@ type IfaceConfig struct {
 
 // NetworkState VLAN / VXLAN / 多 WAN / netplan 托管接口
 type NetworkState struct {
-	Ifaces       []IfaceConfig   `json:"ifaces"`
-	VLANs        []VLANIface     `json:"vlans"`
-	VXLANTunnels []VXLANTunnel   `json:"vxlan_tunnels"`
-	WanLinks     []WanLink       `json:"wan_links"`
+	Ifaces          []IfaceConfig   `json:"ifaces"`
+	VLANs           []VLANIface     `json:"vlans"`
+	VXLANTunnels    []VXLANTunnel   `json:"vxlan_tunnels"`
+	WanLinks        []WanLink       `json:"wan_links"`
+	EgressPolicies  []EgressPolicy  `json:"egress_policies,omitempty"`
 }
 
 // UpsertIfaceConfig 按设备名更新或追加托管网卡配置

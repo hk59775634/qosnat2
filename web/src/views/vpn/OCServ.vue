@@ -23,6 +23,11 @@ const ok = ref('')
 const installing = ref(false)
 const installJob = ref(null)
 const installPollTimer = ref(null)
+const adminUser = ref('admin')
+const showUninstallModal = ref(false)
+const uninstallPassword = ref('')
+const uninstallErr = ref('')
+const uninstallSubmitting = ref(false)
 const activeTab = ref('overview')
 const detail = ref(null)
 const sessions = ref([])
@@ -316,6 +321,7 @@ async function load() {
   camouflageSecretSet.value = !!d.camouflage_secret_set
   connectionInfo.value = d.connection || null
   vhostsMeta.value = d.vhosts_meta || []
+  adminUser.value = (d.admin_user && String(d.admin_user).trim()) || 'admin'
 }
 
 function vhostConnectUrl(domain) {
@@ -399,6 +405,49 @@ async function runInstall() {
     if (e.status === 403) {
       err.value = t('ocserv.installRootHint', { msg })
     }
+  }
+}
+
+function openUninstallModal() {
+  uninstallErr.value = ''
+  uninstallPassword.value = ''
+  showUninstallModal.value = true
+}
+
+function closeUninstallModal() {
+  showUninstallModal.value = false
+  uninstallPassword.value = ''
+  uninstallErr.value = ''
+}
+
+async function confirmUninstallOcserv() {
+  uninstallErr.value = ''
+  if (!uninstallPassword.value) {
+    uninstallErr.value = t('ocserv.uninstallPasswordRequired')
+    return
+  }
+  uninstallSubmitting.value = true
+  try {
+    await api.post('/api/v1/vpn/ocserv/uninstall', { admin_password: uninstallPassword.value })
+    ok.value = t('ocserv.uninstallDone')
+    closeUninstallModal()
+    await load()
+  } catch (e) {
+    const msg = e.data?.error || e.message || ''
+    const msgStr = String(msg)
+    if (e.status === 403) {
+      if (/incorrect admin password/i.test(msgStr)) {
+        uninstallErr.value = t('ocserv.uninstallWrongPassword')
+      } else if (/root|降权|qosnatd/i.test(msgStr)) {
+        uninstallErr.value = t('ocserv.uninstallRootHint', { msg: msgStr })
+      } else {
+        uninstallErr.value = msgStr
+      }
+    } else {
+      uninstallErr.value = msgStr
+    }
+  } finally {
+    uninstallSubmitting.value = false
   }
 }
 
@@ -1050,8 +1099,23 @@ onUnmounted(() => {
         <span>{{ t('ocserv.radiusLinked') }}: <strong>{{ status?.radius_linked ? t('common.yes') : t('common.no') }}</strong></span>
         <span>occtl: <strong>{{ useOcctl ? t('common.enabled') : t('common.disabled') }}</strong></span>
       </div>
-      <button type="button" class="btn-secondary text-sm" :disabled="installing" @click="runInstall">
+      <button
+        v-if="!status?.installed"
+        type="button"
+        class="btn-secondary text-sm"
+        :disabled="installing"
+        @click="runInstall"
+      >
         {{ installing ? t('ocserv.installing') : t('ocserv.installFromSource') }}
+      </button>
+      <button
+        v-else
+        type="button"
+        class="btn-secondary text-sm border-red-200 text-red-700 hover:bg-red-50"
+        :disabled="installing || uninstallSubmitting"
+        @click="openUninstallModal"
+      >
+        {{ t('ocserv.uninstallFromSource') }}
       </button>
       <div v-if="showInstallProgress" class="mt-3 p-3 rounded border text-xs space-y-2"
         :class="installJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'">
@@ -1715,6 +1779,66 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
+
+    <!-- uninstall ocserv modal -->
+    <Teleport to="body">
+      <div
+        v-if="showUninstallModal"
+        class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+        role="presentation"
+        @click.self="closeUninstallModal"
+      >
+        <div
+          class="bg-white rounded-xl shadow-xl w-full max-w-md border border-slate-200"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ocserv-uninstall-title"
+        >
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <h3 id="ocserv-uninstall-title" class="font-medium text-slate-900">
+              {{ t('ocserv.uninstallModalTitle') }}
+            </h3>
+            <button
+              type="button"
+              class="text-slate-500 hover:text-slate-800 text-xl leading-none px-2"
+              :disabled="uninstallSubmitting"
+              @click="closeUninstallModal"
+            >
+              ×
+            </button>
+          </div>
+          <div class="p-4 space-y-3">
+            <p class="text-sm text-slate-600">{{ t('ocserv.uninstallModalBody') }}</p>
+            <label class="block text-sm text-slate-700">
+              {{ t('ocserv.uninstallPasswordLabel', { user: adminUser }) }}
+              <input
+                v-model="uninstallPassword"
+                type="password"
+                autocomplete="current-password"
+                class="input mt-1 w-full"
+                :placeholder="t('ocserv.uninstallPasswordPh', { user: adminUser })"
+                :disabled="uninstallSubmitting"
+                @keydown.enter.prevent="confirmUninstallOcserv"
+              >
+            </label>
+            <p v-if="uninstallErr" class="text-sm text-red-600">{{ uninstallErr }}</p>
+            <div class="flex justify-end gap-2 pt-1">
+              <button type="button" class="btn-secondary" :disabled="uninstallSubmitting" @click="closeUninstallModal">
+                {{ t('common.cancel') }}
+              </button>
+              <button
+                type="button"
+                class="btn-primary bg-red-600 hover:bg-red-700 border-red-600"
+                :disabled="uninstallSubmitting"
+                @click="confirmUninstallOcserv"
+              >
+                {{ uninstallSubmitting ? t('common.loading') : t('ocserv.uninstallConfirm') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- traffic modal -->
     <Teleport to="body">

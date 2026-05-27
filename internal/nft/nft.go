@@ -53,6 +53,9 @@ func Render(cfg Config, st store.State) (string, error) {
 	if len(routes) == 0 {
 		routes = []string{"10.0.0.0/8"}
 	}
+	egressCIDRs := store.EgressPolicyCIDRs(st.Network.EgressPolicies)
+	routes = store.FilterPolicyRoutesForWAN(routes, egressCIDRs)
+	egress := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
 	ips, _ := ResolveSharedIPs(cfg, st)
 
 	var b strings.Builder
@@ -82,6 +85,12 @@ func Render(cfg Config, st store.State) (string, error) {
 		}
 		b.WriteString("        }\n")
 	}
+	for _, e := range egress {
+		b.WriteString(fmt.Sprintf(
+			"        ip saddr %s oifname \"%s\" snat to %s\n",
+			e.Policy.CIDR, e.Device, e.SNATIP,
+		))
+	}
 	if len(ips) > 0 {
 		var inline []string
 		for i, ip := range ips {
@@ -109,15 +118,30 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        type filter hook forward priority filter; policy accept;\n")
 	b.WriteString("        ct state established,related accept\n")
 	writeFilterRules(&b, "forward", st.Firewall.FilterRules)
+	wanDevs := map[string]struct{}{cfg.DevWAN: {}}
+	for _, e := range egress {
+		wanDevs[e.Device] = struct{}{}
+	}
 	if cfg.DevLAN != "" {
-		b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevLAN, cfg.DevWAN))
-		b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevWAN, cfg.DevLAN))
+		for dev := range wanDevs {
+			if dev == "" || dev == cfg.DevLAN {
+				continue
+			}
+			b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevLAN, dev))
+			b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", dev, cfg.DevLAN))
+		}
 		// 非对称回程：公网源直达 LAN 内网段丢弃
-		for _, cidr := range routes {
-			b.WriteString(fmt.Sprintf(
-				"        iifname \"%s\" oifname \"%s\" ip daddr %s ip saddr != %s drop\n",
-				cfg.DevWAN, cfg.DevLAN, cidr, cidr,
-			))
+		allPolicyCIDRs := append(append([]string{}, routes...), egressCIDRs...)
+		for _, cidr := range allPolicyCIDRs {
+			for dev := range wanDevs {
+				if dev == "" || dev == cfg.DevLAN {
+					continue
+				}
+				b.WriteString(fmt.Sprintf(
+					"        iifname \"%s\" oifname \"%s\" ip daddr %s ip saddr != %s drop\n",
+					dev, cfg.DevLAN, cidr, cidr,
+				))
+			}
 		}
 	}
 	b.WriteString("    }\n\n")

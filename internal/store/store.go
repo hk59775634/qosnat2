@@ -160,7 +160,7 @@ func DefaultState() State {
 			Sysctl: map[string]string{},
 		},
 		DHCP:    DefaultDHCP(),
-		Network: NetworkState{Ifaces: []IfaceConfig{}, VLANs: []VLANIface{}, WanLinks: []WanLink{}},
+		Network: NetworkState{Ifaces: []IfaceConfig{}, VLANs: []VLANIface{}, WanLinks: []WanLink{}, EgressPolicies: []EgressPolicy{}},
 		VPN: VPNState{
 			WireGuard: WireGuardState{
 				Enabled:    false,
@@ -298,6 +298,9 @@ func (s *Store) ensureDefaultsLocked() {
 	}
 	if s.State.Network.WanLinks == nil {
 		s.State.Network.WanLinks = []WanLink{}
+	}
+	if s.State.Network.EgressPolicies == nil {
+		s.State.Network.EgressPolicies = []EgressPolicy{}
 	}
 	MigrateWanForwards(&s.State.Firewall.WanPortForwards)
 	if s.State.VPN.WireGuard.Interface == "" {

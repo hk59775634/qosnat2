@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
+	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
@@ -162,9 +163,11 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		_ = srv.store.Update(func(st *store.State) {
 			st.Network.WanLinks = append(st.Network.WanLinks, body)
 			store.SyncWanRoutes(st)
+			store.SyncEgressRoutes(st)
 		})
 		_ = srv.store.Save()
 		srv.applyManagedRoutes()
+		_ = policyroute.Apply(srv.store.Get())
 		srv.auditLog(r, "network.wan.add", body.ID)
 		writeJSON(w, http.StatusOK, body)
 	case http.MethodPut:
@@ -194,6 +197,7 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			}
 			if found {
 				store.SyncWanRoutes(st)
+				store.SyncEgressRoutes(st)
 			}
 		})
 		if !found {
@@ -202,12 +206,18 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		}
 		_ = srv.store.Save()
 		srv.applyManagedRoutes()
+		_ = policyroute.Apply(srv.store.Get())
+		_ = srv.reloadNft()
 		srv.auditLog(r, "network.wan.put", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			return
+		}
+		if err := validateWanLinkDeletable(srv.store.Get(), id); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
@@ -219,9 +229,12 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			}
 			st.Network.WanLinks = out
 			store.SyncWanRoutes(st)
+			store.SyncEgressRoutes(st)
 		})
 		_ = srv.store.Save()
 		srv.applyManagedRoutes()
+		_ = policyroute.Apply(srv.store.Get())
+		_ = srv.reloadNft()
 		srv.auditLog(r, "network.wan.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:

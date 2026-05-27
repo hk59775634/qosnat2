@@ -25,33 +25,36 @@ func configPerGroupDir(o store.OCServState) string {
 }
 
 func renderGroupGlobals(b *bytes.Buffer, o store.OCServState) {
-	// ocserv 在 auth=radius 时 supplemental config 已是 radius，不能再写 config-per-group/user
-	if !store.OCServUsesRadius(o) {
-		if d := configPerGroupDir(o); d != "" {
-			fmt.Fprintf(b, "config-per-group = %s\n", d)
-		}
-		if p := strings.TrimSpace(o.ConfigPerUser); p != "" {
-			fmt.Fprintf(b, "config-per-user = %s\n", p)
-		}
-		if p := strings.TrimSpace(o.DefaultGroupConfig); p != "" {
-			fmt.Fprintf(b, "default-group-config = %s\n", p)
-		}
-		if p := strings.TrimSpace(o.DefaultUserConfig); p != "" {
-			fmt.Fprintf(b, "default-user-config = %s\n", p)
-		}
+	// auth=radius 时本地组配置不生效：保留为注释，便于回切 plain 时恢复。
+	commented := store.OCServUsesRadius(o)
+	prefix := ""
+	if commented {
+		prefix = "# "
+	}
+	if d := configPerGroupDir(o); d != "" {
+		fmt.Fprintf(b, "%sconfig-per-group = %s\n", prefix, d)
+	}
+	if p := strings.TrimSpace(o.ConfigPerUser); p != "" {
+		fmt.Fprintf(b, "%sconfig-per-user = %s\n", prefix, p)
+	}
+	if p := strings.TrimSpace(o.DefaultGroupConfig); p != "" {
+		fmt.Fprintf(b, "%sdefault-group-config = %s\n", prefix, p)
+	}
+	if p := strings.TrimSpace(o.DefaultUserConfig); p != "" {
+		fmt.Fprintf(b, "%sdefault-user-config = %s\n", prefix, p)
 	}
 	if o.AutoSelectGroup {
-		b.WriteString("auto-select-group = true\n")
+		fmt.Fprintf(b, "%sauto-select-group = true\n", prefix)
 	}
 	if g := strings.TrimSpace(o.DefaultSelectGroup); g != "" {
-		fmt.Fprintf(b, "default-select-group = %s\n", g)
+		fmt.Fprintf(b, "%sdefault-select-group = %s\n", prefix, g)
 	}
 	for _, gr := range o.Groups {
 		line := gr.Name
 		if lbl := strings.TrimSpace(gr.Label); lbl != "" {
 			line = fmt.Sprintf("%s[%s]", gr.Name, lbl)
 		}
-		fmt.Fprintf(b, "select-group = %s\n", line)
+		fmt.Fprintf(b, "%sselect-group = %s\n", prefix, line)
 	}
 }
 

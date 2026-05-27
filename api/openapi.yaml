@@ -23,6 +23,7 @@ info:
     3. `POST /api/v1/vpn/ocserv/apply` 写入 `ocserv.conf` 并 `systemctl` 启停
     4. 虚拟主机：`/api/v1/vpn/ocserv/vhosts`；独立密码文件用户：`/api/v1/vpn/ocserv/vhosts/users?domain=`
     5. 安装：`POST .../install`（202，需 root）→ 轮询 `GET .../install/status`
+    6. 卸载：`POST .../uninstall`（需 root + Web 管理员密码 `admin_password`）
 
     **带宽字段（ocserv）**：`rx-data-per-sec` / `tx-data-per-sec` 为**服务端视角**（限制客户端上行用 `tx-data-per-sec`）。Web UI 已按「客户端上/下行」展示并映射到上述字段。
   version: 1.0.0
@@ -322,8 +323,28 @@ components:
         gateway: { type: string }
         metric: { type: integer }
         tier: { type: integer }
-        weight: { type: integer, description: 占位，尚未参与选路 }
+        weight: { type: integer, description: ECMP 权重（同 metric 多 nexthop） }
         enabled: { type: boolean }
+    EgressPolicy:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        cidr: { type: string, description: 源 IPv4 CIDR，如 ocserv 地址池 }
+        wan_link_id: { type: string, description: 绑定的 WanLink.id }
+        snat_ip: { type: string, description: 出站 SNAT 地址，空则使用该 WAN 口首个全球 IPv4 }
+        priority: { type: integer, description: ip rule 优先级，默认 100 }
+        enabled: { type: boolean }
+    ResolvedEgress:
+      type: object
+      properties:
+        policy: { $ref: '#/components/schemas/EgressPolicy' }
+        wan_link: { $ref: '#/components/schemas/WanLink' }
+        device: { type: string }
+        gateway: { type: string }
+        table: { type: integer, description: Linux 路由表号（201 起） }
+        snat_ip: { type: string }
+        priority: { type: integer }
     ShaperTC:
       type: object
       properties:
@@ -1896,6 +1917,78 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ok'
 
+  /api/v1/network/egress-policies:
+    get:
+      tags: [network]
+      summary: 出站策略（源网段 → WanLink，含策略路由与 SNAT 解析结果）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  egress_policies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EgressPolicy'
+                  wan_links:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WanLink'
+                  resolved:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ResolvedEgress'
+                  dev_wan: { type: string }
+    post:
+      tags: [network]
+      summary: 添加出站策略并应用 ip rule / nft SNAT
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EgressPolicy'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EgressPolicy'
+    put:
+      tags: [network]
+      summary: 更新出站策略（query id）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EgressPolicy'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [network]
+      summary: 删除出站策略
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
   /api/v1/network/netplan:
     get:
       tags: [network]
@@ -2100,6 +2193,9 @@ paths:
                   conf_path: { type: string, example: /etc/ocserv/ocserv.conf }
                   radius_secret_set: { type: boolean }
                   camouflage_secret_set: { type: boolean }
+                  admin_user:
+                    type: string
+                    description: Web 管理员用户名（用于卸载确认等提示，不含密码）
     put:
       tags: [vpn]
       summary: 保存 ocserv 配置
@@ -2151,6 +2247,40 @@ paths:
                   script: { type: string }
         '403':
           description: 非 root
+
+  /api/v1/vpn/ocserv/uninstall:
+    post:
+      tags: [vpn]
+      summary: 卸载源码安装的 ocserv（需 root 与管理员密码）
+      description: |
+        校验 Web 管理员密码后：停止并禁用 `ocserv` systemd 服务、删除 unit 与常见 `/usr/local` 下可执行文件。
+        需 qosnatd 以 root 运行；非 root 返回 403。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [admin_password]
+              properties:
+                admin_password:
+                  type: string
+                  description: Web 管理员登录密码（与登录页相同）
+      responses:
+        '200':
+          description: 卸载完成
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '400':
+          description: JSON 无效
+        '403':
+          description: 密码错误或非 root 运行 qosnatd
+        '500':
+          description: 卸载过程失败
 
   /api/v1/vpn/ocserv/install/status:
     get:

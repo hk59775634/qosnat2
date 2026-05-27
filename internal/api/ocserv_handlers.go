@@ -26,6 +26,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 			"radius_secret_set":     strings.TrimSpace(o.Radius.Secret) != "",
 			"camouflage_secret_set": strings.TrimSpace(o.Advanced.CamouflageSecret) != "",
 			"connection":            ocserv.BuildConnectionInfo(o, st.Certificates),
+			"admin_user":            strings.TrimSpace(st.AdminUser),
 		})
 	case http.MethodPut:
 		var body store.OCServState
@@ -140,6 +141,37 @@ func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 		"script":  script,
 		"job":     ocserv.GetInstallStatus(),
 	})
+}
+
+func (srv *Server) handleOCServUninstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if os.Getuid() != 0 {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "卸载需要 root 运行 qosnatd（systemd 未降权或使用 sudo 启动服务）",
+		})
+		return
+	}
+	var body struct {
+		AdminPassword string `json:"admin_password"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		return
+	}
+	st := srv.store.Get()
+	if !srv.verifyAdmin(st.AdminUser, body.AdminPassword) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "incorrect admin password"})
+		return
+	}
+	if err := ocserv.UninstallFromSourceInstall(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	srv.auditLog(r, "vpn.ocserv.uninstall", "")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (srv *Server) handleOCServUsers(w http.ResponseWriter, r *http.Request) {

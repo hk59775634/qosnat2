@@ -130,6 +130,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/network/vxlan", srv.requireAuth(srv.handleNetworkVXLAN))
 	m.HandleFunc("/api/v1/network/vlans", srv.requireAuth(srv.handleNetworkVLANs))
 	m.HandleFunc("/api/v1/network/wan-links", srv.requireAuth(srv.handleNetworkWanLinks))
+	m.HandleFunc("/api/v1/network/egress-policies", srv.requireAuth(srv.handleNetworkEgressPolicies))
 	m.HandleFunc("/api/v1/shaper/tc", srv.requireAuth(srv.handleShaperTC))
 
 	m.HandleFunc("/api/v1/vpn/wireguard/keys", srv.requireAuth(srv.handleWireGuardKeys))
@@ -140,6 +141,7 @@ func (srv *Server) routes() {
 
 	m.HandleFunc("/api/v1/vpn/ocserv/install/status", srv.requireAuth(srv.handleOCServInstallStatus))
 	m.HandleFunc("/api/v1/vpn/ocserv/install", srv.requireAuth(srv.handleOCServInstall))
+	m.HandleFunc("/api/v1/vpn/ocserv/uninstall", srv.requireAuth(srv.handleOCServUninstall))
 	m.HandleFunc("/api/v1/vpn/ocserv/apply", srv.requireAuth(srv.handleOCServApply))
 	m.HandleFunc("/api/v1/vpn/ocserv/status/detail", srv.requireAuth(srv.handleOCServStatusDetail))
 	m.HandleFunc("/api/v1/vpn/ocserv/sessions/disconnect", srv.requireAuth(srv.handleOCServSessionsDisconnect))
@@ -196,8 +198,10 @@ func (srv *Server) ApplyAll() error {
 		return fmt.Errorf("nft: %w", err)
 	}
 	srv.replayWanLinksOnBoot()
+	srv.replayEgressOnBoot()
 	srv.applyNetworkVLANs()
 	srv.applyManagedRoutes()
+	srv.applyEgressPolicyRoutes()
 	srv.applyManagedDHCP()
 	srv.applyEBPF(st)
 	return nil
