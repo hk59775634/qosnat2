@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { emptyVhostRadius } from '@/lib/ocservVhostForm'
 import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
 import OCServRadiusHelpModal from '@/components/OCServRadiusHelpModal.vue'
+import OCServRadiusChallengeHelpModal from '@/components/OCServRadiusChallengeHelpModal.vue'
 import CertSelect from '@/components/CertSelect.vue'
 import VhostPlainUsers from '@/views/vpn/VhostPlainUsers.vue'
 
@@ -289,6 +290,7 @@ function patchRadius(partial) {
         <div class="flex flex-wrap items-center gap-2">
           <h5 class="font-medium text-slate-800">{{ t('ocserv.authRadius') }}</h5>
           <OCServRadiusHelpModal button-class="text-blue-700 text-xs underline" />
+          <OCServRadiusChallengeHelpModal button-class="text-blue-700 text-xs underline" />
         </div>
         <label
           v-if="globalIsRadius"

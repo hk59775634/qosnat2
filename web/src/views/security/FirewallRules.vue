@@ -1,20 +1,43 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import {
   actionMeta,
+  autoRulesForChain,
   builtinRulesForChain,
   formatDestination,
   formatIface,
   formatPort,
   formatProto,
   formatSource,
+  isRuleAutoManaged,
   mergeChainReorder,
-  rulesForChain,
+  ruleDetailLines,
+  ruleMatchesSearch,
+  userRulesForChain,
 } from '@/lib/firewallRuleDisplay'
-import { emptyRuleForm, formToPayload, isRuleMutable, ruleToForm } from '@/lib/firewallRuleForm'
+import {
+  filterBuiltinByIface,
+  filterRulesByIface,
+  IFACE_ALL,
+  IFACE_FLOATING,
+  ifaceFormDefaults,
+  ifaceTabLabel,
+  mergeChainReorderForIface,
+  ruleTouchesIface,
+  wanDeviceNames,
+} from '@/lib/firewallIface'
+import {
+  emptyRuleForm,
+  formToPayload,
+  isRuleMutable,
+  PROTO_OPTIONS,
+  ruleToForm,
+  validateRuleForm,
+} from '@/lib/firewallRuleForm'
 
 const { t } = useI18n()
 
@@ -34,6 +57,11 @@ const dragIdx = ref(null)
 const savingOrder = ref(false)
 const editing = ref(null)
 const formPanel = ref(null)
+const searchQuery = ref('')
+const acmeTempAllow = ref(false)
+const selectedRule = ref(null)
+const ifaceList = ref([])
+const activeIface = ref(IFACE_ALL)
 
 const chains = [
   { id: 'forward', labelKey: 'security.firewall.tabForward' },
@@ -42,24 +70,93 @@ const chains = [
 
 const form = ref(emptyRuleForm())
 
-const userRulesInChain = computed(() => rulesForChain(rules.value, activeChain.value))
+const extraWanDevices = computed(() => wanDeviceNames(ifaceList.value, devWan.value))
+
+function filterUserByIface(list) {
+  return filterRulesByIface(list, activeIface.value, activeChain.value)
+}
+
+function filterAutoByIface(list) {
+  return filterRulesByIface(list, activeIface.value, activeChain.value)
+}
+
+const userRulesInChainRaw = computed(() =>
+  filterUserByIface(userRulesForChain(rules.value, activeChain.value)),
+)
+
+const userRulesInChain = computed(() => {
+  const q = searchQuery.value.trim()
+  if (!q) return userRulesInChainRaw.value
+  return userRulesInChainRaw.value.filter((r) =>
+    ruleMatchesSearch(r, q, devLan.value, devWan.value),
+  )
+})
+
+const autoRulesInChain = computed(() =>
+  filterAutoByIface(autoRulesForChain(rules.value, activeChain.value)),
+)
 
 const showOutCol = computed(() => activeChain.value === 'forward')
 
-const tableColspan = computed(() => (showOutCol.value ? 12 : 11))
+const tableColspan = computed(() => (showOutCol.value ? 13 : 12))
 
 const builtinCtx = computed(() => ({
   adminPort: adminPort.value,
   vpn: vpnMeta.value,
+  acmeTempAllow: acmeTempAllow.value,
 }))
 
-const builtinRows = computed(() =>
-  builtinRulesForChain(activeChain.value, devLan.value, devWan.value, builtinCtx.value, t),
-)
+const builtinRows = computed(() => {
+  const rows = builtinRulesForChain(activeChain.value, devLan.value, devWan.value, builtinCtx.value, t)
+  return filterBuiltinByIface(rows, activeIface.value, devLan.value, devWan.value, extraWanDevices.value)
+})
 
-const customCount = computed(() => userRulesInChain.value.length)
+const activeIfaceLabel = computed(() => {
+  if (!activeIface.value || activeIface.value === IFACE_ALL) return t('security.firewall.tabAll')
+  if (activeIface.value === IFACE_FLOATING) return t('security.firewall.tabFloating')
+  const hit = ifaceList.value.find((x) => x.name === activeIface.value)
+  return hit ? ifaceTabLabel(hit, t) : activeIface.value
+})
+
+function ruleCountOnIface(iface, chainId = activeChain.value) {
+  const ch = chainId
+  const u = filterRulesByIface(userRulesForChain(rules.value, ch), iface, ch).length
+  const a = filterRulesByIface(autoRulesForChain(rules.value, ch), iface, ch).length
+  return u + a
+}
+
+const customCount = computed(() => userRulesInChainRaw.value.length)
+const autoCount = computed(() => autoRulesInChain.value.length)
 
 const isInputChain = computed(() => form.value.chain === 'input')
+
+const detailLines = computed(() => {
+  if (!selectedRule.value) return []
+  return ruleDetailLines(selectedRule.value, devLan.value, devWan.value, t)
+})
+
+watch(activeChain, () => {
+  selectedRule.value = null
+})
+
+watch(activeIface, () => {
+  selectedRule.value = null
+  dragIdx.value = null
+})
+
+function applyIfaceToForm(f) {
+  const d = ifaceFormDefaults(activeIface.value, devLan.value, devWan.value, ifaceList.value)
+  f.iif_mode = d.iif_mode
+  f.oif_mode = d.oif_mode
+  if (d.iif_mode === 'custom') {
+    f.iif_custom = activeIface.value
+  } else {
+    f.iif_custom = ''
+  }
+  if (d.oif_mode === 'custom') {
+    f.oif_custom = activeIface.value
+  }
+}
 
 async function load() {
   const d = await api.firewall.rules.list()
@@ -69,12 +166,16 @@ async function load() {
   adminPort.value = d.admin_port || ''
   aliasNames.value = d.alias_names || []
   vpnMeta.value = d.vpn || {}
+  acmeTempAllow.value = !!d.acme_temp_allow_http01
   rendered.value = d.rendered || ''
+  ifaceList.value = d.interfaces || []
 }
 
 function openAdd() {
   editing.value = null
-  form.value = emptyRuleForm(activeChain.value)
+  const f = emptyRuleForm(activeChain.value)
+  applyIfaceToForm(f)
+  form.value = f
   showForm.value = true
 }
 
@@ -105,7 +206,62 @@ function buildPayload() {
   return formToPayload(form.value, devLan.value, devWan.value)
 }
 
+function runFormValidation() {
+  const problems = validateRuleForm(form.value, t)
+  if (problems.length) {
+    err.value = `${t('security.firewall.formErrors')} ${problems.join('；')}`
+    return false
+  }
+  return true
+}
+
+function openView(r) {
+  selectedRule.value = r
+}
+
+function duplicateRule(r) {
+  if (!isRuleMutable(r)) return
+  editing.value = null
+  form.value = ruleToForm(r, devLan.value, devWan.value)
+  showForm.value = true
+}
+
+function applyPreset(kind) {
+  editing.value = null
+  const f = emptyRuleForm(activeChain.value)
+  const wanDev =
+    activeIface.value && activeIface.value !== IFACE_ALL && activeIface.value !== IFACE_FLOATING
+      ? activeIface.value
+      : devWan.value
+  if (kind === 'lan-in' && (devLan.value || activeIface.value === devLan.value)) {
+    f.chain = 'input'
+    f.action = 'accept'
+    f.iif_mode = devLan.value ? 'lan' : 'custom'
+    if (f.iif_mode === 'custom') f.iif_custom = activeIface.value || devLan.value
+    f.comment = t('security.firewall.presetAllowLan')
+  } else if (kind === 'wan-block' && wanDev) {
+    f.chain = 'input'
+    f.action = 'drop'
+    if (wanDev === devWan.value) f.iif_mode = 'wan'
+    else {
+      f.iif_mode = 'custom'
+      f.iif_custom = wanDev
+    }
+    f.comment = t('security.firewall.presetBlockWan')
+  } else if (kind === 'tcp-allow') {
+    f.action = 'accept'
+    f.proto = 'tcp'
+    f.dst_port_mode = 'custom'
+    f.dst_port_custom = '443'
+    f.comment = t('security.firewall.presetAllowTcp')
+    applyIfaceToForm(f)
+  }
+  form.value = f
+  showForm.value = true
+}
+
 async function add() {
+  if (!runFormValidation()) return
   err.value = ''
   try {
     await api.firewall.rules.add(buildPayload())
@@ -119,6 +275,7 @@ async function add() {
 
 async function saveEdit() {
   if (!editing.value) return
+  if (!runFormValidation()) return
   err.value = ''
   ok.value = ''
   try {
@@ -174,7 +331,10 @@ async function persistOrder(reorderedSubset) {
   savingOrder.value = true
   err.value = ''
   try {
-    const merged = mergeChainReorder(rules.value, activeChain.value, reorderedSubset)
+    const merged =
+      activeIface.value && activeIface.value !== IFACE_ALL
+        ? mergeChainReorderForIface(rules.value, activeChain.value, activeIface.value, reorderedSubset)
+        : mergeChainReorder(rules.value, activeChain.value, reorderedSubset)
     const res = await api.firewall.rules.reorder(merged.map((r) => r.id))
     rules.value = res.rules || merged
     ok.value = t('security.firewall.orderSaved')
@@ -191,7 +351,7 @@ async function onDrop(targetIdx) {
     dragIdx.value = null
     return
   }
-  const arr = [...userRulesInChain.value]
+  const arr = [...userRulesInChainRaw.value]
   const [item] = arr.splice(dragIdx.value, 1)
   arr.splice(targetIdx, 0, item)
   dragIdx.value = null
@@ -199,9 +359,17 @@ async function onDrop(targetIdx) {
 }
 
 async function moveRule(idx, dir) {
+  const displayed = userRulesInChain.value
+  const raw = userRulesInChainRaw.value
+  if (searchQuery.value.trim()) {
+    const id = displayed[idx]?.id
+    const rawIdx = raw.findIndex((r) => r.id === id)
+    if (rawIdx < 0) return
+    idx = rawIdx
+  }
   const j = idx + dir
-  if (j < 0 || j >= userRulesInChain.value.length) return
-  const arr = [...userRulesInChain.value]
+  if (j < 0 || j >= raw.length) return
+  const arr = [...raw]
   ;[arr[idx], arr[j]] = [arr[j], arr[idx]]
   await persistOrder(arr)
 }
@@ -222,26 +390,83 @@ onMounted(load)
     <p v-if="ok" class="text-green-700 text-sm">{{ ok }}</p>
     <p v-if="err" class="text-red-600 text-sm">{{ err }}</p>
 
-    <!-- 接口角色条（类似 pfSense 接口名） -->
-    <div class="fw-iface-bar card card-body flex flex-wrap items-center gap-3 text-sm">
-      <span class="text-slate-500">{{ t('security.firewall.ifaceRoles') }}</span>
-      <span v-if="devLan" class="fw-iface-pill fw-iface-lan">
-        <span class="fw-iface-tag">{{ t('security.firewall.roleLan') }}</span>
-        <span class="font-mono">{{ devLan }}</span>
-      </span>
-      <span v-else class="text-slate-400 text-xs">{{ t('security.firewall.noLan') }}</span>
-      <span v-if="devWan" class="fw-iface-pill fw-iface-wan">
-        <span class="fw-iface-tag">{{ t('security.firewall.roleWan') }}</span>
-        <span class="font-mono">{{ devWan }}</span>
-      </span>
-      <span class="ml-auto flex flex-wrap gap-2">
-        <button type="button" class="btn-primary text-sm" @click="openAdd">
-          {{ t('security.firewall.addRule') }}
+    <!-- 网卡切换（pfSense 风格） -->
+    <div class="card overflow-hidden">
+      <div class="flex flex-wrap items-center gap-2 px-3 py-2 border-b bg-slate-50 text-sm">
+        <span class="text-slate-600 font-medium">{{ t('security.firewall.filterByIface') }}</span>
+        <span class="text-xs text-slate-500 hidden sm:inline">{{ t('security.firewall.ifaceViewHint') }}</span>
+        <span class="ml-auto flex flex-wrap gap-2 items-center">
+          <RouterLink to="/firewall/aliases" class="text-sm text-blue-600 hover:underline">
+            {{ t('security.firewall.manageAliases') }}
+          </RouterLink>
+          <button type="button" class="btn-primary text-sm" @click="openAdd">
+            {{ t('security.firewall.addRule') }}
+          </button>
+          <button type="button" class="btn-secondary text-sm" @click="showForm = !showForm">
+            {{ showForm ? t('security.firewall.hideForm') : t('security.firewall.showForm') }}
+          </button>
+        </span>
+      </div>
+      <nav class="fw-iface-tabs flex gap-0.5 overflow-x-auto px-2 py-2 border-b border-slate-100">
+        <button
+          type="button"
+          class="fw-iface-tab shrink-0"
+          :class="{ 'fw-iface-tab-active': activeIface === IFACE_ALL }"
+          @click="activeIface = IFACE_ALL"
+        >
+          {{ t('security.firewall.tabAll') }}
+          <span class="fw-iface-tab-count">{{ ruleCountOnIface(IFACE_ALL) }}</span>
         </button>
-        <button type="button" class="btn-secondary text-sm" @click="showForm = !showForm">
-          {{ showForm ? t('security.firewall.hideForm') : t('security.firewall.showForm') }}
+        <button
+          v-for="item in ifaceList"
+          :key="item.name"
+          type="button"
+          class="fw-iface-tab shrink-0"
+          :class="{
+            'fw-iface-tab-active': activeIface === item.name,
+            'fw-iface-tab-lan': item.role === 'LAN',
+            'fw-iface-tab-wan': item.role === 'WAN',
+          }"
+          @click="activeIface = item.name"
+        >
+          <span class="font-mono text-xs">{{ item.name }}</span>
+          <span v-if="item.label" class="opacity-80 text-[10px] ml-1">{{ item.label }}</span>
+          <span v-if="item.role" class="fw-iface-tab-role">{{ item.role }}</span>
+          <span class="fw-iface-tab-count">{{ ruleCountOnIface(item.name) }}</span>
         </button>
-      </span>
+        <button
+          type="button"
+          class="fw-iface-tab shrink-0"
+          :class="{ 'fw-iface-tab-active': activeIface === IFACE_FLOATING }"
+          @click="activeIface = IFACE_FLOATING"
+        >
+          {{ t('security.firewall.tabFloating') }}
+          <span class="fw-iface-tab-count">{{ ruleCountOnIface(IFACE_FLOATING) }}</span>
+        </button>
+      </nav>
+      <p class="text-xs text-slate-500 px-3 py-1.5 bg-white">
+        {{ t('security.firewall.viewingIface', { iface: activeIfaceLabel }) }}
+        <span v-if="activeChain === 'forward'" class="ml-2">{{ t('security.firewall.forwardIfaceHint') }}</span>
+        <span v-else class="ml-2">{{ t('security.firewall.inputIfaceHint') }}</span>
+      </p>
+    </div>
+
+    <div class="flex flex-wrap gap-2 items-center">
+      <input
+        v-model="searchQuery"
+        type="search"
+        class="input-field text-sm max-w-md flex-1 min-w-[12rem]"
+        :placeholder="t('security.firewall.searchPh')"
+      />
+      <button type="button" class="btn-secondary text-xs" @click="applyPreset('lan-in')">
+        {{ t('security.firewall.presetAllowLan') }}
+      </button>
+      <button type="button" class="btn-secondary text-xs" @click="applyPreset('wan-block')">
+        {{ t('security.firewall.presetBlockWan') }}
+      </button>
+      <button type="button" class="btn-secondary text-xs" @click="applyPreset('tcp-allow')">
+        {{ t('security.firewall.presetAllowTcp') }}
+      </button>
     </div>
 
     <!-- 链 Tab -->
@@ -259,7 +484,7 @@ onMounted(load)
         @click="activeChain = c.id"
       >
         {{ t(c.labelKey) }}
-        <span class="ml-1 text-xs opacity-70">({{ rulesForChain(rules, c.id).length }})</span>
+        <span class="ml-1 text-xs opacity-70">({{ ruleCountOnIface(activeIface, c.id) }})</span>
       </button>
     </nav>
 
@@ -283,8 +508,9 @@ onMounted(load)
               <th class="w-16 text-center">{{ t('security.firewall.colSPort') }}</th>
               <th>{{ t('security.firewall.colDest') }}</th>
               <th class="w-16 text-center">{{ t('security.firewall.colDPort') }}</th>
+              <th class="w-16 text-center">{{ t('security.firewall.colStatus') }}</th>
               <th>{{ t('security.firewall.colDescription') }}</th>
-              <th class="w-28 text-right">{{ t('security.firewall.colActions') }}</th>
+              <th class="w-32 text-right">{{ t('security.firewall.colActions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -315,10 +541,75 @@ onMounted(load)
               <td class="text-center text-slate-400">*</td>
               <td class="text-slate-400">*</td>
               <td class="text-center text-slate-400">*</td>
+              <td class="text-center">
+                <span class="fw-status-on text-[10px]">{{ t('security.firewall.statusOn') }}</span>
+              </td>
               <td class="text-xs text-slate-500">
                 {{ br.detail || t('security.firewall.systemRule') }}
               </td>
               <td></td>
+            </tr>
+
+            <!-- 自动同步规则 -->
+            <tr class="fw-section-row">
+              <td :colspan="tableColspan" class="!py-1.5 !bg-amber-50 !text-xs !font-semibold !text-amber-900">
+                {{ t('security.firewall.sectionAuto') }}
+                <span class="font-normal text-amber-800">({{ autoCount }})</span>
+              </td>
+            </tr>
+            <tr v-if="autoCount === 0" class="fw-row-empty">
+              <td :colspan="tableColspan" class="text-center text-slate-400 py-4 text-sm">
+                {{ t('security.firewall.noAuto') }}
+              </td>
+            </tr>
+            <tr
+              v-for="(r, aidx) in autoRulesInChain"
+              :key="r.id"
+              class="fw-row-auto"
+              :class="{ 'bg-amber-50/50 ring-1 ring-amber-200': selectedRule?.id === r.id }"
+            >
+              <td class="text-center text-amber-400 text-xs" :title="t('security.firewall.ruleLocked')">🔒</td>
+              <td class="text-center text-xs text-slate-500 font-mono">A{{ aidx + 1 }}</td>
+              <td>
+                <span class="fw-action-badge" :class="actionMeta(r.action).class">
+                  {{ rowActionLabel(r.action) }}
+                </span>
+              </td>
+              <td>
+                <span v-if="formatIface(r.iif, devLan, devWan).name !== '—'" class="fw-iface-cell">
+                  <span v-if="formatIface(r.iif, devLan, devWan).roleKey" class="fw-mini-tag">{{
+                    formatIface(r.iif, devLan, devWan).roleKey === 'lan'
+                      ? t('security.firewall.roleLan')
+                      : t('security.firewall.roleWan')
+                  }}</span>
+                  <span class="font-mono text-xs">{{ formatIface(r.iif, devLan, devWan).name }}</span>
+                </span>
+                <span v-else class="text-slate-400">*</span>
+              </td>
+              <td v-if="showOutCol">
+                <span class="text-slate-400">*</span>
+              </td>
+              <td class="font-mono text-xs text-center">{{ formatProto(r.proto) }}</td>
+              <td>
+                <span class="font-mono text-xs">{{ formatSource(r).label }}</span>
+              </td>
+              <td class="text-center font-mono text-xs">{{ formatPort(r.src_port) }}</td>
+              <td>
+                <span class="font-mono text-xs">{{ formatDestination(r).label }}</span>
+              </td>
+              <td class="text-center font-mono text-xs">{{ formatPort(r.dst_port) }}</td>
+              <td class="text-center">
+                <span class="fw-status-on text-[10px]">{{ t('security.firewall.statusOn') }}</span>
+              </td>
+              <td class="text-xs text-slate-700 max-w-[12rem] truncate" :title="r.comment">
+                <span class="fw-auto-badge">{{ t('security.firewall.autoRule') }}</span>
+                {{ r.comment || '—' }}
+              </td>
+              <td class="text-right whitespace-nowrap">
+                <button type="button" class="fw-icon-btn text-slate-600" @click.stop="openView(r)">
+                  {{ t('security.firewall.viewRule') }}
+                </button>
+              </td>
             </tr>
 
             <!-- 自定义规则 -->
@@ -347,8 +638,12 @@ onMounted(load)
             >
               <td
                 class="text-slate-400 text-center select-none text-xs cursor-grab active:cursor-grabbing"
-                draggable="true"
-                :title="t('security.firewall.dragHint')"
+                :draggable="!searchQuery.trim()"
+                :title="
+                  searchQuery.trim()
+                    ? t('security.firewall.searchPh')
+                    : t('security.firewall.dragHint')
+                "
                 @dragstart="onDragStart(idx)"
               >
                 ⋮⋮
@@ -404,10 +699,21 @@ onMounted(load)
                 </span>
               </td>
               <td class="text-center font-mono text-xs">{{ formatPort(r.dst_port) }}</td>
+              <td class="text-center">
+                <span
+                  class="text-[10px] font-medium px-1.5 py-0.5 rounded"
+                  :class="r.enabled !== false ? 'fw-status-on' : 'fw-status-off'"
+                >
+                  {{ r.enabled !== false ? t('security.firewall.statusOn') : t('security.firewall.statusOff') }}
+                </span>
+              </td>
               <td class="text-xs text-slate-700 max-w-[12rem] truncate" :title="r.comment || r.id">
                 {{ r.comment || '—' }}
               </td>
               <td class="text-right whitespace-nowrap fw-col-actions">
+                <button type="button" class="fw-icon-btn text-slate-500" @click.stop="openView(r)">
+                  {{ t('security.firewall.viewRule') }}
+                </button>
                 <template v-if="isRuleMutable(r)">
                   <button
                     type="button"
@@ -437,17 +743,13 @@ onMounted(load)
                   <button type="button" class="fw-icon-btn text-blue-600" @click.stop="startEdit(r)">
                     {{ t('common.edit') }}
                   </button>
+                  <button type="button" class="fw-icon-btn text-violet-600" @click.stop="duplicateRule(r)">
+                    {{ t('security.firewall.duplicateRule') }}
+                  </button>
                   <button type="button" class="fw-icon-btn text-red-600" @click.stop="remove(r)">
                     {{ t('common.delete') }}
                   </button>
                 </template>
-                <span
-                  v-else
-                  class="text-xs text-slate-400"
-                  :title="t('security.firewall.ruleLocked')"
-                >
-                  🔒
-                </span>
               </td>
             </tr>
           </tbody>
@@ -459,6 +761,29 @@ onMounted(load)
       </p>
     </div>
 
+    <div v-if="selectedRule" class="card card-body text-sm border-l-4 border-l-slate-400">
+      <div class="flex items-start justify-between gap-2">
+        <h3 class="font-medium text-pfsense-nav">
+          {{ t('security.firewall.ruleDetail') }}
+          <span v-if="isRuleAutoManaged(selectedRule)" class="fw-auto-badge ml-2">{{
+            t('security.firewall.autoRule')
+          }}</span>
+        </h3>
+        <button type="button" class="text-slate-400 hover:text-slate-700 text-lg leading-none" @click="selectedRule = null">
+          ×
+        </button>
+      </div>
+      <dl class="mt-2 grid sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <template v-for="(line, li) in detailLines" :key="li">
+          <dt class="text-slate-500">{{ line.k }}</dt>
+          <dd class="font-mono text-slate-800 break-all">{{ line.v }}</dd>
+        </template>
+      </dl>
+      <p v-if="isRuleAutoManaged(selectedRule)" class="mt-2 text-xs text-amber-800">
+        {{ t('security.firewall.ruleLocked') }}
+      </p>
+    </div>
+
     <!-- 添加/编辑表单 -->
     <div
       v-show="showForm"
@@ -467,7 +792,7 @@ onMounted(load)
     >
       <h3 class="font-medium text-pfsense-nav">
         {{ editing ? t('security.firewall.editRule') : t('security.firewall.addRule') }}
-        <span class="text-slate-400 font-normal">({{ activeChain }})</span>
+        <span class="text-slate-400 font-normal">({{ activeChain }} · {{ activeIfaceLabel }})</span>
       </h3>
       <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div>
@@ -491,6 +816,13 @@ onMounted(load)
             <option value="any">{{ t('security.firewall.optAny') }}</option>
             <option v-if="devLan" value="lan">{{ t('security.firewall.roleLan') }} ({{ devLan }})</option>
             <option v-if="devWan" value="wan">{{ t('security.firewall.roleWan') }} ({{ devWan }})</option>
+            <option
+              v-for="item in ifaceList.filter((x) => x.name !== devLan && x.name !== devWan)"
+              :key="'iif-' + item.name"
+              :value="'dev:' + item.name"
+            >
+              {{ item.name }}{{ item.label ? ` (${item.label})` : '' }} · {{ item.role }}
+            </option>
             <option value="custom">{{ t('security.firewall.optCustomIface') }}</option>
           </select>
           <input
@@ -506,6 +838,13 @@ onMounted(load)
             <option value="any">{{ t('security.firewall.optAny') }}</option>
             <option v-if="devLan" value="lan">{{ t('security.firewall.roleLan') }} ({{ devLan }})</option>
             <option v-if="devWan" value="wan">{{ t('security.firewall.roleWan') }} ({{ devWan }})</option>
+            <option
+              v-for="item in ifaceList.filter((x) => x.name !== devLan && x.name !== devWan)"
+              :key="'oif-' + item.name"
+              :value="'dev:' + item.name"
+            >
+              {{ item.name }}{{ item.label ? ` (${item.label})` : '' }} · {{ item.role }}
+            </option>
             <option value="custom">{{ t('security.firewall.optCustomIface') }}</option>
           </select>
           <input
@@ -517,7 +856,11 @@ onMounted(load)
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('security.firewall.protocol') }}</label>
-          <input v-model="form.proto" class="input-field mt-1" placeholder="tcp / udp / icmp" />
+          <select v-model="form.proto" class="input-field mt-1">
+            <option v-for="p in PROTO_OPTIONS" :key="p.value || 'any'" :value="p.value">
+              {{ t(`security.firewall.${p.labelKey}`) }}
+            </option>
+          </select>
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('security.firewall.srcPort') }}</label>
@@ -622,24 +965,33 @@ onMounted(load)
 </template>
 
 <style scoped>
-.fw-iface-bar {
-  @apply border border-slate-200;
+.fw-iface-tabs {
+  @apply overflow-x-auto;
 }
 
-.fw-iface-pill {
-  @apply inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs;
+.fw-iface-tab {
+  @apply inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium text-slate-600
+    border border-transparent hover:bg-slate-100 transition-colors;
 }
 
-.fw-iface-lan {
-  @apply bg-emerald-50 border-emerald-200 text-emerald-900;
+.fw-iface-tab-active {
+  @apply bg-white border-slate-300 text-pfsense-nav shadow-sm;
 }
 
-.fw-iface-wan {
-  @apply bg-sky-50 border-sky-200 text-sky-900;
+.fw-iface-tab-lan.fw-iface-tab-active {
+  @apply border-emerald-300 bg-emerald-50 text-emerald-900;
 }
 
-.fw-iface-tag {
-  @apply font-bold text-[10px] uppercase tracking-wide opacity-80;
+.fw-iface-tab-wan.fw-iface-tab-active {
+  @apply border-sky-300 bg-sky-50 text-sky-900;
+}
+
+.fw-iface-tab-role {
+  @apply text-[9px] font-bold uppercase px-1 rounded bg-slate-200 text-slate-600;
+}
+
+.fw-iface-tab-count {
+  @apply ml-0.5 text-[10px] opacity-70 tabular-nums;
 }
 
 .fw-rules-table thead th {
@@ -696,5 +1048,21 @@ onMounted(load)
 
 .fw-section-row td {
   @apply border-b border-slate-200;
+}
+
+.fw-row-auto {
+  @apply bg-amber-50/30;
+}
+
+.fw-auto-badge {
+  @apply inline-block mr-1 px-1 py-0 rounded text-[10px] font-bold uppercase bg-amber-200 text-amber-900;
+}
+
+.fw-status-on {
+  @apply bg-green-100 text-green-800;
+}
+
+.fw-status-off {
+  @apply bg-slate-200 text-slate-600;
 }
 </style>

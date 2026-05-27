@@ -120,6 +120,68 @@ plan_10m   RP-Downstream-Speed-Limit  :=  1280`,
 10M     1280
 15M     1920
 20M     2560`,
+  radiusChallengeHelpBtn: '二次挑战选路说明',
+  radiusChallengeHelpTitle: 'RADIUS Access-Challenge 选路（ocserv 侧）',
+  radiusChallengeHelpIntro:
+    'AnyConnect 不支持「先登录再下拉选组」。在独立 FreeRADIUS 上通过 Access-Challenge 可在不改客户端的前提下，用键盘二次输入完成出口选路；ocserv 经 radcli 原生转发 Challenge/State。',
+  radiusChallengeHelpScope:
+    'qosnat2 仅生成 ocserv/radcli 客户端配置与字典；Challenge 状态机、Redis、Python 模块等须在独立 FreeRADIUS 体系中实现。本页描述 ocserv 与客户端可见的协议行为及第二阶段建议下发的属性。',
+  radiusChallengeHelpFlowTitle: '交互时序（四阶段）',
+  radiusChallengeHelpFlowSteps: [
+    { step: '首次认证', desc: '用户输入账号密码，ocserv 转发 Access-Request 至 FreeRADIUS。' },
+    { step: '触发挑战', desc: '密码校验通过后返回 Access-Challenge，附带 Reply-Message（菜单文案）与 State。' },
+    { step: '客户端交互', desc: 'AnyConnect 弹出输入框展示提示语；用户输入选路码（如 1、2）。' },
+    { step: '终审下发', desc: '客户端携带同一 State 再次请求；服务器校验 State 后返回 Access-Accept 及隧道属性（如 Framed-IPv6-Prefix）。' },
+  ],
+  radiusChallengeHelpChallengeSections: [
+    {
+      title: '第一阶段：Access-Challenge 常用属性',
+      rows: [
+        { attr: 'Reply-Message', desc: '展示给用户的菜单/提示（如「请输入出口：1-黄金 2-铂金」）；ocserv 会传给客户端弹窗' },
+        { attr: 'State', desc: '会话令牌；第二轮 Access-Request 须原样带回，由 FreeRADIUS 侧关联中间态（建议 Redis，TTL 约 120s）' },
+      ],
+    },
+  ],
+  radiusChallengeHelpPhase2Title: '第二阶段：Access-Accept 建议属性',
+  radiusChallengeHelpPhase2Intro:
+    '用户提交选路码且 State 校验通过后，在 Access-Accept 中下发隧道参数；可与 groupconfig 一并返回 Class、RP 限速等（见「RADIUS 属性说明」）。',
+  radiusChallengeHelpPhase2Sections: [
+    {
+      rows: [
+        { attr: 'Framed-IPv6-Prefix', desc: '按选路码映射的业务 IPv6 前缀（/64 等）；字典类型 ipv6prefix' },
+        { attr: 'Framed-IPv6-Address', desc: '若不用前缀而分配单地址时使用' },
+        { attr: 'Delegated-IPv6-Prefix', desc: 'PD 场景下的委派前缀' },
+        { attr: 'Framed-IP-Address', desc: '若同时需要 IPv4 地址' },
+        { attr: 'Class', desc: '组名 OU=…；与 groupconfig 配合推送组策略' },
+        { attr: 'Framed-Route / Route-IPv6-Information', desc: '按出口推送分流路由' },
+        { attr: 'RP-Upstream/Downstream-Speed-Limit', desc: '按出口套餐限速（传输侧标尺，见属性说明速查表）' },
+        { attr: 'Session-Timeout / Idle-Timeout', desc: '会话与空闲超时' },
+      ],
+    },
+  ],
+  radiusChallengeHelpExampleTitle: 'FreeRADIUS 侧响应示例（概念）',
+  radiusChallengeHelpExampleNote: '下列为独立 FreeRADIUS 上 authorize/post-auth 逻辑应实现的语义；非 qosnat2 自动生成。',
+  radiusChallengeHelpExampleChallengeLabel: '第一阶段 → Access-Challenge',
+  radiusChallengeHelpExampleChallenge: `# 无 State 的请求：密码已通过，返回挑战
+Reply-Message := "请输入出口代码：1-黄金 2-铂金"
+State := "0xA1B2C3D4"   # 短随机令牌；中间态写入 Redis`,
+  radiusChallengeHelpExampleAcceptLabel: '第二阶段（带 State）→ Access-Accept',
+  radiusChallengeHelpExampleAccept: `# User-Password 本轮为选路码（如 "1"），非登录密码
+# State 须与首轮一致；用后删除 Redis 键防重放
+
+Framed-IPv6-Prefix = 2001:db8:1001::/64
+Class = "OU=gold;vpn"
+RP-Upstream-Speed-Limit := 1280
+RP-Downstream-Speed-Limit := 1280
+Session-Timeout := 86400`,
+  radiusChallengeHelpPitfallsTitle: '实现注意（FreeRADIUS 侧）',
+  radiusChallengeHelpPitfalls: [
+    '有 State 时不要再次用 PAP 校验 User-Password，否则会把选路码当密码导致失败。',
+    'State 与 User-Name 绑定校验；Accept 后原子删除 Redis 键，防止重复提交。',
+    '菜单项不宜过多；ocserv 对连续 Challenge 次数有限制。',
+    '非法选路码应有默认出口；State 超时后用户需重新登录。',
+    '字典须与 /etc/radcli/dictionary 一致；IPv6 前缀须与 ocserv ipv6-network / 数据面路由规划对齐。',
+  ],
   radiusHelpSections: [
     {
       title: 'IPv4 / 路由 / 会话',

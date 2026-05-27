@@ -55,6 +55,7 @@ const { order: bottomOrder, moveUp: bottomUp, moveDown: bottomDown } = useWidget
 const quickLinks = computed(() => [
   { path: '/network/interfaces', label: t('dashboard.linkInterfaces'), desc: t('dashboard.linkInterfacesDesc') },
   { path: '/nat/forwards', label: t('dashboard.linkForwards'), desc: t('dashboard.linkForwardsDesc') },
+  { path: '/nat/ipv6', label: t('dashboard.linkIpv6Nat'), desc: t('dashboard.linkIpv6NatDesc') },
   { path: '/shaper/profiles', label: t('dashboard.linkProfiles'), desc: t('dashboard.linkProfilesDesc') },
   { path: '/network/dhcp', label: t('dashboard.linkDhcp'), desc: t('dashboard.linkDhcpDesc') },
   { path: '/vpn/wireguard', label: t('dashboard.linkWg'), desc: t('dashboard.linkWgDesc') },

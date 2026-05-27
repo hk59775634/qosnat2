@@ -24,8 +24,9 @@ const (
 )
 
 type bpfObjects struct {
-	ProfileLpm *ebpf.Map `ebpf:"profile_lpm"`
-	HostExact  *ebpf.Map `ebpf:"host_exact"`
+	ProfileLpm  *ebpf.Map `ebpf:"profile_lpm"`
+	ProfileLpm6 *ebpf.Map `ebpf:"profile_lpm6"`
+	HostExact   *ebpf.Map `ebpf:"host_exact"`
 	ActiveHost *ebpf.Map `ebpf:"active_host"`
 	ClassidMap *ebpf.Map `ebpf:"classid_map"`
 	Events     *ebpf.Map `ebpf:"events"`
@@ -114,6 +115,7 @@ func (m *Manager) pinAll(objs *bpfObjects) error {
 		pin  func(string) error
 	}{
 		{mapProfile, objs.ProfileLpm.Pin},
+		{mapProfile6, objs.ProfileLpm6.Pin},
 		{mapHost, objs.HostExact.Pin},
 		{mapActive, objs.ActiveHost.Pin},
 		{mapClassID, objs.ClassidMap.Pin},
@@ -143,6 +145,9 @@ func (o *bpfObjects) close() {
 	}
 	if o.ProfileLpm != nil {
 		o.ProfileLpm.Close()
+	}
+	if o.ProfileLpm6 != nil {
+		o.ProfileLpm6.Close()
 	}
 	if o.HostExact != nil {
 		o.HostExact.Close()
@@ -263,11 +268,25 @@ func (m *Manager) UpdateProfile(cidr string, rv RateVal) error {
 	if !m.loaded {
 		return errors.New("ebpf not loaded")
 	}
-	k, err := IPToLPMKey(cidr)
+	v4, v6, err := profileMapForCIDR(cidr)
 	if err != nil {
 		return err
 	}
-	return m.objs.ProfileLpm.Put(k.Marshal(), rv.Marshal())
+	if v4 {
+		k, err := IPToLPMKey(cidr)
+		if err != nil {
+			return err
+		}
+		return m.objs.ProfileLpm.Put(k.Marshal(), rv.Marshal())
+	}
+	if v6 && m.objs.ProfileLpm6 != nil {
+		k, err := IPToLPMKeyV6(cidr)
+		if err != nil {
+			return err
+		}
+		return m.objs.ProfileLpm6.Put(k.Marshal(), rv.Marshal())
+	}
+	return fmt.Errorf("ipv6 profile_lpm6 map not available (rebuild bpf: make bpf)")
 }
 
 func (m *Manager) DeleteProfile(cidr string) error {
@@ -276,11 +295,25 @@ func (m *Manager) DeleteProfile(cidr string) error {
 	if !m.loaded {
 		return errors.New("ebpf not loaded")
 	}
-	k, err := IPToLPMKey(cidr)
+	v4, v6, err := profileMapForCIDR(cidr)
 	if err != nil {
 		return err
 	}
-	return m.objs.ProfileLpm.Delete(k.Marshal())
+	if v4 {
+		k, err := IPToLPMKey(cidr)
+		if err != nil {
+			return err
+		}
+		return m.objs.ProfileLpm.Delete(k.Marshal())
+	}
+	if v6 && m.objs.ProfileLpm6 != nil {
+		k, err := IPToLPMKeyV6(cidr)
+		if err != nil {
+			return err
+		}
+		return m.objs.ProfileLpm6.Delete(k.Marshal())
+	}
+	return nil
 }
 
 func (m *Manager) UpdateHost(ip string, rv RateVal) error {

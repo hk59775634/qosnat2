@@ -114,6 +114,10 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/nat/static-mappings", srv.requireAuth(srv.handleStaticMappings))
 	m.HandleFunc("/api/v1/nat/prefix-mappings", srv.requireAuth(srv.handlePrefixMappings))
 	m.HandleFunc("/api/v1/nat/wan-forwards", srv.requireAuth(srv.handleWanForwards))
+	m.HandleFunc("/api/v1/nat", srv.requireAuth(srv.handleNatSummary))
+	m.HandleFunc("/api/v1/nat/nptv6", srv.requireAuth(srv.handleNptv6))
+	m.HandleFunc("/api/v1/nat/nat64", srv.requireAuth(srv.handleNat64))
+	m.HandleFunc("/api/v1/nat/dns64", srv.requireAuth(srv.handleDNS64))
 
 	m.HandleFunc("/api/v1/shaper/profiles/order", srv.requireAuth(srv.handleShaperProfilesOrder))
 	m.HandleFunc("/api/v1/shaper/profiles", srv.requireAuth(srv.handleShaperProfiles))
@@ -208,15 +212,14 @@ func (srv *Server) ApplyAll() error {
 	} else if auto {
 		log.Printf("shared_ips: using WAN %s address %s", srv.env.DevWAN, ips[0])
 	}
-	if err := nft.Apply(cfg, st); err != nil {
-		return fmt.Errorf("nft: %w", err)
+	if err := srv.applyNatStack(); err != nil {
+		return err
 	}
 	srv.replayWanLinksOnBoot()
 	srv.replayEgressOnBoot()
 	srv.applyNetworkVLANs()
 	srv.applyManagedRoutes()
 	srv.applyEgressPolicyRoutes()
-	srv.applyManagedDHCP()
 	srv.applyEBPF(st)
 	return nil
 }

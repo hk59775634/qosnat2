@@ -28,8 +28,8 @@ type Config struct {
 
 // ResolveSharedIPs 返回生效的共享 SNAT 地址：未配置时使用 WAN 口首个全球 IPv4
 func ResolveSharedIPs(cfg Config, st store.State) (ips []string, autoFromWAN bool) {
-	if len(st.SharedIPs) > 0 {
-		return append([]string(nil), st.SharedIPs...), false
+	if len(st.Nat.IPv4.SharedIPs) > 0 {
+		return append([]string(nil), st.Nat.IPv4.SharedIPs...), false
 	}
 	if cfg.DevWAN == "" {
 		return nil, false
@@ -46,7 +46,18 @@ func Render(cfg Config, st store.State) (string, error) {
 	if cfg.DevWAN == "" {
 		return "", fmt.Errorf("DEV_WAN required")
 	}
-	routes := st.PolicyRoutes
+	st.Firewall.FilterRules, _ = store.SyncAutoFilterRules(
+		st.Firewall.FilterRules,
+		cfg.DevWAN,
+		cfg.AdminPort,
+		store.AutoInputVPN{
+			OCServEnabled: cfg.VPN.OCServEnabled,
+			OCServTCP:     cfg.VPN.OCServTCP,
+			OCServUDP:     cfg.VPN.OCServUDP,
+			WGPorts:       cfg.VPN.WGPorts,
+		},
+	)
+	routes := st.Nat.IPv4.PolicyRoutes
 	if len(routes) == 0 {
 		routes = []string{st.Shaper.PolicyCIDR}
 	}
@@ -69,22 +80,24 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("    chain prerouting {\n")
 	b.WriteString("        type nat hook prerouting priority dstnat; policy accept;\n")
 	writeWanForwardRules(&b, cfg, st.Firewall.WanPortForwards)
+	writeNPTv6Prerouting(&b, st.Nat)
 	b.WriteString("    }\n\n")
 
 	// postrouting SNAT
 	b.WriteString("    chain postrouting {\n")
 	b.WriteString("        type nat hook postrouting priority srcnat; policy accept;\n")
-	staticKeys := sortedKeys(st.StaticMappings)
+	staticKeys := sortedKeys(st.Nat.IPv4.StaticMappings)
 	for _, inner := range staticKeys {
-		b.WriteString(fmt.Sprintf("        ip saddr %s snat to %s\n", inner, st.StaticMappings[inner]))
+		b.WriteString(fmt.Sprintf("        ip saddr %s snat to %s\n", inner, st.Nat.IPv4.StaticMappings[inner]))
 	}
-	if len(st.PrefixMappings) > 0 {
+	if len(st.Nat.IPv4.PrefixMappings) > 0 {
 		b.WriteString(fmt.Sprintf("        oifname \"%s\" snat ip prefix to ip saddr map {\n", cfg.DevWAN))
-		for _, inner := range sortedKeys(st.PrefixMappings) {
-			b.WriteString(fmt.Sprintf("            %s : %s,\n", inner, st.PrefixMappings[inner]))
+		for _, inner := range sortedKeys(st.Nat.IPv4.PrefixMappings) {
+			b.WriteString(fmt.Sprintf("            %s : %s,\n", inner, st.Nat.IPv4.PrefixMappings[inner]))
 		}
 		b.WriteString("        }\n")
 	}
+	writeNPTv6Postrouting(&b, cfg, st.Nat)
 	for _, e := range egress {
 		b.WriteString(fmt.Sprintf(
 			"        ip saddr %s oifname \"%s\" snat to %s\n",
@@ -159,7 +172,7 @@ func Render(cfg Config, st store.State) (string, error) {
 		// ACME http-01 挑战需要公网 80 端口可达；临时放开所有接口 tcp/80 入站。
 		b.WriteString("        tcp dport 80 accept comment \"qosnat2-acme-http01-open80\"\n")
 	}
-	writeWANInputPolicy(&b, cfg)
+	// WAN 管理/VPN/默认丢弃：由 store.SyncAutoFilterRules 写入 filter_rules（auto-*）后在此输出。
 	b.WriteString("    }\n}\n")
 	return b.String(), nil
 }
@@ -198,14 +211,14 @@ func sortedKeys(m map[string]string) []string {
 func RemoveSharedIP(st *store.State, ip string) bool {
 	var out []string
 	found := false
-	for _, e := range st.SharedIPs {
+	for _, e := range st.Nat.IPv4.SharedIPs {
 		if e == ip {
 			found = true
 			continue
 		}
 		out = append(out, e)
 	}
-	st.SharedIPs = out
+	st.Nat.IPv4.SharedIPs = out
 	return found
 }
 
@@ -214,12 +227,12 @@ func AddSharedIP(st *store.State, ip string) error {
 	if netParseIP(ip) != nil {
 		return fmt.Errorf("invalid ip: %s", ip)
 	}
-	for _, e := range st.SharedIPs {
+	for _, e := range st.Nat.IPv4.SharedIPs {
 		if e == ip {
 			return nil
 		}
 	}
-	st.SharedIPs = append(st.SharedIPs, ip)
+	st.Nat.IPv4.SharedIPs = append(st.Nat.IPv4.SharedIPs, ip)
 	return nil
 }
 

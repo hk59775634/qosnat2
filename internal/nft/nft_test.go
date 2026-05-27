@@ -12,7 +12,7 @@ func TestRenderSNATAndFilter(t *testing.T) {
 	st.Firewall.FilterRules = []store.FilterRule{{
 		ID: "fr-1", Chain: "forward", Action: "drop", Iif: "ens18", Enabled: true,
 	}}
-	st.SharedIPs = []string{"203.0.113.10"}
+	st.Nat.IPv4.SharedIPs = []string{"203.0.113.10"}
 	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestRenderEgressSNAT(t *testing.T) {
 	st.Network.EgressPolicies = []store.EgressPolicy{
 		{ID: "eg-1", CIDR: "10.250.0.0/24", WanLinkID: "wan-us", SNATIP: "100.64.0.249", Enabled: true},
 	}
-	st.PolicyRoutes = []string{"10.0.0.0/8", "10.250.0.0/24"}
+	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8", "10.250.0.0/24"}
 	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +64,27 @@ func TestRenderAcmeOpen80(t *testing.T) {
 	}
 	if !strings.Contains(body, `tcp dport 80 accept comment "qosnat2-acme-http01-open80"`) {
 		t.Fatalf("missing acme open80 rule in render")
+	}
+}
+
+func TestRenderNPTv6(t *testing.T) {
+	st := store.DefaultState()
+	st.Nat.Nptv6Enabled = true
+	st.Nat.Nptv6Rules = []store.Nptv6Rule{{
+		InternalPrefix: "fd00::/48",
+		ExternalPrefix: "2001:db8::/48",
+	}}
+	body, err := Render(Config{DevWAN: "eth1"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"snat ip6 prefix to 2001:db8::/48",
+		"dnat ip6 prefix to fd00::/48",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
 	}
 }
 

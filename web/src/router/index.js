@@ -13,6 +13,7 @@ const routes = [
     children: [
       { path: '', name: 'dashboard', component: () => import('@/views/Dashboard.vue') },
       { path: 'nat/outbound', name: 'nat-outbound', component: () => import('@/views/nat/Outbound.vue') },
+      { path: 'nat/ipv6', name: 'nat-ipv6', component: () => import('@/views/nat/IPv6.vue') },
       { path: 'nat/forwards', name: 'nat-forwards', component: () => import('@/views/nat/PortForwards.vue') },
       { path: 'firewall/rules', name: 'firewall-rules', component: () => import('@/views/security/FirewallRules.vue') },
       { path: 'firewall/aliases', name: 'firewall-aliases', component: () => import('@/views/security/Aliases.vue') },

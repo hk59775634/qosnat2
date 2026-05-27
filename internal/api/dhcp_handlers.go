@@ -32,7 +32,7 @@ func (srv *Server) handleDHCPGet(w http.ResponseWriter, r *http.Request) {
 	}
 	rendered := ""
 	if dnsmasq.ShowStatus().Installed {
-		rendered = dnsmasq.RenderConf(cfg, srv.env.DevWAN)
+		rendered = dnsmasq.RenderConf(cfg, srv.dnsmasqOpts(st))
 	}
 	dnsSt := dnsmasq.ShowStatus()
 	leases := dnsmasq.ParseLeases(dnsSt.LeasesRaw)
@@ -81,7 +81,7 @@ func (srv *Server) handleDHCPApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := dnsmasq.Apply(cfg, srv.env.DevWAN); err != nil {
+	if err := dnsmasq.Apply(cfg, srv.dnsmasqOpts(st)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -111,7 +111,7 @@ func (srv *Server) applyManagedDHCP() {
 		log.Printf("dhcp normalize: %v", err)
 		return
 	}
-	if err := dnsmasq.Apply(cfg, srv.env.DevWAN); err != nil {
+	if err := dnsmasq.Apply(cfg, srv.dnsmasqOpts(st)); err != nil {
 		log.Printf("dhcp apply: %v", err)
 	}
 }

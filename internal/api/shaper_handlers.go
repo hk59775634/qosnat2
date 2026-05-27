@@ -71,14 +71,14 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 				st.Shaper.DefaultProfile = store.RateProfile{Down: down, Up: up, HostMask: mask}
 			}
 			hasRoute := false
-			for _, c := range st.PolicyRoutes {
+			for _, c := range st.Nat.IPv4.PolicyRoutes {
 				if c == cidr {
 					hasRoute = true
 					break
 				}
 			}
 			if !hasRoute {
-				st.PolicyRoutes = append(st.PolicyRoutes, cidr)
+				st.Nat.IPv4.PolicyRoutes = append(st.Nat.IPv4.PolicyRoutes, cidr)
 			}
 		}
 	})

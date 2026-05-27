@@ -76,4 +76,7 @@ export default {
   techEbpf: 'profile_lpm',
   langEn: 'EN',
   langZh: 'ZH',
+  githubOn: 'Source on',
+  githubViewRepo: 'View on GitHub',
+  githubRepoTitle: 'Open {repo} on GitHub',
 }

@@ -18,6 +18,14 @@ struct {
 } profile_lpm SEC(".maps");
 
 struct {
+	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
+	__uint(max_entries, 4096);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__type(key, struct lpm_v6_key);
+	__type(value, struct rate_val);
+} profile_lpm6 SEC(".maps");
+
+struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 65536);
 	__type(key, __u32);
@@ -213,6 +221,74 @@ static __always_inline int parse_ipv4_at(struct __sk_buff *skb, int ingress, __u
 	return apply_rate_classify(skb, matched_be, rv, ingress);
 }
 
+static __always_inline struct rate_val *lookup_rate_v6_dual(__u8 saddr[16], __u8 daddr[16], int ingress)
+{
+	struct lpm_v6_key ks = { .prefixlen = 128 };
+	struct lpm_v6_key kd = { .prefixlen = 128 };
+	__builtin_memcpy(ks.addr, saddr, 16);
+	__builtin_memcpy(kd.addr, daddr, 16);
+	struct rate_val *rv;
+
+	if (ingress) {
+		rv = bpf_map_lookup_elem(&profile_lpm6, &ks);
+		if (rv)
+			return rv;
+		return bpf_map_lookup_elem(&profile_lpm6, &kd);
+	}
+	rv = bpf_map_lookup_elem(&profile_lpm6, &kd);
+	if (rv)
+		return rv;
+	return bpf_map_lookup_elem(&profile_lpm6, &ks);
+}
+
+static __always_inline int apply_profile_classify_v6(struct __sk_buff *skb, struct rate_val *rv)
+{
+	if (!rv)
+		return TC_ACT_OK;
+	__u32 minor = rv->class_minor;
+	if (!minor)
+		minor = 0x100;
+	skb->tc_classid = minor;
+	return TC_ACT_OK;
+}
+
+static __always_inline int parse_ipv6_at(struct __sk_buff *skb, int ingress, __u32 l3_off)
+{
+	__u8 ver;
+	if (bpf_skb_load_bytes(skb, l3_off, &ver, sizeof(ver)))
+		return TC_ACT_OK;
+	if ((ver & 0xf0) != 0x60)
+		return TC_ACT_OK;
+
+	__u8 saddr[16], daddr[16];
+	if (bpf_skb_load_bytes(skb, l3_off + 8, saddr, 16))
+		return TC_ACT_OK;
+	if (bpf_skb_load_bytes(skb, l3_off + 24, daddr, 16))
+		return TC_ACT_OK;
+
+	struct rate_val *rv = lookup_rate_v6_dual(saddr, daddr, ingress);
+	if (!rv)
+		return TC_ACT_OK;
+	return apply_profile_classify_v6(skb, rv);
+}
+
+static __always_inline int parse_ipv6(struct __sk_buff *skb, int ingress)
+{
+	if (bpf_skb_pull_data(skb, 0))
+		return TC_ACT_OK;
+
+	__u8 ver0;
+	if (!bpf_skb_load_bytes(skb, 0, &ver0, sizeof(ver0)) && (ver0 & 0xf0) == 0x60)
+		return parse_ipv6_at(skb, ingress, 0);
+
+	__u16 eth_proto;
+	if (!bpf_skb_load_bytes(skb, 12, &eth_proto, sizeof(eth_proto)) &&
+	    eth_proto == bpf_htons(ETH_P_IPV6))
+		return parse_ipv6_at(skb, ingress, ETH_HLEN);
+
+	return TC_ACT_OK;
+}
+
 static __always_inline int parse_ipv4(struct __sk_buff *skb, int ingress)
 {
 	if (bpf_skb_pull_data(skb, 0))
@@ -222,11 +298,16 @@ static __always_inline int parse_ipv4(struct __sk_buff *skb, int ingress)
 	__u8 vhl0;
 	if (!bpf_skb_load_bytes(skb, 0, &vhl0, sizeof(vhl0)) && (vhl0 & 0xf0) == 0x40)
 		return parse_ipv4_at(skb, ingress, 0);
+	if ((vhl0 & 0xf0) == 0x60)
+		return parse_ipv6_at(skb, ingress, 0);
 
 	__u16 eth_proto;
-	if (!bpf_skb_load_bytes(skb, 12, &eth_proto, sizeof(eth_proto)) &&
-	    eth_proto == bpf_htons(ETH_P_IP))
-		return parse_ipv4_at(skb, ingress, ETH_HLEN);
+	if (!bpf_skb_load_bytes(skb, 12, &eth_proto, sizeof(eth_proto))) {
+		if (eth_proto == bpf_htons(ETH_P_IP))
+			return parse_ipv4_at(skb, ingress, ETH_HLEN);
+		if (eth_proto == bpf_htons(ETH_P_IPV6))
+			return parse_ipv6_at(skb, ingress, ETH_HLEN);
+	}
 
 	/* mirred → ifb0 等 L3 起始但首字节非预期 IPv4 版本时兜底 */
 	return parse_ipv4_at(skb, ingress, 0);
@@ -235,13 +316,17 @@ static __always_inline int parse_ipv4(struct __sk_buff *skb, int ingress)
 SEC("tc/ingress")
 int classify_ingress(struct __sk_buff *skb)
 {
-	return parse_ipv4(skb, 1);
+	int r = parse_ipv4(skb, 1);
+	parse_ipv6(skb, 1);
+	return r;
 }
 
 SEC("tc/egress")
 int classify_egress(struct __sk_buff *skb)
 {
-	return parse_ipv4(skb, 0);
+	int r = parse_ipv4(skb, 0);
+	parse_ipv6(skb, 0);
+	return r;
 }
 
 char LICENSE[] SEC("license") = "GPL";

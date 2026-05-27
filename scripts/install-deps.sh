@@ -20,8 +20,14 @@ QOSNAT_APT_PACKAGES=(
   tcpdump
   conntrack
   dnsmasq
+  unbound
   nodejs
   npm
+)
+
+# NAT64 数据面（内核模块需与运行内核匹配，失败时请安装 jool-dkms）
+QOSNAT_APT_PACKAGES_OPTIONAL=(
+  jool-tools
 )
 
 qosnat_apt_install_packages() {
@@ -32,4 +38,5 @@ qosnat_apt_install_packages() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq "${QOSNAT_APT_PACKAGES[@]}"
+  apt-get install -y -qq "${QOSNAT_APT_PACKAGES_OPTIONAL[@]}" || true
 }

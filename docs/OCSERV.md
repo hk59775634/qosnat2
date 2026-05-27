@@ -73,6 +73,21 @@ RADIUS 常用参数：服务器地址、认证/计费端口（1812/1813）、共
 
 **FreeRADIUS 注意**：ocserv 不发送 `NAS-Port`，需在服务器 `acct_unique` 中去掉对该属性的依赖，否则计费可能异常（见 ocserv `doc/README-radius.md`）。
 
+### RADIUS Access-Challenge 选路（独立 FreeRADIUS）
+
+AnyConnect 不支持「先登录再下拉选组」。在**独立 FreeRADIUS** 上可用 **Access-Challenge** 实现纯键盘二次选路；qosnat2 的 ocserv 经 radcli **原生支持** Challenge/`State` 往返，不在控制面实现状态机。
+
+| 阶段 | RADIUS 响应 | 要点 |
+|------|-------------|------|
+| 1 | Access-Request（账号密码） | ocserv 转发至 FreeRADIUS |
+| 2 | Access-Challenge | `Reply-Message`（菜单文案）+ `State`（会话令牌，建议 Redis TTL ~120s） |
+| 3 | 客户端 | AnyConnect 弹窗，用户输入选路码 |
+| 4 | Access-Accept | 携带同一 `State`；下发 `Framed-IPv6-Prefix` 等（可与 `groupconfig` 一并返回 Class、RP 限速） |
+
+**qosnat2 职责**：生成 `/etc/radcli/*` 与字典（含 `State`、`Framed-IPv6-Prefix`）；Web **VPN → OpenConnect → RADIUS** 区提供「RADIUS 属性说明」与并列的「二次挑战选路说明」悬浮窗。
+
+**FreeRADIUS 侧（自行部署）**：Python/Redis 状态机、`authorize` 顶置模块、有 `State` 时勿再 PAP 校验选路码等，见 UI 说明与示例；NPTv6/NAT64/路由撤销不在 qosnat2 范围内。
+
 也可在 API 以 root 触发后台安装：`POST /api/v1/vpn/ocserv/install`（需 qosnatd 以 root 运行）。
 
 ## API

@@ -11,6 +11,7 @@ export default {
   rssQueues: 'RSS / Queues',
   security: 'Security',
   outboundNat: 'Outbound NAT',
+  ipv6Nat: 'IPv6 translation',
   portForwards: 'Port forwards',
   firewallRules: 'Firewall rules',
   aliases: 'Aliases',

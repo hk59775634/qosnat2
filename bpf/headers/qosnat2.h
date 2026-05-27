@@ -16,6 +16,11 @@ struct lpm_v4_key {
 	__u32 addr;
 };
 
+struct lpm_v6_key {
+	__u32 prefixlen;
+	__u8 addr[16];
+};
+
 struct active_val {
 	__u64 bytes_down;
 	__u64 bytes_up;

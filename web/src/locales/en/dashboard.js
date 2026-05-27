@@ -28,6 +28,8 @@ export default {
   linkInterfacesDesc: 'WAN/LAN roles & traffic',
   linkForwards: 'Port forwards',
   linkForwardsDesc: 'DNAT rules',
+  linkIpv6Nat: 'IPv6 translation',
+  linkIpv6NatDesc: 'NPTv6 / NAT64 / DNS64',
   linkProfiles: 'QoS profiles',
   linkProfilesDesc: 'Per-subnet caps',
   linkDhcp: 'DHCP',

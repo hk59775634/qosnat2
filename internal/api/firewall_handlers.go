@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
@@ -17,8 +18,22 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 		if rules == nil {
 			rules = []store.FilterRule{}
 		}
+		needSave := false
 		if fixed, ok := store.RepairFilterRuleIDs(rules); ok {
 			rules = fixed
+			needSave = true
+		}
+		vp := nft.VPNFirewallFromState(st)
+		if synced, ok := store.SyncAutoFilterRules(rules, srv.env.DevWAN, srv.env.AdminPort, store.AutoInputVPN{
+			OCServEnabled: vp.OCServEnabled,
+			OCServTCP:     vp.OCServTCP,
+			OCServUDP:     vp.OCServUDP,
+			WGPorts:       vp.WGPorts,
+		}); ok {
+			rules = synced
+			needSave = true
+		}
+		if needSave {
 			_ = srv.store.Update(func(s *store.State) {
 				s.Firewall.FilterRules = rules
 			})
@@ -35,17 +50,24 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		sort.Strings(aliasNames)
-		vp := nft.VPNFirewallFromState(st)
 		wgEnabled := len(vp.WGPorts) > 0
 		wgPrimary := 0
 		if len(vp.WGPorts) > 0 {
 			wgPrimary = vp.WGPorts[0]
 		}
+		var sysDevs []string
+		if list, err := netif.ListDetails(); err == nil {
+			for _, d := range list {
+				sysDevs = append(sysDevs, d.Name)
+			}
+		}
+		ifaces := store.BuildFirewallIfaceList(st, srv.env.DevLAN, srv.env.DevWAN, sysDevs)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"rules":      rules,
 			"dev_lan":    srv.env.DevLAN,
 			"dev_wan":    srv.env.DevWAN,
 			"admin_port": srv.env.AdminPort,
+			"interfaces": ifaces,
 			"alias_names": aliasNames,
 			"vpn": map[string]any{
 				"ocserv_enabled":     vp.OCServEnabled,
@@ -55,7 +77,8 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 				"wireguard_port":     wgPrimary,
 				"wireguard_ports":    vp.WGPorts,
 			},
-			"rendered": srv.firewallRendered(),
+			"acme_temp_allow_http01": st.System.AcmeTempAllowHTTP01,
+			"rendered":               srv.firewallRendered(),
 		})
 	case http.MethodPost:
 		var body store.FilterRule

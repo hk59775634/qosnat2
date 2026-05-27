@@ -141,9 +141,9 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	_ = srv.store.Update(func(st *store.State) {
 		st.AdminUser = body.AdminUser
 		st.AdminPassHash = passHash
-		st.PolicyRoutes = body.PolicyRoutes
+		st.Nat.IPv4.PolicyRoutes = body.PolicyRoutes
 		if body.SharedIPs != nil {
-			st.SharedIPs = body.SharedIPs
+			st.Nat.IPv4.SharedIPs = body.SharedIPs
 		}
 		if body.Hostname != "" {
 			st.System.Hostname = body.Hostname

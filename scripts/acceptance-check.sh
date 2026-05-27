@@ -37,6 +37,12 @@ else
   bad "sysctl.d missing"
 fi
 
+if [ -f "$STATE" ] && grep -q '"nat"' "$STATE"; then
+  ok "nat state block"
+else
+  bad "nat block missing in state (expected after upgrade)"
+fi
+
 if command -v nft >/dev/null && nft list table inet qosnat >/dev/null 2>&1; then
   ok "nft table qosnat"
 else

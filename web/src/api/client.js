@@ -68,6 +68,21 @@ export const api = {
     del: (inner) =>
       request(`/api/v1/nat/prefix-mappings?inner=${encodeURIComponent(inner)}`, { method: 'DELETE' }),
   },
+  nat: {
+    summary: () => request('/api/v1/nat'),
+    nptv6: {
+      get: () => request('/api/v1/nat/nptv6'),
+      put: (body) => request('/api/v1/nat/nptv6', { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    nat64: {
+      get: () => request('/api/v1/nat/nat64'),
+      put: (body) => request('/api/v1/nat/nat64', { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    dns64: {
+      get: () => request('/api/v1/nat/dns64'),
+      put: (body) => request('/api/v1/nat/dns64', { method: 'PUT', body: JSON.stringify(body) }),
+    },
+  },
 
   ebpfMaps: () => request('/api/v1/ebpf/maps'),
   ebpfPrograms: () => request('/api/v1/ebpf/programs'),

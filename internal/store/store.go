@@ -112,11 +112,8 @@ type State struct {
 	SetupComplete  bool              `json:"setup_complete"`
 	AdminUser     string `json:"admin_user,omitempty"`
 	AdminPassHash string `json:"admin_pass_hash,omitempty"`
-	PolicyRoutes   []string          `json:"policy_routes"`
+	Nat            NatState          `json:"nat"`
 	Routes         []RouteEntry      `json:"routes"`
-	SharedIPs      []string          `json:"shared_ips"`
-	StaticMappings map[string]string `json:"static_mappings"`
-	PrefixMappings map[string]string `json:"prefix_mappings"`
 	Shaper         ShaperState       `json:"shaper"`
 	Firewall       FirewallState     `json:"firewall"`
 	System         SystemState       `json:"system"`
@@ -139,11 +136,8 @@ type Store struct {
 func DefaultState() State {
 	return State{
 		SetupComplete:  false,
-		PolicyRoutes:   []string{"10.0.0.0/8"},
-		Routes:         []RouteEntry{},
-		SharedIPs:      nil,
-		StaticMappings: map[string]string{},
-		PrefixMappings: map[string]string{},
+		Nat:    DefaultNat(),
+		Routes: []RouteEntry{},
 		Shaper: ShaperState{
 			PolicyCIDR: "10.0.0.0/8",
 			DefaultProfile: RateProfile{
@@ -204,11 +198,34 @@ func (s *Store) Load() error {
 		}
 		return err
 	}
-	var st State
-	if err := json.Unmarshal(b, &st); err != nil {
+	var disk struct {
+		State
+		Legacy natLegacyFields `json:"-"`
+	}
+	// 单独解析旧顶层字段
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	s.State = st
+	if err := json.Unmarshal(b, &disk.State); err != nil {
+		return err
+	}
+	for _, key := range []string{"policy_routes", "shared_ips", "static_mappings", "prefix_mappings"} {
+		if v, ok := raw[key]; ok {
+			switch key {
+			case "policy_routes":
+				_ = json.Unmarshal(v, &disk.Legacy.PolicyRoutes)
+			case "shared_ips":
+				_ = json.Unmarshal(v, &disk.Legacy.SharedIPs)
+			case "static_mappings":
+				_ = json.Unmarshal(v, &disk.Legacy.StaticMappings)
+			case "prefix_mappings":
+				_ = json.Unmarshal(v, &disk.Legacy.PrefixMappings)
+			}
+		}
+	}
+	s.State = disk.State
+	MigrateNatFromLegacy(&s.State, disk.Legacy)
 	s.ensureDefaultsLocked()
 	return nil
 }
@@ -242,15 +259,7 @@ func (s *Store) Update(fn func(*State)) error {
 }
 
 func (s *Store) ensureDefaultsLocked() {
-	if s.State.SharedIPs == nil {
-		s.State.SharedIPs = []string{}
-	}
-	if s.State.StaticMappings == nil {
-		s.State.StaticMappings = map[string]string{}
-	}
-	if s.State.PrefixMappings == nil {
-		s.State.PrefixMappings = map[string]string{}
-	}
+	ensureNatDefaults(&s.State.Nat)
 	if s.State.Shaper.Hosts == nil {
 		s.State.Shaper.Hosts = map[string]HostRate{}
 	}

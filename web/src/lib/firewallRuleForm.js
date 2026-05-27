@@ -1,11 +1,51 @@
 /** 防火墙规则表单：UI 模式 ↔ API FilterRule */
 
+export function isRuleAutoManaged(r) {
+  if (!r) return false
+  if (r.system) return true
+  const id = String(r.id || '').trim()
+  return id.startsWith('auto-')
+}
+
 export function isRuleMutable(r) {
-  if (!r || r.system) return false
+  if (!r) return false
   const id = String(r.id || '').trim()
   if (!id) return false
-  if (id.startsWith('sys-') || id.startsWith('auto-')) return false
-  return true
+  if (id.startsWith('sys-')) return false
+  return !isRuleAutoManaged(r)
+}
+
+export const PROTO_OPTIONS = [
+  { value: '', labelKey: 'optAnyProto' },
+  { value: 'tcp', labelKey: 'protoTcp' },
+  { value: 'udp', labelKey: 'protoUdp' },
+  { value: 'icmp', labelKey: 'protoIcmp' },
+  { value: 'icmpv6', labelKey: 'protoIcmpv6' },
+  { value: 'sctp', labelKey: 'protoSctp' },
+  { value: 'udplite', labelKey: 'protoUdplite' },
+]
+
+export function validateRuleForm(form, t) {
+  const errors = []
+  if (form.iif_mode === 'custom' && !String(form.iif_custom || '').trim()) {
+    errors.push(t('security.firewall.errInIface'))
+  }
+  if (form.chain === 'forward' && form.oif_mode === 'custom' && !String(form.oif_custom || '').trim()) {
+    errors.push(t('security.firewall.errOutIface'))
+  }
+  if (form.src_mode === 'cidr' && !String(form.src_cidr || '').trim()) {
+    errors.push(t('security.firewall.errSrcCidr'))
+  }
+  if (form.src_mode === 'alias' && !String(form.src_alias || '').trim()) {
+    errors.push(t('security.firewall.errSrcAlias'))
+  }
+  if (form.dst_mode === 'cidr' && !String(form.dst_cidr || '').trim()) {
+    errors.push(t('security.firewall.errDstCidr'))
+  }
+  if (form.dst_mode === 'alias' && !String(form.dst_alias || '').trim()) {
+    errors.push(t('security.firewall.errDstAlias'))
+  }
+  return errors
 }
 
 export function emptyRuleForm(chain = 'forward') {
@@ -33,6 +73,9 @@ export function emptyRuleForm(chain = 'forward') {
 }
 
 function ifaceFromMode(mode, custom, devLan, devWan) {
+  if (String(mode || '').startsWith('dev:')) {
+    return String(mode).slice(4).trim()
+  }
   switch (mode) {
     case 'lan':
       return devLan || ''
@@ -50,7 +93,7 @@ function modeFromIface(name, devLan, devWan) {
   if (!n) return { mode: 'any', custom: '' }
   if (n === devLan) return { mode: 'lan', custom: '' }
   if (n === devWan) return { mode: 'wan', custom: '' }
-  return { mode: 'custom', custom: n }
+  return { mode: `dev:${n}`, custom: '' }
 }
 
 function portFromRule(port) {

@@ -142,6 +142,52 @@ components:
         redirect_ip: { type: string }
         redirect_port: { type: integer }
         comment: { type: string }
+    NatIPv4State:
+      type: object
+      properties:
+        policy_routes: { type: array, items: { type: string } }
+        shared_ips: { type: array, items: { type: string } }
+        static_mappings: { type: object, additionalProperties: { type: string } }
+        prefix_mappings: { type: object, additionalProperties: { type: string } }
+    Nptv6Rule:
+      type: object
+      required: [internal_prefix, external_prefix]
+      properties:
+        id: { type: string }
+        internal_prefix: { type: string, example: "fd00:1111:2222::/48" }
+        external_prefix: { type: string, example: "2001:db8:aaaa::/48" }
+        description: { type: string }
+        oif: { type: string, description: 出口网卡，空则 DEV_WAN }
+    DNS64Config:
+      type: object
+      properties:
+        mode: { type: string, enum: [local_unbound, upstream], default: local_unbound }
+        upstream:
+          type: array
+          items: { type: string, format: ipv6 }
+          description: mode=upstream 时下发给客户端的 DNS64 解析器
+        unbound_listen: { type: string, example: "127.0.0.1:5353" }
+        forwarders:
+          type: array
+          items: { type: string }
+          description: Unbound 递归上游
+        serve_to_clients: { type: boolean, default: true, description: 'false=VPN/static DNS, no dnsmasq/DHCP' }
+        access_allow:
+          type: array
+          items: { type: string }
+          description: Unbound access-control when serve_to_clients is false
+    NatState:
+      type: object
+      properties:
+        ipv4: { $ref: '#/components/schemas/NatIPv4State' }
+        nptv6_enabled: { type: boolean }
+        nptv6_rules:
+          type: array
+          items: { $ref: '#/components/schemas/Nptv6Rule' }
+        nat64_enabled: { type: boolean }
+        nat64_prefix: { type: string, example: "64:ff9b::/96" }
+        nat64_pool4: { type: string, example: "10.255.255.0/24" }
+        dns64: { $ref: '#/components/schemas/DNS64Config' }
     Health:
       type: object
       properties:
@@ -1106,6 +1152,111 @@ paths:
           in: query
           required: true
           schema: { type: string }
+
+  /api/v1/nat:
+    get:
+      tags: [nat]
+      summary: NAT 完整配置与 NAT64/Jool/Unbound 状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nat: { $ref: '#/components/schemas/NatState' }
+                  status: { type: object, additionalProperties: true }
+
+  /api/v1/nat/nptv6:
+    get:
+      tags: [nat]
+      summary: NPTv6 配置
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  nptv6_enabled: { type: boolean }
+                  nptv6_rules:
+                    type: array
+                    items: { $ref: '#/components/schemas/Nptv6Rule' }
+    put:
+      tags: [nat]
+      summary: 更新 NPTv6 并 apply
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nptv6_enabled: { type: boolean }
+                nptv6_rules:
+                  type: array
+                  items: { $ref: '#/components/schemas/Nptv6Rule' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/nat/nat64:
+    get:
+      tags: [nat]
+      summary: NAT64 + DNS64 配置与运行状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    put:
+      tags: [nat]
+      summary: 更新 NAT64/DNS64 并 apply（Jool + Unbound + dnsmasq）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nat64_enabled: { type: boolean }
+                nat64_prefix: { type: string }
+                nat64_pool4: { type: string }
+                dns64: { $ref: '#/components/schemas/DNS64Config' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/nat/dns64:
+    get:
+      tags: [nat]
+      summary: DNS64 子配置
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DNS64Config'
+    put:
+      tags: [nat]
+      summary: 仅更新 DNS64 并 apply
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DNS64Config'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
 
   /api/v1/nat/wan-forwards:
     get:

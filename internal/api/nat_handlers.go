@@ -17,7 +17,7 @@ func (srv *Server) handleSharedIPs(w http.ResponseWriter, r *http.Request) {
 		if ips == nil {
 			ips = []string{}
 		}
-		configured := st.SharedIPs
+		configured := st.Nat.IPv4.SharedIPs
 		if configured == nil {
 			configured = []string{}
 		}
@@ -74,7 +74,7 @@ func (srv *Server) handleSharedIPs(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		m := srv.store.Get().StaticMappings
+		m := srv.store.Get().Nat.IPv4.StaticMappings
 		if m == nil {
 			m = map[string]string{}
 		}
@@ -99,7 +99,7 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
-			st.StaticMappings[body.Inner] = body.Outer
+			st.Nat.IPv4.StaticMappings[body.Inner] = body.Outer
 		})
 		_ = srv.store.Save()
 		if err := srv.reloadNft(); err != nil {
@@ -115,8 +115,8 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 		}
 		found := false
 		_ = srv.store.Update(func(st *store.State) {
-			if _, ok := st.StaticMappings[inner]; ok {
-				delete(st.StaticMappings, inner)
+			if _, ok := st.Nat.IPv4.StaticMappings[inner]; ok {
+				delete(st.Nat.IPv4.StaticMappings, inner)
 				found = true
 			}
 		})
@@ -135,7 +135,7 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		m := srv.store.Get().PrefixMappings
+		m := srv.store.Get().Nat.IPv4.PrefixMappings
 		if m == nil {
 			m = map[string]string{}
 		}
@@ -160,7 +160,7 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
-			st.PrefixMappings[body.Inner] = body.Outer
+			st.Nat.IPv4.PrefixMappings[body.Inner] = body.Outer
 		})
 		_ = srv.store.Save()
 		if err := srv.reloadNft(); err != nil {
@@ -176,8 +176,8 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 		}
 		found := false
 		_ = srv.store.Update(func(st *store.State) {
-			if _, ok := st.PrefixMappings[inner]; ok {
-				delete(st.PrefixMappings, inner)
+			if _, ok := st.Nat.IPv4.PrefixMappings[inner]; ok {
+				delete(st.Nat.IPv4.PrefixMappings, inner)
 				found = true
 			}
 		})
@@ -196,7 +196,7 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, srv.store.Get().PolicyRoutes)
+		writeJSON(w, http.StatusOK, srv.store.Get().Nat.IPv4.PolicyRoutes)
 	case http.MethodPost:
 		var body struct {
 			CIDR string `json:"cidr"`
@@ -211,12 +211,12 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := srv.store.Update(func(st *store.State) {
-			for _, c := range st.PolicyRoutes {
+			for _, c := range st.Nat.IPv4.PolicyRoutes {
 				if c == body.CIDR {
 					return
 				}
 			}
-			st.PolicyRoutes = append(st.PolicyRoutes, body.CIDR)
+			st.Nat.IPv4.PolicyRoutes = append(st.Nat.IPv4.PolicyRoutes, body.CIDR)
 		}); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
@@ -235,12 +235,12 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := srv.store.Update(func(st *store.State) {
 			var out []string
-			for _, c := range st.PolicyRoutes {
+			for _, c := range st.Nat.IPv4.PolicyRoutes {
 				if c != cidr {
 					out = append(out, c)
 				}
 			}
-			st.PolicyRoutes = out
+			st.Nat.IPv4.PolicyRoutes = out
 		}); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return

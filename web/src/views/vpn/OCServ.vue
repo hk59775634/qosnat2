@@ -8,6 +8,7 @@ import SnmpTrafficChart from '@/components/SnmpTrafficChart.vue'
 import { buildVhostPayload, emptyBasicVhost, vhostFormFromGlobal } from '@/lib/ocservVhostForm'
 import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
 import OCServRadiusHelpModal from '@/components/OCServRadiusHelpModal.vue'
+import OCServRadiusChallengeHelpModal from '@/components/OCServRadiusChallengeHelpModal.vue'
 import CertSelect from '@/components/CertSelect.vue'
 
 const { t } = useI18n()
@@ -1668,6 +1669,7 @@ onUnmounted(() => {
         <div class="flex flex-wrap items-center gap-2">
           <h3 class="text-sm font-medium">{{ t('ocserv.radiusSection') }}</h3>
           <OCServRadiusHelpModal />
+          <OCServRadiusChallengeHelpModal />
         </div>
         <label class="block text-sm">{{ t('ocserv.radiusServer') }} <input v-model="cfg.radius.server" class="input w-full mt-1" /></label>
         <div class="grid grid-cols-2 gap-4">

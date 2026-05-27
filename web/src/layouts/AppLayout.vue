@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import GitHubProjectLink from '@/components/GitHubProjectLink.vue'
 import NotificationTray from '@/components/NotificationTray.vue'
 import { displayName } from '@/composables/useBranding'
 
@@ -40,6 +41,7 @@ const menu = computed(() => [
     title: t('nav.security'),
     items: [
       { path: '/nat/outbound', label: t('nav.outboundNat') },
+      { path: '/nat/ipv6', label: t('nav.ipv6Nat') },
       { path: '/nat/forwards', label: t('nav.portForwards') },
       { path: '/firewall/rules', label: t('nav.firewallRules') },
       { path: '/firewall/aliases', label: t('nav.aliases') },
@@ -245,11 +247,12 @@ const groupShort = computed(() => ({
           <button type="button" class="text-sm text-blue-100 hover:text-white" @click="logout">{{ t('common.logout') }}</button>
         </div>
       </div>
-      <div class="bg-pfsense-bar px-4 py-1.5 text-xs text-blue-100 hidden sm:flex gap-4">
+      <div class="bg-pfsense-bar px-4 py-1.5 text-xs text-blue-100 hidden sm:flex items-center gap-4">
         <span>{{ t('common.techHtb') }}</span>
         <span>{{ t('common.techNft') }}</span>
         <span>{{ t('common.techEbpf') }}</span>
         <span class="text-blue-200">{{ t('common.apiFirstControl') }}</span>
+        <GitHubProjectLink variant="inline" class="ml-auto shrink-0" />
       </div>
     </header>
 
@@ -262,7 +265,10 @@ const groupShort = computed(() => ({
           mobileOpen ? 'fixed inset-y-0 left-0 z-40 top-[var(--header-h,0)] shadow-xl lg:static lg:shadow-none' : 'hidden lg:block',
         ]"
       >
-        <nav class="app-sidebar-nav" :class="sidebarCollapsed ? 'px-1' : 'px-0'">
+        <nav
+          class="app-sidebar-nav flex flex-col min-h-full"
+          :class="sidebarCollapsed ? 'px-1' : 'px-0'"
+        >
           <div
             v-if="!sidebarCollapsed"
             class="flex items-center justify-between gap-1 px-3 py-2 mb-1 border-b border-slate-700/80"
@@ -357,6 +363,21 @@ const groupShort = computed(() => ({
                 </router-link>
               </div>
             </template>
+          </div>
+
+          <div
+            class="mt-auto border-t border-slate-700/80 pt-2 pb-3"
+            :class="sidebarCollapsed ? 'px-1' : 'px-2'"
+          >
+            <GitHubProjectLink
+              v-if="!sidebarCollapsed"
+              variant="sidebar"
+            />
+            <GitHubProjectLink
+              v-else
+              variant="sidebar"
+              icon-only
+            />
           </div>
         </nav>
       </aside>

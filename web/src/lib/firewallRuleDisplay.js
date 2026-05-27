@@ -1,5 +1,9 @@
 /** 将 FilterRule 格式化为 pfSense 风格展示字段 */
 
+import { isRuleAutoManaged, isRuleMutable } from './firewallRuleForm'
+
+export { isRuleAutoManaged, isRuleMutable }
+
 export function formatAny(text, fallback = '*') {
   const s = String(text || '').trim()
   return s || fallback
@@ -98,59 +102,13 @@ export function builtinRulesForChain(chain, devLan, devWan, ctx, t) {
     if (devLan) {
       rows.push(sys('sys-lan-in', 'accept', t('security.firewall.sysLanInput', { lan: devLan }), ''))
     }
-    if (devWan && adminPort) {
+    if (ctx?.acmeTempAllow) {
       rows.push(
         sys(
-          'sys-wan-admin',
+          'sys-acme-80',
           'accept',
-          t('security.firewall.sysWanAdmin', { wan: devWan, port: adminPort }),
-          '',
-        ),
-      )
-    }
-    if (devWan && vpn.ocserv_enabled) {
-      rows.push(
-        sys(
-          'sys-wan-ocserv-tcp',
-          'accept',
-          t('security.firewall.sysWanOcservTcp', { wan: devWan, port: vpn.ocserv_tcp_port }),
-          '',
-        ),
-      )
-      if (vpn.ocserv_udp_port) {
-        rows.push(
-          sys(
-            'sys-wan-ocserv-udp',
-            'accept',
-            t('security.firewall.sysWanOcservUdp', { wan: devWan, port: vpn.ocserv_udp_port }),
-            '',
-          ),
-        )
-      }
-    }
-    const wgPorts =
-      Array.isArray(vpn.wireguard_ports) && vpn.wireguard_ports.length > 0
-        ? vpn.wireguard_ports
-        : vpn.wireguard_port
-          ? [vpn.wireguard_port]
-          : []
-    if (devWan && wgPorts.length > 0) {
-      rows.push(
-        sys(
-          'sys-wan-wg',
-          'accept',
-          t('security.firewall.sysWanWireGuard', { wan: devWan, port: wgPorts.join(', ') }),
-          '',
-        ),
-      )
-    }
-    if (devWan) {
-      rows.push(
-        sys(
-          'sys-wan-drop',
-          'drop',
-          t('security.firewall.sysWanDeny', { wan: devWan }),
-          t('security.firewall.sysWanDenyDetail'),
+          t('security.firewall.sysAcmeHttp01'),
+          t('security.firewall.sysAcmeHttp01Detail'),
         ),
       )
     }
@@ -164,16 +122,76 @@ export function rulesForChain(rules, chain) {
   return (rules || []).filter((r) => String(r.chain).toLowerCase() === chain)
 }
 
-/** 在同链内拖动排序后，写回完整 rules 数组（保持其他链规则原位） */
-export function mergeChainReorder(allRules, chain, reorderedSubset) {
+export function userRulesForChain(rules, chain) {
+  return rulesForChain(rules, chain).filter((r) => isRuleMutable(r))
+}
+
+export function autoRulesForChain(rules, chain) {
+  return rulesForChain(rules, chain).filter((r) => isRuleAutoManaged(r))
+}
+
+export function ruleMatchesSearch(r, q, devLan, devWan) {
+  if (!q) return true
+  const needle = q.toLowerCase()
+  const parts = [
+    r.id,
+    r.comment,
+    r.action,
+    r.chain,
+    r.proto,
+    r.iif,
+    r.oif,
+    r.src_addr,
+    r.dst_addr,
+    r.src_alias,
+    r.dst_alias,
+    String(r.src_port || ''),
+    String(r.dst_port || ''),
+    formatSource(r).label,
+    formatDestination(r).label,
+    formatIface(r.iif, devLan, devWan).name,
+    formatIface(r.oif, devLan, devWan).name,
+  ]
+  return parts.some((p) => String(p || '').toLowerCase().includes(needle))
+}
+
+/** 在同链内拖动排序后，写回完整 rules 数组（自动规则保持原位） */
+export function mergeChainReorder(allRules, chain, reorderedUserSubset) {
   const result = []
-  let i = 0
+  let ui = 0
   for (const r of allRules || []) {
-    if (String(r.chain).toLowerCase() === chain) {
-      result.push(reorderedSubset[i++])
-    } else {
+    if (String(r.chain).toLowerCase() !== chain) {
       result.push(r)
+      continue
+    }
+    if (!isRuleMutable(r)) {
+      result.push(r)
+    } else {
+      result.push(reorderedUserSubset[ui++])
     }
   }
   return result
+}
+
+/** 规则摘要（详情面板） */
+export function ruleDetailLines(r, devLan, devWan, t) {
+  const inIf = formatIface(r.iif, devLan, devWan)
+  const outIf = formatIface(r.oif, devLan, devWan)
+  return [
+    { k: t('security.firewall.detailId'), v: r.id || '—' },
+    { k: t('security.firewall.chain'), v: r.chain },
+    { k: t('security.firewall.action'), v: r.action },
+    { k: t('security.firewall.colIn'), v: inIf.name },
+    { k: t('security.firewall.colOut'), v: outIf.name },
+    { k: t('security.firewall.colProto'), v: formatProto(r.proto) },
+    { k: t('security.firewall.colSource'), v: formatSource(r).label },
+    { k: t('security.firewall.colSPort'), v: formatPort(r.src_port) },
+    { k: t('security.firewall.colDest'), v: formatDestination(r).label },
+    { k: t('security.firewall.colDPort'), v: formatPort(r.dst_port) },
+    { k: t('security.firewall.colDescription'), v: r.comment || '—' },
+    {
+      k: t('security.firewall.enabled'),
+      v: r.enabled !== false ? t('security.firewall.statusOn') : t('security.firewall.statusOff'),
+    },
+  ]
 }

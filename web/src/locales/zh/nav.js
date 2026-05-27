@@ -11,6 +11,7 @@ export default {
   rssQueues: 'RSS / 多队列',
   security: '安全 / NAT',
   outboundNat: '出站 NAT',
+  ipv6Nat: 'IPv6 翻译',
   portForwards: '端口转发',
   firewallRules: '防火墙规则',
   aliases: '别名',

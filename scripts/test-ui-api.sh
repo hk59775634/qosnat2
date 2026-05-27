@@ -80,6 +80,10 @@ for ep in \
   GET:/api/v1/nat/static-mappings:200 \
   GET:/api/v1/nat/prefix-mappings:200 \
   GET:/api/v1/nat/wan-forwards:200 \
+  GET:/api/v1/nat:200 \
+  GET:/api/v1/nat/nptv6:200 \
+  GET:/api/v1/nat/nat64:200 \
+  GET:/api/v1/nat/dns64:200 \
   GET:/api/v1/shaper/profiles:200 \
   GET:/api/v1/shaper/active:200 \
   GET:/api/v1/routes:200 \
@@ -138,6 +142,16 @@ if command -v python3 >/dev/null; then
   fi
 else
   echo "SKIP ethtool (no python3)"
+fi
+
+echo "=== NAT v6 (disabled, no jool required) ==="
+code=$(req PUT /api/v1/nat/nptv6 '{"nptv6_enabled":false,"nptv6_rules":[]}')
+check nat-nptv6-off 200 "$code"
+code=$(req PUT /api/v1/nat/nat64 '{"nat64_enabled":false,"dns64":{"mode":"local_unbound"}}')
+if [ "$code" = "200" ] || [ "$code" = "500" ]; then
+  ok=$((ok + 1)); echo "OK   nat64-off ($code)"
+else
+  fail=$((fail + 1)); echo "FAIL nat64-off ($code)"
 fi
 
 echo "=== NAT write ==="

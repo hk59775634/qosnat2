@@ -5,6 +5,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import GitHubProjectLink from '@/components/GitHubProjectLink.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -78,6 +79,9 @@ async function submit() {
       <button type="submit" class="btn-primary w-full" :disabled="loading">
         {{ loading ? t('login.submitting') : t('login.submit') }}
       </button>
+      <div class="mt-6 pt-4 border-t border-slate-200 flex justify-center">
+        <GitHubProjectLink variant="footer" />
+      </div>
     </form>
   </div>
 </template>

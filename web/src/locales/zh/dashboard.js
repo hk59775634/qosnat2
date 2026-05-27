@@ -28,6 +28,8 @@ export default {
   linkInterfacesDesc: 'WAN/LAN 与流量',
   linkForwards: '端口转发',
   linkForwardsDesc: 'DNAT 规则',
+  linkIpv6Nat: 'IPv6 翻译',
+  linkIpv6NatDesc: 'NPTv6 / NAT64 / DNS64',
   linkProfiles: 'QoS 模板',
   linkProfilesDesc: '网段限速',
   linkDhcp: 'DHCP',

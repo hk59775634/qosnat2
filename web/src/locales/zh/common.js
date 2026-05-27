@@ -76,4 +76,7 @@ export default {
   techEbpf: 'profile_lpm',
   langEn: 'EN',
   langZh: '中文',
+  githubOn: '开源仓库',
+  githubViewRepo: '在 GitHub 查看源码',
+  githubRepoTitle: '在 GitHub 打开 {repo}',
 }
