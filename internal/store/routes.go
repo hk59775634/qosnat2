@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 // RouteNexthop 多路径 default 的一跳（ip route replace default nexthop … weight …）
@@ -13,18 +14,36 @@ type RouteNexthop struct {
 	Weight  int    `json:"weight,omitempty"`
 }
 
+const (
+	RouteSourceManual = "manual"
+	RouteSourceWan    = "wan"
+	RouteSourceEgress = "egress"
+)
+
 // RouteEntry 由 qosnatd 管理的静态路由（ip route replace）
 type RouteEntry struct {
-	ID       string         `json:"id"`
-	Dest     string         `json:"dest"` // CIDR 或 default
-	Gateway  string         `json:"gateway,omitempty"`
-	Device   string         `json:"device,omitempty"`
-	Nexthops []RouteNexthop `json:"nexthops,omitempty"`
-	Table    int            `json:"table,omitempty"` // 0/254 = main
-	Metric   int            `json:"metric,omitempty"`
-	Scope    string         `json:"scope,omitempty"`
-	Comment  string         `json:"comment,omitempty"`
-	Enabled  bool           `json:"enabled"`
+	ID         string         `json:"id"`
+	Dest       string         `json:"dest"` // CIDR 或 default
+	Gateway    string         `json:"gateway,omitempty"`
+	Device     string         `json:"device,omitempty"`
+	Nexthops   []RouteNexthop `json:"nexthops,omitempty"`
+	Table      int            `json:"table,omitempty"` // 0/254 = main
+	Metric     int            `json:"metric,omitempty"`
+	Scope      string         `json:"scope,omitempty"`
+	Comment    string         `json:"comment,omitempty"`
+	Enabled    bool           `json:"enabled"`
+	Source     string         `json:"source,omitempty"`      // manual | wan | egress
+	SourceNote string         `json:"source_note,omitempty"` // 只读说明，便于区分相似 default 路由
+	Locked     bool           `json:"locked,omitempty"`      // 由多 WAN / 出站策略同步，不可在本页删除或编辑
+}
+
+// IsAutoManagedRoute 是否为多 WAN 或策略出站自动同步的路由
+func IsAutoManagedRoute(r RouteEntry) bool {
+	if r.Locked {
+		return true
+	}
+	return strings.HasPrefix(r.Comment, wanRouteCommentPrefix) ||
+		strings.HasPrefix(r.Comment, egressRouteCommentPrefix)
 }
 
 // NewRouteID 生成路由条目 ID

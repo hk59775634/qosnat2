@@ -73,6 +73,10 @@ const sections = tm('ocserv.radiusHelpSections')
             <h4 class="font-medium text-slate-800">{{ t('ocserv.radiusHelpExampleTitle') }}</h4>
             <pre class="text-xs font-mono bg-slate-900 text-slate-100 rounded-md p-3 overflow-x-auto whitespace-pre">{{ t('ocserv.radiusHelpExampleFreeradius') }}</pre>
             <pre class="text-xs font-mono bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre">{{ t('ocserv.radiusHelpExampleRate') }}</pre>
+            <h4 class="font-medium text-slate-800 pt-1">{{ t('ocserv.radiusHelpExampleRadgroupTitle') }}</h4>
+            <pre class="text-xs font-mono bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre">{{ t('ocserv.radiusHelpExampleRadgroup') }}</pre>
+            <h4 class="font-medium text-slate-800 pt-1">{{ t('ocserv.radiusHelpSpeedTableTitle') }}</h4>
+            <pre class="text-xs font-mono bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre">{{ t('ocserv.radiusHelpSpeedTable') }}</pre>
           </section>
         </div>
 

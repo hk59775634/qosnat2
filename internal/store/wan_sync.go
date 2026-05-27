@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -53,13 +54,16 @@ func SyncWanRoutes(st *State) {
 		if len(links) == 1 {
 			w := links[0]
 			keep = append(keep, RouteEntry{
-				ID:      w.ID,
-				Dest:    "default",
-				Gateway: strings.TrimSpace(w.Gateway),
-				Device:  strings.TrimSpace(w.Device),
-				Metric:  metric,
-				Comment: wanRouteCommentPrefix + w.ID,
-				Enabled: true,
+				ID:         w.ID,
+				Dest:       "default",
+				Gateway:    strings.TrimSpace(w.Gateway),
+				Device:     strings.TrimSpace(w.Device),
+				Metric:     metric,
+				Comment:    wanRouteCommentPrefix + w.ID,
+				Enabled:    true,
+				Source:     RouteSourceWan,
+				Locked:     true,
+				SourceNote: wanLinkRouteNote(w, metric),
 			})
 			continue
 		}
@@ -79,12 +83,15 @@ func SyncWanRoutes(st *State) {
 		}
 		sort.Strings(ids)
 		keep = append(keep, RouteEntry{
-			ID:       "wan-nh-" + strconv.Itoa(metric),
-			Dest:     "default",
-			Nexthops: nh,
-			Metric:   metric,
-			Comment:  wanRouteCommentPrefix + "nh-m" + strconv.Itoa(metric) + ":" + strings.Join(ids, "+"),
-			Enabled:  true,
+			ID:         "wan-nh-" + strconv.Itoa(metric),
+			Dest:       "default",
+			Nexthops:   nh,
+			Metric:     metric,
+			Comment:    wanRouteCommentPrefix + "nh-m" + strconv.Itoa(metric) + ":" + strings.Join(ids, "+"),
+			Enabled:    true,
+			Source:     RouteSourceWan,
+			Locked:     true,
+			SourceNote: fmt.Sprintf("多 WAN 负载 · m%d", metric),
 		})
 	}
 	st.Routes = keep

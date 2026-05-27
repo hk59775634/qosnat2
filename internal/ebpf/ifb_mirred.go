@@ -43,7 +43,12 @@ func sortCIDRsByPrefixLen(cidrs []string) []string {
 
 // ApplyIFBMirred 将 LAN ingress 匹配源网段的上行导入 ifb0（u32+mirred，比 flower 对本机目的更可靠）
 func ApplyIFBMirred(devLAN string, cidrs []string) error {
-	if devLAN == "" {
+	return ApplyIFBMirredOnDevice(devLAN, cidrs)
+}
+
+// ApplyIFBMirredOnDevice 在指定接口 ingress 上匹配源网段，mirred 重定向到 ifb0（WireGuard 隧道上行等）
+func ApplyIFBMirredOnDevice(dev string, cidrs []string) error {
+	if dev == "" {
 		return nil
 	}
 	seen := map[string]struct{}{}
@@ -56,15 +61,56 @@ func ApplyIFBMirred(devLAN string, cidrs []string) error {
 			continue
 		}
 		seen[cidr] = struct{}{}
-		delIFBMirredU32(devLAN, cidr)
-		out, err := exec.Command("tc", "filter", "add", "dev", devLAN, "ingress",
+		delIFBMirredU32(dev, cidr)
+		out, err := exec.Command("tc", "filter", "add", "dev", dev, "ingress",
 			"protocol", "ip", "prio", "10", "u32",
 			"match", "ip", "src", cidr,
 			"action", "mirred", "egress", "redirect", "dev", ifbDev).CombinedOutput()
 		if err != nil {
 			msg := strings.TrimSpace(string(out))
 			if !strings.Contains(msg, "File exists") {
-				return fmt.Errorf("ifb mirred %s %s: %s %w", devLAN, cidr, msg, err)
+				return fmt.Errorf("ifb mirred %s %s: %s %w", dev, cidr, msg, err)
+			}
+		}
+	}
+	return nil
+}
+
+// ApplyIFBMirredOnDeviceBidirectional 在 ingress 上同时对 src 与 dst 匹配 mirred（WG 客户端下行 dst 为本机隧道）
+func ApplyIFBMirredOnDeviceBidirectional(dev string, cidrs []string) error {
+	if dev == "" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	for _, cidr := range sortCIDRsByPrefixLen(cidrs) {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		if _, ok := seen[cidr]; ok {
+			continue
+		}
+		seen[cidr] = struct{}{}
+		delIFBMirredU32(dev, cidr)
+		delIFBMirredDstU32(dev, cidr)
+		out, err := exec.Command("tc", "filter", "add", "dev", dev, "ingress",
+			"protocol", "ip", "prio", "10", "u32",
+			"match", "ip", "src", cidr,
+			"action", "mirred", "egress", "redirect", "dev", ifbDev).CombinedOutput()
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if !strings.Contains(msg, "File exists") {
+				return fmt.Errorf("ifb mirred src %s %s: %s %w", dev, cidr, msg, err)
+			}
+		}
+		out, err = exec.Command("tc", "filter", "add", "dev", dev, "ingress",
+			"protocol", "ip", "prio", "11", "u32",
+			"match", "ip", "dst", cidr,
+			"action", "mirred", "egress", "redirect", "dev", ifbDev).CombinedOutput()
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if !strings.Contains(msg, "File exists") {
+				return fmt.Errorf("ifb mirred dst %s %s: %s %w", dev, cidr, msg, err)
 			}
 		}
 	}
@@ -77,6 +123,17 @@ func delIFBMirredU32(devLAN, cidr string) {
 	for i := 0; i < 8; i++ {
 		out, _ := exec.Command("tc", "filter", "del", "dev", devLAN, "ingress",
 			"protocol", "ip", "u32", "match", "ip", "src", cidr).CombinedOutput()
+		msg := string(out)
+		if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") {
+			break
+		}
+	}
+}
+
+func delIFBMirredDstU32(devLAN, cidr string) {
+	for i := 0; i < 8; i++ {
+		out, _ := exec.Command("tc", "filter", "del", "dev", devLAN, "ingress",
+			"protocol", "ip", "u32", "match", "ip", "dst", cidr).CombinedOutput()
 		msg := string(out)
 		if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") {
 			break
@@ -117,13 +174,15 @@ func delAllFlowerIngress(devLAN string, knownCIDRs []string) {
 }
 
 func flushIngressMirredU32(devLAN string) {
-	for i := 0; i < 64; i++ {
-		out, _ := exec.Command("tc", "filter", "del", "dev", devLAN, "ingress",
-			"protocol", "ip", "prio", "10", "u32").CombinedOutput()
-		msg := string(out)
-		if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") ||
-			strings.Contains(msg, "does not match") {
-			break
+	for _, prio := range []string{"10", "11"} {
+		for i := 0; i < 64; i++ {
+			out, _ := exec.Command("tc", "filter", "del", "dev", devLAN, "ingress",
+				"protocol", "ip", "prio", prio, "u32").CombinedOutput()
+			msg := string(out)
+			if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") ||
+				strings.Contains(msg, "does not match") {
+				break
+			}
 		}
 	}
 }
@@ -136,6 +195,22 @@ func ResetIFBMirred(devLAN string, cidrs []string) error {
 	delAllFlowerIngress(devLAN, cidrs)
 	flushIngressMirredU32(devLAN)
 	return ApplyIFBMirred(devLAN, cidrs)
+}
+
+// ResetIFBMirredOnDevice 清空设备 ingress 上 prio 10/11 的 u32 mirred 后重装（无 flower 清理，供 wg 等非 LAN 口）。
+// clientBidirectionalMirred 为 true 时（WG 客户端）同时按 src 与 dst 匹配，使解密后下行（dst 为本机隧道）进入 IFB。
+func ResetIFBMirredOnDevice(dev string, cidrs []string, clientBidirectionalMirred bool) error {
+	if dev == "" {
+		return nil
+	}
+	flushIngressMirredU32(dev)
+	if len(cidrs) == 0 {
+		return nil
+	}
+	if clientBidirectionalMirred {
+		return ApplyIFBMirredOnDeviceBidirectional(dev, cidrs)
+	}
+	return ApplyIFBMirredOnDevice(dev, cidrs)
 }
 
 // ApplyIFBIngressBPF 在 ifb0 ingress 挂分类器（mirred 入 ifb 后更新 map/统计）
@@ -172,6 +247,8 @@ func ClearIFBMirred(devLAN string, cidrs []string) {
 		return
 	}
 	for _, cidr := range cidrs {
-		delIFBMirredU32(devLAN, strings.TrimSpace(cidr))
+		c := strings.TrimSpace(cidr)
+		delIFBMirredU32(devLAN, c)
+		delIFBMirredDstU32(devLAN, c)
 	}
 }

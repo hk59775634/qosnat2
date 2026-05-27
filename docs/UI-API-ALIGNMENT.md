@@ -54,6 +54,7 @@
 | | POST | `/api/v1/vpn/wireguard/keys` | WireGuard |
 | | POST | `/api/v1/vpn/wireguard/apply` | WireGuard |
 | | * | `/api/v1/vpn/wireguard/peers` | WireGuard |
+| | GET | `/api/v1/vpn/wireguard/peers/traffic` | WireGuard Peer 流量历史/实时 |
 | | GET | `/api/v1/vpn/wireguard/peers/{name}/conf` | WireGuard（新窗口下载） |
 | | * | `/api/v1/vpn/ocserv` | OCServ、VhostAdvanced |
 | | * | `/api/v1/vpn/ocserv/install` | OCServ |

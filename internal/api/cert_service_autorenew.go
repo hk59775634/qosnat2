@@ -115,10 +115,11 @@ func (srv *Server) tryServiceCertAutoRenew(boundID string) {
 		return
 	}
 	days := certs.DaysUntilExpiry(mc.CertPath)
-	if days < 0 || days > store.ServiceAutoRenewDays {
+	renewBefore := store.ServiceBoundCertRenewBeforeDays(mc)
+	if days < 0 || days > renewBefore {
 		return
 	}
-	log.Printf("acme: service-bound cert %s (%s) expires in %d days", boundID, mc.Name, days)
+	log.Printf("acme: service-bound cert %s (%s) expires in %d days (renew when <=%d)", boundID, mc.Name, days, renewBefore)
 
 	if newID, switched := srv.tryUseLibraryCertFirst(boundID); switched {
 		log.Printf("acme: switched service binding %s -> %s (library cert)", boundID, newID)

@@ -28,10 +28,7 @@ func (srv *Server) handleRoutesGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	live = route.MarkManaged(live, st.Routes)
-	managed := st.Routes
-	if managed == nil {
-		managed = []store.RouteEntry{}
-	}
+	managed := store.EnrichManagedRoutes(st.Routes, st)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"managed":  managed,
 		"live":     live,
@@ -60,7 +57,8 @@ func (srv *Server) handleRoutesPost(w http.ResponseWriter, r *http.Request) {
 		st.Routes = append(st.Routes, entry)
 	})
 	_ = srv.store.Save()
-	writeJSON(w, http.StatusOK, entry)
+	st := srv.store.Get()
+	writeJSON(w, http.StatusOK, store.EnrichRouteEntry(entry, st))
 }
 
 func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
@@ -93,6 +91,12 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 		}
 		if !found {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if store.IsAutoManagedRoute(old) {
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"error": "此路由由多 WAN 或策略出站自动同步，请在「多 WAN」页面修改；本页不可编辑",
+			})
 			return
 		}
 		prev, err := store.CloneState(srv.store.Get())
@@ -146,7 +150,8 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, entry)
+		st := srv.store.Get()
+		writeJSON(w, http.StatusOK, store.EnrichRouteEntry(entry, st))
 	case http.MethodDelete:
 		var old store.RouteEntry
 		found := false
@@ -164,6 +169,12 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 		})
 		if !found {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+		if store.IsAutoManagedRoute(old) {
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"error": "此路由由多 WAN 或策略出站自动同步，请在「多 WAN」页面删除对应链路或出站策略；本页不可删除",
+			})
 			return
 		}
 		_ = route.Delete(old)

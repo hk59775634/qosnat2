@@ -63,11 +63,13 @@ export default {
   camoRealmHint: 'camouflage-realm：HTTPS 伪装页显示的 Realm',
   radiusHelpBtn: 'RADIUS 属性说明',
   radiusHelpTitle: 'ocserv RADIUS 下发属性',
-  radiusHelpIntro: '在 Access-Accept 中返回下列属性；需启用 auth 的 groupconfig=true，且字典与 /etc/radcli/dictionary 一致。',
+  radiusHelpIntro:
+    'Access-Accept 中可返回下列属性；需启用 auth 的 groupconfig=true，且 FreeRADIUS 字典与 qosnat 下发的 /etc/radcli/dictionary 一致。用户级属性写在 users 等表；套餐/产品组级策略见「套餐组」一节（radgroupcheck / radgroupreply）。',
   radiusHelpGroupconfig:
-    '启用「从 RADIUS 读取每组配置」后，用户/组的 dns、路由、限速等以 RADIUS 为准，不再使用本地 config-per-user/group 文件。',
+    '启用「从 RADIUS 读取每组配置」后，用户/组的 dns、路由、带宽策略等以 RADIUS 为准，不再使用本地 config-per-user/group 文件。',
   radiusHelpRateNote:
-    '限速：ocserv 以服务器视角计数——rx-data-per-sec 限制客户端上行，tx-data-per-sec 限制客户端下行（单位：字节/秒，8 Mbps ≈ 1000000）。可通过 Filter-Id 多行下发，或使用 Roaring-Penguin 厂商属性（本系统字典已包含）。',
+    'RP-Upstream/Downstream-Speed-Limit 的整型为传输侧标尺，套餐带宽请用下方速查表换算；需要字节/秒语义时可用 config-per-group 中的 rx-data-per-sec / tx-data-per-sec。\n'
+    + '限定：本页仅描述 qosnat2 当前 ocserv、字典与 radcli 组合；未列出的 RADIUS 属性或套外环境请以官方文档及你侧实测为准。',
   radiusHelpColAttr: '属性',
   radiusHelpColDesc: '说明',
   radiusHelpExampleTitle: 'FreeRADIUS 示例',
@@ -78,11 +80,46 @@ vpnuser Cleartext-Password := "secret"
     Session-Timeout = 86400
     MS-Primary-DNS-Server = 8.8.8.8
     Framed-Route = "10.0.0.0/8"`,
-  radiusHelpExampleRate: `# 限速示例（Filter-Id 多行，单位 B/s）
-    Filter-Id := "rx-data-per-sec = 1250000\\ntx-data-per-sec = 2500000"
-# 或使用厂商属性（bps，需与字典一致）
-#    RP-Upstream-Speed-Limit = 1250000
-#    RP-Downstream-Speed-Limit = 2500000`,
+  radiusHelpExampleRate: `# A：套餐带宽 → RP（速查表；radgroupreply 示例）
+plan_10m   RP-Upstream-Speed-Limit := 1280
+plan_10m   RP-Downstream-Speed-Limit := 1280
+
+# B：实测可生效的 RP 整数（传输/文件通道侧标尺；与 Mbps 套餐不是同一数值体系）
+    RP-Upstream-Speed-Limit := 1250000
+    RP-Downstream-Speed-Limit := 2500000
+
+# C（可选）：组配置文件（字节/秒，ocserv 服务器视角）
+# rx-data-per-sec = 1250000
+# tx-data-per-sec = 2500000`,
+  radiusHelpExampleRadgroupTitle: '套餐组（radgroupcheck / radgroupreply）',
+  radiusHelpExampleRadgroup: `# 下列「组名」请替换为你的产品/套餐组名（与下发 Class / check 表 groupname 一致；SQL 部署时列名以你库为准）
+
+# —— radgroupcheck：并发、地址池（示例） ——
+# 1 并发套餐
+#   组名    属性                  操作符  值
+one_sess   Simultaneous-Use       :=      1
+
+# 5 并发套餐
+five_sess  Simultaneous-Use       :=      5
+
+# 香港出口（地址池名 pool_hk 需在 Framed-Pool 等侧已定义）
+hk_plan    Pool-Name              :=      pool_hk
+
+# 美国出口
+us_plan    Pool-Name              :=      pool_us
+
+# —— radgroupreply：RP 传输侧限速（上下行示例均为 10M 档，数值=1280） ——
+plan_10m   RP-Upstream-Speed-Limit    :=  1280
+plan_10m   RP-Downstream-Speed-Limit  :=  1280`,
+  radiusHelpSpeedTableTitle: '套餐带宽 → RP 限速值速查（实测；用于 RP-Upstream/Downstream-Speed-Limit）',
+  radiusHelpSpeedTable: `带宽    限速值
+1M      128
+3M      384
+5M      640
+8M      1024
+10M     1280
+15M     1920
+20M     2560`,
   radiusHelpSections: [
     {
       title: 'IPv4 / 路由 / 会话',
@@ -99,9 +136,29 @@ vpnuser Cleartext-Password := "secret"
       title: '组 / DNS',
       rows: [
         { attr: 'Class', desc: '组名，格式 OU=组1;组2（需 select-group 与 group-separator）' },
-        { attr: 'Filter-Id', desc: '多行 ocserv 配置片段（dns、route、rx/tx-data-per-sec 等）' },
         { attr: 'MS-Primary-DNS-Server', desc: '主 DNS（Microsoft 厂商 311）' },
         { attr: 'MS-Secondary-DNS-Server', desc: '备 DNS（Microsoft 厂商 311）' },
+      ],
+    },
+    {
+      title: '套餐组（radgroupcheck / radgroupreply）',
+      rows: [
+        {
+          attr: 'Simultaneous-Use（check）',
+          desc: '并发会话上限；1 并发套餐写 := 1，5 并发套餐写 := 5（表：radgroupcheck，groupname=产品组名）',
+        },
+        {
+          attr: 'Pool-Name（check）',
+          desc: '地址池名；香港出口套餐示例 := pool_hk，美国出口 := pool_us；须与 Framed-Pool/地址池定义一致',
+        },
+        {
+          attr: 'RP-Upstream-Speed-Limit（reply）',
+          desc: '传输侧上行限制（非直接 Mbps）；与下行成对写在 radgroupreply，数值用速查表由带宽换算',
+        },
+        {
+          attr: 'RP-Downstream-Speed-Limit（reply）',
+          desc: '传输侧下行限制；与上行同档时通常与 RP-Upstream 取相同速查值',
+        },
       ],
     },
     {
@@ -119,13 +176,6 @@ vpnuser Cleartext-Password := "secret"
         { attr: 'ASA-Group-Policy', desc: '组策略名（与 ASA 对接时常用）' },
         { attr: 'ASA-Primary-DNS / ASA-Secondary-DNS', desc: 'DNS 服务器' },
         { attr: 'ASA-Address-Pools', desc: '地址池' },
-      ],
-    },
-    {
-      title: '限速（Roaring-Penguin 厂商 10055）',
-      rows: [
-        { attr: 'RP-Upstream-Speed-Limit', desc: '客户端上行限速（字节/秒）' },
-        { attr: 'RP-Downstream-Speed-Limit', desc: '客户端下行限速（字节/秒）' },
       ],
     },
   ],
@@ -289,6 +339,29 @@ vpnuser Cleartext-Password := "secret"
   installTask: '安装任务',
   userAdded: '用户已添加并已写入 ocpasswd，可直接用客户端登录（无需重启）',
   appliedReload: '配置已应用（热加载，未中断现有连接）',
+  appliedReloadWithPendingRestart:
+    '配置已写入并已执行 reload；以下项按 ocserv(8) 需完整重启主进程后才对当前运行实例生效，请点击「重启 ocserv」。',
+  manualReloadVsRestart:
+    'ocserv(8)：SIGHUP / reload 可刷新大部分配置；手册中「reload 不生效」一节及标注 (non-reloadable) 的项（如 auth、监听端口、socket-file、部分 TLS 路径等）须 systemctl restart。详见 https://ocserv.openconnect-vpn.net/ocserv.8.html',
+  serviceStart: '启动 ocserv',
+  serviceStop: '停止 ocserv',
+  serviceRestart: '重启 ocserv',
+  serviceStarted: 'ocserv 已启动',
+  serviceStopped: 'ocserv 已停止',
+  serviceRestarted: 'ocserv 已重启',
+  serviceRootHint: '{msg}。请以 root 运行 qosnatd 后重试。',
+  serviceRootOnlyHint: '当前 qosnatd 非 root 运行，无法控制 systemd 中的 ocserv 服务（启动/停止/重启已禁用）。',
+  restartPendingTitle: '以下变更需重启 ocserv 后才会对运行中服务完全生效',
+  restartReason: {
+    auth_global: '全局认证（auth，手册中为不可 reload）',
+    radius_acct: 'RADIUS 计费（acct，不可 reload）',
+    socket_file: 'socket-file（不可 reload）',
+    listen_ports: 'TCP/UDP 监听端口（不可 reload）',
+    tls_global: '全局 TLS 证书路径或绑定（需重启加载新监听上下文）',
+    log_level: 'log-level（手册标记为不可 reload）',
+    server_stats_reset: 'server-stats-reset-time（手册标记为不可 reload）',
+  },
+  restartReasonVhost: '虚拟主机 {domain}（auth/TLS/acct 等不可 reload 相关项）',
   stoppedOcserv: '已停止 ocserv',
   appliedStarted: '已应用并启动 ocserv',
   installQueued: '已在后台编译安装',

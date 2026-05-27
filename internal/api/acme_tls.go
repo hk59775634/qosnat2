@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/acme"
+	"github.com/hk59775634/qosnat2/internal/certs"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -53,7 +54,7 @@ func (srv *Server) recordAcmeResult(err error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_ = srv.store.Update(func(s *store.State) {
 		if err != nil {
-			s.System.TLSAcmeLastError = err.Error()
+			s.System.TLSAcmeLastError = certs.ClassifyACMEError(err).Summary
 		} else {
 			s.System.TLSAcmeLastError = ""
 			s.System.TLSAcmeLastOK = now

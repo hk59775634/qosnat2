@@ -17,16 +17,18 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		o := st.VPN.OCServ
 		pub := ocservPublicConfig(o)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"config":                pub,
-			"vhosts_meta":           ocservPublicVhosts(o.Vhosts, o, st.Certificates),
-			"status":                ocserv.InstallInfo(),
-			"install_script":        ocserv.InstallScriptPath(),
-			"install_job":           ocserv.GetInstallStatus(),
-			"conf_path":             ocserv.ConfPath,
-			"radius_secret_set":     strings.TrimSpace(o.Radius.Secret) != "",
-			"camouflage_secret_set": strings.TrimSpace(o.Advanced.CamouflageSecret) != "",
-			"connection":            ocserv.BuildConnectionInfo(o, st.Certificates),
-			"admin_user":            strings.TrimSpace(st.AdminUser),
+			"config":                  pub,
+			"vhosts_meta":             ocservPublicVhosts(o.Vhosts, o, st.Certificates),
+			"status":                  ocserv.InstallInfo(),
+			"install_script":          ocserv.InstallScriptPath(),
+			"install_job":             ocserv.GetInstallStatus(),
+			"conf_path":               ocserv.ConfPath,
+			"radius_secret_set":       strings.TrimSpace(o.Radius.Secret) != "",
+			"camouflage_secret_set":   strings.TrimSpace(o.Advanced.CamouflageSecret) != "",
+			"connection":              ocserv.BuildConnectionInfo(o, st.Certificates),
+			"admin_user":              strings.TrimSpace(st.AdminUser),
+			"restart_pending_reasons": srv.ocservRestartHintList(),
+			"root_for_service_ops":    os.Getuid() == 0,
 		})
 	case http.MethodPut:
 		var body store.OCServState
@@ -34,7 +36,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 			return
 		}
-		prev := srv.store.Get().VPN.OCServ
+		prev := deepCopyOCServState(srv.store.Get().VPN.OCServ)
 		mergeOCServPasswords(&body, prev)
 		mergeOCServRadiusSecret(&body, prev)
 		mergeOCServCamouflageSecret(&body, prev)
@@ -64,6 +66,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		srv.updateOcservRestartHints(prev, srv.store.Get().VPN.OCServ)
 		srv.auditLog(r, "vpn.ocserv.save", "")
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
@@ -102,8 +105,15 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 	if srv.setupComplete() {
 		_ = srv.reloadNft()
 	}
+	if mode != "reload" {
+		srv.clearOcservRestartHints()
+	}
 	srv.auditLog(r, "vpn.ocserv.apply", map[bool]string{true: "up", false: "down"}[up])
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "apply_mode": mode})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                      true,
+		"apply_mode":              mode,
+		"restart_pending_reasons": srv.ocservRestartHintList(),
+	})
 }
 
 func (srv *Server) handleOCServInstallStatus(w http.ResponseWriter, r *http.Request) {
@@ -370,10 +380,10 @@ func (srv *Server) handleOCServStatusDetail(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":        ocserv.InstallInfo(),
-		"detail":        st,
-		"use_occtl":     cfg.UseOcctl,
-		"socket_file":   cfg.SocketFile,
+		"status":      ocserv.InstallInfo(),
+		"detail":      st,
+		"use_occtl":   cfg.UseOcctl,
+		"socket_file": cfg.SocketFile,
 	})
 }
 

@@ -25,7 +25,7 @@ func (srv *Server) updateCertificateByID(id string, fn func(*store.ManagedCertif
 func (srv *Server) recordCertRenewFailure(id string, err error) {
 	info := certs.ClassifyACMEError(err)
 	srv.updateCertificateByID(id, func(c *store.ManagedCertificate) {
-		c.AcmeLastError = err.Error()
+		c.AcmeLastError = info.Summary
 		if info.PauseAutoRenew {
 			c.AutoRenewPaused = true
 			c.AutoRenewEnabled = false

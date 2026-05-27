@@ -64,11 +64,12 @@ export default {
   radiusHelpBtn: 'RADIUS attribute guide',
   radiusHelpTitle: 'ocserv RADIUS attributes',
   radiusHelpIntro:
-    'Return these in Access-Accept. Requires auth groupconfig=true and a dictionary matching /etc/radcli/dictionary.',
+    'Return these in Access-Accept. Requires auth groupconfig=true and a dictionary matching qosnat2’s /etc/radcli/dictionary. User-level attrs live in users (etc.); package/product group policies use radgroupcheck / radgroupreply (see section below).',
   radiusHelpGroupconfig:
-    'With groupconfig enabled, per-user/group dns, routes, and rate limits come from RADIUS instead of local config-per-user/group files.',
+    'With groupconfig enabled, per-user/group dns, routes, and bandwidth policies come from RADIUS instead of local config-per-user/group files.',
   radiusHelpRateNote:
-    'Rate limits use server perspective: rx-data-per-sec caps client upload, tx-data-per-sec caps client download (bytes/s; 8 Mbps ≈ 1000000). Use Filter-Id lines or Roaring-Penguin vendor attrs (included in qosnat2 dictionary).',
+    'RP-Up/Downstream-Speed-Limit integers are transport-side scales; map package tiers via the lookup table below; use per-group rx-data-per-sec / tx-data-per-sec for classic bytes/s semantics.\n'
+    + 'Scope: this page only covers qosnat2’s current ocserv, dictionary, and radcli pairing; for RADIUS attributes not listed here or other deployments, follow upstream docs and your own tests.',
   radiusHelpColAttr: 'Attribute',
   radiusHelpColDesc: 'Description',
   radiusHelpExampleTitle: 'FreeRADIUS examples',
@@ -79,11 +80,38 @@ vpnuser Cleartext-Password := "secret"
     Session-Timeout = 86400
     MS-Primary-DNS-Server = 8.8.8.8
     Framed-Route = "10.0.0.0/8"`,
-  radiusHelpExampleRate: `# Rate limit (Filter-Id lines, bytes/s)
-    Filter-Id := "rx-data-per-sec = 1250000\\ntx-data-per-sec = 2500000"
-# Or vendor attrs (dictionary must define them)
-#    RP-Upstream-Speed-Limit = 1250000
-#    RP-Downstream-Speed-Limit = 2500000`,
+  radiusHelpExampleRate: `# A: package bandwidth → RP (lookup table; radgroupreply example)
+plan_10m   RP-Upstream-Speed-Limit := 1280
+plan_10m   RP-Downstream-Speed-Limit := 1280
+
+# B: RP integers that work here (transport/file-channel scale; not the same numbers as Mbps packages)
+    RP-Upstream-Speed-Limit := 1250000
+    RP-Downstream-Speed-Limit := 2500000
+
+# C (optional): per-group file (bytes/s, server perspective)
+# rx-data-per-sec = 1250000
+# tx-data-per-sec = 2500000`,
+  radiusHelpExampleRadgroupTitle: 'Package groups (radgroupcheck / radgroupreply)',
+  radiusHelpExampleRadgroup: `# Replace group names with your product/package names (must match Class / radgroup groupname; SQL column names depend on your schema)
+
+# --- radgroupcheck: concurrency & pool (examples) ---
+one_sess   Simultaneous-Use       :=      1
+five_sess  Simultaneous-Use       :=      5
+hk_plan    Pool-Name              :=      pool_hk
+us_plan    Pool-Name              :=      pool_us
+
+# --- radgroupreply: RP transport caps (10M tier example = 1280 each) ---
+plan_10m   RP-Upstream-Speed-Limit    :=  1280
+plan_10m   RP-Downstream-Speed-Limit  :=  1280`,
+  radiusHelpSpeedTableTitle: 'Package bandwidth → RP lookup (field-tested; for RP-Up/Downstream-Speed-Limit)',
+  radiusHelpSpeedTable: `Bandwidth   Value
+1M          128
+3M          384
+5M          640
+8M          1024
+10M         1280
+15M         1920
+20M         2560`,
   radiusHelpSections: [
     {
       title: 'IPv4 / routes / session',
@@ -100,9 +128,29 @@ vpnuser Cleartext-Password := "secret"
       title: 'Group / DNS',
       rows: [
         { attr: 'Class', desc: 'Groups as OU=group1;group2 (needs select-group)' },
-        { attr: 'Filter-Id', desc: 'Multi-line ocserv config (dns, route, rx/tx-data-per-sec, …)' },
         { attr: 'MS-Primary-DNS-Server', desc: 'Primary DNS (Microsoft vendor 311)' },
         { attr: 'MS-Secondary-DNS-Server', desc: 'Secondary DNS (Microsoft vendor 311)' },
+      ],
+    },
+    {
+      title: 'Package groups (radgroupcheck / radgroupreply)',
+      rows: [
+        {
+          attr: 'Simultaneous-Use (check)',
+          desc: 'Max concurrent sessions; use := 1 for single-session package, := 5 for five-session (radgroupcheck, groupname = product group)',
+        },
+        {
+          attr: 'Pool-Name (check)',
+          desc: 'Pool name; HK exit example := pool_hk, US exit := pool_us; must match Framed-Pool / pool definitions',
+        },
+        {
+          attr: 'RP-Upstream-Speed-Limit (reply)',
+          desc: 'Transport-side upload cap (not raw Mbps); pair with downstream, values from lookup table',
+        },
+        {
+          attr: 'RP-Downstream-Speed-Limit (reply)',
+          desc: 'Transport-side download cap; often same lookup tier as upstream',
+        },
       ],
     },
     {
@@ -120,13 +168,6 @@ vpnuser Cleartext-Password := "secret"
         { attr: 'ASA-Group-Policy', desc: 'Group policy name (ASA proxy)' },
         { attr: 'ASA-Primary-DNS / ASA-Secondary-DNS', desc: 'DNS servers' },
         { attr: 'ASA-Address-Pools', desc: 'Address pools' },
-      ],
-    },
-    {
-      title: 'Rate limits (Roaring-Penguin vendor 10055)',
-      rows: [
-        { attr: 'RP-Upstream-Speed-Limit', desc: 'Client upload cap (bytes/s)' },
-        { attr: 'RP-Downstream-Speed-Limit', desc: 'Client download cap (bytes/s)' },
       ],
     },
   ],
@@ -290,6 +331,29 @@ vpnuser Cleartext-Password := "secret"
   installTask: 'Install task',
   userAdded: 'User added to ocpasswd; clients can connect without restart',
   appliedReload: 'Applied (hot reload, sessions kept)',
+  appliedReloadWithPendingRestart:
+    'Configuration was written and reload ran; per ocserv(8) the items below require a full service restart to affect the running instance — click “Restart ocserv”.',
+  manualReloadVsRestart:
+    'ocserv(8): SIGHUP/reload updates most settings; directives documented as unchanged on reload and options marked (non-reloadable) (e.g. auth, listen ports, socket-file, some TLS paths) need systemctl restart. See https://ocserv.openconnect-vpn.net/ocserv.8.html',
+  serviceStart: 'Start ocserv',
+  serviceStop: 'Stop ocserv',
+  serviceRestart: 'Restart ocserv',
+  serviceStarted: 'ocserv started',
+  serviceStopped: 'ocserv stopped',
+  serviceRestarted: 'ocserv restarted',
+  serviceRootHint: '{msg}. Run qosnatd as root and retry.',
+  serviceRootOnlyHint: 'qosnatd is not running as root; systemd ocserv start/stop/restart is disabled.',
+  restartPendingTitle: 'Restart ocserv for these changes to fully apply to the running service',
+  restartReason: {
+    auth_global: 'Global authentication (auth; non-reloadable in manual)',
+    radius_acct: 'RADIUS accounting (acct; non-reloadable)',
+    socket_file: 'socket-file (non-reloadable)',
+    listen_ports: 'TCP/UDP listen ports (non-reloadable)',
+    tls_global: 'Global TLS certificate paths/binding (restart required for new listen context)',
+    log_level: 'log-level (non-reloadable per manual)',
+    server_stats_reset: 'server-stats-reset-time (non-reloadable per manual)',
+  },
+  restartReasonVhost: 'Virtual host {domain} (auth/TLS/acct non-reloadable-related changes)',
   stoppedOcserv: 'ocserv stopped',
   appliedStarted: 'Applied and started ocserv',
   installQueued: 'Build/install started in background',

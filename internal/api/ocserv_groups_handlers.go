@@ -124,6 +124,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 			return
 		}
+		prevFull := deepCopyOCServState(srv.store.Get().VPN.OCServ)
 		body.Enabled = true
 		st := srv.store.Get().VPN.OCServ
 		if r.Method == http.MethodPost {
@@ -186,6 +187,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		srv.updateOcservRestartHints(prevFull, srv.store.Get().VPN.OCServ)
 		srv.auditLog(r, "vpn.ocserv.vhost.save", body.Domain)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case http.MethodDelete:
@@ -194,6 +196,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain required"})
 			return
 		}
+		prevFull := deepCopyOCServState(srv.store.Get().VPN.OCServ)
 		found := false
 		_ = srv.store.Update(func(s *store.State) {
 			var out []store.OCServVhost
@@ -216,6 +219,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
+		srv.updateOcservRestartHints(prevFull, srv.store.Get().VPN.OCServ)
 		srv.auditLog(r, "vpn.ocserv.vhost.delete", domain)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:

@@ -171,12 +171,34 @@ func Apply(wg store.WireGuardState, up bool) error {
 	if err := netif.ValidateIfaceName(iface); err != nil {
 		return err
 	}
-	var cmd *exec.Cmd
-	if up {
-		cmd = exec.Command("wg-quick", "up", iface)
-	} else {
-		cmd = exec.Command("wg-quick", "down", iface)
+	if !up {
+		cmd := exec.Command("wg-quick", "down", iface)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			low := strings.ToLower(msg)
+			if strings.Contains(low, "not found") || strings.Contains(low, "no such device") {
+				return nil
+			}
+			return fmt.Errorf("wg-quick: %s %w", msg, err)
+		}
+		return nil
 	}
+	// 已存在接口时 wg-quick up 会报 `already exists`；改用 syncconf 热更新密钥/peer，避免断连
+	if netif.LinkExists(iface) {
+		stripped, err := exec.Command("wg-quick", "strip", iface).Output()
+		if err != nil {
+			return fmt.Errorf("wg-quick strip %s: %w", iface, err)
+		}
+		cmd := exec.Command("wg", "syncconf", iface, "/proc/self/fd/0")
+		cmd.Stdin = bytes.NewReader(stripped)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("wg syncconf: %s %w", strings.TrimSpace(string(out)), err)
+		}
+		return nil
+	}
+	cmd := exec.Command("wg-quick", "up", iface)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("wg-quick: %s %w", strings.TrimSpace(string(out)), err)

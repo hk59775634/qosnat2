@@ -12,15 +12,15 @@ import (
 )
 
 const (
-	SysconfDir     = "/etc/ocserv"
-	ConfPath       = SysconfDir + "/ocserv.conf"
-	PasswdPath     = SysconfDir + "/ocpasswd"
-	DefaultCert    = SysconfDir + "/server-cert.pem"
-	DefaultKey     = SysconfDir + "/server-key.pem"
-	QoSnatTLSCert  = "/etc/qosnat2/tls.crt"
-	QoSnatTLSKey   = "/etc/qosnat2/tls.key"
-	BinaryPath     = "/usr/local/sbin/ocserv"
-	OcpasswdPath   = "/usr/local/bin/ocpasswd"
+	SysconfDir    = "/etc/ocserv"
+	ConfPath      = SysconfDir + "/ocserv.conf"
+	PasswdPath    = SysconfDir + "/ocpasswd"
+	DefaultCert   = SysconfDir + "/server-cert.pem"
+	DefaultKey    = SysconfDir + "/server-key.pem"
+	QoSnatTLSCert = "/etc/qosnat2/tls.crt"
+	QoSnatTLSKey  = "/etc/qosnat2/tls.key"
+	BinaryPath    = "/usr/local/sbin/ocserv"
+	OcpasswdPath  = "/usr/local/bin/ocpasswd"
 )
 
 // Status 运行状态
@@ -265,8 +265,9 @@ func SyncPlainUsers(o store.OCServState) error {
 	return SyncUsers(o.Users)
 }
 
-// Apply 写配置；运行中优先 systemctl reload（不踢下线），否则 restart/stop。
-// 返回值 applyMode：reload | restart | start | stop
+// Apply 写入 ocserv.conf。运行中仅执行 reload（SIGHUP / systemctl reload），不再自动 restart；
+// 对 ocserv(8) 中标记为不可 reload 生效的项，须由用户手动「重启 ocserv」后进程才会加载。
+// 返回值 applyMode：reload | start | stop
 func Apply(o store.OCServState, managed []store.ManagedCertificate, up bool) (applyMode string, err error) {
 	st := InstallInfo()
 	if !st.Installed {
@@ -286,23 +287,18 @@ func Apply(o store.OCServState, managed []store.ManagedCertificate, up bool) (ap
 		}
 		if st.Active {
 			out, err = exec.Command("systemctl", "reload", "ocserv").CombinedOutput()
-			if err == nil {
-				return "reload", nil
+			if err != nil {
+				if err2 := Reload(o); err2 != nil {
+					return "", fmt.Errorf("ocserv reload failed (systemctl: %s): %w", strings.TrimSpace(string(out)), err2)
+				}
 			}
-			if err := Reload(o); err == nil {
-				return "reload", nil
-			}
-			_ = out
+			return "reload", nil
 		}
-		mode := "restart"
-		if !st.Active {
-			mode = "start"
-		}
-		out, err = exec.Command("systemctl", "restart", "ocserv").CombinedOutput()
+		out, err = exec.Command("systemctl", "start", "ocserv").CombinedOutput()
 		if err != nil {
-			return "", fmt.Errorf("systemctl restart: %s %w", strings.TrimSpace(string(out)), err)
+			return "", fmt.Errorf("systemctl start: %s %w", strings.TrimSpace(string(out)), err)
 		}
-		return mode, nil
+		return "start", nil
 	}
 	out, err = exec.Command("systemctl", "stop", "ocserv").CombinedOutput()
 	if err != nil {
@@ -310,6 +306,31 @@ func Apply(o store.OCServState, managed []store.ManagedCertificate, up bool) (ap
 	}
 	_, _ = exec.Command("systemctl", "disable", "ocserv").CombinedOutput()
 	return "stop", nil
+}
+
+// ServiceControl 执行 systemctl start|stop|restart（需 root）。
+func ServiceControl(action string) error {
+	action = strings.TrimSpace(strings.ToLower(action))
+	switch action {
+	case "start", "stop", "restart":
+	default:
+		return fmt.Errorf("invalid service action %q", action)
+	}
+	st := InstallInfo()
+	if !st.Installed {
+		return fmt.Errorf("ocserv not installed")
+	}
+	if action == "start" {
+		out, err := exec.Command("systemctl", "enable", "ocserv").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("systemctl enable: %s %w", strings.TrimSpace(string(out)), err)
+		}
+	}
+	out, err := exec.Command("systemctl", action, "ocserv").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("systemctl %s: %s %w", action, strings.TrimSpace(string(out)), err)
+	}
+	return nil
 }
 
 // InstallScriptPath 返回仓库内安装脚本路径

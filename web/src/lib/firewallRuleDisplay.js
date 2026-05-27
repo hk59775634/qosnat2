@@ -128,12 +128,18 @@ export function builtinRulesForChain(chain, devLan, devWan, ctx, t) {
         )
       }
     }
-    if (devWan && vpn.wireguard_enabled && vpn.wireguard_port) {
+    const wgPorts =
+      Array.isArray(vpn.wireguard_ports) && vpn.wireguard_ports.length > 0
+        ? vpn.wireguard_ports
+        : vpn.wireguard_port
+          ? [vpn.wireguard_port]
+          : []
+    if (devWan && wgPorts.length > 0) {
       rows.push(
         sys(
           'sys-wan-wg',
           'accept',
-          t('security.firewall.sysWanWireGuard', { wan: devWan, port: vpn.wireguard_port }),
+          t('security.firewall.sysWanWireGuard', { wan: devWan, port: wgPorts.join(', ') }),
           '',
         ),
       )

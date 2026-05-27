@@ -339,7 +339,7 @@ UI 写 `state.json` + `sysctl -w` + 可选重启提示。
 
 ### 10.6 VPN
 
-**WireGuard**：服务端、Peer、Conf 导出。不支持 IPsec / OpenVPN。
+**WireGuard**：服务端、Peer、Conf 导出；**Peer 流量**（`wg show` transfer 每 5 分钟采样 + Web 曲线/实时）。不支持 IPsec / OpenVPN。
 
 ### 10.7 状态与诊断
 

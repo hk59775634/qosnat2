@@ -48,14 +48,41 @@ async function addRoute() {
 }
 
 async function toggleEnabled(r) {
-  await api.put(`/api/v1/routes/${r.id}`, { ...r, enabled: !r.enabled })
-  await load()
+  if (r.locked) return
+  err.value = ''
+  try {
+    await api.put(`/api/v1/routes/${r.id}`, { ...r, enabled: !r.enabled })
+    await load()
+  } catch (e) {
+    err.value = e.data?.error || e.message
+  }
 }
 
 async function remove(r) {
+  if (r.locked) {
+    err.value = t('network.routes.deleteForbidden')
+    return
+  }
   if (!confirm(t('network.routes.confirmDelete', { dest: r.dest }))) return
-  await api.del(`/api/v1/routes/${r.id}`)
-  await load()
+  err.value = ''
+  try {
+    await api.del(`/api/v1/routes/${r.id}`)
+    await load()
+  } catch (e) {
+    err.value = e.data?.error || e.message
+  }
+}
+
+function sourceLabel(r) {
+  if (r.source === 'wan') return t('network.routes.sourceWan')
+  if (r.source === 'egress') return t('network.routes.sourceEgress')
+  return t('network.routes.sourceManual')
+}
+
+function routeTableLabel(r) {
+  const tbl = r.table || 0
+  if (tbl <= 0 || tbl === 254) return 'main'
+  return `${t('network.routes.routeTable')} ${tbl}`
 }
 
 async function applyAll() {
@@ -128,25 +155,42 @@ onMounted(load)
             <tr>
               <th>{{ t('network.routes.dest') }}</th>
               <th>{{ t('network.routes.gateway') }}</th>
+              <th>{{ t('network.routes.routeTable') }}</th>
+              <th>{{ t('network.routes.source') }}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in managed" :key="r.id">
+            <tr v-for="r in managed" :key="r.id" :class="{ 'bg-slate-50': r.locked }">
               <td class="font-mono text-xs">{{ r.dest }}</td>
               <td class="font-mono text-xs">
                 {{ r.gateway || '—' }} / {{ r.device || '—' }}
-                <span v-if="r.comment" class="text-slate-400 block">{{ r.comment }}</span>
+                <span v-if="r.metric" class="text-slate-400"> metric {{ r.metric }}</span>
+              </td>
+              <td class="text-xs">{{ routeTableLabel(r) }}</td>
+              <td class="text-xs max-w-xs">
+                <span
+                  v-if="r.locked"
+                  class="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium mr-1"
+                >{{ t('network.routes.autoManaged') }}</span>
+                <span class="text-slate-600">{{ sourceLabel(r) }}</span>
+                <p v-if="r.source_note" class="text-slate-500 mt-0.5 leading-snug">{{ r.source_note }}</p>
+                <p v-else-if="r.comment && !r.locked" class="text-slate-400 mt-0.5">{{ r.comment }}</p>
               </td>
               <td class="whitespace-nowrap text-xs">
-                <button type="button" class="text-blue-600 mr-2" @click="toggleEnabled(r)">
-                  {{ r.enabled ? t('common.disabled') : t('common.enabled') }}
-                </button>
-                <button type="button" class="text-red-600" @click="remove(r)">{{ t('common.delete') }}</button>
+                <template v-if="r.locked">
+                  <span class="text-slate-400">{{ t('network.routes.autoManagedNoEdit') }}</span>
+                </template>
+                <template v-else>
+                  <button type="button" class="text-blue-600 mr-2" @click="toggleEnabled(r)">
+                    {{ r.enabled ? t('common.disabled') : t('common.enabled') }}
+                  </button>
+                  <button type="button" class="text-red-600" @click="remove(r)">{{ t('common.delete') }}</button>
+                </template>
               </td>
             </tr>
             <tr v-if="!managed.length">
-              <td colspan="3" class="text-center text-slate-400 py-4">{{ t('common.noData') }}</td>
+              <td colspan="5" class="text-center text-slate-400 py-4">{{ t('common.noData') }}</td>
             </tr>
           </tbody>
         </table>

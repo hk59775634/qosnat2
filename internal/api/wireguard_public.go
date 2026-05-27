@@ -4,32 +4,41 @@ import (
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/store"
+	wgusertraffic "github.com/hk59775634/qosnat2/internal/wg/usertraffic"
 )
 
-func wireGuardPublic(c store.WireGuardState) map[string]any {
-	peers := make([]map[string]any, 0, len(c.Peers))
-	for _, p := range c.Peers {
+func wireGuardInstancePublic(inst store.WireGuardInstance) map[string]any {
+	tr := wgusertraffic.DefaultStore()
+	peers := make([]map[string]any, 0, len(inst.Peers))
+	for _, p := range inst.Peers {
+		rx, tx := tr.TotalBytes(store.WgPeerTrafficKey(inst.ID, p.Name))
 		peers = append(peers, map[string]any{
-			"name":                  p.Name,
-			"public_key":            p.PublicKey,
-			"allowed_ips":           p.AllowedIPs,
-			"endpoint":              p.Endpoint,
-			"persistent_keepalive":  p.PersistentKeepalive,
-			"rate":                  p.Rate,
-			"private_key_set":       strings.TrimSpace(p.PrivateKey) != "",
-			"preshared_key_set":     strings.TrimSpace(p.PresharedKey) != "",
+			"name":                 p.Name,
+			"public_key":           p.PublicKey,
+			"allowed_ips":          p.AllowedIPs,
+			"endpoint":             p.Endpoint,
+			"persistent_keepalive": p.PersistentKeepalive,
+			"rate":                 p.Rate,
+			"private_key_set":      strings.TrimSpace(p.PrivateKey) != "",
+			"preshared_key_set":    strings.TrimSpace(p.PresharedKey) != "",
+			"total_rx_bytes":       rx,
+			"total_tx_bytes":       tx,
+			"total_bytes":          rx + tx,
 		})
 	}
 	return map[string]any{
-		"enabled":                c.Enabled,
-		"interface":              c.Interface,
-		"listen_port":            c.ListenPort,
-		"address":                c.Address,
-		"public_key":             c.PublicKey,
-		"dns":                    c.DNS,
-		"server_endpoint":        c.ServerEndpoint,
+		"id":                     inst.ID,
+		"name":                   inst.Name,
+		"mode":                   inst.Mode,
+		"enabled":                inst.Enabled,
+		"interface":              inst.Interface,
+		"listen_port":            inst.ListenPort,
+		"address":                inst.Address,
+		"public_key":             inst.PublicKey,
+		"dns":                    inst.DNS,
+		"server_endpoint":        inst.ServerEndpoint,
 		"peers":                  peers,
-		"server_private_key_set": strings.TrimSpace(c.PrivateKey) != "",
+		"server_private_key_set": strings.TrimSpace(inst.PrivateKey) != "",
 	}
 }
 
@@ -53,4 +62,8 @@ func mergeWireGuardSecrets(body *store.WireGuardState, prev store.WireGuardState
 			body.Peers[i].PresharedKey = pp.PresharedKey
 		}
 	}
+}
+
+func mergeWireGuardInstanceSecrets(body *store.WireGuardInstance, prev store.WireGuardInstance) {
+	mergeWireGuardSecrets(&body.WireGuardState, prev.WireGuardState)
 }

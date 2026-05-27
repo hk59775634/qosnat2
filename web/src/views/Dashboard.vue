@@ -81,12 +81,19 @@ function canDownBottom(id) {
 
 async function load() {
   try {
-    const [dash, h, dhcpRes, wgRes] = await Promise.all([
+    const [dash, h, dhcpRes, list] = await Promise.all([
       api.dashboard(),
       api.health(),
       api.get('/api/v1/dhcp').catch(() => null),
-      api.get('/api/v1/vpn/wireguard').catch(() => null),
+      api.get('/api/v1/vpn/wireguard/instances').catch(() => null),
     ])
+    let wgRes = null
+    const firstId = list?.instances?.[0]?.id
+    if (firstId) {
+      wgRes = await api
+        .get(`/api/v1/vpn/wireguard/instances/${encodeURIComponent(firstId)}`)
+        .catch(() => null)
+    }
     data.value = dash
     health.value = h
     dhcp.value = dhcpRes

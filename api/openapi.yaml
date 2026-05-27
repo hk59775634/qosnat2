@@ -20,10 +20,11 @@ info:
     **ocserv 常用流程**：
     1. `GET /api/v1/vpn/ocserv` 读取配置与 `install_job` / `status`
     2. `PUT` 保存 state（密码/RADIUS 密钥留空表示不修改）
-    3. `POST /api/v1/vpn/ocserv/apply` 写入 `ocserv.conf` 并 `systemctl` 启停
-    4. 虚拟主机：`/api/v1/vpn/ocserv/vhosts`；独立密码文件用户：`/api/v1/vpn/ocserv/vhosts/users?domain=`
-    5. 安装：`POST .../install`（202，需 root）→ 轮询 `GET .../install/status`
-    6. 卸载：`POST .../uninstall`（需 root + Web 管理员密码 `admin_password`）
+    3. `POST /api/v1/vpn/ocserv/apply` 写入 `ocserv.conf`；运行中仅 `reload`，冷启动用 `start`，关闭用 `stop`+`disable`（非 reload 生效项见 GET `restart_pending_reasons`）
+    4. `POST /api/v1/vpn/ocserv/service`：`start` / `stop` / `restart`（需 root）
+    5. 虚拟主机：`/api/v1/vpn/ocserv/vhosts`；独立密码文件用户：`/api/v1/vpn/ocserv/vhosts/users?domain=`
+    6. 安装：`POST .../install`（202，需 root）→ 轮询 `GET .../install/status`
+    7. 卸载：`POST .../uninstall`（需 root + Web 管理员密码 `admin_password`）
 
     **带宽字段（ocserv）**：`rx-data-per-sec` / `tx-data-per-sec` 为**服务端视角**（限制客户端上行用 `tx-data-per-sec`）。Web UI 已按「客户端上/下行」展示并映射到上述字段。
   version: 1.0.0
@@ -121,10 +122,13 @@ components:
         dest: { type: string, example: "10.0.0.0/8" }
         gateway: { type: string }
         device: { type: string }
-        table: { type: integer }
+        table: { type: integer, description: '0/254 为 main；策略出站为 201 起的独立路由表 }
         metric: { type: integer }
-        comment: { type: string }
+        comment: { type: string, description: '内部标记；qosnat-wan: / qosnat-egress: 为自动同步 }
         enabled: { type: boolean }
+        source: { type: string, enum: [manual, wan, egress], description: 'manual=本页添加；wan=多 WAN；egress=策略出站 }
+        source_note: { type: string, description: '只读说明，区分相似 default 路由 }
+        locked: { type: boolean, description: 'true 时不可在本页删除或编辑，请在多 WAN 管理 }
     WanPortForward:
       type: object
       properties:
@@ -187,7 +191,7 @@ components:
         not_after: { type: string, format: date-time }
         acme_email: { type: string }
         acme_staging: { type: boolean }
-        acme_renew_days: { type: integer, description: 库内独立证书到期前自动续期天数，默认 30；HTTPS/ocserv 绑定为 7 天 }
+        acme_renew_days: { type: integer, description: 到期前自动续期阈值（天）：域名库内默认 30、服务绑定 7；公网 IP 短期证（全周期约 7 天）库内与服务绑定均默认 3，且保存时大于 5 的值会规范为 3 }
         acme_last_error: { type: string }
         auto_renew_enabled: { type: boolean }
         auto_renew_paused: { type: boolean }
@@ -373,6 +377,9 @@ components:
         preshared_key: { type: string }
         rate:
           $ref: '#/components/schemas/HostRate'
+        total_rx_bytes: { type: integer, description: 历史累计 RX（采样持久化，GET 配置时附带） }
+        total_tx_bytes: { type: integer, description: 历史累计 TX }
+        total_bytes: { type: integer }
     WireGuardConfig:
       type: object
       properties:
@@ -390,6 +397,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WGPeer'
+        server_private_key_set: { type: boolean, description: GET 展示用；PUT 时忽略 }
+    WireGuardInstance:
+      description: WireGuard 多实例条目（JSON 扁平：id/name/mode 与隧道字段并列）
+      allOf:
+        - $ref: '#/components/schemas/WireGuardConfig'
+        - type: object
+          required: [id, mode]
+          properties:
+            id: { type: string, example: default }
+            name: { type: string }
+            mode: { type: string, enum: [server, client] }
+    WireGuardInstanceSummary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        mode: { type: string, enum: [server, client] }
+        enabled: { type: boolean }
+        interface: { type: string }
+        listen_port: { type: integer }
+        status:
+          type: object
+          additionalProperties: true
     OCServUser:
       type: object
       properties:
@@ -2050,10 +2080,52 @@ paths:
                   - $ref: '#/components/schemas/Ok'
                   - $ref: '#/components/schemas/ShaperTC'
 
-  /api/v1/vpn/wireguard:
+  /api/v1/vpn/wireguard/instances:
     get:
       tags: [vpn]
-      summary: WireGuard 配置与状态
+      summary: WireGuard 实例列表（摘要）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  instances:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WireGuardInstanceSummary'
+    post:
+      tags: [vpn]
+      summary: 新建 WireGuard 实例
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id: { type: string, description: 可选；空则服务端生成 }
+                name: { type: string }
+                mode: { type: string, enum: [server, client], default: server }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  id: { type: string }
+
+  /api/v1/vpn/wireguard/instances/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [vpn]
+      summary: 单实例配置与 wg 状态
       responses:
         '200':
           content:
@@ -2062,17 +2134,29 @@ paths:
                 type: object
                 properties:
                   config:
-                    $ref: '#/components/schemas/WireGuardConfig'
+                    $ref: '#/components/schemas/WireGuardInstance'
                   status:
                     type: object
+                    additionalProperties: true
+        '404':
+          description: 实例不存在
     put:
       tags: [vpn]
-      summary: 保存 WireGuard 配置
+      summary: 保存实例配置
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WireGuardConfig'
+              $ref: '#/components/schemas/WireGuardInstance'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [vpn]
+      summary: 删除实例（至少保留 1 个）
       responses:
         '200':
           content:
@@ -2080,24 +2164,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ok'
 
-  /api/v1/vpn/wireguard/keys:
+  /api/v1/vpn/wireguard/instances/{id}/apply:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
     post:
       tags: [vpn]
-      summary: 生成 WireGuard 密钥对
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  private_key: { type: string }
-                  public_key: { type: string }
-
-  /api/v1/vpn/wireguard/apply:
-    post:
-      tags: [vpn]
-      summary: wg-quick up/down
+      summary: wg-quick up/down（按实例 enabled）
       responses:
         '200':
           content:
@@ -2108,7 +2183,50 @@ paths:
                   ok: { type: boolean }
                   up: { type: boolean }
 
-  /api/v1/vpn/wireguard/peers:
+  /api/v1/vpn/wireguard/instances/{id}/keys:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [vpn]
+      summary: 生成并写入该实例服务端密钥对
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  private_key: { type: string }
+                  public_key: { type: string }
+
+  /api/v1/vpn/wireguard/instances/{id}/peer-genkey:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [vpn]
+      summary: 仅生成密钥对（不落库，用于填写 Peer 表单）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  private_key: { type: string }
+                  public_key: { type: string }
+
+  /api/v1/vpn/wireguard/instances/{id}/peers:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
     get:
       tags: [vpn]
       summary: Peer 列表
@@ -2149,15 +2267,76 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ok'
 
-  /api/v1/vpn/wireguard/peers/{name}/conf:
+  /api/v1/vpn/wireguard/instances/{id}/peers/traffic:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [vpn]
+      summary: WireGuard Peer 流量统计与历史曲线
+      description: |
+        后台每 5 分钟从 `wg show IFACE dump` 采样 transfer 计数；`period` 控制历史曲线范围。
+        `summary` 含累计/今日/周期字节；`series` 为 Mbps 时间序列。`online`/`current` 来自当前内核状态。
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema: { type: string, description: Peer 名称 }
+        - name: period
+          in: query
+          schema: { type: string, enum: [24h, 7d, 30d, 365d], default: 7d }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  peer: { type: string }
+                  online: { type: boolean }
+                  current: { type: object, additionalProperties: true }
+                  summary:
+                    type: object
+                    properties:
+                      total_rx_bytes: { type: integer }
+                      total_tx_bytes: { type: integer }
+                      today_rx_bytes: { type: integer }
+                      today_tx_bytes: { type: integer }
+                      period_rx_bytes: { type: integer }
+                      period_tx_bytes: { type: integer }
+                  series:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ts: { type: integer }
+                        rx_mbps: { type: number }
+                        tx_mbps: { type: number }
+                  resolution: { type: string }
+                  period: { type: string }
+        '404':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+
+  /api/v1/vpn/wireguard/instances/{id}/peers/{name}/conf:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
     get:
       tags: [vpn]
       summary: 下载客户端配置
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema: { type: string }
       responses:
         '200':
           description: WireGuard client conf
@@ -2196,6 +2375,15 @@ paths:
                   admin_user:
                     type: string
                     description: Web 管理员用户名（用于卸载确认等提示，不含密码）
+                  restart_pending_reasons:
+                    type: array
+                    description: |
+                      相对 ocserv(8) 中不可随 reload 生效的配置项，若服务在保存后仍在运行且尚未重启，
+                      则返回稳定 code 列表（如 `listen_ports`、`auth_global`、`vhost:example.com`）；执行 `POST .../service` restart 后清空。
+                    items: { type: string }
+                  root_for_service_ops:
+                    type: boolean
+                    description: 为 true 时 Web 可对 ocserv 执行 systemctl 启停/重启（qosnatd 以 root 运行）
     put:
       tags: [vpn]
       summary: 保存 ocserv 配置
@@ -2217,8 +2405,11 @@ paths:
   /api/v1/vpn/ocserv/apply:
     post:
       tags: [vpn]
-      summary: 写入 ocserv.conf、ocpasswd 并 systemctl start/stop ocserv
-      description: 根据 `enabled` 生成配置并 `systemctl start` 或 `stop` ocserv；同步 vhost radcli 与密码文件。
+      summary: 写入 ocserv.conf 并 reload / start / stop ocserv
+      description: |
+        根据 `enabled` 写配置并同步 ocpasswd、radcli 等。服务已在运行时**仅**执行 `systemctl reload`（及 occtl reload 回退），
+        不再自动 `restart`（与 ocserv 手册一致：部分指令 reload 不生效，须用户手动重启）。
+        未运行时执行 `systemctl start`；关闭时 `stop`+`disable`。
       responses:
         '200':
           content:
@@ -2227,7 +2418,46 @@ paths:
                 type: object
                 properties:
                   ok: { type: boolean }
-                  apply_mode: { type: string, description: 如 up / down }
+                  apply_mode:
+                    type: string
+                    description: reload（运行中热加载）| start（冷启动）| stop
+                  restart_pending_reasons:
+                    type: array
+                    description: 与 GET `restart_pending_reasons` 相同；若保存后仍有需重启才生效的项则非空
+                    items: { type: string }
+        '500':
+          description: reload 失败等
+
+  /api/v1/vpn/ocserv/service:
+    post:
+      tags: [vpn]
+      summary: systemctl 启动/停止/重启 ocserv（需 root）
+      description: |
+        对 `ocserv` 执行 `start`、`stop` 或 `restart`。用于 Web 便捷控制；成功后清除 `restart_pending_reasons`。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [start, stop, restart]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  action: { type: string }
+        '400':
+          description: JSON 无效或 action 非法
+        '403':
+          description: 非 root 运行 qosnatd
 
   /api/v1/vpn/ocserv/install:
     post:

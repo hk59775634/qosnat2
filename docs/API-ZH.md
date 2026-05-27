@@ -86,6 +86,13 @@ GET 响应要点：
 
 `period`：`24h` | `7d` | `30d` | `365d`（默认 `7d`）。
 
+## WireGuard 补充
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/vpn/wireguard/peers/traffic?name=&period=` | 按 **Peer 名称** 返回历史 `series` + `summary`；`online`/`current` 来自 `wg show IFACE dump`（transfer 计数）。后台每 5 分钟采样写入 `/var/lib/qosnat2/wireguard-peer-traffic.json`。`period` 同 ocserv。 |
+| GET | `/api/v1/vpn/wireguard` | `config.peers[]` 附带 `total_rx_bytes` / `total_tx_bytes`（历史 hourly 汇总）。 |
+
 ### 虚拟主机（vhost）
 
 | 方法 | 路径 | 说明 |

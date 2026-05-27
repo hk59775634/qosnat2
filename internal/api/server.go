@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/acme"
@@ -18,41 +19,45 @@ import (
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/ocserv/usertraffic"
 	"github.com/hk59775634/qosnat2/internal/shaper"
-	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/stats"
+	"github.com/hk59775634/qosnat2/internal/store"
+	wgusertraffic "github.com/hk59775634/qosnat2/internal/wg/usertraffic"
 )
 
 // Env 运行配置
 type Env struct {
-	AdminUser    string
-	AdminPass    string
-	AdminPort    string
-	DevLAN       string
-	DevWAN       string
-	StateFile    string
-	SessionFile  string
-	OpenAPIPath  string
-	WebRoot      string
-	TLSCert      string
-	TLSKey       string
+	AdminUser   string
+	AdminPass   string
+	AdminPort   string
+	DevLAN      string
+	DevWAN      string
+	StateFile   string
+	SessionFile string
+	OpenAPIPath string
+	WebRoot     string
+	TLSCert     string
+	TLSKey      string
 }
 
 // Server HTTP API + 控制面编排
 type Server struct {
-	env        Env
-	store      *store.Store
-	sessions   *sessionStore
-	bpf        *ebpf.Manager
-	hosts      *shaper.HostShaper
-	metrics    *stats.Collector
-	pcap       *capture.Manager
+	env                  Env
+	store                *store.Store
+	sessions             *sessionStore
+	bpf                  *ebpf.Manager
+	hosts                *shaper.HostShaper
+	metrics              *stats.Collector
+	pcap                 *capture.Manager
 	ringCancel           context.CancelFunc
 	metricsCancel        context.CancelFunc
 	ocservTrafficCancel  context.CancelFunc
-	mux             *http.ServeMux
-	loginLim        *loginLimiter
-	tlsReloader     *tlsCertReloader
-	httpListen      *httpListener
+	wgTrafficCancel      context.CancelFunc
+	mux                  *http.ServeMux
+	loginLim             *loginLimiter
+	tlsReloader          *tlsCertReloader
+	httpListen           *httpListener
+	ocservRestartHints   []string
+	ocservRestartHintsMu sync.Mutex
 }
 
 func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
@@ -144,15 +149,13 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/network/egress-policies", srv.requireAuth(srv.handleNetworkEgressPolicies))
 	m.HandleFunc("/api/v1/shaper/tc", srv.requireAuth(srv.handleShaperTC))
 
-	m.HandleFunc("/api/v1/vpn/wireguard/keys", srv.requireAuth(srv.handleWireGuardKeys))
-	m.HandleFunc("/api/v1/vpn/wireguard/apply", srv.requireAuth(srv.handleWireGuardApply))
-	m.HandleFunc("/api/v1/vpn/wireguard/peers/", srv.requireAuth(srv.handleWireGuardPeers))
-	m.HandleFunc("/api/v1/vpn/wireguard/peers", srv.requireAuth(srv.handleWireGuardPeers))
-	m.HandleFunc("/api/v1/vpn/wireguard", srv.requireAuth(srv.handleWireGuard))
+	m.HandleFunc("/api/v1/vpn/wireguard/instances/", srv.requireAuth(srv.handleWireGuardInstancesSubtree))
+	m.HandleFunc("/api/v1/vpn/wireguard/instances", srv.requireAuth(srv.handleWireGuardInstancesRoot))
 
 	m.HandleFunc("/api/v1/vpn/ocserv/install/status", srv.requireAuth(srv.handleOCServInstallStatus))
 	m.HandleFunc("/api/v1/vpn/ocserv/install", srv.requireAuth(srv.handleOCServInstall))
 	m.HandleFunc("/api/v1/vpn/ocserv/uninstall", srv.requireAuth(srv.handleOCServUninstall))
+	m.HandleFunc("/api/v1/vpn/ocserv/service", srv.requireAuth(srv.handleOCServService))
 	m.HandleFunc("/api/v1/vpn/ocserv/apply", srv.requireAuth(srv.handleOCServApply))
 	m.HandleFunc("/api/v1/vpn/ocserv/status/detail", srv.requireAuth(srv.handleOCServStatusDetail))
 	m.HandleFunc("/api/v1/vpn/ocserv/sessions/disconnect", srv.requireAuth(srv.handleOCServSessionsDisconnect))
@@ -310,6 +313,13 @@ func readJSON(r *http.Request, dst any) error {
 	defer r.Body.Close()
 	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 	dec.DisallowUnknownFields()
+	return dec.Decode(dst)
+}
+
+// readJSONRelaxed 忽略未知 JSON 字段（用于 WireGuard 等 GET→PUT 回环：响应含只读展示字段）
+func readJSONRelaxed(r *http.Request, dst any) error {
+	defer r.Body.Close()
+	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 	return dec.Decode(dst)
 }
 
@@ -491,6 +501,7 @@ func (srv *Server) Listen() error {
 	_ = srv.sessions.load()
 	srv.startMetricsSampler()
 	srv.startOCServTrafficSampler()
+	srv.startWireGuardTrafficSampler()
 	srv.initHTTPListener()
 	srv.httpListen.started = true
 	go srv.listenerSupervisor()
@@ -505,6 +516,17 @@ func (srv *Server) startOCServTrafficSampler() {
 	srv.ocservTrafficCancel = cancel
 	go usertraffic.StartSampler(ctx, func() store.OCServState {
 		return srv.store.Get().VPN.OCServ
+	})
+}
+
+func (srv *Server) startWireGuardTrafficSampler() {
+	if srv.wgTrafficCancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	srv.wgTrafficCancel = cancel
+	go wgusertraffic.StartSampler(ctx, func() []store.WireGuardInstance {
+		return srv.store.Get().VPN.WireGuards
 	})
 }
 

@@ -133,6 +133,45 @@ func (m *Manager) AttachTCDevice(dev string) error {
 	return nil
 }
 
+// AttachTCDeviceEgressOnly 在指定设备上挂 classify_egress，与 LAN 一致使用 HTB parent 1:（勿用 clsact egress：
+// clsact 上 direct-action 设置的 tc_classid 无法稳定参与 root HTB 选类，WG 下行会落默认类导致限速失效）。
+// ingress 仍留给 u32+mirred；会先清空 ingress 上遗留 filter（由上层随后重装 mirred）。
+func (m *Manager) AttachTCDeviceEgressOnly(dev string) error {
+	if dev == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.loaded || m.objs == nil {
+		return fmt.Errorf("ebpf not loaded")
+	}
+	for i := 0; i < 32; i++ {
+		out, _ := exec.Command("tc", "filter", "del", "dev", dev, "ingress").CombinedOutput()
+		msg := string(out)
+		if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") ||
+			strings.Contains(msg, "does not match") {
+			break
+		}
+	}
+	for i := 0; i < 32; i++ {
+		out, _ := exec.Command("tc", "filter", "del", "dev", dev, "egress").CombinedOutput()
+		msg := string(out)
+		if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") ||
+			strings.Contains(msg, "does not match") {
+			break
+		}
+	}
+	egressPin := filepath.Join(PinDir, progEgress)
+	if err := m.attachBPFFilterHTB(dev, egressPin); err != nil {
+		return err
+	}
+	if m.attached == nil {
+		m.attached = map[string]struct{}{}
+	}
+	m.attached[dev] = struct{}{}
+	return nil
+}
+
 // flushHTBBPFOnly 仅移除 HTB 上的 BPF 分类器，保留 u32/flower 等整形规则
 func flushHTBBPFOnly(dev string) {
 	const bpfPrio = "49152"
@@ -191,6 +230,7 @@ func (m *Manager) DetachTCDevice(dev string) error {
 		return nil
 	}
 	delete(m.attached, dev)
+	flushHTBBPFOnly(dev)
 	_ = exec.Command("tc", "filter", "del", "dev", dev, "ingress").Run()
 	_ = exec.Command("tc", "filter", "del", "dev", dev, "egress").Run()
 	if m.attachedDev == dev {

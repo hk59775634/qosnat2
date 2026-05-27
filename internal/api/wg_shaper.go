@@ -4,6 +4,8 @@ import (
 	"log"
 	"strings"
 
+	"github.com/hk59775634/qosnat2/internal/ebpf"
+	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/wg"
@@ -11,32 +13,79 @@ import (
 
 func (srv *Server) setupWGShaper() {
 	st := srv.store.Get()
-	wgc := st.VPN.WireGuard
-	iface := wgc.Interface
-	if iface == "" {
-		iface = "wg0"
-	}
 	leaf := st.Shaper.Leaf
 
-	if !wgc.Enabled {
+	enabledCount := 0
+	var firstIface string
+	for i := range st.VPN.WireGuards {
+		inst := st.VPN.WireGuards[i]
+		iface := strings.TrimSpace(inst.Interface)
+		if iface == "" {
+			iface = "wg0"
+		}
+		if !inst.Enabled {
+			if route.LinkExists(iface) {
+				if err := ebpf.ResetIFBMirredOnDevice(iface, nil, false); err != nil {
+					log.Printf("wg mirred flush %s: %v", iface, err)
+				}
+			}
+			if srv.bpf != nil {
+				_ = srv.bpf.DetachTCDevice(iface)
+			}
+			continue
+		}
+		enabledCount++
+		if firstIface == "" {
+			firstIface = iface
+		}
+		if err := shaper.EnsureDevice(iface, leaf); err != nil {
+			log.Printf("wg shaper device %s: %v", iface, err)
+			continue
+		}
+		if srv.bpf != nil && srv.bpf.Ready() {
+			if err := srv.bpf.AttachTCDeviceEgressOnly(iface); err != nil {
+				log.Printf("wg bpf attach %s: %v", iface, err)
+			}
+		}
+	}
+	if enabledCount == 0 {
 		srv.hosts.SetExtraDev("")
-		if srv.bpf != nil {
-			_ = srv.bpf.DetachTCDevice(iface)
-		}
 		return
 	}
-
-	if err := shaper.EnsureDevice(iface, leaf); err != nil {
-		log.Printf("wg shaper device %s: %v", iface, err)
-		return
+	// 兼容 EnsureHost() 路径：仅单实例启用时把 extraDev 指到该 wg 口
+	if enabledCount == 1 {
+		srv.hosts.SetExtraDev(firstIface)
+	} else {
+		srv.hosts.SetExtraDev("")
 	}
-	srv.hosts.SetExtraDev(iface)
-	if srv.bpf != nil && srv.bpf.Ready() {
-		if err := srv.bpf.AttachTCDevice(iface); err != nil {
-			log.Printf("wg bpf attach %s: %v", iface, err)
-		}
-	}
+	srv.applyWireGuardMirred()
 	srv.syncWGPeerRates()
+}
+
+// applyWireGuardMirred 将各已启用实例隧道源网段从对应 wg 口 ingress mirred 到 ifb0
+func (srv *Server) applyWireGuardMirred() {
+	st := srv.store.Get()
+	for i := range st.VPN.WireGuards {
+		inst := st.VPN.WireGuards[i]
+		if !inst.Enabled {
+			continue
+		}
+		iface := strings.TrimSpace(inst.Interface)
+		if iface == "" {
+			iface = "wg0"
+		}
+		if !route.LinkExists(iface) {
+			continue
+		}
+		cidrs := store.WireGuardMirredSrcCIDRs(inst.WireGuardState)
+		if len(cidrs) == 0 {
+			continue
+		}
+		bidir := inst.Mode == store.WGModeClient
+		if err := ebpf.ResetIFBMirredOnDevice(iface, cidrs, bidir); err != nil {
+			log.Printf("wg ifb mirred %s: %v", iface, err)
+		}
+	}
 }
 
 func (srv *Server) syncWGPeerRates() {
@@ -44,34 +93,39 @@ func (srv *Server) syncWGPeerRates() {
 		return
 	}
 	st := srv.store.Get()
-	for _, p := range st.VPN.WireGuard.Peers {
-		ip := wg.PeerTunnelIP(p)
-		if ip == "" {
+	for _, inst := range st.VPN.WireGuards {
+		if !inst.Enabled {
 			continue
 		}
-		cidr := store.Host32ProfileCIDR(ip)
-		if !peerRateEnabled(p) {
-			srv.clearPeerProfileShaper(cidr, ip)
-			continue
-		}
-		down, up := peerRateStrings(p)
-		rv, err := srv.rateVal(down, up)
-		if err != nil {
-			log.Printf("wg peer rate %s: %v", ip, err)
-			continue
-		}
-		if err := srv.bpf.UpdateProfile(cidr, rv); err != nil {
-			log.Printf("wg bpf profile %s: %v", cidr, err)
-			continue
-		}
-		iface := st.VPN.WireGuard.Interface
+		iface := strings.TrimSpace(inst.Interface)
 		if iface == "" {
 			iface = "wg0"
 		}
-		_ = srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, iface)
-		_ = srv.store.Update(func(s *store.State) {
-			srv.assignProfileOnAdd(s, cidr, down, up, 32, iface)
-		})
+		for _, p := range inst.Peers {
+			ip := wg.PeerRateShapeIP(inst, p)
+			if ip == "" {
+				continue
+			}
+			cidr := store.Host32ProfileCIDR(ip)
+			if !peerRateEnabled(p) {
+				srv.clearPeerProfileShaper(cidr, ip)
+				continue
+			}
+			down, up := peerRateStrings(p)
+			rv, err := srv.rateVal(down, up)
+			if err != nil {
+				log.Printf("wg peer rate %s: %v", ip, err)
+				continue
+			}
+			if err := srv.bpf.UpdateProfile(cidr, rv); err != nil {
+				log.Printf("wg bpf profile %s: %v", cidr, err)
+				continue
+			}
+			_ = srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, iface)
+			_ = srv.store.Update(func(s *store.State) {
+				srv.assignProfileOnAdd(s, cidr, down, up, 32, iface)
+			})
+		}
 	}
 	_ = srv.store.Save()
 }
@@ -113,8 +167,8 @@ func (srv *Server) clearPeerProfileShaper(cidr, ip string) {
 	srv.refreshShaperAfterChange()
 }
 
-func (srv *Server) removeWGPeerShaper(peer store.WGPeer) {
-	ip := wg.PeerTunnelIP(peer)
+func (srv *Server) removeWGPeerShaper(inst store.WireGuardInstance, peer store.WGPeer) {
+	ip := wg.PeerRateShapeIP(inst, peer)
 	if ip != "" {
 		srv.clearPeerProfileShaper(store.Host32ProfileCIDR(ip), ip)
 	}

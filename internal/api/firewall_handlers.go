@@ -36,6 +36,11 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Strings(aliasNames)
 		vp := nft.VPNFirewallFromState(st)
+		wgEnabled := len(vp.WGPorts) > 0
+		wgPrimary := 0
+		if len(vp.WGPorts) > 0 {
+			wgPrimary = vp.WGPorts[0]
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"rules":      rules,
 			"dev_lan":    srv.env.DevLAN,
@@ -43,11 +48,12 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			"admin_port": srv.env.AdminPort,
 			"alias_names": aliasNames,
 			"vpn": map[string]any{
-				"ocserv_enabled":    vp.OCServEnabled,
-				"ocserv_tcp_port":   vp.OCServTCP,
-				"ocserv_udp_port":   vp.OCServUDP,
-				"wireguard_enabled": vp.WGEnabled,
-				"wireguard_port":    vp.WGUDP,
+				"ocserv_enabled":     vp.OCServEnabled,
+				"ocserv_tcp_port":    vp.OCServTCP,
+				"ocserv_udp_port":    vp.OCServUDP,
+				"wireguard_enabled":  wgEnabled,
+				"wireguard_port":     wgPrimary,
+				"wireguard_ports":    vp.WGPorts,
 			},
 			"rendered": srv.firewallRendered(),
 		})

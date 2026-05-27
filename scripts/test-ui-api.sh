@@ -84,7 +84,7 @@ for ep in \
   GET:/api/v1/shaper/active:200 \
   GET:/api/v1/routes:200 \
   GET:/api/v1/dhcp:200 \
-  GET:/api/v1/vpn/wireguard:200 \
+  GET:/api/v1/vpn/wireguard/instances:200 \
   GET:/api/v1/vpn/ocserv:200 \
   GET:/api/v1/vpn/ocserv/vhosts:200 \
   GET:/api/v1/vpn/ocserv/groups:200 \
@@ -121,6 +121,8 @@ code=$(req GET /api/v1/vpn/ocserv/sessions)
 if [ "$code" = "200" ] || [ "$code" = "503" ]; then ok=$((ok + 1)); echo "OK   /api/v1/vpn/ocserv/sessions ($code)"; else fail=$((fail + 1)); echo "FAIL /api/v1/vpn/ocserv/sessions ($code)"; fi
 code=$(req GET '/api/v1/vpn/ocserv/users/traffic?username=_none_&period=24h')
 if [ "$code" = "200" ]; then ok=$((ok + 1)); echo "OK   ocserv users/traffic ($code)"; else fail=$((fail + 1)); echo "FAIL ocserv users/traffic ($code)"; fi
+code=$(req GET '/api/v1/vpn/wireguard/instances/default/peers/traffic?name=__no_such_peer__&period=24h')
+if [ "$code" = "404" ]; then ok=$((ok + 1)); echo "OK   wireguard instance peers/traffic missing peer -> 404"; else fail=$((fail + 1)); echo "FAIL wireguard instance peers/traffic expected 404 got $code"; fi
 code=$(req GET '/api/v1/vpn/ocserv/vhosts/users?domain=__no_such_vhost__.invalid')
 if [ "$code" = "404" ]; then ok=$((ok + 1)); echo "OK   vhosts/users missing vhost -> 404"; else fail=$((fail + 1)); echo "FAIL vhosts/users expected 404 got $code"; fi
 

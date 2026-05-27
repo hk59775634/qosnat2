@@ -14,9 +14,11 @@ const (
 	CertTypeACME   = "acme"
 	// DefaultAcmeAutoRenewDays 证书管理库内独立 ACME 自动续期（天）
 	DefaultAcmeAutoRenewDays = 30
-	// DefaultIPAcmeAutoRenewDays 公网 IP 短期证书（约 6 天有效）建议提前续期天数
+	// DefaultIPAcmeAutoRenewDays 公网 IP 短期证书（Let's Encrypt 全周期约 7 天）建议提前续期天数
 	DefaultIPAcmeAutoRenewDays = 3
-	// ServiceAutoRenewDays Web UI / ocserv 绑定证书自动续期（天）
+	// maxIPAcmeRenewBeforeDays IP 证书周期短，续期阈值（天）若过大会在「剩余天数」整数化后几乎始终触发续期；用户配置超过此值时按 DefaultIPAcmeAutoRenewDays 处理
+	maxIPAcmeRenewBeforeDays = 5
+	// ServiceAutoRenewDays Web UI / ocserv 绑定证书（域名证书）自动续期：到期前若干天
 	ServiceAutoRenewDays = 7
 )
 
@@ -80,12 +82,12 @@ func NormalizeManagedCertificate(c *ManagedCertificate) error {
 	if c.CreatedAt == "" {
 		c.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 	}
-	if c.AcmeRenewDays <= 0 {
-		if len(c.Domains) > 0 && net.ParseIP(strings.TrimSpace(c.Domains[0])) != nil {
+	if len(c.Domains) > 0 && net.ParseIP(strings.TrimSpace(c.Domains[0])) != nil {
+		if c.AcmeRenewDays <= 0 || c.AcmeRenewDays > maxIPAcmeRenewBeforeDays {
 			c.AcmeRenewDays = DefaultIPAcmeAutoRenewDays
-		} else {
-			c.AcmeRenewDays = DefaultAcmeAutoRenewDays
 		}
+	} else if c.AcmeRenewDays <= 0 {
+		c.AcmeRenewDays = DefaultAcmeAutoRenewDays
 	}
 	if c.Type == CertTypeACME && !c.AutoRenewPaused {
 		c.AutoRenewEnabled = true
@@ -178,15 +180,26 @@ func ManagedCertIsIP(c ManagedCertificate) bool {
 	return net.ParseIP(strings.TrimSpace(c.Domains[0])) != nil
 }
 
-// CertAcmeRenewBeforeDays 自动续期触发阈值（天）
+// CertAcmeRenewBeforeDays 自动续期触发阈值（剩余有效期 ≤ 该天数时尝试续期）
 func CertAcmeRenewBeforeDays(c ManagedCertificate) int {
+	if ManagedCertIsIP(c) {
+		if c.AcmeRenewDays > 0 && c.AcmeRenewDays <= maxIPAcmeRenewBeforeDays {
+			return c.AcmeRenewDays
+		}
+		return DefaultIPAcmeAutoRenewDays
+	}
 	if c.AcmeRenewDays > 0 {
 		return c.AcmeRenewDays
 	}
-	if ManagedCertIsIP(c) {
-		return DefaultIPAcmeAutoRenewDays
-	}
 	return DefaultAcmeAutoRenewDays
+}
+
+// ServiceBoundCertRenewBeforeDays HTTPS/ocserv 引用的 ACME 证书续期阈值（天）
+func ServiceBoundCertRenewBeforeDays(c ManagedCertificate) int {
+	if ManagedCertIsIP(c) {
+		return CertAcmeRenewBeforeDays(c)
+	}
+	return ServiceAutoRenewDays
 }
 
 // CertShouldAutoRenew 是否参与后台自动续期

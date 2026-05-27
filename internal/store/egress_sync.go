@@ -1,6 +1,9 @@
 package store
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 const egressRouteCommentPrefix = "qosnat-egress:"
 
@@ -31,13 +34,16 @@ func SyncEgressRoutes(st *State) {
 			continue
 		}
 		keep = append(keep, RouteEntry{
-			ID:      p.ID,
-			Dest:    "default",
-			Gateway: gw,
-			Device:  dev,
-			Table:   tbl,
-			Comment: egressRouteCommentPrefix + p.ID,
-			Enabled: true,
+			ID:         p.ID,
+			Dest:       "default",
+			Gateway:    gw,
+			Device:     dev,
+			Table:      tbl,
+			Comment:    egressRouteCommentPrefix + p.ID,
+			Enabled:    true,
+			Source:     RouteSourceEgress,
+			Locked:     true,
+			SourceNote: fmt.Sprintf("出站 · %s → %s · 表%d", egressPolicyDisplay(p), wanLinkDisplay(w), tbl),
 		})
 	}
 	st.Routes = keep

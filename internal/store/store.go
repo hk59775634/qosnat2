@@ -165,12 +165,19 @@ func DefaultState() State {
 		DHCP:    DefaultDHCP(),
 		Network: NetworkState{Ifaces: []IfaceConfig{}, VLANs: []VLANIface{}, WanLinks: []WanLink{}, EgressPolicies: []EgressPolicy{}},
 		VPN: VPNState{
-			WireGuard: WireGuardState{
-				Enabled:    false,
-				Interface:  "wg0",
-				ListenPort: 51820,
-				Address:    "10.200.0.1/24",
-				Peers:      []WGPeer{},
+			WireGuards: []WireGuardInstance{
+				{
+					ID:   "default",
+					Name: "default",
+					Mode: WGModeServer,
+					WireGuardState: WireGuardState{
+						Enabled:    false,
+						Interface:  "wg0",
+						ListenPort: 51820,
+						Address:    "10.200.0.1/24",
+						Peers:      []WGPeer{},
+					},
+				},
 			},
 			OCServ: DefaultOCServ(),
 		},
@@ -306,17 +313,17 @@ func (s *Store) ensureDefaultsLocked() {
 		s.State.Network.EgressPolicies = []EgressPolicy{}
 	}
 	MigrateWanForwards(&s.State.Firewall.WanPortForwards)
-	if s.State.VPN.WireGuard.Interface == "" {
-		s.State.VPN.WireGuard.Interface = "wg0"
+	MigrateLegacyWireGuardToInstances(&s.State.VPN)
+	if s.State.VPN.WireGuards == nil {
+		s.State.VPN.WireGuards = []WireGuardInstance{}
 	}
-	if s.State.VPN.WireGuard.ListenPort == 0 {
-		s.State.VPN.WireGuard.ListenPort = 51820
+	if len(s.State.VPN.WireGuards) == 0 {
+		inst := WireGuardInstance{ID: "default", Name: "default", Mode: WGModeServer}
+		NormalizeWireGuardInstance(&inst)
+		s.State.VPN.WireGuards = []WireGuardInstance{inst}
 	}
-	if s.State.VPN.WireGuard.Address == "" {
-		s.State.VPN.WireGuard.Address = "10.200.0.1/24"
-	}
-	if s.State.VPN.WireGuard.Peers == nil {
-		s.State.VPN.WireGuard.Peers = []WGPeer{}
+	for i := range s.State.VPN.WireGuards {
+		NormalizeWireGuardInstance(&s.State.VPN.WireGuards[i])
 	}
 	if s.State.VPN.OCServ.TCPPort == 0 && len(s.State.VPN.OCServ.Users) == 0 && s.State.VPN.OCServ.IPv4Network == "" {
 		s.State.VPN.OCServ = DefaultOCServ()

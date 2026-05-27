@@ -52,8 +52,27 @@ func (srv *Server) ensureShaperDevice(dev string) {
 	}
 	// DEV_LAN 由 applyEBPF→AttachTC（egress BPF + ifb ingress）与 ApplyIFBMirred 处理，勿再 AttachTCDevice 覆盖 ingress
 	if srv.bpf != nil && srv.bpf.Ready() && dev != srv.env.DevLAN {
-		_ = srv.bpf.AttachTCDevice(dev)
+		st := srv.store.Get()
+		if dev == srv.wireGuardIfaceName(st) {
+			_ = srv.bpf.AttachTCDeviceEgressOnly(dev)
+		} else {
+			_ = srv.bpf.AttachTCDevice(dev)
+		}
 	}
+}
+
+func (srv *Server) wireGuardIfaceName(st store.State) string {
+	for _, inst := range st.VPN.WireGuards {
+		if !inst.Enabled {
+			continue
+		}
+		iface := strings.TrimSpace(inst.Interface)
+		if iface == "" {
+			iface = "wg0"
+		}
+		return iface
+	}
+	return ""
 }
 
 func (srv *Server) syncShaperDevices() {
@@ -64,8 +83,11 @@ func (srv *Server) syncShaperDevices() {
 	for _, p := range st.Shaper.Profiles {
 		seen[srv.profileDevice(p, st)] = struct{}{}
 	}
-	if st.VPN.WireGuard.Enabled {
-		iface := st.VPN.WireGuard.Interface
+	for _, inst := range st.VPN.WireGuards {
+		if !inst.Enabled {
+			continue
+		}
+		iface := strings.TrimSpace(inst.Interface)
 		if iface == "" {
 			iface = "wg0"
 		}
@@ -138,6 +160,7 @@ func (srv *Server) reattachShaperDataPath() {
 	if err := srv.verifyUploadPath(cidrs); err != nil {
 		log.Printf("shaper upload path: %v", err)
 	}
+	srv.applyWireGuardMirred()
 }
 
 // replayProfileUploadHTB 恢复 ifb 上行 u32+HTB（/32 主机优先，网段按前缀最长优先）

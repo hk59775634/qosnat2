@@ -185,7 +185,7 @@ func RenewACME(mc store.ManagedCertificate) (*store.ManagedCertificate, error) {
 		res, err = acme.Renew(cfg, string(certPEM), string(keyPEM))
 	}
 	if err != nil {
-		mc.AcmeLastError = err.Error()
+		mc.AcmeLastError = ClassifyACMEError(err).Summary
 		return &mc, err
 	}
 	certPath, keyPath, caPath, err := SavePEM(mc.ID, res.CertPEM, res.KeyPEM, "")

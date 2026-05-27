@@ -23,8 +23,11 @@ func writeWANInputPolicy(b *strings.Builder, cfg Config) {
 	if vp.OCServEnabled && vp.OCServUDP > 0 {
 		b.WriteString(fmt.Sprintf("        iifname \"%s\" udp dport %d accept comment \"qosnat2-ocserv-udp\"\n", wan, vp.OCServUDP))
 	}
-	if vp.WGEnabled && vp.WGUDP > 0 {
-		b.WriteString(fmt.Sprintf("        iifname \"%s\" udp dport %d accept comment \"qosnat2-wireguard\"\n", wan, vp.WGUDP))
+	for _, p := range vp.WGPorts {
+		if p <= 0 {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("        iifname \"%s\" udp dport %d accept comment \"qosnat2-wireguard\"\n", wan, p))
 	}
 	b.WriteString(fmt.Sprintf("        iifname \"%s\" drop comment \"qosnat2-wan-default-drop\"\n", wan))
 }

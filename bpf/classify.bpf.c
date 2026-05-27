@@ -76,13 +76,67 @@ static __always_inline struct rate_val *lookup_rate(__u32 addr_be)
 	return bpf_map_lookup_elem(&profile_lpm, &key);
 }
 
-static __always_inline int handle_l3(struct __sk_buff *skb, __u32 addr_be, int ingress)
+/* 同时看源/目的：ingress 优先 saddr（与历史一致），再 daddr；egress 优先 daddr（下行），再 saddr（WG 客户端上行）。 */
+static __always_inline struct rate_val *lookup_rate_dual(__u32 saddr_be, __u32 daddr_be, int ingress,
+							 __u32 *matched_be)
 {
-	if (!addr_be)
-		return TC_ACT_OK;
+	struct rate_val *rv;
 
-	struct rate_val *rv = lookup_rate(addr_be);
-	if (!rv)
+	if (ingress) {
+		rv = bpf_map_lookup_elem(&host_exact, &saddr_be);
+		if (rv) {
+			*matched_be = saddr_be;
+			return rv;
+		}
+		rv = bpf_map_lookup_elem(&host_exact, &daddr_be);
+		if (rv) {
+			*matched_be = daddr_be;
+			return rv;
+		}
+		struct lpm_v4_key ks = { .prefixlen = 32, .addr = saddr_be };
+		rv = bpf_map_lookup_elem(&profile_lpm, &ks);
+		if (rv) {
+			*matched_be = saddr_be;
+			return rv;
+		}
+		struct lpm_v4_key kd = { .prefixlen = 32, .addr = daddr_be };
+		rv = bpf_map_lookup_elem(&profile_lpm, &kd);
+		if (rv) {
+			*matched_be = daddr_be;
+			return rv;
+		}
+		return NULL;
+	}
+
+	rv = bpf_map_lookup_elem(&host_exact, &daddr_be);
+	if (rv) {
+		*matched_be = daddr_be;
+		return rv;
+	}
+	rv = bpf_map_lookup_elem(&host_exact, &saddr_be);
+	if (rv) {
+		*matched_be = saddr_be;
+		return rv;
+	}
+	struct lpm_v4_key kd = { .prefixlen = 32, .addr = daddr_be };
+	rv = bpf_map_lookup_elem(&profile_lpm, &kd);
+	if (rv) {
+		*matched_be = daddr_be;
+		return rv;
+	}
+	struct lpm_v4_key ks = { .prefixlen = 32, .addr = saddr_be };
+	rv = bpf_map_lookup_elem(&profile_lpm, &ks);
+	if (rv) {
+		*matched_be = saddr_be;
+		return rv;
+	}
+	return NULL;
+}
+
+static __always_inline int apply_rate_classify(struct __sk_buff *skb, __u32 addr_be, struct rate_val *rv,
+					       int ingress)
+{
+	if (!addr_be || !rv)
 		return TC_ACT_OK;
 
 	__u32 ip_key = ip_host_key(addr_be);
@@ -125,6 +179,17 @@ static __always_inline int handle_l3(struct __sk_buff *skb, __u32 addr_be, int i
 	return TC_ACT_OK;
 }
 
+static __always_inline int handle_l3(struct __sk_buff *skb, __u32 addr_be, int ingress)
+{
+	if (!addr_be)
+		return TC_ACT_OK;
+
+	struct rate_val *rv = lookup_rate(addr_be);
+	if (!rv)
+		return TC_ACT_OK;
+	return apply_rate_classify(skb, addr_be, rv, ingress);
+}
+
 #define ETH_HLEN 14
 
 static __always_inline int parse_ipv4_at(struct __sk_buff *skb, int ingress, __u32 l3_off)
@@ -135,12 +200,17 @@ static __always_inline int parse_ipv4_at(struct __sk_buff *skb, int ingress, __u
 	if ((vhl & 0xf0) != 0x40)
 		return TC_ACT_OK;
 
-	__u32 addr_be;
-	__u32 aoff = l3_off + (ingress ? 12 : 16);
-	if (bpf_skb_load_bytes(skb, aoff, &addr_be, sizeof(addr_be)))
+	__u32 saddr_be, daddr_be;
+	if (bpf_skb_load_bytes(skb, l3_off + 12, &saddr_be, sizeof(saddr_be)))
+		return TC_ACT_OK;
+	if (bpf_skb_load_bytes(skb, l3_off + 16, &daddr_be, sizeof(daddr_be)))
 		return TC_ACT_OK;
 
-	return handle_l3(skb, addr_be, ingress);
+	__u32 matched_be = 0;
+	struct rate_val *rv = lookup_rate_dual(saddr_be, daddr_be, ingress, &matched_be);
+	if (!rv)
+		return TC_ACT_OK;
+	return apply_rate_classify(skb, matched_be, rv, ingress);
 }
 
 static __always_inline int parse_ipv4(struct __sk_buff *skb, int ingress)
@@ -148,12 +218,17 @@ static __always_inline int parse_ipv4(struct __sk_buff *skb, int ingress)
 	if (bpf_skb_pull_data(skb, 0))
 		return TC_ACT_OK;
 
+	/* WireGuard/tun 等 RAW 接口：skb 从 IPv4 头起，偏移 12 处不是 ethertype；若误判为以太帧会把 l3_off 置 14 导致无法命中 profile。 */
+	__u8 vhl0;
+	if (!bpf_skb_load_bytes(skb, 0, &vhl0, sizeof(vhl0)) && (vhl0 & 0xf0) == 0x40)
+		return parse_ipv4_at(skb, ingress, 0);
+
 	__u16 eth_proto;
 	if (!bpf_skb_load_bytes(skb, 12, &eth_proto, sizeof(eth_proto)) &&
 	    eth_proto == bpf_htons(ETH_P_IP))
 		return parse_ipv4_at(skb, ingress, ETH_HLEN);
 
-	/* mirred → ifb0 时 skb 可能从 L3 起，无以太头 */
+	/* mirred → ifb0 等 L3 起始但首字节非预期 IPv4 版本时兜底 */
 	return parse_ipv4_at(skb, ingress, 0);
 }
 

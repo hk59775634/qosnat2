@@ -30,6 +30,26 @@ func TestSyncEgressRoutes(t *testing.T) {
 	if eg.Table != 201 || eg.Device != "ens19" || eg.Gateway != "100.64.0.1" {
 		t.Fatalf("bad egress route: %+v", eg)
 	}
+	if !eg.Locked || eg.Source != RouteSourceEgress || eg.SourceNote == "" {
+		t.Fatalf("expected locked egress route with note, got %+v", eg)
+	}
+}
+
+func TestEnrichRouteEntryLegacyEgress(t *testing.T) {
+	st := &State{
+		Routes: []RouteEntry{{
+			ID: "eg-1", Dest: "default", Gateway: "100.64.0.1", Device: "ens19", Table: 201,
+			Comment: egressRouteCommentPrefix + "eg-1",
+		}},
+		Network: NetworkState{
+			WanLinks:       []WanLink{{ID: "wan-us", Name: "US", Device: "ens19", Gateway: "100.64.0.1", Enabled: true}},
+			EgressPolicies: []EgressPolicy{{ID: "eg-1", CIDR: "10.250.0.0/24", WanLinkID: "wan-us", Enabled: true}},
+		},
+	}
+	r := EnrichRouteEntry(st.Routes[0], *st)
+	if !r.Locked || r.Source != RouteSourceEgress || r.SourceNote == "" {
+		t.Fatalf("enrich: %+v", r)
+	}
 }
 
 func TestFilterPolicyRoutesForWAN(t *testing.T) {

@@ -28,6 +28,9 @@ const showUninstallModal = ref(false)
 const uninstallPassword = ref('')
 const uninstallErr = ref('')
 const uninstallSubmitting = ref(false)
+const restartHints = ref([])
+const serviceSubmitting = ref(false)
+const rootForServiceOps = ref(true)
 const activeTab = ref('overview')
 const detail = ref(null)
 const sessions = ref([])
@@ -322,6 +325,39 @@ async function load() {
   connectionInfo.value = d.connection || null
   vhostsMeta.value = d.vhosts_meta || []
   adminUser.value = (d.admin_user && String(d.admin_user).trim()) || 'admin'
+  restartHints.value = Array.isArray(d.restart_pending_reasons) ? d.restart_pending_reasons : []
+  rootForServiceOps.value = d.root_for_service_ops !== false
+}
+
+function restartReasonLabel(code) {
+  const c = String(code || '')
+  if (c.startsWith('vhost:')) {
+    return t('ocserv.restartReasonVhost', { domain: c.slice(6) })
+  }
+  const key = `ocserv.restartReason.${c}`
+  const msg = t(key)
+  return msg !== key ? msg : c
+}
+
+async function controlOcservService(action) {
+  err.value = ''
+  ok.value = ''
+  serviceSubmitting.value = true
+  try {
+    await api.post('/api/v1/vpn/ocserv/service', { action })
+    if (action === 'start') ok.value = t('ocserv.serviceStarted')
+    else if (action === 'stop') ok.value = t('ocserv.serviceStopped')
+    else ok.value = t('ocserv.serviceRestarted')
+    await load()
+  } catch (e) {
+    const msg = e.data?.error || e.message
+    err.value = msg
+    if (e.status === 403) {
+      err.value = t('ocserv.serviceRootHint', { msg })
+    }
+  } finally {
+    serviceSubmitting.value = false
+  }
 }
 
 function vhostConnectUrl(domain) {
@@ -480,7 +516,7 @@ async function save() {
     ok.value = t('ocserv.configSaved')
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -492,8 +528,12 @@ async function apply() {
     if (err.value) return
     const r = await api.post('/api/v1/vpn/ocserv/apply', {})
     const mode = r.apply_mode
+    restartHints.value = Array.isArray(r.restart_pending_reasons) ? r.restart_pending_reasons : []
     if (mode === 'reload') {
-      ok.value = t('ocserv.appliedReload')
+      ok.value =
+        restartHints.value.length > 0
+          ? t('ocserv.appliedReloadWithPendingRestart')
+          : t('ocserv.appliedReload')
     } else if (mode === 'stop') {
       ok.value = t('ocserv.stoppedOcserv')
     } else {
@@ -501,7 +541,7 @@ async function apply() {
     }
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -513,7 +553,7 @@ async function addUser() {
     ok.value = t('ocserv.userAdded')
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -545,7 +585,7 @@ async function saveEditUser() {
     ok.value = t('ocserv.userUpdated')
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -609,7 +649,7 @@ async function saveGroup() {
     ok.value = t('ocserv.groupSaved')
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -620,7 +660,7 @@ async function delGroup(name) {
     await load()
     ok.value = t('ocserv.groupDeleted')
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -641,7 +681,7 @@ async function addVhost() {
     ok.value = t('ocserv.vhostAdded')
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -652,7 +692,7 @@ async function delVhost(domain) {
     await load()
     ok.value = t('ocserv.vhostDeleted')
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -662,7 +702,7 @@ async function delUser(name) {
     await api.del(`/api/v1/vpn/ocserv/users?username=${encodeURIComponent(name)}`)
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   }
 }
 
@@ -703,7 +743,7 @@ async function loadUserTraffic(silent = false) {
     }
   } catch (e) {
     if (!silent) {
-      trafficErr.value = e.message
+      trafficErr.value = e.data?.error || e.message
       trafficData.value = null
     }
   } finally {
@@ -777,7 +817,7 @@ async function pollTrafficLive() {
     appendTrafficLiveSample(data.current)
     trafficLastUpdated.value = Date.now()
   } catch (e) {
-    trafficLiveErr.value = e.message || t('ocserv.trafficLiveFailed')
+    trafficLiveErr.value = e.data?.error || e.message || t('ocserv.trafficLiveFailed')
   }
 }
 
@@ -1112,11 +1152,60 @@ onUnmounted(() => {
         v-else
         type="button"
         class="btn-secondary text-sm border-red-200 text-red-700 hover:bg-red-50"
-        :disabled="installing || uninstallSubmitting"
+        :disabled="installing || uninstallSubmitting || serviceSubmitting"
         @click="openUninstallModal"
       >
         {{ t('ocserv.uninstallFromSource') }}
       </button>
+
+      <div
+        v-if="status?.installed"
+        class="pt-3 mt-1 border-t border-slate-100 space-y-2"
+      >
+        <p v-if="!rootForServiceOps" class="text-xs text-amber-800">{{ t('ocserv.serviceRootOnlyHint') }}</p>
+        <p class="text-xs text-slate-600">{{ t('ocserv.manualReloadVsRestart') }}</p>
+        <div class="flex flex-wrap items-start gap-2">
+          <button
+            v-if="!status?.active"
+            type="button"
+            class="btn-secondary text-sm"
+            :disabled="installing || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
+            :title="!rootForServiceOps ? t('ocserv.serviceRootOnlyHint') : undefined"
+            @click="controlOcservService('start')"
+          >
+            {{ serviceSubmitting ? t('common.loading') : t('ocserv.serviceStart') }}
+          </button>
+          <template v-else>
+            <button
+              type="button"
+              class="btn-secondary text-sm"
+              :disabled="installing || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
+              :title="!rootForServiceOps ? t('ocserv.serviceRootOnlyHint') : undefined"
+              @click="controlOcservService('stop')"
+            >
+              {{ t('ocserv.serviceStop') }}
+            </button>
+            <div class="flex flex-col items-start gap-1">
+              <button
+                type="button"
+                class="btn-secondary text-sm"
+                :disabled="installing || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
+                :title="!rootForServiceOps ? t('ocserv.serviceRootOnlyHint') : undefined"
+                @click="controlOcservService('restart')"
+              >
+                {{ t('ocserv.serviceRestart') }}
+              </button>
+              <div v-if="restartHints?.length" class="rounded border border-amber-200 bg-amber-50/80 px-3 py-2 max-w-2xl">
+                <p class="text-xs font-medium text-amber-900">{{ t('ocserv.restartPendingTitle') }}</p>
+                <ul class="text-xs text-amber-900 list-disc pl-4 mt-1 space-y-0.5">
+                  <li v-for="c in restartHints" :key="c">{{ restartReasonLabel(c) }}</li>
+                </ul>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <div v-if="showInstallProgress" class="mt-3 p-3 rounded border text-xs space-y-2"
         :class="installJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'">
         <div class="flex gap-3 text-sm">
