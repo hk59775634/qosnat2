@@ -18,6 +18,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/ocserv/usertraffic"
+	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/stats"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -134,6 +135,8 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/mark-policy", srv.requireAuth(srv.handleMarkPolicy))
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
+	m.HandleFunc("/api/v1/system/version/switch", srv.requireAuth(srv.handleSystemVersionSwitch))
+	m.HandleFunc("/api/v1/system/version", srv.requireAuth(srv.handleSystemVersion))
 	m.HandleFunc("/api/v1/system/tls/acme", srv.requireAuth(srv.handleTLSAcme))
 	m.HandleFunc("/api/v1/system/notifications", srv.requireAuth(srv.handleNotifications))
 	m.HandleFunc("/api/v1/system/certificates/auto-renew", srv.requireAuth(srv.handleCertificateAutoRenew))
@@ -153,6 +156,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/network/vlans", srv.requireAuth(srv.handleNetworkVLANs))
 	m.HandleFunc("/api/v1/network/wan-links", srv.requireAuth(srv.handleNetworkWanLinks))
 	m.HandleFunc("/api/v1/network/egress-policies", srv.requireAuth(srv.handleNetworkEgressPolicies))
+	m.HandleFunc("/api/v1/network/egress-policies/bulk", srv.requireAuth(srv.handleNetworkEgressPoliciesBulk))
 	m.HandleFunc("/api/v1/network/warp/status", srv.requireAuth(srv.handleNetworkWarpStatus))
 	m.HandleFunc("/api/v1/network/warp/install", srv.requireAuth(srv.handleNetworkWarpInstall))
 	m.HandleFunc("/api/v1/network/warp/install/status", srv.requireAuth(srv.handleNetworkWarpInstallStatus))
@@ -300,12 +304,49 @@ func (srv *Server) StartBackground() {
 	}()
 }
 
+func (srv *Server) persistAutoFirewallRules() {
+	vp := nft.VPNFirewallFromState(srv.store.Get())
+	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, srv.store.Get())
+	_ = srv.store.Update(func(s *store.State) {
+		synced, _ := store.SyncAutoFilterRules(s.Firewall.FilterRules, wanDevs, srv.env.AdminPort, store.AutoInputVPN{
+			OCServEnabled: vp.OCServEnabled,
+			OCServTCP:     vp.OCServTCP,
+			OCServUDP:     vp.OCServUDP,
+			WGPorts:       vp.WGPorts,
+		})
+		s.Firewall.FilterRules = synced
+	})
+	_ = srv.store.Save()
+}
+
+// tryReloadNft 在 setup 完成后重载 nft；失败时记录日志并返回警告文案（不中断已完成的 VPN 等操作）。
+func (srv *Server) tryReloadNft() string {
+	if !srv.setupComplete() {
+		return ""
+	}
+	if err := srv.reloadNft(); err != nil {
+		log.Printf("reload nft: %v", err)
+		return err.Error()
+	}
+	return ""
+}
+
 func (srv *Server) reloadNft() error {
-	if err := nft.Apply(srv.nftCfg(), srv.store.Get()); err != nil {
+	st := srv.store.Get()
+	if err := nft.Apply(srv.nftCfg(), st); err != nil {
 		return err
 	}
+	srv.persistAutoFirewallRules()
 	warpnetns.ReconcileHostNAT()
 	return nil
+}
+
+// applyWanLinkDataPlane 多 WAN 变更后同步策略路由与 nft。
+func (srv *Server) applyWanLinkDataPlane() error {
+	if err := policyroute.Apply(srv.store.Get()); err != nil {
+		return err
+	}
+	return srv.reloadNft()
 }
 
 func (srv *Server) nftCfg() nft.Config {

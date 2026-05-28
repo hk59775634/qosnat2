@@ -19,7 +19,11 @@ func ReorderFirewallRules(rules []FilterRule, order []string) ([]FilterRule, err
 			return nil, fmt.Errorf("unknown rule id %q", id)
 		}
 		if IsAutoManagedRule(r) {
-			return nil, fmt.Errorf("cannot reorder auto-managed rule %q", id)
+			// UI 可能提交完整列表；自动规则位置由 SyncAutoFilterRules 固定，此处忽略。
+			continue
+		}
+		if !FilterRuleMutable(r) {
+			continue
 		}
 		out = append(out, r)
 		seen[id] = struct{}{}

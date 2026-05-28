@@ -178,10 +178,20 @@ export const api = {
     wanLinks: {
       list: () => request('/api/v1/network/wan-links'),
       add: (body) => request('/api/v1/network/wan-links', { method: 'POST', body: JSON.stringify(body) }),
+      put: (id, body) =>
+        request(`/api/v1/network/wan-links?id=${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        }),
       del: (id) => request(`/api/v1/network/wan-links?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
     egressPolicies: {
       list: () => request('/api/v1/network/egress-policies'),
+      bulkAdd: (policies, skipExisting = true) =>
+        request('/api/v1/network/egress-policies/bulk', {
+          method: 'POST',
+          body: JSON.stringify({ policies, skip_existing: skipExisting }),
+        }),
       add: (body) =>
         request('/api/v1/network/egress-policies', { method: 'POST', body: JSON.stringify(body) }),
       put: (id, body) =>

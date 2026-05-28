@@ -43,8 +43,31 @@ export function builtinTouchesIface(br, iface, devLan, devWan, wanDevices = []) 
       return iface === devLan
     case 'sys-acme-80':
       return wans.has(iface)
-    default:
+    case 'sys-ifb0':
+      return iface === 'ifb0'
+    case 'sys-vpn-wg':
+    case 'sys-vpn-ocserv':
+    case 'sys-forward-vpn-wg':
+    case 'sys-forward-vpn-ocserv':
+    case 'sys-forward-default-deny':
+    case 'sys-default-deny':
+      return false
+    default: {
+      const id = String(br?.id || '')
+      if (id.startsWith('sys-asym-')) {
+        const wan = id.slice('sys-asym-'.length)
+        return iface === wan || iface === devLan
+      }
+      if (id.startsWith('sys-lan-wan-')) {
+        const wan = id.slice('sys-lan-wan-'.length)
+        return iface === devLan || iface === wan
+      }
+      if (id.startsWith('sys-wan-lan-')) {
+        const wan = id.slice('sys-wan-lan-'.length)
+        return iface === wan || iface === devLan
+      }
       return true
+    }
   }
 }
 
@@ -85,6 +108,16 @@ export function wanDeviceNames(ifaceList, devWan) {
     if (x.role === 'WAN' && x.name && x.name !== devWan) wans.add(x.name)
   }
   return [...wans]
+}
+
+/** 全部 WAN 设备名（主 WAN + 多 WAN 链路），稳定排序 */
+export function allWanDeviceNames(ifaceList, devWan) {
+  const wans = new Set()
+  if (devWan) wans.add(devWan)
+  for (const x of ifaceList || []) {
+    if (x.role === 'WAN' && x.name) wans.add(x.name)
+  }
+  return [...wans].sort()
 }
 
 /** 网卡 Tab 显示标签 */

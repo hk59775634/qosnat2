@@ -24,7 +24,8 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			needSave = true
 		}
 		vp := nft.VPNFirewallFromState(st)
-		if synced, ok := store.SyncAutoFilterRules(rules, srv.env.DevWAN, srv.env.AdminPort, store.AutoInputVPN{
+		wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
+		if synced, ok := store.SyncAutoFilterRules(rules, wanDevs, srv.env.AdminPort, store.AutoInputVPN{
 			OCServEnabled: vp.OCServEnabled,
 			OCServTCP:     vp.OCServTCP,
 			OCServUDP:     vp.OCServUDP,
@@ -206,8 +207,19 @@ func (srv *Server) handleFirewallRulesOrder(w http.ResponseWriter, r *http.Reque
 	var body struct {
 		Order []string `json:"order"`
 	}
-	if err := readJSON(r, &body); err != nil || len(body.Order) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "order[] required"})
+	if err := readJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		return
+	}
+	if len(body.Order) == 0 {
+		st := srv.store.Get()
+		for _, rule := range st.Firewall.FilterRules {
+			if store.FilterRuleMutable(rule) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "order[] required"})
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "rules": st.Firewall.FilterRules})
 		return
 	}
 	var reordered []store.FilterRule
@@ -217,7 +229,16 @@ func (srv *Server) handleFirewallRulesOrder(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			return
 		}
-		st.Firewall.FilterRules = reordered
+		vp := nft.VPNFirewallFromState(*st)
+		wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, *st)
+		synced, _ := store.SyncAutoFilterRules(reordered, wanDevs, srv.env.AdminPort, store.AutoInputVPN{
+			OCServEnabled: vp.OCServEnabled,
+			OCServTCP:     vp.OCServTCP,
+			OCServUDP:     vp.OCServUDP,
+			WGPorts:       vp.WGPorts,
+		})
+		st.Firewall.FilterRules = synced
+		reordered = synced
 	})
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

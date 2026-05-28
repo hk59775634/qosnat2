@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
-	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/warpnetns"
@@ -165,6 +164,13 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface not found"})
 			return
 		}
+		stCheck := srv.store.Get()
+		for _, wl := range stCheck.Network.WanLinks {
+			if wl.ID == body.ID {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wan link id already exists"})
+				return
+			}
+		}
 		_ = srv.store.Update(func(st *store.State) {
 			st.Network.WanLinks = append(st.Network.WanLinks, body)
 			store.SyncWanRoutes(st)
@@ -172,7 +178,10 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		})
 		_ = srv.store.Save()
 		srv.applyManagedRoutes()
-		_ = policyroute.Apply(srv.store.Get())
+		if err := srv.applyWanLinkDataPlane(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		srv.auditLog(r, "network.wan.add", body.ID)
 		writeJSON(w, http.StatusOK, body)
 	case http.MethodPut:
@@ -215,8 +224,10 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		}
 		_ = srv.store.Save()
 		srv.applyManagedRoutes()
-		_ = policyroute.Apply(srv.store.Get())
-		_ = srv.reloadNft()
+		if err := srv.applyWanLinkDataPlane(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		srv.auditLog(r, "network.wan.put", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
@@ -242,8 +253,10 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		})
 		_ = srv.store.Save()
 		srv.applyManagedRoutes()
-		_ = policyroute.Apply(srv.store.Get())
-		_ = srv.reloadNft()
+		if err := srv.applyWanLinkDataPlane(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		srv.auditLog(r, "network.wan.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:

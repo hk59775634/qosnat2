@@ -1,7 +1,6 @@
 package api
 
 import (
-	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -15,9 +14,7 @@ func (srv *Server) applyWarpWanLink(device string) error {
 		return err
 	}
 	srv.applyManagedRoutes()
-	_ = policyroute.Apply(srv.store.Get())
-	_ = srv.reloadNft()
-	return nil
+	return srv.applyWanLinkDataPlane()
 }
 
 func (srv *Server) removeWarpWanLink() error {
@@ -30,7 +27,5 @@ func (srv *Server) removeWarpWanLink() error {
 		return err
 	}
 	srv.applyManagedRoutes()
-	_ = policyroute.Apply(srv.store.Get())
-	_ = srv.reloadNft()
-	return nil
+	return srv.applyWanLinkDataPlane()
 }

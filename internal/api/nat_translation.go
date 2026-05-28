@@ -52,6 +52,7 @@ func (srv *Server) applyNatStack() error {
 	if err := nft.Apply(srv.nftCfg(), st); err != nil {
 		return fmt.Errorf("nft: %w", err)
 	}
+	srv.persistAutoFirewallRules()
 	if err := jool.Apply(st.Nat); err != nil {
 		return fmt.Errorf("jool: %w", err)
 	}

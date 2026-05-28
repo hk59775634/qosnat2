@@ -2,15 +2,16 @@ package store
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
 // Auto rule IDs (reserved prefix auto-).
 const (
-	autoIDInputAdmin    = "auto-input-admin"
+	autoIDInputAdmin     = "auto-input-admin"
 	autoIDInputOcservTCP = "auto-input-ocserv-tcp"
 	autoIDInputOcservUDP = "auto-input-ocserv-udp"
-	autoIDInputWanDrop  = "auto-input-wan-drop"
+	autoIDInputWanDrop   = "auto-input-wan-drop"
 )
 
 // AutoInputVPN mirrors nft.VPNFirewall without importing nft.
@@ -30,62 +31,122 @@ func IsAutoManagedRule(r FilterRule) bool {
 	return strings.HasPrefix(id, "auto-")
 }
 
-// BuildAutoInputRules 根据当前 WAN/管理端口/VPN 生成 input 链自动规则（顺序：放行项 → WAN 默认丢弃）。
-func BuildAutoInputRules(devWan, adminPort string, vpn AutoInputVPN) []FilterRule {
-	wan := strings.TrimSpace(devWan)
-	if wan == "" {
+// CollectWanInputDevices 返回需生成 WAN 入站自动规则的网卡（主 WAN + 已启用 WanLink，排除 LAN）。
+func CollectWanInputDevices(devWAN, devLAN string, st State) []string {
+	devLAN = strings.TrimSpace(devLAN)
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" || name == devLAN {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	add(devWAN)
+	for _, w := range st.Network.WanLinks {
+		if !w.Enabled {
+			continue
+		}
+		add(w.Device)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// CollectWanForwardDevices 返回 forward 链需处理的 WAN 口（主 WAN + 已启用 WanLink + 已解析 egress，排除 LAN）。
+func CollectWanForwardDevices(devWAN, devLAN string, st State, egressDevices []string) []string {
+	devLAN = strings.TrimSpace(devLAN)
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" || name == devLAN {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	for _, d := range CollectWanInputDevices(devWAN, devLAN, st) {
+		add(d)
+	}
+	for _, d := range egressDevices {
+		add(d)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// BuildAutoInputRules 为每个 WAN 口生成 input 链自动规则（放行项 → 该口默认丢弃）。
+func BuildAutoInputRules(wanDevs []string, adminPort string, vpn AutoInputVPN) []FilterRule {
+	if len(wanDevs) == 0 {
 		return nil
 	}
 	port := strings.TrimSpace(adminPort)
 	if port == "" {
 		port = "8080"
 	}
+	adminP := parsePortInt(port)
 	var out []FilterRule
-	out = append(out, FilterRule{
-		ID:      autoIDInputAdmin,
-		Chain:   "input",
-		Action:  "accept",
-		Iif:     wan,
-		Proto:   "tcp",
-		DstPort: parsePortInt(port),
-		Comment: "qosnat2 管理端口（自动）",
-		Enabled: true,
-		System:  true,
-	})
-	if vpn.OCServEnabled && vpn.OCServTCP > 0 {
-		out = append(out, FilterRule{
-			ID: autoIDInputOcservTCP, Chain: "input", Action: "accept",
-			Iif: wan, Proto: "tcp", DstPort: vpn.OCServTCP,
-			Comment: "OpenConnect TCP（自动）", Enabled: true, System: true,
-		})
-	}
-	if vpn.OCServEnabled && vpn.OCServUDP > 0 {
-		out = append(out, FilterRule{
-			ID: autoIDInputOcservUDP, Chain: "input", Action: "accept",
-			Iif: wan, Proto: "udp", DstPort: vpn.OCServUDP,
-			Comment: "OpenConnect UDP（自动）", Enabled: true, System: true,
-		})
-	}
-	for _, p := range vpn.WGPorts {
-		if p <= 0 {
+	for _, wan := range wanDevs {
+		wan = strings.TrimSpace(wan)
+		if wan == "" {
 			continue
 		}
+		sfx := wan
 		out = append(out, FilterRule{
-			ID:      fmt.Sprintf("auto-input-wg-%d", p),
+			ID:      autoIDInputAdmin + "-" + sfx,
 			Chain:   "input",
 			Action:  "accept",
 			Iif:     wan,
-			Proto:   "udp",
-			DstPort: p,
-			Comment: fmt.Sprintf("WireGuard UDP/%d（自动）", p),
+			Proto:   "tcp",
+			DstPort: adminP,
+			Comment: fmt.Sprintf("qosnat2 管理端口 %s（自动）", wan),
 			Enabled: true,
 			System:  true,
 		})
+		if vpn.OCServEnabled && vpn.OCServTCP > 0 {
+			out = append(out, FilterRule{
+				ID: autoIDInputOcservTCP + "-" + sfx, Chain: "input", Action: "accept",
+				Iif: wan, Proto: "tcp", DstPort: vpn.OCServTCP,
+				Comment: fmt.Sprintf("OpenConnect TCP %s（自动）", wan), Enabled: true, System: true,
+			})
+		}
+		if vpn.OCServEnabled && vpn.OCServUDP > 0 {
+			out = append(out, FilterRule{
+				ID: autoIDInputOcservUDP + "-" + sfx, Chain: "input", Action: "accept",
+				Iif: wan, Proto: "udp", DstPort: vpn.OCServUDP,
+				Comment: fmt.Sprintf("OpenConnect UDP %s（自动）", wan), Enabled: true, System: true,
+			})
+		}
+		for _, p := range vpn.WGPorts {
+			if p <= 0 {
+				continue
+			}
+			out = append(out, FilterRule{
+				ID:      fmt.Sprintf("auto-input-wg-%d-%s", p, sfx),
+				Chain:   "input",
+				Action:  "accept",
+				Iif:     wan,
+				Proto:   "udp",
+				DstPort: p,
+				Comment: fmt.Sprintf("WireGuard UDP/%d %s（自动）", p, wan),
+				Enabled: true,
+				System:  true,
+			})
+		}
+		out = append(out, FilterRule{
+			ID: autoIDInputWanDrop + "-" + sfx, Chain: "input", Action: "drop",
+			Iif: wan, Comment: fmt.Sprintf("WAN 入站默认丢弃 %s（自动）", wan), Enabled: true, System: true,
+		})
 	}
-	out = append(out, FilterRule{
-		ID: autoIDInputWanDrop, Chain: "input", Action: "drop",
-		Iif: wan, Comment: "WAN 入站默认丢弃（自动）", Enabled: true, System: true,
-	})
 	return out
 }
 
@@ -120,8 +181,8 @@ func autoRuleEqual(a, b FilterRule) bool {
 }
 
 // SyncAutoFilterRules 合并用户规则与自动规则；自动规则固定在数组末尾（input 链在 forward 之后）。
-func SyncAutoFilterRules(rules []FilterRule, devWan, adminPort string, vpn AutoInputVPN) ([]FilterRule, bool) {
-	desired := BuildAutoInputRules(devWan, adminPort, vpn)
+func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN) ([]FilterRule, bool) {
+	desired := BuildAutoInputRules(wanDevs, adminPort, vpn)
 	var user []FilterRule
 	for _, r := range rules {
 		if !IsAutoManagedRule(r) {

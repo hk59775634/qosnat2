@@ -105,6 +105,9 @@ func (srv *Server) handleWanForwardsDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	_ = srv.store.Save()
-	_ = srv.reloadNft()
+	if err := srv.reloadNft(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

@@ -28,9 +28,15 @@ describe('ruleTouchesIface', () => {
 
 describe('builtinTouchesIface', () => {
   it('lan-wan on lan and wan tabs', () => {
-    const br = { id: 'sys-lan-wan' }
+    const br = { id: 'sys-lan-wan-eth1' }
     expect(builtinTouchesIface(br, 'br0', 'br0', 'eth1')).toBe(true)
     expect(builtinTouchesIface(br, 'eth1', 'br0', 'eth1')).toBe(true)
     expect(builtinTouchesIface(br, 'eth2', 'br0', 'eth1')).toBe(false)
+  })
+
+  it('ifb0 only on ifb0 tab', () => {
+    const br = { id: 'sys-ifb0' }
+    expect(builtinTouchesIface(br, 'ifb0', 'br0', 'eth1')).toBe(true)
+    expect(builtinTouchesIface(br, 'br0', 'br0', 'eth1')).toBe(false)
   })
 })

@@ -55,6 +55,34 @@ func TestRenderEgressSNAT(t *testing.T) {
 	}
 }
 
+func TestRenderEgressDestinationSNAT(t *testing.T) {
+	st := store.DefaultState()
+	st.Network.WanLinks = []store.WanLink{
+		{ID: "wan-us", Device: "ens19", Gateway: "100.64.0.1", Enabled: true},
+	}
+	st.Network.EgressPolicies = []store.EgressPolicy{
+		{
+			ID: "eg-cf", CIDR: "173.245.48.0/20", Match: "destination",
+			WanLinkID: "wan-us", SNATIP: "100.64.0.249", Enabled: true,
+		},
+	}
+	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8"}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `ip daddr 173.245.48.0/20 oifname "ens19" snat to 100.64.0.249`
+	if !strings.Contains(body, want) {
+		t.Fatalf("missing %q in:\n%s", want, body)
+	}
+	if strings.Contains(body, `ip saddr 173.245.48.0/20`) {
+		t.Fatal("destination egress must not use ip saddr")
+	}
+	if strings.Contains(body, `173.245.48.0/20 oifname "ens18"`) {
+		t.Fatal("cloudflare cidr must not be excluded onto primary WAN SNAT")
+	}
+}
+
 func TestRenderEgressWarpMasquerade(t *testing.T) {
 	st := store.DefaultState()
 	st.Network.WanLinks = []store.WanLink{

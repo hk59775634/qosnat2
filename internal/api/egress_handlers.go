@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -193,6 +194,79 @@ func (srv *Server) applyEgressPolicyRoutes() {
 	if err := policyroute.Apply(srv.store.Get()); err != nil {
 		log.Printf("egress policy routes: %v", err)
 	}
+}
+
+// handleNetworkEgressPoliciesBulk 原子批量添加出站策略（单次 state 保存 + 单次 dataplane apply）。
+func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Policies     []store.EgressPolicy `json:"policies"`
+		SkipExisting bool                 `json:"skip_existing"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		return
+	}
+	if len(body.Policies) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "policies[] required"})
+		return
+	}
+	normalized := make([]store.EgressPolicy, 0, len(body.Policies))
+	for i := range body.Policies {
+		p := body.Policies[i]
+		if err := store.NormalizeEgressPolicy(&p); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		st := srv.store.Get()
+		if _, ok := store.FindWanLink(st.Network.WanLinks, p.WanLinkID); !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wan_link_id not found: " + p.WanLinkID})
+			return
+		}
+		normalized = append(normalized, p)
+	}
+	var added, skipped int
+	_ = srv.store.Update(func(st *store.State) {
+		existingCIDR := map[string]struct{}{}
+		for _, p := range st.Network.EgressPolicies {
+			existingCIDR[p.CIDR] = struct{}{}
+		}
+		for _, p := range normalized {
+			if _, dup := existingCIDR[p.CIDR]; dup {
+				if body.SkipExisting {
+					skipped++
+					continue
+				}
+				continue
+			}
+			st.Network.EgressPolicies = append(st.Network.EgressPolicies, p)
+			existingCIDR[p.CIDR] = struct{}{}
+			added++
+		}
+		if added > 0 {
+			store.SyncEgressRoutes(st)
+		}
+	})
+	if added == 0 {
+		msg := "no policies added"
+		if skipped > 0 {
+			msg = "all policies already exist"
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
+	_ = srv.store.Save()
+	if added > 0 {
+		if err := srv.applyEgressDataPlane(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	srv.auditLog(r, "network.egress.bulk", fmt.Sprintf("added=%d skipped=%d", added, skipped))
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "added": added, "skipped": skipped})
 }
 
 func egressPoliciesUsingWanLink(st store.State, wanID string) []store.EgressPolicy {

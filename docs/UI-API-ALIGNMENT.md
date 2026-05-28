@@ -32,6 +32,8 @@
 | | GET | `/api/v1/system/mark-policy` | MarkPolicy |
 | | * | `/api/v1/system/tuning` | Advanced |
 | | * | `/api/v1/system/general` | General |
+| | GET | `/api/v1/system/version` | General |
+| | POST | `/api/v1/system/version/switch` | General |
 | | POST | `/api/v1/system/tls/acme` | General |
 | | GET | `/api/v1/system/audit` | Audit |
 | 防火墙 | * | `/api/v1/firewall/rules` | FirewallRules |

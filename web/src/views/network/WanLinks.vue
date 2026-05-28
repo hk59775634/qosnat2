@@ -37,6 +37,26 @@ const egForm = ref({
   priority: 100,
   enabled: true,
 })
+const editingId = ref(null)
+const editingEgressId = ref(null)
+const egEditForm = ref({
+  name: '',
+  cidr: '',
+  match: 'source',
+  wan_link_id: '',
+  snat_ip: '',
+  priority: 100,
+  enabled: true,
+})
+const editForm = ref({
+  name: '',
+  device: '',
+  gateway: '',
+  metric: 200,
+  tier: 2,
+  weight: 1,
+  enabled: true,
+})
 
 const linkOptions = computed(() =>
   (links.value || []).filter((w) => w.enabled).map((w) => ({ id: w.id, label: `${w.name} (${w.device})` }))
@@ -66,8 +86,11 @@ async function load() {
   }
   if (!form.value.device && devWan.value) form.value.device = devWan.value
   if (!egForm.value.wan_link_id && links.value.length) {
-    const us = links.value.find((w) => w.device === 'ens19') || links.value[0]
-    egForm.value.wan_link_id = us.id
+    const pick =
+      links.value.find((w) => w.enabled && w.device === devWan.value) ||
+      links.value.find((w) => w.enabled) ||
+      links.value[0]
+    if (pick) egForm.value.wan_link_id = pick.id
   }
 }
 
@@ -181,11 +204,42 @@ async function add() {
   }
 }
 
+function startEdit(w) {
+  editingId.value = w.id
+  editForm.value = {
+    name: w.name,
+    device: w.device,
+    gateway: w.gateway,
+    metric: w.metric,
+    tier: w.tier,
+    weight: w.weight,
+    enabled: w.enabled,
+  }
+}
+
+function cancelEdit() {
+  editingId.value = null
+}
+
+async function saveEdit() {
+  if (!editingId.value) return
+  err.value = ''
+  try {
+    await api.network.wanLinks.put(editingId.value, { ...editForm.value })
+    editingId.value = null
+    ok.value = t('common.saved')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
 async function remove(id) {
   if (!confirm(t('common.delete') + '?')) return
   err.value = ''
   try {
     await api.network.wanLinks.del(id)
+    if (editingId.value === id) editingId.value = null
     await load()
   } catch (e) {
     err.value = e.message
@@ -214,23 +268,54 @@ async function addCloudflarePreset() {
     err.value = 'Cloudflare CDN 列表为空'
     return
   }
-  let added = 0
-  for (const cidr of prefixes) {
-    const exists = (egress.value || []).some((p) => p.cidr === cidr)
-    if (exists) continue
-    await api.network.egressPolicies.add({
-      name: `Cloudflare CDN ${cidr}`,
-      cidr,
-      match: 'destination',
-      wan_link_id: egForm.value.wan_link_id,
-      snat_ip: egForm.value.snat_ip || undefined,
-      priority: egForm.value.priority || 100,
-      enabled: true,
-    })
-    added += 1
+  const policies = prefixes.map((cidr) => ({
+    name: `Cloudflare CDN ${cidr}`,
+    cidr,
+    match: 'destination',
+    wan_link_id: egForm.value.wan_link_id,
+    snat_ip: egForm.value.snat_ip || undefined,
+    priority: egForm.value.priority || 100,
+    enabled: true,
+  }))
+  try {
+    const res = await api.network.egressPolicies.bulkAdd(policies, true)
+    ok.value = `Cloudflare CDN 策略已导入 ${res.added || 0} 条（跳过 ${res.skipped || 0} 条已存在）`
+    await load()
+  } catch (e) {
+    err.value = e.message
   }
-  ok.value = `Cloudflare CDN 策略已导入 ${added} 条`
-  await load()
+}
+
+function startEditEgress(p) {
+  editingEgressId.value = p.id
+  egEditForm.value = {
+    name: p.name || '',
+    cidr: p.cidr,
+    match: p.match || 'source',
+    wan_link_id: p.wan_link_id,
+    snat_ip: p.snat_ip || '',
+    priority: p.priority,
+    enabled: p.enabled,
+  }
+}
+
+function cancelEditEgress() {
+  editingEgressId.value = null
+}
+
+async function saveEditEgress() {
+  if (!editingEgressId.value) return
+  err.value = ''
+  try {
+    const body = { ...egEditForm.value }
+    if (!body.snat_ip) delete body.snat_ip
+    await api.network.egressPolicies.put(editingEgressId.value, body)
+    editingEgressId.value = null
+    ok.value = t('common.saved')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
 }
 
 async function removeEgress(id) {
@@ -238,6 +323,7 @@ async function removeEgress(id) {
   err.value = ''
   try {
     await api.network.egressPolicies.del(id)
+    if (editingEgressId.value === id) editingEgressId.value = null
     await load()
   } catch (e) {
     err.value = e.message
@@ -349,30 +435,53 @@ onUnmounted(stopWarpInstallPoll)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="w in links" :key="w.id">
-            <td>
-              {{ w.name }}
-              <span v-if="w.warp_managed" class="ml-1 text-[10px] px-1 py-0.5 rounded bg-violet-100 text-violet-800">WARP</span>
-            </td>
-            <td class="font-mono">{{ w.device }}</td>
-            <td class="font-mono">
-              {{ w.gateway }}
-              <span v-if="w.policy_only" class="ml-1 text-[10px] px-1 py-0.5 rounded bg-indigo-100 text-indigo-700">
-                policy-only
-              </span>
-            </td>
-            <td>{{ w.tier }}</td>
-            <td>{{ w.metric }}</td>
-            <td>{{ w.weight }}</td>
-            <td>
-              <button
-                v-if="!w.warp_managed"
-                type="button"
-                class="text-red-600 text-xs"
-                @click="remove(w.id)"
-              >{{ t('common.delete') }}</button>
-              <span v-else class="text-slate-400 text-xs">{{ t('network.wanLinks.warpManagedNoDelete') }}</span>
-            </td>
+          <tr v-for="w in links" :key="w.id" :class="editingId === w.id ? 'bg-slate-50' : ''">
+            <template v-if="editingId === w.id">
+              <td><input v-model="editForm.name" class="input-field text-xs" /></td>
+              <td><input v-model="editForm.device" class="input-field text-xs font-mono" /></td>
+              <td><input v-model="editForm.gateway" class="input-field text-xs font-mono" /></td>
+              <td><input v-model.number="editForm.tier" type="number" class="input-field text-xs w-16" /></td>
+              <td><input v-model.number="editForm.metric" type="number" class="input-field text-xs w-16" /></td>
+              <td><input v-model.number="editForm.weight" type="number" class="input-field text-xs w-16" /></td>
+              <td class="space-x-2 whitespace-nowrap">
+                <label class="inline-flex items-center gap-1 text-xs">
+                  <input v-model="editForm.enabled" type="checkbox" /> {{ t('common.enabled') }}
+                </label>
+                <button type="button" class="text-indigo-600 text-xs" @click="saveEdit">{{ t('common.save') }}</button>
+                <button type="button" class="text-slate-500 text-xs" @click="cancelEdit">{{ t('common.cancel') }}</button>
+              </td>
+            </template>
+            <template v-else>
+              <td>
+                {{ w.name }}
+                <span v-if="w.warp_managed" class="ml-1 text-[10px] px-1 py-0.5 rounded bg-violet-100 text-violet-800">WARP</span>
+              </td>
+              <td class="font-mono">{{ w.device }}</td>
+              <td class="font-mono">
+                {{ w.gateway }}
+                <span v-if="w.policy_only" class="ml-1 text-[10px] px-1 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                  policy-only
+                </span>
+              </td>
+              <td>{{ w.tier }}</td>
+              <td>{{ w.metric }}</td>
+              <td>{{ w.weight }}</td>
+              <td class="space-x-2 whitespace-nowrap">
+                <button
+                  v-if="!w.warp_managed"
+                  type="button"
+                  class="text-indigo-600 text-xs"
+                  @click="startEdit(w)"
+                >{{ t('common.edit') }}</button>
+                <button
+                  v-if="!w.warp_managed"
+                  type="button"
+                  class="text-red-600 text-xs"
+                  @click="remove(w.id)"
+                >{{ t('common.delete') }}</button>
+                <span v-else class="text-slate-400 text-xs">{{ t('network.wanLinks.warpManagedNoDelete') }}</span>
+              </td>
+            </template>
           </tr>
           <tr v-if="!links.length">
             <td colspan="7" class="text-center text-slate-400 py-3">{{ t('network.wanLinks.noExtra') }}</td>
@@ -449,19 +558,47 @@ onUnmounted(stopWarpInstallPoll)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in egress" :key="p.id">
-            <td>{{ p.name || p.id }}</td>
-            <td class="font-mono">{{ p.cidr }}</td>
-            <td>{{ p.match === 'destination' ? t('network.wanLinks.matchDestination') : t('network.wanLinks.matchSource') }}</td>
-            <td class="font-mono">{{ links.find((w) => w.id === p.wan_link_id)?.name || p.wan_link_id }}</td>
-            <td class="font-mono text-xs">
-              {{ resolvedRow(p.id)?.snat_ip || p.snat_ip || t('network.wanLinks.snatAuto') }}
-            </td>
-            <td>{{ resolvedRow(p.id)?.table ?? '—' }}</td>
-            <td>{{ p.priority }}</td>
-            <td>
-              <button type="button" class="text-red-600 text-xs" @click="removeEgress(p.id)">{{ t('common.delete') }}</button>
-            </td>
+          <tr v-for="p in egress" :key="p.id" :class="editingEgressId === p.id ? 'bg-slate-50' : ''">
+            <template v-if="editingEgressId === p.id">
+              <td><input v-model="egEditForm.name" class="input-field text-xs" /></td>
+              <td><input v-model="egEditForm.cidr" class="input-field text-xs font-mono" /></td>
+              <td>
+                <select v-model="egEditForm.match" class="input-field text-xs">
+                  <option value="source">{{ t('network.wanLinks.matchSource') }}</option>
+                  <option value="destination">{{ t('network.wanLinks.matchDestination') }}</option>
+                </select>
+              </td>
+              <td>
+                <select v-model="egEditForm.wan_link_id" class="input-field text-xs">
+                  <option v-for="o in linkOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+                </select>
+              </td>
+              <td><input v-model="egEditForm.snat_ip" class="input-field text-xs font-mono" /></td>
+              <td>{{ resolvedRow(p.id)?.table ?? '—' }}</td>
+              <td><input v-model.number="egEditForm.priority" type="number" class="input-field text-xs w-16" /></td>
+              <td class="space-x-2 whitespace-nowrap">
+                <label class="inline-flex items-center gap-1 text-xs">
+                  <input v-model="egEditForm.enabled" type="checkbox" /> {{ t('common.enabled') }}
+                </label>
+                <button type="button" class="text-indigo-600 text-xs" @click="saveEditEgress">{{ t('common.save') }}</button>
+                <button type="button" class="text-slate-500 text-xs" @click="cancelEditEgress">{{ t('common.cancel') }}</button>
+              </td>
+            </template>
+            <template v-else>
+              <td>{{ p.name || p.id }}</td>
+              <td class="font-mono">{{ p.cidr }}</td>
+              <td>{{ p.match === 'destination' ? t('network.wanLinks.matchDestination') : t('network.wanLinks.matchSource') }}</td>
+              <td class="font-mono">{{ links.find((w) => w.id === p.wan_link_id)?.name || p.wan_link_id }}</td>
+              <td class="font-mono text-xs">
+                {{ resolvedRow(p.id)?.snat_ip || p.snat_ip || t('network.wanLinks.snatAuto') }}
+              </td>
+              <td>{{ resolvedRow(p.id)?.table ?? '—' }}</td>
+              <td>{{ p.priority }}</td>
+              <td class="space-x-2 whitespace-nowrap">
+                <button type="button" class="text-indigo-600 text-xs" @click="startEditEgress(p)">{{ t('common.edit') }}</button>
+                <button type="button" class="text-red-600 text-xs" @click="removeEgress(p.id)">{{ t('common.delete') }}</button>
+              </td>
+            </template>
           </tr>
           <tr v-if="!egress.length">
             <td colspan="8" class="text-center text-slate-400 py-3">{{ t('network.wanLinks.noEgress') }}</td>

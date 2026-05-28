@@ -53,12 +53,32 @@ func (srv *Server) ensureShaperDevice(dev string) {
 	// DEV_LAN 由 applyEBPF→AttachTC（egress BPF + ifb ingress）与 ApplyIFBMirred 处理，勿再 AttachTCDevice 覆盖 ingress
 	if srv.bpf != nil && srv.bpf.Ready() && dev != srv.env.DevLAN {
 		st := srv.store.Get()
-		if dev == srv.wireGuardIfaceName(st) {
+		if srv.isWireGuardIface(st, dev) {
 			_ = srv.bpf.AttachTCDeviceEgressOnly(dev)
 		} else {
 			_ = srv.bpf.AttachTCDevice(dev)
 		}
 	}
+}
+
+func (srv *Server) isWireGuardIface(st store.State, dev string) bool {
+	dev = strings.TrimSpace(dev)
+	if dev == "" {
+		return false
+	}
+	for _, inst := range st.VPN.WireGuards {
+		if !inst.Enabled {
+			continue
+		}
+		iface := strings.TrimSpace(inst.Interface)
+		if iface == "" {
+			iface = "wg0"
+		}
+		if dev == iface {
+			return true
+		}
+	}
+	return false
 }
 
 func (srv *Server) wireGuardIfaceName(st store.State) string {

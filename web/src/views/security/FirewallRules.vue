@@ -104,6 +104,7 @@ const builtinCtx = computed(() => ({
   adminPort: adminPort.value,
   vpn: vpnMeta.value,
   acmeTempAllow: acmeTempAllow.value,
+  ifaceList: ifaceList.value,
 }))
 
 const builtinRows = computed(() => {
@@ -335,7 +336,13 @@ async function persistOrder(reorderedSubset) {
       activeIface.value && activeIface.value !== IFACE_ALL
         ? mergeChainReorderForIface(rules.value, activeChain.value, activeIface.value, reorderedSubset)
         : mergeChainReorder(rules.value, activeChain.value, reorderedSubset)
-    const res = await api.firewall.rules.reorder(merged.map((r) => r.id))
+    const orderIds = merged.filter((r) => isRuleMutable(r)).map((r) => r.id)
+    if (!orderIds.length) {
+      rules.value = merged
+      ok.value = t('security.firewall.orderSaved')
+      return
+    }
+    const res = await api.firewall.rules.reorder(orderIds)
     rules.value = res.rules || merged
     ok.value = t('security.firewall.orderSaved')
   } catch (e) {

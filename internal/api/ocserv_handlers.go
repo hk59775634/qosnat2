@@ -102,18 +102,20 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if srv.setupComplete() {
-		_ = srv.reloadNft()
-	}
+	nftWarn := srv.tryReloadNft()
 	if mode != "reload" {
 		srv.clearOcservRestartHints()
 	}
 	srv.auditLog(r, "vpn.ocserv.apply", map[bool]string{true: "up", false: "down"}[up])
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ok":                      true,
 		"apply_mode":              mode,
 		"restart_pending_reasons": srv.ocservRestartHintList(),
-	})
+	}
+	if nftWarn != "" {
+		resp["nft_warning"] = nftWarn
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (srv *Server) handleOCServInstallStatus(w http.ResponseWriter, r *http.Request) {

@@ -191,8 +191,10 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 		}
 		_ = srv.store.Save()
 		srv.setupWGShaper()
-		if srv.setupComplete() {
-			_ = srv.reloadNft()
+		nftWarn := srv.tryReloadNft()
+		if nftWarn != "" {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nft_warning": nftWarn})
+			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
@@ -221,8 +223,10 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 		}
 		_ = srv.store.Save()
 		srv.setupWGShaper()
-		if srv.setupComplete() {
-			_ = srv.reloadNft()
+		nftWarn := srv.tryReloadNft()
+		if nftWarn != "" {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nft_warning": nftWarn})
+			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
@@ -294,10 +298,12 @@ func (srv *Server) handleWireGuardInstanceApply(w http.ResponseWriter, r *http.R
 		return
 	}
 	srv.setupWGShaper()
-	if srv.setupComplete() {
-		_ = srv.reloadNft()
+	nftWarn := srv.tryReloadNft()
+	resp := map[string]any{"ok": true, "up": up}
+	if nftWarn != "" {
+		resp["nft_warning"] = nftWarn
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "up": up})
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.Request, id string) {

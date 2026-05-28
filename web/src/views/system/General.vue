@@ -34,7 +34,11 @@ const switchBusy = ref(false)
 
 async function load() {
   cfg.value = await api.system.general.get()
-  versionInfo.value = await api.get('/api/v1/system/version')
+  try {
+    versionInfo.value = await api.get('/api/v1/system/version')
+  } catch {
+    versionInfo.value = null
+  }
   const tlsCfg = cfg.value.tls || {}
   form.value.hostname = cfg.value.hostname || ''
   form.value.display_name = cfg.value.display_name || ''

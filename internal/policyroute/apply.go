@@ -16,7 +16,7 @@ func Apply(st store.State) error {
 	for _, p := range st.Network.EgressPolicies {
 		tbl := store.WanLinkRouteTable(p.WanLinkID, st.Network.WanLinks)
 		if tbl > 0 {
-			delRules(p.CIDR, tbl, p.Priority)
+			delRules(p.CIDR, p.Match, tbl, p.Priority)
 		}
 	}
 	resolved := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
@@ -61,25 +61,30 @@ func checkUnresolvedEgress(st store.State, resolved []store.ResolvedEgress) erro
 func DeletePolicy(p store.EgressPolicy, links []store.WanLink) {
 	tbl := store.WanLinkRouteTable(p.WanLinkID, links)
 	if tbl > 0 {
-		delRules(p.CIDR, tbl, p.Priority)
+		delRules(p.CIDR, p.Match, tbl, p.Priority)
 	}
 	flushRouteCache()
 }
 
-func addRules(cidr, match string, table, priority int) error {
+func ruleDirections(match string) (mainDir, policyDir string) {
 	if match == "" {
 		match = "source"
 	}
-	toPrio := priority - 1
-	if toPrio < 1 {
-		toPrio = 1
-	}
-	mainDir := "to"
-	policyDir := "from"
+	mainDir = "to"
+	policyDir = "from"
 	if match == "destination" {
 		mainDir = "from"
 		policyDir = "to"
 	}
+	return mainDir, policyDir
+}
+
+func addRules(cidr, match string, table, priority int) error {
+	toPrio := priority - 1
+	if toPrio < 1 {
+		toPrio = 1
+	}
+	mainDir, policyDir := ruleDirections(match)
 	if out, err := exec.Command("ip", "rule", "add", mainDir, cidr, "lookup", "main", "priority", strconv.Itoa(toPrio)).CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if !strings.Contains(msg, "File exists") {
@@ -96,22 +101,19 @@ func addRules(cidr, match string, table, priority int) error {
 	return nil
 }
 
-func delRules(cidr string, table, priority int) {
+func delRules(cidr, match string, table, priority int) {
 	toPrio := priority - 1
 	if toPrio < 1 {
 		toPrio = 1
 	}
+	mainDir, policyDir := ruleDirections(match)
+	delRuleLoop(policyDir, cidr, strconv.Itoa(table), priority)
+	delRuleLoop(mainDir, cidr, "main", toPrio)
+}
+
+func delRuleLoop(dir, cidr, lookup string, priority int) {
 	for {
-		if out, err := exec.Command("ip", "rule", "del", "from", cidr, "lookup", strconv.Itoa(table), "priority", strconv.Itoa(priority)).CombinedOutput(); err != nil {
-			msg := strings.TrimSpace(string(out))
-			if msg == "" || strings.Contains(strings.ToLower(msg), "not found") || strings.Contains(msg, "No such file") {
-				break
-			}
-			break
-		}
-	}
-	for {
-		if out, err := exec.Command("ip", "rule", "del", "to", cidr, "lookup", "main", "priority", strconv.Itoa(toPrio)).CombinedOutput(); err != nil {
+		if out, err := exec.Command("ip", "rule", "del", dir, cidr, "lookup", lookup, "priority", strconv.Itoa(priority)).CombinedOutput(); err != nil {
 			msg := strings.TrimSpace(string(out))
 			if msg == "" || strings.Contains(strings.ToLower(msg), "not found") || strings.Contains(msg, "No such file") {
 				break

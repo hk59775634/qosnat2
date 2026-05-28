@@ -15,6 +15,19 @@ func TestWanLinkRouteTableStable(t *testing.T) {
 	}
 }
 
+func TestWanLinkRouteTableSkipsDisabled(t *testing.T) {
+	links := []WanLink{
+		{ID: "wan-off", Enabled: false},
+		{ID: "wan-a", Enabled: true},
+	}
+	if got := WanLinkRouteTable("wan-off", links); got != 0 {
+		t.Fatalf("disabled link table=%d want 0", got)
+	}
+	if got := WanLinkRouteTable("wan-a", links); got != 201 {
+		t.Fatalf("wan-a table=%d want 201 (disabled must not shift index)", got)
+	}
+}
+
 func TestNormalizeEgressPolicy(t *testing.T) {
 	p := &EgressPolicy{CIDR: "10.250.0.0/24", WanLinkID: "wan-1"}
 	if err := NormalizeEgressPolicy(p); err != nil {
@@ -35,6 +48,30 @@ func TestNormalizeEgressPolicyMatch(t *testing.T) {
 	}
 	if p.Match != "destination" {
 		t.Fatalf("match=%q", p.Match)
+	}
+}
+
+func TestEgressPolicySourceMatchCIDRs_skipsDestination(t *testing.T) {
+	policies := []EgressPolicy{
+		{ID: "eg-src", CIDR: "10.250.0.0/24", Match: "source", Enabled: true},
+		{ID: "eg-dst", CIDR: "173.245.48.0/20", Match: "destination", Enabled: true},
+	}
+	got := EgressPolicySourceMatchCIDRs(policies)
+	if len(got) != 1 || got[0] != "10.250.0.0/24" {
+		t.Fatalf("got %v", got)
+	}
+	all := EgressPolicyCIDRs(policies)
+	if len(all) != 1 || all[0] != "10.250.0.0/24" {
+		t.Fatalf("EgressPolicyCIDRs got %v", all)
+	}
+}
+
+func TestEgressSNATAddrPrefix(t *testing.T) {
+	if EgressSNATAddrPrefix("destination") != "ip daddr" {
+		t.Fatal("destination")
+	}
+	if EgressSNATAddrPrefix("source") != "ip saddr" {
+		t.Fatal("source")
 	}
 }
 

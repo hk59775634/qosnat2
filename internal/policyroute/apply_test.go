@@ -6,6 +6,37 @@ import (
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
+func TestRuleDirections_source(t *testing.T) {
+	mainDir, policyDir := ruleDirections("source")
+	if mainDir != "to" || policyDir != "from" {
+		t.Fatalf("source: main=%q policy=%q", mainDir, policyDir)
+	}
+}
+
+func TestRuleDirections_destination(t *testing.T) {
+	mainDir, policyDir := ruleDirections("destination")
+	if mainDir != "from" || policyDir != "to" {
+		t.Fatalf("destination: main=%q policy=%q", mainDir, policyDir)
+	}
+}
+
+func TestRuleDirections_default(t *testing.T) {
+	mainDir, policyDir := ruleDirections("")
+	if mainDir != "to" || policyDir != "from" {
+		t.Fatalf("empty match: main=%q policy=%q", mainDir, policyDir)
+	}
+}
+
+func TestDelRulesSymmetricWithAddRules(t *testing.T) {
+	for _, match := range []string{"source", "destination", ""} {
+		mainAdd, policyAdd := ruleDirections(match)
+		mainDel, policyDel := ruleDirections(match)
+		if mainAdd != mainDel || policyAdd != policyDel {
+			t.Fatalf("match %q: add (%s,%s) del (%s,%s)", match, mainAdd, policyAdd, mainDel, policyDel)
+		}
+	}
+}
+
 func TestCheckUnresolvedEgress_noSNAT(t *testing.T) {
 	st := store.State{
 		Network: store.NetworkState{

@@ -64,7 +64,10 @@ func (srv *Server) handleSharedIPs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = srv.store.Save()
-		_ = srv.reloadNft()
+		if err := srv.reloadNft(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -125,7 +128,10 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		_ = srv.store.Save()
-		_ = srv.reloadNft()
+		if err := srv.reloadNft(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -186,7 +192,10 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		_ = srv.store.Save()
-		_ = srv.reloadNft()
+		if err := srv.reloadNft(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -246,7 +255,10 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = srv.store.Save()
-		_ = srv.reloadNft()
+		if err := srv.reloadNft(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

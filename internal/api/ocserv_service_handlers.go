@@ -32,9 +32,11 @@ func (srv *Server) handleOCServService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	srv.clearOcservRestartHints()
-	if srv.setupComplete() {
-		_ = srv.reloadNft()
-	}
+	nftWarn := srv.tryReloadNft()
 	srv.auditLog(r, "vpn.ocserv.service", act)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "action": act})
+	resp := map[string]any{"ok": true, "action": act}
+	if nftWarn != "" {
+		resp["nft_warning"] = nftWarn
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

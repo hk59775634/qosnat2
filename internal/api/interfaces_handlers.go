@@ -149,8 +149,12 @@ func (srv *Server) handleInterfacesRoles(w http.ResponseWriter, r *http.Request)
 		apply = *body.Apply
 	}
 	var applyErr string
-	if apply && srv.setupComplete() {
-		if err := srv.ApplyAll(); err != nil {
+	if srv.setupComplete() {
+		if apply {
+			if err := srv.ApplyAll(); err != nil {
+				applyErr = err.Error()
+			}
+		} else if err := srv.reloadNft(); err != nil {
 			applyErr = err.Error()
 		}
 	}

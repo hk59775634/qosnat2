@@ -1,5 +1,6 @@
 /** 将 FilterRule 格式化为 pfSense 风格展示字段 */
 
+import { allWanDeviceNames } from './firewallIface'
 import { isRuleAutoManaged, isRuleMutable } from './firewallRuleForm'
 
 export { isRuleAutoManaged, isRuleMutable }
@@ -21,11 +22,13 @@ export function formatDestination(r) {
   return { kind: 'any', label: '*' }
 }
 
-export function formatIface(name, devLan, devWan) {
+export function formatIface(name, devLan, devWan, wanDevices = []) {
   const n = String(name || '').trim()
   if (!n) return { name: '—', roleKey: '' }
   if (n === devLan) return { name: n, roleKey: 'lan' }
-  if (n === devWan) return { name: n, roleKey: 'wan' }
+  if (n === devWan || (wanDevices.length && wanDevices.includes(n))) {
+    return { name: n, roleKey: 'wan' }
+  }
   return { name: n, roleKey: '' }
 }
 
@@ -64,33 +67,51 @@ export function builtinRulesForChain(chain, devLan, devWan, ctx, t) {
     enabled: true,
   })
 
-  const adminPort = ctx?.adminPort || ''
-  const vpn = ctx?.vpn || {}
+  const ifaceList = ctx?.ifaceList || []
+  const wanDevs = allWanDeviceNames(ifaceList, devWan)
 
   if (chain === 'forward') {
     const rows = [sys('sys-est', 'accept', t('security.firewall.sysEstablished'), '')]
-    if (devLan && devWan) {
-      rows.push(
-        sys(
-          'sys-lan-wan',
-          'accept',
-          t('security.firewall.sysLanToWan', { lan: devLan, wan: devWan }),
-          '',
-        ),
-        sys(
-          'sys-wan-lan',
-          'accept',
-          t('security.firewall.sysWanToLan', { lan: devLan, wan: devWan }),
-          '',
-        ),
-        sys(
-          'sys-asym',
-          'drop',
-          t('security.firewall.sysAsymmetric'),
-          t('security.firewall.sysAsymmetricDetail', { lan: devLan, wan: devWan }),
-        ),
-      )
+    if (devLan) {
+      for (const wan of wanDevs) {
+        if (!wan || wan === devLan) continue
+        rows.push(
+          sys(
+            `sys-lan-wan-${wan}`,
+            'accept',
+            t('security.firewall.sysLanToWan', { lan: devLan, wan }),
+            '',
+          ),
+          sys(
+            `sys-wan-lan-${wan}`,
+            'accept',
+            t('security.firewall.sysWanToLan', { lan: devLan, wan }),
+            '',
+          ),
+          sys(
+            `sys-asym-${wan}`,
+            'drop',
+            t('security.firewall.sysAsymmetric'),
+            t('security.firewall.sysAsymmetricDetail', { lan: devLan, wan }),
+          ),
+        )
+      }
     }
+    rows.push(
+      sys('sys-forward-vpn-wg', 'accept', t('security.firewall.sysForwardVpnWg'), t('security.firewall.sysForwardVpnWgDetail')),
+      sys(
+        'sys-forward-vpn-ocserv',
+        'accept',
+        t('security.firewall.sysForwardVpnOcserv'),
+        t('security.firewall.sysForwardVpnOcservDetail'),
+      ),
+      sys(
+        'sys-forward-default-deny',
+        'drop',
+        t('security.firewall.sysForwardDefaultDeny'),
+        t('security.firewall.sysForwardDefaultDenyDetail'),
+      ),
+    )
     return rows
   }
 
@@ -102,6 +123,16 @@ export function builtinRulesForChain(chain, devLan, devWan, ctx, t) {
     if (devLan) {
       rows.push(sys('sys-lan-in', 'accept', t('security.firewall.sysLanInput', { lan: devLan }), ''))
     }
+    rows.push(
+      sys('sys-ifb0', 'accept', t('security.firewall.sysIfb0'), t('security.firewall.sysIfb0Detail')),
+      sys('sys-vpn-wg', 'accept', t('security.firewall.sysVpnWg'), t('security.firewall.sysVpnWgDetail')),
+      sys(
+        'sys-vpn-ocserv',
+        'accept',
+        t('security.firewall.sysVpnOcserv'),
+        t('security.firewall.sysVpnOcservDetail'),
+      ),
+    )
     if (ctx?.acmeTempAllow) {
       rows.push(
         sys(
@@ -112,6 +143,14 @@ export function builtinRulesForChain(chain, devLan, devWan, ctx, t) {
         ),
       )
     }
+    rows.push(
+      sys(
+        'sys-default-deny',
+        'drop',
+        t('security.firewall.sysDefaultDeny'),
+        t('security.firewall.sysDefaultDenyDetail'),
+      ),
+    )
     return rows
   }
 

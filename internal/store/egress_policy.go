@@ -84,7 +84,7 @@ func FindWanLink(links []WanLink, id string) (WanLink, bool) {
 func WanLinkRouteTable(wanLinkID string, links []WanLink) int {
 	var ids []string
 	for _, w := range links {
-		if strings.TrimSpace(w.ID) != "" {
+		if strings.TrimSpace(w.ID) != "" && w.Enabled {
 			ids = append(ids, w.ID)
 		}
 	}
@@ -114,11 +114,24 @@ func EnabledEgressPolicies(policies []EgressPolicy) []EgressPolicy {
 	return out
 }
 
-// EgressPolicyCIDRs 返回所有已启用出站策略的 CIDR（用于从主 WAN SNAT 中排除）
+// EgressPolicyCIDRs 返回 source 匹配出站策略的 CIDR（从主 WAN SNAT / 非对称回程中排除）。
+// destination 匹配（如 Cloudflare CDN）由策略路由与专用 SNAT 规则处理，不应进入主 WAN 排除集。
 func EgressPolicyCIDRs(policies []EgressPolicy) []string {
+	return EgressPolicySourceMatchCIDRs(policies)
+}
+
+// EgressPolicySourceMatchCIDRs 仅 source 匹配（默认）的出站 CIDR。
+func EgressPolicySourceMatchCIDRs(policies []EgressPolicy) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	for _, p := range EnabledEgressPolicies(policies) {
+		m := p.Match
+		if m == "" {
+			m = "source"
+		}
+		if m != "source" {
+			continue
+		}
 		if _, ok := seen[p.CIDR]; ok {
 			continue
 		}
@@ -126,6 +139,14 @@ func EgressPolicyCIDRs(policies []EgressPolicy) []string {
 		out = append(out, p.CIDR)
 	}
 	return out
+}
+
+// EgressSNATAddrPrefix 返回 nft SNAT 行使用的地址选择前缀（source→saddr，destination→daddr）。
+func EgressSNATAddrPrefix(match string) string {
+	if strings.TrimSpace(strings.ToLower(match)) == "destination" {
+		return "ip daddr"
+	}
+	return "ip saddr"
 }
 
 // FilterPolicyRoutesForWAN 从 policy_routes 中去掉已由出站策略接管的 CIDR

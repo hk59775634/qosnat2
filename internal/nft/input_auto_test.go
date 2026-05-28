@@ -22,6 +22,12 @@ func TestRenderAutoWANInputRules(t *testing.T) {
 	if !strings.Contains(body, `iifname "ifb0" accept`) {
 		t.Fatal("missing ifb0 accept")
 	}
+	if !strings.Contains(body, `iifname "wg*" accept`) {
+		t.Fatal("missing vpn wg accept")
+	}
+	if !strings.Contains(body, `iifname "vpns*" accept`) {
+		t.Fatal("missing vpn ocserv accept")
+	}
 	if !strings.Contains(body, `drop comment "qosnat2-input-default-deny"`) {
 		t.Fatal("missing input default deny")
 	}
