@@ -305,7 +305,7 @@ components:
       type: object
       properties:
         binary_path: { type: string, example: /usr/local/sbin/ocserv }
-        current_tag: { type: string, example: '2026052801', description: 10 位版本号，来自 /var/lib/qosnat2/ocserv-release-tag }
+        current_tag: { type: string, example: '1.4.2', description: ocserv 官方版本号，来自 /var/lib/qosnat2/ocserv-release-tag }
         current_version: { type: string, description: ocserv --version 输出解析 }
         installed: { type: boolean }
         active: { type: boolean }
@@ -322,7 +322,7 @@ components:
         version:
           type: string
           example: '1.4.2'
-          description: "10 位版本号 YYYYMMDDNN（对应 GitHub tag ocserv-{version}）"
+          description: "ocserv 官方版本号（如 1.4.2，对应 GitHub tag ocserv-{version}）"
         admin_password: { type: string }
     OCServInstallPut:
       type: object
@@ -334,8 +334,8 @@ components:
           description: release=下载预编译包；source=源码编译（仅开发构建允许）
         version:
           type: string
-          example: '2026052801'
-          description: release 安装/切换时的 10 位版本号
+          example: '1.4.2'
+          description: release 安装/切换时的官方版本号
     IfaceAddr:
       type: object
       properties:

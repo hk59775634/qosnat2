@@ -78,7 +78,7 @@ sudo ./deploy-qos-nat.sh -SkipWeb start
 >
 > **安装方式约定**：除开发环境外，统一使用 release 可执行文件安装/升级/切换版本；不再通过源码编译安装。
 >
-> **版本号**：`YYYYMMDD` + 每日 2 位自增序号（如 `2026052801`），清单见仓库 [`releases/qosnat2-versions.json`](releases/qosnat2-versions.json)（仅保留最新 5 个）；设备/Web 从 GitHub raw 拉取可切换列表。
+> **版本号**：qosnat2 使用 `YYYYMMDD` + 每日 2 位序号（如 `2026052801`），见 [`releases/qosnat2-versions.json`](releases/qosnat2-versions.json)；ocserv 使用**官方版本号**（如 `1.4.2`），见 [`releases/ocserv-versions.json`](releases/ocserv-versions.json)。设备/Web 从 GitHub raw 拉取可切换列表（各保留最新 5 个）。
 
 从 GitHub 下载 release 二进制并执行部署脚本（需 **root**）：
 

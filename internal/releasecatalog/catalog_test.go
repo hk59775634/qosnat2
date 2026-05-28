@@ -26,13 +26,30 @@ func TestGitHubTags(t *testing.T) {
 	if got := QosnatGitHubTag("2026052803"); got != "v2026052803" {
 		t.Fatalf("QosnatGitHubTag: %q", got)
 	}
-	if got := OcservGitHubTag("2026052803"); got != "ocserv-2026052803" {
+	if got := OcservGitHubTag("1.4.2"); got != "ocserv-1.4.2" {
 		t.Fatalf("OcservGitHubTag: %q", got)
 	}
 }
 
-func TestNormalizeID(t *testing.T) {
-	if got := NormalizeID("ocserv-2026052801"); got != "2026052801" {
-		t.Fatalf("NormalizeID: %q", got)
+func TestValidOcservVersion(t *testing.T) {
+	for _, tc := range []struct {
+		v    string
+		want bool
+	}{
+		{"1.4.2", true},
+		{"ocserv-1.4.2", true},
+		{"1.3.0", true},
+		{"2026052801", false},
+		{"", false},
+	} {
+		if got := ValidOcservVersion(tc.v); got != tc.want {
+			t.Errorf("ValidOcservVersion(%q) = %v, want %v", tc.v, got, tc.want)
+		}
+	}
+}
+
+func TestNormalizeOcservVersion(t *testing.T) {
+	if got := NormalizeOcservVersion("ocserv-1.4.2"); got != "1.4.2" {
+		t.Fatalf("NormalizeOcservVersion: %q", got)
 	}
 }

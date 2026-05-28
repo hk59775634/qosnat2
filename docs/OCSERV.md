@@ -43,7 +43,7 @@ sudo ./scripts/build-ocserv-release.sh
 # 产出 dist/ocserv-linux-amd64.tar.gz
 ```
 
-发布：CI 自动生成 10 位版本号（如 `2026052801`），创建 Git tag `ocserv-2026052801`，并更新 [`releases/ocserv-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/ocserv-versions.json)（仅保留最新 5 个）。
+发布：版本号与 **ocserv 官方上游 tag 一致**（如 `1.4.2`，与 qosnat2 的日期版本号无关）。CI 创建 Git tag `ocserv-1.4.2`，并更新 [`releases/ocserv-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/ocserv-versions.json)（仅保留最新 5 个官方版本）。
 
 ## Web 管理
 

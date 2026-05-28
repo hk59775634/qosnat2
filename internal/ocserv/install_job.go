@@ -96,12 +96,12 @@ func StartInstallAsync(method, version string) error {
 	if method == "" {
 		method = "release"
 	}
-	version = releasecatalog.NormalizeID(version)
+	version = releasecatalog.NormalizeOcservVersion(version)
 	if version == "" && method == "release" {
 		if entries, err := releasecatalog.ListEntries("ocserv"); err == nil && len(entries) > 0 {
-			version = releasecatalog.NormalizeID(entries[0].ID)
+			version = releasecatalog.NormalizeOcservVersion(entries[0].ID)
 			if version == "" {
-				version = releasecatalog.NormalizeID(entries[0].Tag)
+				version = releasecatalog.NormalizeOcservVersion(entries[0].Tag)
 			}
 		}
 	}

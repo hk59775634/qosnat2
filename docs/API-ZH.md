@@ -79,7 +79,9 @@ GET 响应要点：
 
 `method=source` 仅开发构建的 qosnatd 允许。
 
-**版本号规则**：10 位 `YYYYMMDDNN`（UTC 日期 + 每日 01–99 自增，每日重置）。可切换列表来自 GitHub 仓库 [`releases/qosnat2-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/qosnat2-versions.json) / `ocserv-versions.json`（仅保留最新 5 条）。GitHub Release tag：`v2026052801`（qosnat2）、`ocserv-2026052801`（ocserv）。
+**版本号规则**：
+- **qosnat2**：10 位 `YYYYMMDDNN`（UTC 日期 + 每日自增），清单 [`releases/qosnat2-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/qosnat2-versions.json)，Release tag `v2026052801`
+- **ocserv**：与官方上游一致（如 `1.4.2`），清单 [`releases/ocserv-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/ocserv-versions.json)，Release tag `ocserv-1.4.2`
 
 `install_job.state`：`idle` | `running` | `ok` | `failed`；`log_tail` 为日志末尾约 80 行。
 

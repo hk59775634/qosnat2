@@ -2,6 +2,11 @@ name: release-ocserv
 
 on:
   workflow_dispatch:
+    inputs:
+      upstream_version:
+        description: "ocserv 官方版本（GitLab tag，如 1.4.2）"
+        required: true
+        default: "1.4.2"
 
 permissions:
   contents: write
@@ -19,15 +24,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Allocate release version
+      - name: Set release version
         id: ver
         run: |
-          chmod +x ./scripts/release-version.sh
-          VERSION_ID="$(./scripts/release-version.sh ocserv next)"
-          VERSION_TAG="ocserv-${VERSION_ID}"
+          VERSION_ID="${{ github.event.inputs.upstream_version }}"
+          VERSION_ID="${VERSION_ID#ocserv-}"
+          VERSION_ID="${VERSION_ID#v}"
+          if ! [[ "${VERSION_ID}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?([-.+][0-9A-Za-z.-]*)?$ ]]; then
+            echo "invalid ocserv version: ${VERSION_ID}" >&2
+            exit 1
+          fi
           echo "version_id=${VERSION_ID}" >> "$GITHUB_OUTPUT"
-          echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
-          echo "Allocated ${VERSION_TAG}"
+          echo "version_tag=ocserv-${VERSION_ID}" >> "$GITHUB_OUTPUT"
+          echo "Using official ocserv version ${VERSION_ID}"
 
       - name: Install ocserv build dependencies
         run: |
@@ -43,8 +52,7 @@ jobs:
 
       - name: Build ocserv release tarball
         env:
-          OCSERV_UPSTREAM_TAG: "1.4.2"
-          OCSERV_PACKAGE_VERSION: ${{ steps.ver.outputs.version_id }}
+          OCSERV_UPSTREAM_TAG: ${{ steps.ver.outputs.version_id }}
         run: |
           chmod +x ./scripts/build-ocserv-release.sh ./scripts/install-ocserv.sh
           sudo -E ./scripts/build-ocserv-release.sh
@@ -59,6 +67,7 @@ jobs:
 
       - name: Update version manifest
         run: |
+          chmod +x ./scripts/release-version.sh
           ./scripts/release-version.sh ocserv bump "${{ steps.ver.outputs.version_id }}"
 
       - name: Commit manifest

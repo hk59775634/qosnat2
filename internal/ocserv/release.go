@@ -38,10 +38,10 @@ type ReleaseVersionItem struct {
 // VersionInfo 返回 OCServ 版本管理状态。
 func VersionInfo() VersionStatus {
 	st := InstallInfo()
-	tag := releasecatalog.NormalizeID(readOcservTagFile())
+	tag := releasecatalog.NormalizeOcservVersion(readOcservTagFile())
 	ver := strings.TrimSpace(st.Version)
 	if tag == "" && ver != "" {
-		tag = releasecatalog.NormalizeID(parseVersionFromOcservOutput(ver))
+		tag = releasecatalog.NormalizeOcservVersion(parseVersionFromOcservOutput(ver))
 	}
 	entries, listErr := releasecatalog.ListEntries("ocserv")
 	releases := manifestToOcservItems(entries)
@@ -64,9 +64,9 @@ func VersionInfo() VersionStatus {
 func manifestToOcservItems(entries []releasecatalog.VersionEntry) []ReleaseVersionItem {
 	out := make([]ReleaseVersionItem, 0, len(entries))
 	for _, e := range entries {
-		id := releasecatalog.NormalizeID(e.ID)
+		id := releasecatalog.NormalizeOcservVersion(e.ID)
 		if id == "" {
-			id = releasecatalog.NormalizeID(e.Tag)
+			id = releasecatalog.NormalizeOcservVersion(e.Tag)
 		}
 		if id == "" {
 			continue
@@ -116,12 +116,12 @@ func ocservReleaseDownloadURL(version string) string {
 
 // InstallReleaseVersion 下载并安装指定 ocserv 版本（二进制包），不启动服务。
 func InstallReleaseVersion(version string) error {
-	version = releasecatalog.NormalizeID(version)
+	version = releasecatalog.NormalizeOcservVersion(version)
 	if version == "" {
 		return fmt.Errorf("version required")
 	}
-	if !releasecatalog.ValidID(version) {
-		return fmt.Errorf("invalid version id (expected YYYYMMDDNN)")
+	if !releasecatalog.ValidOcservVersion(version) {
+		return fmt.Errorf("invalid ocserv version (expected official tag e.g. 1.4.2)")
 	}
 	script := InstallScriptPath()
 	if _, err := os.Stat(script); err != nil {
@@ -137,7 +137,7 @@ func InstallReleaseVersion(version string) error {
 		}
 		return fmt.Errorf("%s", msg)
 	}
-	saveOcservReleaseTag(releasecatalog.NormalizeID(version))
+	saveOcservReleaseTag(releasecatalog.NormalizeOcservVersion(version))
 	return nil
 }
 

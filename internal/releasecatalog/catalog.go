@@ -17,7 +17,10 @@ const (
 	VersionIDLen   = 10
 )
 
-var versionIDRe = regexp.MustCompile(`^\d{10}$`)
+var (
+	qosnatVersionIDRe = regexp.MustCompile(`^\d{10}$`)
+	ocservVersionRe   = regexp.MustCompile(`^\d+\.\d+(\.\d+)?([-.+][\w.-]*)?$`)
+)
 
 // Manifest 存于 releases/{product}-versions.json（main 分支 raw 内容）。
 type Manifest struct {
@@ -76,18 +79,25 @@ func ListEntries(product string) ([]VersionEntry, error) {
 	return out, nil
 }
 
-// NormalizeID 去掉 v / ocserv- 等前缀，得到 10 位版本号。
+// NormalizeID 去掉 v 前缀，得到 qosnat2 的 10 位版本号。
 func NormalizeID(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "v")
+	return s
+}
+
+// NormalizeOcservVersion 去掉 ocserv-/v 前缀，得到官方风格版本号（如 1.4.2）。
+func NormalizeOcservVersion(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "ocserv-")
 	s = strings.TrimPrefix(s, "v")
 	return s
 }
 
-// ValidID 校验 YYYYMMDD + 01–99 格式。
-func ValidID(id string) bool {
+// ValidQosnatID 校验 qosnat2 的 YYYYMMDDNN 格式。
+func ValidQosnatID(id string) bool {
 	id = NormalizeID(id)
-	if !versionIDRe.MatchString(id) {
+	if !qosnatVersionIDRe.MatchString(id) {
 		return false
 	}
 	date := id[:8]
@@ -99,6 +109,14 @@ func ValidID(id string) bool {
 	return err == nil
 }
 
+// ValidID 为 ValidQosnatID 的别名（qosnat2 专用）。
+func ValidID(id string) bool { return ValidQosnatID(id) }
+
+// ValidOcservVersion 校验 ocserv 官方版本号（semver 风格，如 1.4.2）。
+func ValidOcservVersion(v string) bool {
+	return ocservVersionRe.MatchString(NormalizeOcservVersion(v))
+}
+
 // QosnatGitHubTag 将版本号转为 GitHub release tag（v2026052801）。
 func QosnatGitHubTag(versionID string) string {
 	id := NormalizeID(versionID)
@@ -108,13 +126,13 @@ func QosnatGitHubTag(versionID string) string {
 	return "v" + id
 }
 
-// OcservGitHubTag 将版本号转为 ocserv release tag（ocserv-2026052801）。
-func OcservGitHubTag(versionID string) string {
-	id := NormalizeID(versionID)
-	if id == "" {
+// OcservGitHubTag 将官方版本号转为 ocserv release tag（ocserv-1.4.2）。
+func OcservGitHubTag(version string) string {
+	v := NormalizeOcservVersion(version)
+	if v == "" {
 		return ""
 	}
-	return "ocserv-" + id
+	return "ocserv-" + v
 }
 
 // QosnatDownloadURL release 资产下载地址。
@@ -127,8 +145,8 @@ func QosnatDownloadURL(versionID string) string {
 }
 
 // OcservDownloadURL ocserv release 资产下载地址。
-func OcservDownloadURL(versionID string) string {
-	tag := OcservGitHubTag(versionID)
+func OcservDownloadURL(version string) string {
+	tag := OcservGitHubTag(version)
 	if tag == "" {
 		return ""
 	}

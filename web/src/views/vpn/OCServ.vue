@@ -1215,6 +1215,7 @@ onUnmounted(() => {
         <span>{{ t('ocserv.radiusLinked') }}: <strong>{{ status?.radius_linked ? t('common.yes') : t('common.no') }}</strong></span>
         <span>occtl: <strong>{{ useOcctl ? t('common.enabled') : t('common.disabled') }}</strong></span>
       </div>
+      <p class="text-xs text-slate-500">{{ t('ocserv.versionOfficialHint') }}</p>
       <p v-if="versionInfo?.list_error" class="text-xs text-amber-700">{{ versionInfo.list_error }}</p>
       <p v-if="!versionInfo?.root_required" class="text-xs text-amber-800">{{ t('ocserv.versionRootHint') }}</p>
 

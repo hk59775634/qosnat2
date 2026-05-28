@@ -35,13 +35,13 @@ func (srv *Server) handleOCServVersionSwitch(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
 		return
 	}
-	version := releasecatalog.NormalizeID(body.Version)
+	version := releasecatalog.NormalizeOcservVersion(body.Version)
 	if version == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "version required"})
 		return
 	}
-	if !releasecatalog.ValidID(version) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid version id (expected YYYYMMDDNN)"})
+	if !releasecatalog.ValidOcservVersion(version) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid ocserv version (expected official tag e.g. 1.4.2)"})
 		return
 	}
 	st := srv.store.Get()

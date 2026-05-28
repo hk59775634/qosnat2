@@ -77,7 +77,8 @@ parse_args() {
   fi
   if [[ "${INSTALL_METHOD}" == "release" ]]; then
     [[ -n "${OCSERV_VERSION}" ]] || die "release 安装需要版本号（--version 或版本清单）"
-    [[ "${OCSERV_VERSION}" =~ ^[0-9]{10}$ ]] || die "版本号格式应为 YYYYMMDDNN（10 位数字）: ${OCSERV_VERSION}"
+    [[ "${OCSERV_VERSION}" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?([-.+][0-9A-Za-z.-]*)?$ ]] \
+      || die "版本号应为 ocserv 官方版本（如 1.4.2）: ${OCSERV_VERSION}"
   elif [[ -z "${OCSERV_VERSION}" ]]; then
     OCSERV_VERSION="1.4.2"
   fi
