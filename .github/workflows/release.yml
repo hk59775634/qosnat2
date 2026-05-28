@@ -1,13 +1,22 @@
 name: release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'releases/**'
+      - 'docs/**'
+      - '**/*.md'
+      - 'web/**'
+      - '.github/**'
 
 permissions:
   contents: write
+
+concurrency:
+  group: qosnat2-release
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
@@ -15,6 +24,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Allocate release version
+        id: ver
+        run: |
+          chmod +x ./scripts/release-version.sh
+          VERSION_ID="$(./scripts/release-version.sh qosnat2 next)"
+          VERSION_TAG="v${VERSION_ID}"
+          echo "version_id=${VERSION_ID}" >> "$GITHUB_OUTPUT"
+          echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Allocated ${VERSION_TAG}"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -29,7 +50,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm libbpf-dev make rsync
+          sudo apt-get install -y clang llvm libbpf-dev make rsync jq
 
       - name: Build release assets
         run: |
@@ -39,7 +60,20 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.version_tag }}
+          name: qosnat2 ${{ steps.ver.outputs.version_id }}
           files: |
             dist/qosnatd-linux-amd64
             dist/qosnat2-linux-amd64.tar.gz
           generate_release_notes: true
+
+      - name: Update version manifest
+        run: |
+          ./scripts/release-version.sh qosnat2 bump "${{ steps.ver.outputs.version_id }}"
+
+      - name: Commit manifest
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(release): qosnat2 ${{ steps.ver.outputs.version_id }}"
+          file_pattern: releases/qosnat2-versions.json
+          branch: main

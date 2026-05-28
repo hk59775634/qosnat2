@@ -1,0 +1,69 @@
+name: release-ocserv
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ocserv-release
+  cancel-in-progress: false
+
+jobs:
+  ocserv-release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Allocate release version
+        id: ver
+        run: |
+          chmod +x ./scripts/release-version.sh
+          VERSION_ID="$(./scripts/release-version.sh ocserv next)"
+          VERSION_TAG="ocserv-${VERSION_ID}"
+          echo "version_id=${VERSION_ID}" >> "$GITHUB_OUTPUT"
+          echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Allocated ${VERSION_TAG}"
+
+      - name: Install ocserv build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq \
+            build-essential meson ninja-build pkg-config \
+            libgnutls28-dev libev-dev libreadline-dev libseccomp-dev \
+            libnl-route-3-dev libnl-genl-3-dev libtalloc-dev libhttp-parser-dev \
+            libprotobuf-c-dev libpam0g-dev libradcli-dev \
+            libcurl4-gnutls-dev liboath-dev libmaxminddb-dev \
+            liblz4-dev libbrotli-dev libnghttp2-dev \
+            autoconf automake libtool git curl
+
+      - name: Build ocserv release tarball
+        env:
+          OCSERV_TAG: ${{ steps.ver.outputs.version_id }}
+        run: |
+          export OCSERV_TAG
+          chmod +x ./scripts/build-ocserv-release.sh ./scripts/install-ocserv.sh
+          sudo -E ./scripts/build-ocserv-release.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version_tag }}
+          name: ocserv ${{ steps.ver.outputs.version_id }}
+          files: dist/ocserv-linux-amd64.tar.gz
+          generate_release_notes: true
+
+      - name: Update version manifest
+        run: |
+          ./scripts/release-version.sh ocserv bump "${{ steps.ver.outputs.version_id }}"
+
+      - name: Commit manifest
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(release): ocserv ${{ steps.ver.outputs.version_id }}"
+          file_pattern: releases/ocserv-versions.json
+          branch: main

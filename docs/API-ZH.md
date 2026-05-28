@@ -54,17 +54,56 @@ GET 响应要点：
 - `config`：脱敏后的全局配置（含 groups、vhosts 列表）
 - `vhosts_meta`：各域名是否可管理独立用户等
 - `status`：ocserv 是否已安装
+- `version_info`：当前版本、release 列表、是否允许源码安装
 - `install_job`：安装任务（见下表）
 - `radius_secret_set` / `camouflage_secret_set`：是否已配置（不返回明文）
 
-### 安装
+### 安装与版本
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/vpn/ocserv/install` | 后台 bash 安装脚本，**需 root 运行 qosnatd**，返回 202 |
+| GET | `/api/v1/vpn/ocserv/version` | 当前 ocserv 版本与可安装 release 列表 |
+| POST | `/api/v1/vpn/ocserv/version/switch` | 切换 release 版本（需 root + `admin_password`） |
+| POST | `/api/v1/vpn/ocserv/install` | 后台安装（默认 `method=release` 下载预编译包），**需 root**，返回 202 |
+| POST | `/api/v1/vpn/ocserv/uninstall` | 卸载二进制（需 root + `admin_password`） |
 | GET | `/api/v1/vpn/ocserv/install/status` | 轮询任务状态 |
 
+`POST /api/v1/vpn/ocserv/install` 请求体（均可选）：
+
+```json
+{
+  "method": "release",
+  "version": "1.4.2"
+}
+```
+
+`method=source` 仅开发构建的 qosnatd 允许。
+
+**版本号规则**：10 位 `YYYYMMDDNN`（UTC 日期 + 每日 01–99 自增，每日重置）。可切换列表来自 GitHub 仓库 [`releases/qosnat2-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/qosnat2-versions.json) / `ocserv-versions.json`（仅保留最新 5 条）。GitHub Release tag：`v2026052801`（qosnat2）、`ocserv-2026052801`（ocserv）。
+
 `install_job.state`：`idle` | `running` | `ok` | `failed`；`log_tail` 为日志末尾约 80 行。
+
+## 系统版本管理 API（qosnatd）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/system/version` | 当前运行版本、当前 release tag、可切换版本列表 |
+| POST | `/api/v1/system/version/switch` | 切换到指定 release 版本（下载二进制并重启 `qosnatd`） |
+
+`POST /api/v1/system/version/switch` 请求体：
+
+```json
+{
+  "tag": "v1.2.3",
+  "current_password": "管理员当前密码"
+}
+```
+
+说明：
+
+- 仅在 `qosnatd` 以 root 运行时可执行切换（否则 403）。
+- 切换流程为下载 `qosnat2-linux-amd64.tar.gz`，覆盖 `/usr/local/bin/qosnatd`，随后重启服务。
+- 一键安装写入 `/etc/qosnat2/release-tag`；版本查询优先读取该标签。
 
 ### 运行时会话（occtl）
 

@@ -18,7 +18,8 @@
 #   QOSNAT_SKIP_OS_CHECK=1       非 Ubuntu 24.04 时仍继续（不推荐）
 #   QOSNAT_INSTALL_DIR=/opt/qosnat2
 #   QOSNAT_REPO=https://github.com/hk59775634/qosnat2.git
-#   QOSNAT_RELEASE_TAG=vX.Y.Z    指定 release tag（默认 latest）
+#   QOSNAT_RELEASE_TAG=v2026052801  指定版本（10 位 YYYYMMDDNN 或带 v 前缀）
+#   QOSNAT_VERSIONS_URL=...      版本清单（默认 GitHub releases/qosnat2-versions.json）
 #   QOSNAT_SKIP_SCRIPT_REFRESH=1  跳过从 GitHub 重新拉取 install.sh（仅本地调试）
 #
 # 卸载见 scripts/uninstall.sh 或 deploy-qos-nat.sh uninstall
@@ -29,7 +30,7 @@ QOSNAT_REPO="${QOSNAT_REPO:-https://github.com/hk59775634/qosnat2.git}"
 QOSNAT_INSTALL_DIR="${QOSNAT_INSTALL_DIR:-/opt/qosnat2}"
 QOSNAT_INSTALL_RAW_URL="${QOSNAT_INSTALL_RAW_URL:-https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh}"
 QOSNAT_RELEASE_TAG="${QOSNAT_RELEASE_TAG:-}"
-QOSNAT_RELEASE_API="${QOSNAT_RELEASE_API:-https://api.github.com/repos/hk59775634/qosnat2/releases/latest}"
+QOSNAT_VERSIONS_URL="${QOSNAT_VERSIONS_URL:-https://raw.githubusercontent.com/hk59775634/qosnat2/main/releases/qosnat2-versions.json}"
 QOSNAT_RELEASE_ASSET="${QOSNAT_RELEASE_ASSET:-qosnat2-linux-amd64.tar.gz}"
 QOSNAT_BIN_PATH="${QOSNAT_BIN_PATH:-/usr/local/bin/qosnatd}"
 DEFAULT_ACME_EMAIL="${DEFAULT_ACME_EMAIL:-hk59775634@gmail.com}"
@@ -163,15 +164,29 @@ clone_or_update() {
   fi
 }
 
+normalize_qosnat_tag() {
+  local t="${1:-}"
+  t="${t#v}"
+  if [[ "${t}" =~ ^[0-9]{10}$ ]]; then
+    echo "v${t}"
+    return 0
+  fi
+  echo "${1}"
+}
+
 detect_release_tag() {
   if [[ -n "${QOSNAT_RELEASE_TAG}" ]]; then
-    echo "${QOSNAT_RELEASE_TAG}"
+    normalize_qosnat_tag "${QOSNAT_RELEASE_TAG}"
     return 0
   fi
   local tag
-  tag="$(curl -fsSL "${QOSNAT_RELEASE_API}" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
-  [[ -n "${tag}" ]] || die "无法获取 latest release tag，请设置 QOSNAT_RELEASE_TAG=vX.Y.Z"
-  echo "${tag}"
+  if command -v jq >/dev/null 2>&1; then
+    tag="$(curl -fsSL "${QOSNAT_VERSIONS_URL}" | jq -r '.versions[0].tag // empty')"
+  else
+    tag="$(curl -fsSL "${QOSNAT_VERSIONS_URL}" | python3 -c "import json,sys; d=json.load(sys.stdin); v=d.get('versions') or []; print(v[0].get('tag','') if v else '')" 2>/dev/null || true)"
+  fi
+  [[ -n "${tag}" ]] || die "无法从版本清单获取 release tag，请设置 QOSNAT_RELEASE_TAG 或检查 ${QOSNAT_VERSIONS_URL}"
+  normalize_qosnat_tag "${tag}"
 }
 
 download_release_binary() {
@@ -191,7 +206,10 @@ download_release_binary() {
     install -m 0644 "${tmp}/lib/classify.bpf.o" /usr/lib/qosnat2/classify.bpf.o
   fi
   rm -rf "${tmp}"
-  log "已安装 release 二进制: ${QOSNAT_BIN_PATH} (tag=${QOSNAT_RELEASE_TAG})"
+  install -d /etc/qosnat2
+  local id="${QOSNAT_RELEASE_TAG#v}"
+  echo "${id}" > /etc/qosnat2/release-tag
+  log "已安装 release 二进制: ${QOSNAT_BIN_PATH} (version=${id})"
 }
 
 detect_public_ipv4() {

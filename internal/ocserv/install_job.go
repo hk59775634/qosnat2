@@ -2,12 +2,15 @@ package ocserv
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/hk59775634/qosnat2/internal/releasecatalog"
 )
 
 const (
@@ -20,7 +23,7 @@ const (
 	installLogFile    = "/var/lib/qosnat2/ocserv-install.log"
 )
 
-// InstallJobStatus 源码安装任务状态（供 UI 轮询）
+// InstallJobStatus 安装任务状态（供 UI 轮询）
 type InstallJobStatus struct {
 	State      string `json:"state"`
 	Message    string `json:"message,omitempty"`
@@ -28,6 +31,8 @@ type InstallJobStatus struct {
 	FinishedAt string `json:"finished_at,omitempty"`
 	LogTail    string `json:"log_tail,omitempty"`
 	Script     string `json:"script,omitempty"`
+	Method     string `json:"method,omitempty"`
+	Version    string `json:"version,omitempty"`
 }
 
 var (
@@ -77,8 +82,8 @@ func GetInstallStatus() InstallJobStatus {
 	return st
 }
 
-// StartInstallAsync 后台执行安装脚本（单实例）
-func StartInstallAsync(script string) error {
+// StartInstallAsync 后台执行安装（单实例）。method: release（默认）或 source（仅开发构建）。
+func StartInstallAsync(method, version string) error {
 	installMu.Lock()
 	if installRunning {
 		installMu.Unlock()
@@ -86,6 +91,30 @@ func StartInstallAsync(script string) error {
 	}
 	installRunning = true
 	installMu.Unlock()
+
+	method = strings.TrimSpace(strings.ToLower(method))
+	if method == "" {
+		method = "release"
+	}
+	version = releasecatalog.NormalizeID(version)
+	if version == "" && method == "release" {
+		if entries, err := releasecatalog.ListEntries("ocserv"); err == nil && len(entries) > 0 {
+			version = releasecatalog.NormalizeID(entries[0].ID)
+			if version == "" {
+				version = releasecatalog.NormalizeID(entries[0].Tag)
+			}
+		}
+	}
+	if version == "" && method == "source" {
+		version = "1.4.2"
+	}
+	if method == "release" && version == "" {
+		installMu.Lock()
+		installRunning = false
+		installMu.Unlock()
+		return fmt.Errorf("release install requires version (manifest empty?)")
+	}
+	script := InstallScriptPath()
 
 	go func() {
 		defer func() {
@@ -97,9 +126,11 @@ func StartInstallAsync(script string) error {
 		started := time.Now().UTC().Format(time.RFC3339)
 		st := InstallJobStatus{
 			State:     installStateRunning,
-			Message:   "running install script",
+			Message:   "running install",
 			StartedAt: started,
 			Script:    script,
+			Method:    method,
+			Version:   version,
 		}
 		saveInstallStatus(st)
 
@@ -111,7 +142,13 @@ func StartInstallAsync(script string) error {
 		}
 		defer logf.Close()
 
-		cmd := exec.Command("bash", script)
+		var cmd *exec.Cmd
+		if method == "source" {
+			cmd = exec.Command("bash", script, "--method", "source", "--version", version)
+		} else {
+			url := ocservReleaseDownloadURL(version)
+			cmd = exec.Command("bash", script, "--method", "release", "--version", version, "--url", url)
+		}
 		cmd.Stdout = logf
 		cmd.Stderr = logf
 		runErr := cmd.Run()
@@ -123,6 +160,7 @@ func StartInstallAsync(script string) error {
 			finishInstall(started, installStateFailed, runErr.Error(), tail)
 			return
 		}
+		saveOcservReleaseTag(version)
 		finishInstall(started, installStateOK, "install completed", tail)
 	}()
 	return nil

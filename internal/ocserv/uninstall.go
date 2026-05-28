@@ -10,9 +10,9 @@ import (
 
 const ocservSystemdUnit = "/etc/systemd/system/ocserv.service"
 
-// UninstallFromSourceInstall 停止 ocserv、移除 systemd 单元与源码安装常见二进制（/usr/local）。
+// UninstallBinaries 停止 ocserv、移除 systemd 单元与 /usr/local 下的可执行文件。
 // 不删除 /etc/ocserv 配置目录。
-func UninstallFromSourceInstall() error {
+func UninstallBinaries() error {
 	_, _ = exec.Command("systemctl", "stop", "ocserv").CombinedOutput()
 	_, _ = exec.Command("systemctl", "disable", "ocserv").CombinedOutput()
 
@@ -56,5 +56,9 @@ func UninstallFromSourceInstall() error {
 			return fmt.Errorf("remove %s: %w", p, err)
 		}
 	}
+	_ = os.Remove(ocservReleaseTagFile)
 	return nil
 }
+
+// UninstallFromSourceInstall 保留旧名称以兼容调用方。
+func UninstallFromSourceInstall() error { return UninstallBinaries() }

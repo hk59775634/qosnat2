@@ -1,25 +1,125 @@
 #!/usr/bin/env bash
-# 从源码编译安装 ocserv（OpenConnect VPN 服务端，兼容 AnyConnect 客户端）
-# 用法: sudo /opt/qosnat2/scripts/install-ocserv.sh
-# 可选: OCSERV_TAG=1.4.2 OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
+# 安装 ocserv（OpenConnect VPN 服务端）
+# 生产环境默认使用预编译 release 包；开发环境可用 --method source 从源码编译。
+#
+# 用法:
+#   sudo /opt/qosnat2/scripts/install-ocserv.sh
+#   sudo /opt/qosnat2/scripts/install-ocserv.sh --method release --version 2026052801
+#   sudo /opt/qosnat2/scripts/install-ocserv.sh --method source   # 仅开发/构建机
+#
+# 环境变量:
+#   INSTALL_METHOD=release|source
+#   OCSERV_VERSION=2026052801
+#   OCSERV_VERSIONS_URL=...   # 默认 GitHub releases/ocserv-versions.json
+#   OCSERV_DOWNLOAD_URL=...   # 可选，覆盖默认 GitHub release URL
+#   OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv  # source 编译用
 set -euo pipefail
 
 OCSERV_REPO="${OCSERV_REPO:-https://gitlab.com/openconnect/ocserv.git}"
-OCSERV_TAG="${OCSERV_TAG:-1.4.2}"
+OCSERV_TAG="${OCSERV_TAG:-}"
+OCSERV_VERSION="${OCSERV_VERSION:-${OCSERV_TAG}}"
+OCSERV_VERSIONS_URL="${OCSERV_VERSIONS_URL:-https://raw.githubusercontent.com/hk59775634/qosnat2/main/releases/ocserv-versions.json}"
 OCSERV_PREFIX="${OCSERV_PREFIX:-/usr/local}"
 OCSERV_SYSCONFDIR="${OCSERV_SYSCONFDIR:-/etc/ocserv}"
 BUILD_DIR="${BUILD_DIR:-/usr/local/src/ocserv-build}"
 OCSERV_BIN="${OCSERV_PREFIX}/sbin/ocserv"
 MESON_BUILD_DIR="${MESON_BUILD_DIR:-build}"
+INSTALL_METHOD="${INSTALL_METHOD:-release}"
+GITHUB_REPO="${GITHUB_REPO:-hk59775634/qosnat2}"
+RELEASE_ASSET="${RELEASE_ASSET:-ocserv-linux-amd64.tar.gz}"
 
 log()  { echo "[ocserv-install] $*"; }
 warn() { echo "[ocserv-install] WARN: $*" >&2; }
 die()  { echo "[ocserv-install] ERROR: $*" >&2; exit 1; }
 
 [[ "$(id -u)" -eq 0 ]] || die "需要 root"
-
-# 避免从已删除的工作目录执行 git/apt（UI 后台触发时 cwd 可能无效）
 cd / || true
+
+normalize_version() {
+  local v="${1:-}"
+  v="${v#ocserv-}"
+  v="${v#v}"
+  echo "${v}"
+}
+
+detect_release_version() {
+  if [[ -n "${OCSERV_VERSION}" ]]; then
+    normalize_version "${OCSERV_VERSION}"
+    return 0
+  fi
+  local id
+  if command -v jq >/dev/null 2>&1; then
+    id="$(curl -fsSL "${OCSERV_VERSIONS_URL}" | jq -r '.versions[0].id // .versions[0].tag // empty' | head -n1)"
+    id="$(normalize_version "${id}")"
+  else
+    id="$(curl -fsSL "${OCSERV_VERSIONS_URL}" | python3 -c "import json,sys; d=json.load(sys.stdin); v=d.get('versions') or []; e=v[0] if v else {}; print((e.get('id') or e.get('tag') or '').replace('ocserv-','').replace('v',''))" 2>/dev/null || true)"
+  fi
+  [[ -n "${id}" ]] || die "无法从版本清单获取版本，请设置 OCSERV_VERSION 或检查 ${OCSERV_VERSIONS_URL}"
+  echo "${id}"
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --method) INSTALL_METHOD="${2:-release}"; shift 2 ;;
+      --version) OCSERV_VERSION="${2:-}"; shift 2 ;;
+      --url) OCSERV_DOWNLOAD_URL="${2:-}"; shift 2 ;;
+      -h|--help)
+        sed -n '1,20p' "$0"
+        exit 0
+        ;;
+      *) die "未知参数: $1" ;;
+    esac
+  done
+  OCSERV_VERSION="$(normalize_version "${OCSERV_VERSION}")"
+  if [[ "${INSTALL_METHOD}" == "release" && -z "${OCSERV_VERSION}" ]]; then
+    OCSERV_VERSION="$(detect_release_version)"
+  fi
+  if [[ "${INSTALL_METHOD}" == "release" ]]; then
+    [[ -n "${OCSERV_VERSION}" ]] || die "release 安装需要版本号（--version 或版本清单）"
+    [[ "${OCSERV_VERSION}" =~ ^[0-9]{10}$ ]] || die "版本号格式应为 YYYYMMDDNN（10 位数字）: ${OCSERV_VERSION}"
+  elif [[ -z "${OCSERV_VERSION}" ]]; then
+    OCSERV_VERSION="1.4.2"
+  fi
+}
+
+default_release_url() {
+  local ver tag
+  ver="$(normalize_version "${OCSERV_VERSION}")"
+  tag="ocserv-${ver}"
+  echo "https://github.com/${GITHUB_REPO}/releases/download/${tag}/${RELEASE_ASSET}"
+}
+
+install_release() {
+  local url tmp
+  url="${OCSERV_DOWNLOAD_URL:-$(default_release_url)}"
+  tmp="$(mktemp -d /tmp/ocserv-release.XXXXXX)"
+  trap 'rm -rf "${tmp}"' RETURN
+  log "下载 release: ${url}"
+  command -v curl >/dev/null || die "需要 curl"
+  curl -fL --retry 3 --retry-delay 2 "${url}" -o "${tmp}/pkg.tar.gz"
+  tar -xzf "${tmp}/pkg.tar.gz" -C "${tmp}"
+  [[ -f "${tmp}/bin/ocserv" ]] || die "release 包缺少 bin/ocserv"
+  install -d /usr/local/sbin /usr/local/bin
+  install -m 0755 "${tmp}/bin/ocserv" /usr/local/sbin/ocserv
+  for tool in occtl ocpasswd; do
+    if [[ -f "${tmp}/bin/${tool}" ]]; then
+      install -m 0755 "${tmp}/bin/${tool}" "/usr/local/bin/${tool}"
+    fi
+  done
+  if [[ -f "${tmp}/systemd/ocserv.service" ]]; then
+    sed "s|/usr/sbin/ocserv|/usr/local/sbin/ocserv|g; s|/etc/ocserv|${OCSERV_SYSCONFDIR}|g" \
+      "${tmp}/systemd/ocserv.service" > /etc/systemd/system/ocserv.service
+    sed -i 's|^ExecStartPre=.*||' /etc/systemd/system/ocserv.service 2>/dev/null || true
+    systemctl daemon-reload
+  fi
+  seed_config
+  enable_ip_forward
+  install -d /var/lib/qosnat2
+  echo "${OCSERV_VERSION}" > /var/lib/qosnat2/ocserv-release-tag
+  log "release 安装完成: /usr/local/sbin/ocserv (${OCSERV_VERSION})"
+  /usr/local/sbin/ocserv --version 2>/dev/null || true
+}
 
 install_build_deps() {
   if ! command -v apt-get &>/dev/null; then
@@ -69,15 +169,7 @@ fetch_source() {
   fi
   cd "${BUILD_DIR}/ocserv"
   if [[ -f .gitmodules ]] && [[ -d .git ]]; then
-    log "初始化 git submodules..."
-    git submodule update --init --recursive 2>/dev/null || warn "submodule 初始化失败（可能不影响编译）"
-  fi
-  if [[ -f meson.build ]]; then
-    log "源码版本: $(meson introspect --project-version meson.build 2>/dev/null || echo "${tag}") (Meson)"
-  elif [[ -f configure.ac ]]; then
-    log "源码版本: ${tag} (Autotools)"
-  else
-    die "源码树无效：缺少 meson.build 与 configure.ac"
+    git submodule update --init --recursive 2>/dev/null || warn "submodule 初始化失败"
   fi
 }
 
@@ -101,13 +193,10 @@ build_install_autotools() {
 build_install_meson() {
   log "使用 Meson 编译..."
   rm -rf "${MESON_BUILD_DIR}"
-  local meson_args=(
-    setup "${MESON_BUILD_DIR}"
-    --prefix="${OCSERV_PREFIX}"
-    --sysconfdir="${OCSERV_SYSCONFDIR}"
-    -Dradius=enabled
-  )
-  if ! meson "${meson_args[@]}"; then
+  if ! meson setup "${MESON_BUILD_DIR}" \
+    --prefix="${OCSERV_PREFIX}" \
+    --sysconfdir="${OCSERV_SYSCONFDIR}" \
+    -Dradius=enabled; then
     warn "Meson 启用 radius 失败，重试 -Dradius=auto"
     meson setup "${MESON_BUILD_DIR}" \
       --prefix="${OCSERV_PREFIX}" \
@@ -128,16 +217,9 @@ build_install() {
     die "无法识别构建系统"
   fi
   [[ -x "${OCSERV_BIN}" ]] || die "未找到 ${OCSERV_BIN}"
-  if command -v "${OCSERV_PREFIX}/bin/ocpasswd" &>/dev/null; then
-    log "ocpasswd: ${OCSERV_PREFIX}/bin/ocpasswd"
-  elif command -v "${OCSERV_PREFIX}/sbin/ocpasswd" &>/dev/null; then
-    log "ocpasswd: ${OCSERV_PREFIX}/sbin/ocpasswd"
-  else
-    warn "ocpasswd 未在 ${OCSERV_PREFIX}/bin 或 sbin"
-  fi
 }
 
-install_systemd() {
+install_systemd_from_source() {
   mkdir -p "${OCSERV_SYSCONFDIR}"
   local unit_src=""
   for p in \
@@ -155,17 +237,15 @@ install_systemd() {
     warn "未找到 ocserv.service 模板，跳过 systemd"
     return 0
   fi
-  local unit_dst="/etc/systemd/system/ocserv.service"
-  sed "s|/usr/sbin/ocserv|${OCSERV_BIN}|g; s|/etc/ocserv|${OCSERV_SYSCONFDIR}|g" "${unit_src}" > "${unit_dst}"
-  sed -i 's|^ExecStartPre=.*||' "${unit_dst}" 2>/dev/null || true
+  sed "s|/usr/sbin/ocserv|${OCSERV_BIN}|g; s|/etc/ocserv|${OCSERV_SYSCONFDIR}|g" "${unit_src}" > /etc/systemd/system/ocserv.service
+  sed -i 's|^ExecStartPre=.*||' /etc/systemd/system/ocserv.service 2>/dev/null || true
   systemctl daemon-reload
-  log "已安装 ${unit_dst}（来自 $(basename "$(dirname "${unit_src}")")/$(basename "${unit_src}")）"
 }
 
 seed_config() {
   mkdir -p "${OCSERV_SYSCONFDIR}/certs"
   if [[ ! -f "${OCSERV_SYSCONFDIR}/ocserv.conf" ]]; then
-    log "写入默认 ${OCSERV_SYSCONFDIR}/ocserv.conf（可由 qosnatd UI 覆盖）"
+    log "写入默认 ${OCSERV_SYSCONFDIR}/ocserv.conf"
     cat > "${OCSERV_SYSCONFDIR}/ocserv.conf" <<EOF
 # qosnat2 初始模板 — 请通过 Web「VPN → OpenConnect」保存完整配置
 auth = "plain[passwd=${OCSERV_SYSCONFDIR}/ocpasswd]"
@@ -192,7 +272,6 @@ EOF
   touch "${OCSERV_SYSCONFDIR}/ocpasswd"
   chmod 0600 "${OCSERV_SYSCONFDIR}/ocpasswd"
   if [[ ! -f "${OCSERV_SYSCONFDIR}/certs/server-cert.pem" ]] && [[ -f /etc/qosnat2/tls.crt ]]; then
-    log "复用 /etc/qosnat2/tls.* 为 VPN 证书"
     cp -f /etc/qosnat2/tls.crt "${OCSERV_SYSCONFDIR}/certs/server-cert.pem"
     cp -f /etc/qosnat2/tls.key "${OCSERV_SYSCONFDIR}/certs/server-key.pem"
     chmod 0644 "${OCSERV_SYSCONFDIR}/certs/server-cert.pem"
@@ -206,21 +285,38 @@ enable_ip_forward() {
     || echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.d/99-qosnat2.conf 2>/dev/null || true
 }
 
-main() {
+install_source() {
+  OCSERV_TAG="${OCSERV_VERSION}"
   install_build_deps
   fetch_source
   build_install
-  install_systemd
+  install_systemd_from_source
   seed_config
   enable_ip_forward
-  log "完成。二进制: ${OCSERV_BIN}"
+  install -d /var/lib/qosnat2
+  echo "${OCSERV_VERSION}" > /var/lib/qosnat2/ocserv-release-tag
+  log "源码安装完成: ${OCSERV_BIN}"
   if ldd "${OCSERV_BIN}" 2>/dev/null | grep -qE 'radcli|radiusclient'; then
     log "RADIUS: 已链接 radcli"
   else
-    warn "RADIUS: 未检测到 radcli；检查 libradcli-dev 与 meson -Dradius"
+    warn "RADIUS: 未检测到 radcli"
   fi
-  log "下一步: Web「VPN → OpenConnect」配置并 Apply"
   "${OCSERV_BIN}" --version 2>/dev/null || true
+}
+
+main() {
+  parse_args "$@"
+  case "${INSTALL_METHOD}" in
+    release|binary)
+      install_release
+      ;;
+    source)
+      install_source
+      ;;
+    *)
+      die "未知 INSTALL_METHOD=${INSTALL_METHOD}（可用 release 或 source）"
+      ;;
+  esac
 }
 
 main "$@"

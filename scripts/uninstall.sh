@@ -207,6 +207,7 @@ remove_installed_files() {
   systemctl reset-failed qos-nat.service 2>/dev/null || true
 
   rm -f "${QOSNATD_BIN}"
+  rm -f /etc/qosnat2/release-tag
 
   if [[ -f "${SYSCTL_CONF}" ]]; then
     log "移除 ${SYSCTL_CONF}"

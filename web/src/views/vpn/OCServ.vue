@@ -18,6 +18,13 @@ const router = useRouter()
 const cfg = ref(null)
 const status = ref(null)
 const installScript = ref('')
+const versionInfo = ref(null)
+const installVersion = ref('')
+const switchVersion = ref('')
+const switchVersionBusy = ref(false)
+const showSwitchVersionModal = ref(false)
+const switchVersionPassword = ref('')
+const switchVersionErr = ref('')
 const users = ref([])
 const err = ref('')
 const ok = ref('')
@@ -316,8 +323,21 @@ async function load() {
   cfg.value = d.config || {}
   ensureDefaults()
   status.value = d.status || {}
+  versionInfo.value = d.version_info || null
   installScript.value = d.install_script || ''
   installJob.value = normalizeInstallJob(d.install_job)
+  if (!installVersion.value) {
+    installVersion.value =
+      versionInfo.value?.current_tag ||
+      versionInfo.value?.releases?.[0]?.tag ||
+      ''
+  }
+  if (!switchVersion.value) {
+    switchVersion.value =
+      versionInfo.value?.current_tag ||
+      versionInfo.value?.releases?.[0]?.tag ||
+      ''
+  }
   users.value = (d.config?.users || []).map((u) => ({ ...u }))
   radiusSecret.value = ''
   radiusSecretSet.value = !!d.radius_secret_set
@@ -438,7 +458,10 @@ async function runInstall() {
   ok.value = ''
   installing.value = true
   try {
-    const r = await api.post('/api/v1/vpn/ocserv/install', {})
+    const r = await api.post('/api/v1/vpn/ocserv/install', {
+      method: 'release',
+      version: installVersion.value || undefined,
+    })
     ok.value = r.message || t('ocserv.installQueued')
     installJob.value = r.job || { state: 'running' }
     startInstallPoll()
@@ -462,6 +485,49 @@ function closeUninstallModal() {
   showUninstallModal.value = false
   uninstallPassword.value = ''
   uninstallErr.value = ''
+}
+
+function openSwitchVersionModal() {
+  switchVersionErr.value = ''
+  switchVersionPassword.value = ''
+  showSwitchVersionModal.value = true
+}
+
+function closeSwitchVersionModal() {
+  showSwitchVersionModal.value = false
+  switchVersionPassword.value = ''
+  switchVersionErr.value = ''
+}
+
+async function confirmSwitchVersion() {
+  switchVersionErr.value = ''
+  if (!switchVersion.value) {
+    switchVersionErr.value = t('ocserv.versionNeedTag')
+    return
+  }
+  if (!switchVersionPassword.value) {
+    switchVersionErr.value = t('ocserv.switchPasswordRequired')
+    return
+  }
+  switchVersionBusy.value = true
+  try {
+    const r = await api.post('/api/v1/vpn/ocserv/version/switch', {
+      version: switchVersion.value,
+      admin_password: switchVersionPassword.value,
+    })
+    ok.value = r.message || t('ocserv.versionSwitchDone')
+    closeSwitchVersionModal()
+    await load()
+  } catch (e) {
+    const msg = e.data?.error || e.message || ''
+    if (e.status === 403 && /incorrect admin password/i.test(String(msg))) {
+      switchVersionErr.value = t('ocserv.uninstallWrongPassword')
+    } else {
+      switchVersionErr.value = String(msg)
+    }
+  } finally {
+    switchVersionBusy.value = false
+  }
 }
 
 async function confirmUninstallOcserv() {
@@ -1140,31 +1206,67 @@ onUnmounted(() => {
     <p v-if="err" class="text-sm text-red-600 mb-2">{{ err }}</p>
     <p v-if="ok" class="text-sm text-green-700 mb-2">{{ ok }}</p>
 
-    <div class="card p-4 mb-4 space-y-2">
+    <div class="card p-4 mb-4 space-y-3">
       <div class="flex flex-wrap gap-4 text-sm">
         <span>{{ t('ocserv.installed') }}: <strong>{{ status?.installed ? t('common.yes') : t('common.no') }}</strong></span>
         <span>{{ t('ocserv.running') }}: <strong>{{ status?.active ? t('common.yes') : t('common.no') }}</strong></span>
+        <span>{{ t('ocserv.version') }}: <strong class="font-mono">{{ versionInfo?.current_version || status?.version || '—' }}</strong></span>
+        <span v-if="versionInfo?.current_tag">{{ t('ocserv.currentTag') }}: <strong class="font-mono">{{ versionInfo.current_tag }}</strong></span>
         <span>{{ t('ocserv.radiusLinked') }}: <strong>{{ status?.radius_linked ? t('common.yes') : t('common.no') }}</strong></span>
         <span>occtl: <strong>{{ useOcctl ? t('common.enabled') : t('common.disabled') }}</strong></span>
       </div>
-      <button
-        v-if="!status?.installed"
-        type="button"
-        class="btn-secondary text-sm"
-        :disabled="installing"
-        @click="runInstall"
-      >
-        {{ installing ? t('ocserv.installing') : t('ocserv.installFromSource') }}
-      </button>
-      <button
-        v-else
-        type="button"
-        class="btn-secondary text-sm border-red-200 text-red-700 hover:bg-red-50"
-        :disabled="installing || uninstallSubmitting || serviceSubmitting"
-        @click="openUninstallModal"
-      >
-        {{ t('ocserv.uninstallFromSource') }}
-      </button>
+      <p v-if="versionInfo?.list_error" class="text-xs text-amber-700">{{ versionInfo.list_error }}</p>
+      <p v-if="!versionInfo?.root_required" class="text-xs text-amber-800">{{ t('ocserv.versionRootHint') }}</p>
+
+      <div v-if="!status?.installed" class="flex flex-wrap items-end gap-2">
+        <label class="text-sm min-w-[12rem]">
+          <span class="text-xs text-slate-500">{{ t('ocserv.installVersion') }}</span>
+          <select v-model="installVersion" class="input w-full mt-1 font-mono text-sm" :disabled="installing">
+            <option v-for="r in (versionInfo?.releases || [])" :key="r.tag" :value="r.tag">
+              {{ r.tag }}{{ r.prerelease ? ' (pre)' : '' }}
+            </option>
+          </select>
+        </label>
+        <button
+          type="button"
+          class="btn-secondary text-sm"
+          :disabled="installing || !versionInfo?.root_required"
+          @click="runInstall"
+        >
+          {{ installing ? t('ocserv.installing') : t('ocserv.installRelease') }}
+        </button>
+      </div>
+
+      <div v-else class="flex flex-wrap items-end gap-2">
+        <label class="text-sm min-w-[12rem]">
+          <span class="text-xs text-slate-500">{{ t('ocserv.switchToVersion') }}</span>
+          <select
+            v-model="switchVersion"
+            class="input w-full mt-1 font-mono text-sm"
+            :disabled="installing || switchVersionBusy || !versionInfo?.root_required"
+          >
+            <option v-for="r in (versionInfo?.releases || [])" :key="r.tag" :value="r.tag">
+              {{ r.tag }}{{ r.prerelease ? ' (pre)' : '' }}
+            </option>
+          </select>
+        </label>
+        <button
+          type="button"
+          class="btn-secondary text-sm"
+          :disabled="installing || switchVersionBusy || serviceSubmitting || !versionInfo?.root_required"
+          @click="openSwitchVersionModal"
+        >
+          {{ t('ocserv.switchVersion') }}
+        </button>
+        <button
+          type="button"
+          class="btn-secondary text-sm border-red-200 text-red-700 hover:bg-red-50"
+          :disabled="installing || uninstallSubmitting || serviceSubmitting || switchVersionBusy"
+          @click="openUninstallModal"
+        >
+          {{ t('ocserv.uninstallRelease') }}
+        </button>
+      </div>
 
       <div
         v-if="status?.installed"
@@ -1877,6 +1979,62 @@ onUnmounted(() => {
         </button>
       </div>
     </div>
+
+    <!-- switch ocserv version modal -->
+    <Teleport to="body">
+      <div
+        v-if="showSwitchVersionModal"
+        class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+        role="presentation"
+        @click.self="closeSwitchVersionModal"
+      >
+        <div
+          class="bg-white rounded-xl shadow-xl w-full max-w-md border border-slate-200"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ocserv-switch-version-title"
+        >
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <h3 id="ocserv-switch-version-title" class="font-medium text-slate-900">
+              {{ t('ocserv.switchVersionModalTitle') }}
+            </h3>
+            <button
+              type="button"
+              class="text-slate-500 hover:text-slate-800 text-xl leading-none px-2"
+              :disabled="switchVersionBusy"
+              @click="closeSwitchVersionModal"
+            >
+              ×
+            </button>
+          </div>
+          <div class="p-4 space-y-3">
+            <p class="text-sm text-slate-600">{{ t('ocserv.switchVersionModalBody') }}</p>
+            <p class="text-sm font-mono text-slate-800">{{ switchVersion }}</p>
+            <label class="block text-sm text-slate-700">
+              {{ t('ocserv.uninstallPasswordLabel', { user: adminUser }) }}
+              <input
+                v-model="switchVersionPassword"
+                type="password"
+                autocomplete="current-password"
+                class="input mt-1 w-full"
+                :placeholder="t('ocserv.uninstallPasswordPh', { user: adminUser })"
+                :disabled="switchVersionBusy"
+                @keydown.enter.prevent="confirmSwitchVersion"
+              >
+            </label>
+            <p v-if="switchVersionErr" class="text-sm text-red-600">{{ switchVersionErr }}</p>
+            <div class="flex justify-end gap-2 pt-1">
+              <button type="button" class="btn-secondary" :disabled="switchVersionBusy" @click="closeSwitchVersionModal">
+                {{ t('common.cancel') }}
+              </button>
+              <button type="button" class="btn-primary" :disabled="switchVersionBusy" @click="confirmSwitchVersion">
+                {{ switchVersionBusy ? t('common.processing') : t('ocserv.switchVersion') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- uninstall ocserv modal -->
     <Teleport to="body">

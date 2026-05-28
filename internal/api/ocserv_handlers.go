@@ -20,6 +20,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 			"config":                  pub,
 			"vhosts_meta":             ocservPublicVhosts(o.Vhosts, o, st.Certificates),
 			"status":                  ocserv.InstallInfo(),
+			"version_info":            ocserv.VersionInfo(),
 			"install_script":          ocserv.InstallScriptPath(),
 			"install_job":             ocserv.GetInstallStatus(),
 			"conf_path":               ocserv.ConfPath,
@@ -135,20 +136,47 @@ func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	var body struct {
+		Version string `json:"version"`
+		Method  string `json:"method"`
+	}
+	if r.ContentLength != 0 {
+		if err := readJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			return
+		}
+	}
+	method := strings.TrimSpace(strings.ToLower(body.Method))
+	if method == "" {
+		method = "release"
+	}
+	if method == "source" && !ocserv.AllowSourceInstall() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": "当前为 release 构建，仅支持下载预编译包安装；请使用 method=release",
+		})
+		return
+	}
 	script := ocserv.InstallScriptPath()
 	if _, err := os.Stat(script); err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "install script not found"})
 		return
 	}
-	if err := ocserv.StartInstallAsync(script); err != nil {
+	version := strings.TrimSpace(body.Version)
+	if err := ocserv.StartInstallAsync(method, version); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	srv.auditLog(r, "vpn.ocserv.install.start", script)
+	srv.auditLog(r, "vpn.ocserv.install.start", method+":"+version)
+	msg := "已在后台开始安装预编译包，请稍候查看下方进度"
+	if method == "source" {
+		msg = "已在后台开始源码编译安装，请稍候查看下方进度"
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok":      true,
-		"message": "已在后台开始编译安装，请稍候查看下方进度",
+		"message": msg,
 		"script":  script,
+		"method":  method,
+		"version": version,
 		"job":     ocserv.GetInstallStatus(),
 	})
 }
@@ -176,7 +204,7 @@ func (srv *Server) handleOCServUninstall(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "incorrect admin password"})
 		return
 	}
-	if err := ocserv.UninstallFromSourceInstall(); err != nil {
+	if err := ocserv.UninstallBinaries(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

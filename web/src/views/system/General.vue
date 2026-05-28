@@ -28,9 +28,13 @@ const err = ref('')
 const ok = ref('')
 const warn = ref('')
 const acmeBusy = ref(false)
+const versionInfo = ref(null)
+const switchTag = ref('')
+const switchBusy = ref(false)
 
 async function load() {
   cfg.value = await api.system.general.get()
+  versionInfo.value = await api.get('/api/v1/system/version')
   const tlsCfg = cfg.value.tls || {}
   form.value.hostname = cfg.value.hostname || ''
   form.value.display_name = cfg.value.display_name || ''
@@ -44,6 +48,9 @@ async function load() {
   form.value.tls_managed_cert_id = tlsCfg.managed_cert_id || ''
   form.value.tls_cert = ''
   form.value.tls_key = ''
+  if (!switchTag.value) {
+    switchTag.value = versionInfo.value?.current_tag || versionInfo.value?.releases?.[0]?.tag || ''
+  }
 }
 
 const useLibraryCert = computed(() => !!form.value.tls_managed_cert_id)
@@ -175,6 +182,32 @@ async function runAcme(action) {
   }
 }
 
+async function switchVersion() {
+  err.value = ''
+  ok.value = ''
+  warn.value = ''
+  if (!switchTag.value) {
+    err.value = t('system.general.versionNeedTag')
+    return
+  }
+  if (!form.value.current_password) {
+    err.value = t('system.general.needPasswordForTls')
+    return
+  }
+  switchBusy.value = true
+  try {
+    const r = await api.post('/api/v1/system/version/switch', {
+      tag: switchTag.value,
+      current_password: form.value.current_password,
+    })
+    ok.value = r.message || t('system.general.versionSwitchQueued')
+  } catch (e) {
+    err.value = e.data?.error || e.message
+  } finally {
+    switchBusy.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -225,6 +258,38 @@ onMounted(load)
           <label class="text-xs text-slate-500">{{ t('system.general.currentPassword') }}</label>
           <input v-model="form.current_password" type="password" class="input-field mt-1" autocomplete="current-password" />
         </div>
+      </section>
+
+      <section class="space-y-4 pt-4 border-t border-slate-200">
+        <h3 class="text-sm font-semibold text-slate-800">{{ t('system.general.versionSection') }}</h3>
+        <p class="text-xs text-slate-500">{{ t('system.general.versionFormatHint') }}</p>
+        <div v-if="versionInfo" class="text-xs text-slate-600 space-y-1 bg-slate-50 rounded p-3">
+          <p>{{ t('system.general.currentVersion') }}: <span class="font-mono">{{ versionInfo.current_version || 'unknown' }}</span></p>
+          <p>{{ t('system.general.currentTag') }}: <span class="font-mono">{{ versionInfo.current_tag || 'unknown' }}</span></p>
+          <p>{{ t('system.general.binaryPath') }}: <span class="font-mono">{{ versionInfo.binary_path }}</span></p>
+          <p v-if="versionInfo.list_error" class="text-amber-700">{{ versionInfo.list_error }}</p>
+        </div>
+        <div class="flex flex-wrap gap-2 items-end">
+          <label class="flex-1 min-w-[16rem]">
+            <span class="text-xs text-slate-500">{{ t('system.general.switchToVersion') }}</span>
+            <select v-model="switchTag" class="input-field mt-1 font-mono" :disabled="switchBusy || !versionInfo?.root_required">
+              <option v-for="r in (versionInfo?.releases || [])" :key="r.tag" :value="r.tag">
+                {{ r.tag }}{{ r.prerelease ? ' (pre)' : '' }}
+              </option>
+            </select>
+          </label>
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="switchBusy || !versionInfo?.root_required"
+            @click="switchVersion"
+          >
+            {{ switchBusy ? t('common.processing') : t('system.general.switchVersion') }}
+          </button>
+        </div>
+        <p v-if="versionInfo && !versionInfo.root_required" class="text-xs text-amber-700">
+          {{ t('system.general.versionRootHint') }}
+        </p>
       </section>
 
       <section class="space-y-4 pt-4 border-t border-slate-200">

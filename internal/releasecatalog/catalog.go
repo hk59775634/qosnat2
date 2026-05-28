@@ -1,0 +1,158 @@
+// Package releasecatalog 从 GitHub 仓库 manifest 读取可切换的 release 版本列表。
+package releasecatalog
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+)
+
+const (
+	GitHubRepo     = "hk59775634/qosnat2"
+	DefaultBranch  = "main"
+	MaxVersions    = 5
+	VersionIDLen   = 10
+)
+
+var versionIDRe = regexp.MustCompile(`^\d{10}$`)
+
+// Manifest 存于 releases/{product}-versions.json（main 分支 raw 内容）。
+type Manifest struct {
+	Schema   int            `json:"schema"`
+	MaxKeep  int            `json:"max_keep"`
+	Versions []VersionEntry `json:"versions"`
+}
+
+type VersionEntry struct {
+	ID          string `json:"id"`
+	Tag         string `json:"tag"`
+	PublishedAt string `json:"published_at,omitempty"`
+}
+
+// ManifestURL 返回 raw.githubusercontent.com 上的 manifest 地址。
+func ManifestURL(product string) string {
+	product = strings.TrimSpace(product)
+	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/releases/%s-versions.json",
+		GitHubRepo, DefaultBranch, product)
+}
+
+// FetchManifest 拉取版本清单（防火墙/设备侧用于列举可切换版本）。
+func FetchManifest(product string) (*Manifest, error) {
+	req, err := http.NewRequest(http.MethodGet, ManifestURL(product), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	cli := &http.Client{Timeout: 10 * time.Second}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("manifest %s: %s", product, resp.Status)
+	}
+	var m Manifest
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// ListEntries 返回 manifest 中的版本条目；拉取失败时 err 非 nil。
+func ListEntries(product string) ([]VersionEntry, error) {
+	m, err := FetchManifest(product)
+	if err != nil {
+		return nil, err
+	}
+	if m == nil || len(m.Versions) == 0 {
+		return nil, nil
+	}
+	out := make([]VersionEntry, len(m.Versions))
+	copy(out, m.Versions)
+	return out, nil
+}
+
+// NormalizeID 去掉 v / ocserv- 等前缀，得到 10 位版本号。
+func NormalizeID(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "ocserv-")
+	s = strings.TrimPrefix(s, "v")
+	return s
+}
+
+// ValidID 校验 YYYYMMDD + 01–99 格式。
+func ValidID(id string) bool {
+	id = NormalizeID(id)
+	if !versionIDRe.MatchString(id) {
+		return false
+	}
+	date := id[:8]
+	seq := id[8:]
+	if seq < "01" || seq > "99" {
+		return false
+	}
+	_, err := time.Parse("20060102", date)
+	return err == nil
+}
+
+// QosnatGitHubTag 将版本号转为 GitHub release tag（v2026052801）。
+func QosnatGitHubTag(versionID string) string {
+	id := NormalizeID(versionID)
+	if id == "" {
+		return ""
+	}
+	return "v" + id
+}
+
+// OcservGitHubTag 将版本号转为 ocserv release tag（ocserv-2026052801）。
+func OcservGitHubTag(versionID string) string {
+	id := NormalizeID(versionID)
+	if id == "" {
+		return ""
+	}
+	return "ocserv-" + id
+}
+
+// QosnatDownloadURL release 资产下载地址。
+func QosnatDownloadURL(versionID string) string {
+	tag := QosnatGitHubTag(versionID)
+	if tag == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://github.com/%s/releases/download/%s/qosnat2-linux-amd64.tar.gz", GitHubRepo, tag)
+}
+
+// OcservDownloadURL ocserv release 资产下载地址。
+func OcservDownloadURL(versionID string) string {
+	tag := OcservGitHubTag(versionID)
+	if tag == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://github.com/%s/releases/download/%s/ocserv-linux-amd64.tar.gz", GitHubRepo, tag)
+}
+
+// ToReleaseMaps 转为 API/Web 使用的 releases 列表（tag 字段为 10 位版本号）。
+func ToReleaseMaps(entries []VersionEntry) []map[string]any {
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		id := NormalizeID(e.ID)
+		if id == "" {
+			id = NormalizeID(e.Tag)
+		}
+		if id == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"tag":          id,
+			"id":           id,
+			"github_tag":   strings.TrimSpace(e.Tag),
+			"name":         id,
+			"published_at": strings.TrimSpace(e.PublishedAt),
+		})
+	}
+	return out
+}

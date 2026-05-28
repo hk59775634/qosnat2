@@ -16,7 +16,7 @@
 | **QoS** | Per-IP HTB + eBPF `profile_lpm`；网段与单 IP（`/32`）均在 QoS 策略页，`POST /shaper/wizard` |
 | **网络** | 接口 4h 流量、实时速率（线速占比/手动基准）、ethtool、**netplan** IPv4/VLAN、路由、DHCP |
 | **可观测** | Dashboard、eBPF Maps、Mark 审计、conntrack、tcpdump 抓包 |
-| **VPN** | WireGuard；**ocserv**（OpenConnect，[`scripts/install-ocserv.sh`](scripts/install-ocserv.sh) 源码安装） |
+| **VPN** | WireGuard；**ocserv**（OpenConnect，[`scripts/install-ocserv.sh`](scripts/install-ocserv.sh) release 预编译包安装，Web 可切换版本） |
 
 ## 仓库结构
 
@@ -75,6 +75,10 @@ sudo ./deploy-qos-nat.sh -SkipWeb start
 ## 一键安装（curl | bash）
 
 > **平台说明**：一键安装默认从 GitHub Release 下载 `qosnatd-linux-amd64` 并部署（目标机不编译），自动安装运行时 apt 依赖（`nftables`、`iproute2`、`dnsmasq` 等）。该流程**仅在 Ubuntu 24.04 x86_64 上完成安装验证**，**强烈推荐使用 Ubuntu 24.04**。其他版本可设置 `QOSNAT_SKIP_OS_CHECK=1` 强制继续（不保证成功）。
+>
+> **安装方式约定**：除开发环境外，统一使用 release 可执行文件安装/升级/切换版本；不再通过源码编译安装。
+>
+> **版本号**：`YYYYMMDD` + 每日 2 位自增序号（如 `2026052801`），清单见仓库 [`releases/qosnat2-versions.json`](releases/qosnat2-versions.json)（仅保留最新 5 个）；设备/Web 从 GitHub raw 拉取可切换列表。
 
 从 GitHub 下载 release 二进制并执行部署脚本（需 **root**）：
 
@@ -89,6 +93,11 @@ curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/ins
 ```
 
 可选：`QOSNAT_RELEASE_TAG=v1.2.3`（固定版本）、`PUBLIC_IP=1.2.3.4`、`ACME_STAGING=1`（测试环境）、`QOSNAT_INSTALL_DIR=/opt/qosnat2`、`QOSNAT_SKIP_OS_CHECK=1`（非 24.04 时）。
+
+## 版本切换（Web UI）
+
+在 **System → General → 版本管理** 中可查看当前版本并切换 release tag。  
+切换流程：下载对应版本二进制 → 覆盖 `/usr/local/bin/qosnatd` → 自动重启服务。
 
 ## 一键卸载
 
