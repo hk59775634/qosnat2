@@ -21,6 +21,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/stats"
 	"github.com/hk59775634/qosnat2/internal/store"
+	"github.com/hk59775634/qosnat2/internal/warpnetns"
 	"github.com/hk59775634/qosnat2/internal/webassets"
 	wgusertraffic "github.com/hk59775634/qosnat2/internal/wg/usertraffic"
 )
@@ -152,6 +153,11 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/network/vlans", srv.requireAuth(srv.handleNetworkVLANs))
 	m.HandleFunc("/api/v1/network/wan-links", srv.requireAuth(srv.handleNetworkWanLinks))
 	m.HandleFunc("/api/v1/network/egress-policies", srv.requireAuth(srv.handleNetworkEgressPolicies))
+	m.HandleFunc("/api/v1/network/warp/status", srv.requireAuth(srv.handleNetworkWarpStatus))
+	m.HandleFunc("/api/v1/network/warp/install", srv.requireAuth(srv.handleNetworkWarpInstall))
+	m.HandleFunc("/api/v1/network/warp/install/status", srv.requireAuth(srv.handleNetworkWarpInstallStatus))
+	m.HandleFunc("/api/v1/network/warp/connect", srv.requireAuth(srv.handleNetworkWarpConnect))
+	m.HandleFunc("/api/v1/network/warp/disconnect", srv.requireAuth(srv.handleNetworkWarpDisconnect))
 	m.HandleFunc("/api/v1/shaper/tc", srv.requireAuth(srv.handleShaperTC))
 
 	m.HandleFunc("/api/v1/vpn/wireguard/instances/", srv.requireAuth(srv.handleWireGuardInstancesSubtree))
@@ -295,7 +301,11 @@ func (srv *Server) StartBackground() {
 }
 
 func (srv *Server) reloadNft() error {
-	return nft.Apply(srv.nftCfg(), srv.store.Get())
+	if err := nft.Apply(srv.nftCfg(), srv.store.Get()); err != nil {
+		return err
+	}
+	warpnetns.ReconcileHostNAT()
+	return nil
 }
 
 func (srv *Server) nftCfg() nft.Config {

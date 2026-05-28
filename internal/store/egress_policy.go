@@ -15,6 +15,7 @@ type EgressPolicy struct {
 	ID        string `json:"id"`
 	Name      string `json:"name,omitempty"`
 	CIDR      string `json:"cidr"`
+	Match     string `json:"match,omitempty"` // source|destination，默认 source
 	WanLinkID string `json:"wan_link_id"`
 	SNATIP    string `json:"snat_ip,omitempty"` // 空则使用该 WAN 口首个全球 IPv4
 	Priority  int    `json:"priority"`          // ip rule 优先级，越小越优先；默认 100
@@ -37,6 +38,7 @@ func NormalizeEgressPolicy(p *EgressPolicy) error {
 	}
 	p.Name = strings.TrimSpace(p.Name)
 	p.CIDR = strings.TrimSpace(p.CIDR)
+	p.Match = strings.TrimSpace(strings.ToLower(p.Match))
 	p.WanLinkID = strings.TrimSpace(p.WanLinkID)
 	p.SNATIP = strings.TrimSpace(p.SNATIP)
 	if p.CIDR == "" {
@@ -47,6 +49,12 @@ func NormalizeEgressPolicy(p *EgressPolicy) error {
 	}
 	if p.WanLinkID == "" {
 		return fmt.Errorf("wan_link_id required")
+	}
+	if p.Match == "" {
+		p.Match = "source"
+	}
+	if p.Match != "source" && p.Match != "destination" {
+		return fmt.Errorf("match must be source or destination")
 	}
 	if p.SNATIP != "" {
 		if err := ValidateIPv4OrCIDR(p.SNATIP); err != nil {
@@ -141,13 +149,14 @@ func FilterPolicyRoutesForWAN(policyRoutes, egressCIDRs []string) []string {
 
 // ResolvedEgress 解析后的出站策略（含 WAN 设备、网关、路由表、SNAT 地址）
 type ResolvedEgress struct {
-	Policy   EgressPolicy `json:"policy"`
-	WanLink  WanLink      `json:"wan_link"`
-	Device   string       `json:"device"`
-	Gateway  string       `json:"gateway"`
-	Table    int          `json:"table"`
-	SNATIP   string       `json:"snat_ip"`
-	Priority int          `json:"priority"`
+	Policy     EgressPolicy `json:"policy"`
+	WanLink    WanLink      `json:"wan_link"`
+	Device     string       `json:"device"`
+	Gateway    string       `json:"gateway"`
+	Table      int          `json:"table"`
+	SNATIP     string       `json:"snat_ip"`
+	Masquerade bool         `json:"masquerade,omitempty"`
+	Priority   int          `json:"priority"`
 }
 
 // ResolveEgressPolicies 解析出站策略；跳过无效或缺失 WanLink 的项
@@ -160,7 +169,7 @@ func ResolveEgressPolicies(st State, primaryIP func(device string) (string, erro
 		}
 		dev := strings.TrimSpace(w.Device)
 		gw := strings.TrimSpace(w.Gateway)
-		if dev == "" || gw == "" {
+		if dev == "" {
 			continue
 		}
 		tbl := WanLinkRouteTable(w.ID, st.Network.WanLinks)
@@ -171,18 +180,46 @@ func ResolveEgressPolicies(st State, primaryIP func(device string) (string, erro
 		if snat == "" && primaryIP != nil {
 			snat, _ = primaryIP(dev)
 		}
+		masquerade := false
 		if snat == "" {
-			continue
+			// WARP 托管链路通常没有稳定的公网 IPv4，回退为按出口口 MASQUERADE。
+			if IsWarpWanLink(w) {
+				masquerade = true
+			} else {
+				continue
+			}
 		}
 		out = append(out, ResolvedEgress{
-			Policy:   p,
-			WanLink:  w,
-			Device:   dev,
-			Gateway:  gw,
-			Table:    tbl,
-			SNATIP:   snat,
-			Priority: p.Priority,
+			Policy:     p,
+			WanLink:    w,
+			Device:     dev,
+			Gateway:    gw,
+			Table:      tbl,
+			SNATIP:     snat,
+			Masquerade: masquerade,
+			Priority:   p.Priority,
 		})
 	}
 	return out
+}
+
+// CloudflareCDNCIDRsV4 Cloudflare 官方公布的 IPv4 CDN 网段（用于策略出口预置）
+func CloudflareCDNCIDRsV4() []string {
+	return []string{
+		"173.245.48.0/20",
+		"103.21.244.0/22",
+		"103.22.200.0/22",
+		"103.31.4.0/22",
+		"141.101.64.0/18",
+		"108.162.192.0/18",
+		"190.93.240.0/20",
+		"188.114.96.0/20",
+		"197.234.240.0/22",
+		"198.41.128.0/17",
+		"162.158.0.0/15",
+		"104.16.0.0/13",
+		"104.24.0.0/14",
+		"172.64.0.0/13",
+		"131.0.72.0/22",
+	}
 }

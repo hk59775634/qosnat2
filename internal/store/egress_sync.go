@@ -26,7 +26,7 @@ func SyncEgressRoutes(st *State) {
 		}
 		dev := strings.TrimSpace(w.Device)
 		gw := strings.TrimSpace(w.Gateway)
-		if dev == "" || gw == "" {
+		if dev == "" {
 			continue
 		}
 		tbl := WanLinkRouteTable(w.ID, st.Network.WanLinks)

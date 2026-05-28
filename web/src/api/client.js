@@ -192,6 +192,13 @@ export const api = {
       del: (id) =>
         request(`/api/v1/network/egress-policies?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
+    warp: {
+      status: () => request('/api/v1/network/warp/status'),
+      install: () => request('/api/v1/network/warp/install', { method: 'POST', body: '{}' }),
+      installStatus: () => request('/api/v1/network/warp/install/status'),
+      connect: () => request('/api/v1/network/warp/connect', { method: 'POST', body: '{}' }),
+      disconnect: () => request('/api/v1/network/warp/disconnect', { method: 'POST', body: '{}' }),
+    },
   },
   interfacesEthtool: (device) => request(`/api/v1/interfaces/ethtool?device=${encodeURIComponent(device)}`),
   setEthtool: (device, body) =>

@@ -19,14 +19,16 @@ type VLANIface struct {
 
 // WanLink 多 WAN 网关（Tier 越小越优先，Metric 用于 ip route）
 type WanLink struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Device  string `json:"device"`
-	Gateway string `json:"gateway"`
-	Metric  int    `json:"metric"`
-	Tier    int    `json:"tier"`
-	Weight  int    `json:"weight"`
-	Enabled bool   `json:"enabled"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Device     string `json:"device"`
+	Gateway    string `json:"gateway"`
+	Metric     int    `json:"metric"`
+	Tier       int    `json:"tier"`
+	Weight     int    `json:"weight"`
+	PolicyOnly  bool `json:"policy_only,omitempty"`  // true: 不参与 main default，仅用于策略路由
+	Enabled     bool `json:"enabled"`
+	WarpManaged bool `json:"warp_managed,omitempty"` // true: 由 WARP 连接自动创建，不可手动删除
 }
 
 // IfaceConfig 由 qosnat 写入 netplan 的物理网卡（/etc/netplan/99-qosnat2.yaml）

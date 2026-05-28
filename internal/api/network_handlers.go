@@ -9,6 +9,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/store"
+	"github.com/hk59775634/qosnat2/internal/warpnetns"
 )
 
 func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +157,10 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		if body.ID == store.WanLinkIDWarp || body.WarpManaged {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "use WARP connect to create the WARP WAN link"})
+			return
+		}
 		if !route.LinkExists(body.Device) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface not found"})
 			return
@@ -182,6 +187,10 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		body.ID = id
+		if err := validateWanLinkMutable(srv.store.Get(), id); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 		if err := store.NormalizeWanLink(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -250,11 +259,20 @@ func (srv *Server) applyNetworkVLANs() {
 
 func (srv *Server) replayWanLinksOnBoot() {
 	st := srv.store.Get()
-	if len(st.Network.WanLinks) == 0 {
+	if len(st.Network.WanLinks) == 0 && !warpnetns.IsConnected() {
 		return
 	}
 	_ = srv.store.Update(func(st *store.State) {
+		if warpnetns.IsConnected() {
+			iface := warpnetns.HostInterface()
+			if iface != "" {
+				store.UpsertWarpWanLink(st, iface)
+			}
+		} else {
+			store.RemoveWarpWanLink(st)
+		}
 		store.SyncWanRoutes(st)
+		store.SyncEgressRoutes(st)
 	})
 	_ = srv.store.Save()
 }

@@ -21,7 +21,7 @@ func Apply(st store.State) error {
 	}
 	resolved := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
 	for _, re := range resolved {
-		if err := addRules(re.Policy.CIDR, re.Table, re.Priority); err != nil {
+		if err := addRules(re.Policy.CIDR, re.Policy.Match, re.Table, re.Priority); err != nil {
 			return fmt.Errorf("egress %s: %w", re.Policy.ID, err)
 		}
 	}
@@ -46,8 +46,11 @@ func checkUnresolvedEgress(st store.State, resolved []store.ResolvedEgress) erro
 		if !found || !w.Enabled {
 			return fmt.Errorf("egress %s: wan link %q not found or disabled", p.ID, p.WanLinkID)
 		}
-		if strings.TrimSpace(w.Gateway) == "" || strings.TrimSpace(w.Device) == "" {
-			return fmt.Errorf("egress %s: wan link %q missing gateway or device", p.ID, p.WanLinkID)
+		if strings.TrimSpace(w.Device) == "" {
+			return fmt.Errorf("egress %s: wan link %q missing device", p.ID, p.WanLinkID)
+		}
+		if store.IsWarpWanLink(w) {
+			return fmt.Errorf("egress %s: unresolved warp wan link %q (warp tunnel not ready)", p.ID, p.WanLinkID)
 		}
 		return fmt.Errorf("egress %s: no SNAT IP on %s (set snat_ip or add IPv4 to interface)", p.ID, w.Device)
 	}
@@ -63,21 +66,30 @@ func DeletePolicy(p store.EgressPolicy, links []store.WanLink) {
 	flushRouteCache()
 }
 
-func addRules(cidr string, table, priority int) error {
+func addRules(cidr, match string, table, priority int) error {
+	if match == "" {
+		match = "source"
+	}
 	toPrio := priority - 1
 	if toPrio < 1 {
 		toPrio = 1
 	}
-	if out, err := exec.Command("ip", "rule", "add", "to", cidr, "lookup", "main", "priority", strconv.Itoa(toPrio)).CombinedOutput(); err != nil {
+	mainDir := "to"
+	policyDir := "from"
+	if match == "destination" {
+		mainDir = "from"
+		policyDir = "to"
+	}
+	if out, err := exec.Command("ip", "rule", "add", mainDir, cidr, "lookup", "main", "priority", strconv.Itoa(toPrio)).CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if !strings.Contains(msg, "File exists") {
 			return fmt.Errorf("ip rule to %s: %s %w", cidr, msg, err)
 		}
 	}
-	if out, err := exec.Command("ip", "rule", "add", "from", cidr, "lookup", strconv.Itoa(table), "priority", strconv.Itoa(priority)).CombinedOutput(); err != nil {
+	if out, err := exec.Command("ip", "rule", "add", policyDir, cidr, "lookup", strconv.Itoa(table), "priority", strconv.Itoa(priority)).CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if !strings.Contains(msg, "File exists") {
-			_ = exec.Command("ip", "rule", "del", "to", cidr, "lookup", "main", "priority", strconv.Itoa(toPrio)).Run()
+			_ = exec.Command("ip", "rule", "del", mainDir, cidr, "lookup", "main", "priority", strconv.Itoa(toPrio)).Run()
 			return fmt.Errorf("ip rule from %s: %s %w", cidr, msg, err)
 		}
 	}

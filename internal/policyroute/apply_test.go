@@ -22,3 +22,26 @@ func TestCheckUnresolvedEgress_noSNAT(t *testing.T) {
 		t.Fatal("expected error when no SNAT and no resolver in resolved list")
 	}
 }
+
+func TestCheckUnresolvedEgress_warpNotReady(t *testing.T) {
+	st := store.State{
+		Network: store.NetworkState{
+			WanLinks: []store.WanLink{
+				{
+					ID:          store.WanLinkIDWarp,
+					Device:      "CloudflareWARP",
+					Enabled:     true,
+					PolicyOnly:  true,
+					WarpManaged: true,
+				},
+			},
+			EgressPolicies: []store.EgressPolicy{
+				{ID: "eg-1", CIDR: "10.88.0.0/24", WanLinkID: store.WanLinkIDWarp, Enabled: true, Priority: 100},
+			},
+		},
+	}
+	err := checkUnresolvedEgress(st, nil)
+	if err == nil {
+		t.Fatal("expected warp unresolved error")
+	}
+}

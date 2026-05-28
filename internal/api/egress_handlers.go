@@ -23,10 +23,11 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 		}
 		resolved := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"egress_policies": policies,
-			"wan_links":       links,
-			"resolved":        resolved,
-			"dev_wan":         srv.env.DevWAN,
+			"egress_policies":            policies,
+			"wan_links":                  links,
+			"resolved":                   resolved,
+			"dev_wan":                    srv.env.DevWAN,
+			"cloudflare_cdn_cidrs_ipv4": store.CloudflareCDNCIDRsV4(),
 		})
 	case http.MethodPost:
 		var body store.EgressPolicy
@@ -205,10 +206,26 @@ func egressPoliciesUsingWanLink(st store.State, wanID string) []store.EgressPoli
 }
 
 func validateWanLinkDeletable(st store.State, wanID string) error {
+	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok && store.IsWarpWanLink(w) {
+		return errWarpWanLinkLocked{}
+	}
 	if len(egressPoliciesUsingWanLink(st, wanID)) > 0 {
 		return errWanLinkInUse{wanID: wanID}
 	}
 	return nil
+}
+
+func validateWanLinkMutable(st store.State, wanID string) error {
+	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok && store.IsWarpWanLink(w) {
+		return errWarpWanLinkLocked{}
+	}
+	return nil
+}
+
+type errWarpWanLinkLocked struct{}
+
+func (errWarpWanLinkLocked) Error() string {
+	return "WARP managed WAN link cannot be modified manually; disconnect WARP to remove"
 }
 
 type errWanLinkInUse struct{ wanID string }

@@ -55,6 +55,30 @@ func TestRenderEgressSNAT(t *testing.T) {
 	}
 }
 
+func TestRenderEgressWarpMasquerade(t *testing.T) {
+	st := store.DefaultState()
+	st.Network.WanLinks = []store.WanLink{
+		{
+			ID:          store.WanLinkIDWarp,
+			Device:      "CloudflareWARP",
+			Enabled:     true,
+			PolicyOnly:  true,
+			WarpManaged: true,
+		},
+	}
+	st.Network.EgressPolicies = []store.EgressPolicy{
+		{ID: "eg-warp", CIDR: "10.88.0.0/24", WanLinkID: store.WanLinkIDWarp, Enabled: true},
+	}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `ip saddr 10.88.0.0/24 oifname "CloudflareWARP" masquerade`
+	if !strings.Contains(body, want) {
+		t.Fatalf("missing %q in:\n%s", want, body)
+	}
+}
+
 func TestRenderAcmeOpen80(t *testing.T) {
 	st := store.DefaultState()
 	st.System.AcmeTempAllowHTTP01 = true

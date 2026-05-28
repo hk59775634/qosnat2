@@ -25,7 +25,7 @@ func SyncWanRoutes(st *State) {
 	}
 	var enabled []linkMetric
 	for _, w := range st.Network.WanLinks {
-		if !w.Enabled || strings.TrimSpace(w.Gateway) == "" {
+		if !w.Enabled || w.PolicyOnly || strings.TrimSpace(w.Device) == "" {
 			continue
 		}
 		m := w.Metric

@@ -99,6 +99,13 @@ func Render(cfg Config, st store.State) (string, error) {
 	}
 	writeNPTv6Postrouting(&b, cfg, st.Nat)
 	for _, e := range egress {
+		if e.Masquerade {
+			b.WriteString(fmt.Sprintf(
+				"        ip saddr %s oifname \"%s\" masquerade\n",
+				e.Policy.CIDR, e.Device,
+			))
+			continue
+		}
 		b.WriteString(fmt.Sprintf(
 			"        ip saddr %s oifname \"%s\" snat to %s\n",
 			e.Policy.CIDR, e.Device, e.SNATIP,

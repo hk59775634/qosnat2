@@ -415,6 +415,13 @@ function startInstallPoll() {
         installJob.value = null
         ok.value = t('ocserv.installDone')
         await load()
+      } else if (j.state === 'idle' && installing.value) {
+        // 兜底：若任务刚结束但状态文件缺失/被清理，避免前端长期停留在“安装中”。
+        stopInstallPoll()
+        installing.value = false
+        installJob.value = null
+        ok.value = t('ocserv.installDone')
+        await load()
       } else if (j.state === 'failed') {
         stopInstallPoll()
         installing.value = false

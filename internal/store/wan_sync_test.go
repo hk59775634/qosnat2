@@ -29,3 +29,17 @@ func TestSyncWanRoutesNexthopWeight(t *testing.T) {
 		t.Fatalf("weights %+v", nh.Nexthops)
 	}
 }
+
+func TestSyncWanRoutesSkipPolicyOnly(t *testing.T) {
+	st := &State{
+		Network: NetworkState{
+			WanLinks: []WanLink{
+				{ID: "warp", Device: "wgcf", Metric: 90, Enabled: true, PolicyOnly: true},
+			},
+		},
+	}
+	SyncWanRoutes(st)
+	if len(st.Routes) != 0 {
+		t.Fatalf("policy_only wan should not create main default route: %+v", st.Routes)
+	}
+}
