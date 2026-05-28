@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/hk59775634/qosnat2/internal/releasecatalog"
 )
 
 const (
@@ -19,42 +17,17 @@ const (
 	installStateOK      = "ok"
 	installStateFailed  = "failed"
 
-	installStatusFile = "/var/lib/qosnat2/ocserv-install-status.json"
-	installLogFile    = "/var/lib/qosnat2/ocserv-install.log"
+	installStatusFile    = "/var/lib/qosnat2/ocserv-install-status.json"
+	installLogFile       = "/var/lib/qosnat2/ocserv-install.log"
+	ocservReleaseTagFile = "/var/lib/qosnat2/ocserv-release-tag"
+	defaultSourceTag     = "1.4.2"
 )
 
-// InstallJobStatus 安装任务状态（供 UI 轮询）
-type InstallJobStatus struct {
-	State      string `json:"state"`
-	Message    string `json:"message,omitempty"`
-	StartedAt  string `json:"started_at,omitempty"`
-	FinishedAt string `json:"finished_at,omitempty"`
-	LogTail    string `json:"log_tail,omitempty"`
-	Script     string `json:"script,omitempty"`
-	Method     string `json:"method,omitempty"`
-	Version    string `json:"version,omitempty"`
-}
+type installBusyError struct{}
 
-var (
-	installMu     sync.Mutex
-	installRunning bool
-)
+func (installBusyError) Error() string { return "install already running" }
 
-func loadInstallStatus() InstallJobStatus {
-	st := InstallJobStatus{State: installStateIdle}
-	b, err := os.ReadFile(installStatusFile)
-	if err != nil {
-		return st
-	}
-	_ = json.Unmarshal(b, &st)
-	if st.State == "" {
-		st.State = installStateIdle
-	}
-	if b, err := os.ReadFile(installLogFile); err == nil {
-		st.LogTail = tailLines(string(b), 80)
-	}
-	return st
-}
+var errInstallBusy = installBusyError{}
 
 func saveInstallStatus(st InstallJobStatus) {
 	_ = os.MkdirAll(filepath.Dir(installStatusFile), 0755)
@@ -70,19 +43,43 @@ func tailLines(s string, max int) string {
 	return strings.Join(lines[len(lines)-max:], "\n")
 }
 
-// GetInstallStatus 返回最近一次安装任务状态
+// InstallJobStatus 安装任务状态（供 UI 轮询）
+type InstallJobStatus struct {
+	State      string `json:"state"`
+	Message    string `json:"message,omitempty"`
+	StartedAt  string `json:"started_at,omitempty"`
+	FinishedAt string `json:"finished_at,omitempty"`
+	LogTail    string `json:"log_tail,omitempty"`
+	Script     string `json:"script,omitempty"`
+	Method     string `json:"method,omitempty"`
+	Version    string `json:"version,omitempty"`
+}
+
+var (
+	installMu      sync.Mutex
+	installRunning bool
+)
+
+// GetInstallStatus 读取安装任务状态
 func GetInstallStatus() InstallJobStatus {
 	installMu.Lock()
 	defer installMu.Unlock()
-	st := loadInstallStatus()
-	if installRunning {
+	b, err := os.ReadFile(installStatusFile)
+	if err != nil {
+		return InstallJobStatus{State: installStateIdle}
+	}
+	var st InstallJobStatus
+	if json.Unmarshal(b, &st) != nil {
+		return InstallJobStatus{State: installStateIdle}
+	}
+	if installRunning && st.State != installStateRunning {
 		st.State = installStateRunning
 		st.Message = "install in progress"
 	}
 	return st
 }
 
-// StartInstallAsync 后台执行安装（单实例）。method: release（默认）或 source（仅开发构建）。
+// StartInstallAsync 后台执行源码编译安装（单实例）。
 func StartInstallAsync(method, version string) error {
 	installMu.Lock()
 	if installRunning {
@@ -93,26 +90,20 @@ func StartInstallAsync(method, version string) error {
 	installMu.Unlock()
 
 	method = strings.TrimSpace(strings.ToLower(method))
-	if method == "" {
-		method = "release"
+	if method == "" || method == "release" {
+		method = "source"
 	}
-	version = releasecatalog.NormalizeOcservVersion(version)
-	if version == "" && method == "release" {
-		if entries, err := releasecatalog.ListEntries("ocserv"); err == nil && len(entries) > 0 {
-			version = releasecatalog.NormalizeOcservVersion(entries[0].ID)
-			if version == "" {
-				version = releasecatalog.NormalizeOcservVersion(entries[0].Tag)
-			}
-		}
-	}
-	if version == "" && method == "source" {
-		version = "1.4.2"
-	}
-	if method == "release" && version == "" {
+	if method != "source" {
 		installMu.Lock()
 		installRunning = false
 		installMu.Unlock()
-		return fmt.Errorf("release install requires version (manifest empty?)")
+		return fmt.Errorf("unsupported install method: %s (only source)", method)
+	}
+	version = strings.TrimSpace(version)
+	version = strings.TrimPrefix(version, "ocserv-")
+	version = strings.TrimPrefix(version, "v")
+	if version == "" {
+		version = defaultSourceTag
 	}
 	script := InstallScriptPath()
 
@@ -142,13 +133,7 @@ func StartInstallAsync(method, version string) error {
 		}
 		defer logf.Close()
 
-		var cmd *exec.Cmd
-		if method == "source" {
-			cmd = exec.Command("bash", script, "--method", "source", "--version", version)
-		} else {
-			url := ocservReleaseDownloadURL(version)
-			cmd = exec.Command("bash", script, "--method", "release", "--version", version, "--url", url)
-		}
+		cmd := exec.Command("bash", script, "--method", "source", "--version", version)
 		cmd.Stdout = logf
 		cmd.Stderr = logf
 		runErr := cmd.Run()
@@ -160,7 +145,6 @@ func StartInstallAsync(method, version string) error {
 			finishInstall(started, installStateFailed, runErr.Error(), tail)
 			return
 		}
-		saveOcservReleaseTag(version)
 		finishInstall(started, installStateOK, "install completed", tail)
 	}()
 	return nil
@@ -176,9 +160,3 @@ func finishInstall(started, state, msg, tail string) {
 	}
 	saveInstallStatus(st)
 }
-
-type installBusyError struct{}
-
-func (installBusyError) Error() string { return "install already running" }
-
-var errInstallBusy = installBusyError{}

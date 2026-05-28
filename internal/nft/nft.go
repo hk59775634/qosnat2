@@ -175,11 +175,15 @@ func Render(cfg Config, st store.State) (string, error) {
 	if cfg.DevLAN != "" {
 		b.WriteString(fmt.Sprintf("        iifname \"%s\" accept\n", cfg.DevLAN))
 	}
+	// IFB 上行整形（mirred 重定向）须放行入站，否则 u32/BPF 路径异常。
+	b.WriteString("        iifname \"ifb0\" accept\n")
 	if st.System.AcmeTempAllowHTTP01 {
 		// ACME http-01 挑战需要公网 80 端口可达；临时放开所有接口 tcp/80 入站。
 		b.WriteString("        tcp dport 80 accept comment \"qosnat2-acme-http01-open80\"\n")
 	}
-	// WAN 管理/VPN/默认丢弃：由 store.SyncAutoFilterRules 写入 filter_rules（auto-*）后在此输出。
+	// WAN 管理/VPN/按口丢弃：由 store.SyncAutoFilterRules（auto-*）在上方 filter_rules 输出。
+	// 除 lo、LAN、ifb0 及已匹配的 WAN 放行项外，其余网卡入站一律丢弃。
+	b.WriteString("        drop comment \"qosnat2-input-default-deny\"\n")
 	b.WriteString("    }\n}\n")
 	return b.String(), nil
 }

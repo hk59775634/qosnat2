@@ -23,9 +23,8 @@ info:
     3. `POST /api/v1/vpn/ocserv/apply` 写入 `ocserv.conf`；运行中仅 `reload`，冷启动用 `start`，关闭用 `stop`+`disable`（非 reload 生效项见 GET `restart_pending_reasons`）
     4. `POST /api/v1/vpn/ocserv/service`：`start` / `stop` / `restart`（需 root）
     5. 虚拟主机：`/api/v1/vpn/ocserv/vhosts`；独立密码文件用户：`/api/v1/vpn/ocserv/vhosts/users?domain=`
-    6. 安装：`POST .../install`（202，需 root；默认 `method=release` 下载预编译包）→ 轮询 `GET .../install/status`
-    7. 版本：`GET .../version`（从 GitHub `releases/*-versions.json` 读取可切换列表）；`POST .../version/switch`（需 root + `admin_password`）
-    8. 卸载：`POST .../uninstall`（需 root + Web 管理员密码 `admin_password`）
+    6. 安装：`POST .../install`（202，需 root；源码编译）→ 轮询 `GET .../install/status`
+    7. 卸载：`POST .../uninstall`（需 root + Web 管理员密码 `admin_password`）
 
     **带宽字段（ocserv）**：`rx-data-per-sec` / `tx-data-per-sec` 为**服务端视角**（限制客户端上行用 `tx-data-per-sec`）。Web UI 已按「客户端上/下行」展示并映射到上述字段。
   version: 1.0.0
@@ -301,41 +300,13 @@ components:
       properties:
         tag: { type: string, example: '2026052801', description: 10 位版本号 }
         current_password: { type: string }
-    OCServVersionStatus:
-      type: object
-      properties:
-        binary_path: { type: string, example: /usr/local/sbin/ocserv }
-        current_tag: { type: string, example: '1.4.2', description: ocserv 官方版本号，来自 /var/lib/qosnat2/ocserv-release-tag }
-        current_version: { type: string, description: ocserv --version 输出解析 }
-        installed: { type: boolean }
-        active: { type: boolean }
-        allow_source_install: { type: boolean, description: 开发构建为 true，release 构建为 false }
-        root_required: { type: boolean }
-        list_error: { type: string }
-        releases:
-          type: array
-          items: { $ref: '#/components/schemas/ReleaseVersionItem' }
-    OCServVersionSwitchPut:
-      type: object
-      required: [version, admin_password]
-      properties:
-        version:
-          type: string
-          example: '1.4.2'
-          description: "ocserv 官方版本号（如 1.4.2，对应 GitHub tag ocserv-{version}）"
-        admin_password: { type: string }
     OCServInstallPut:
       type: object
       properties:
-        method:
-          type: string
-          enum: [release, source]
-          default: release
-          description: release=下载预编译包；source=源码编译（仅开发构建允许）
         version:
           type: string
           example: '1.4.2'
-          description: release 安装/切换时的官方版本号
+          description: 可选，ocserv 官方源码 tag（默认 1.4.2）
     IfaceAddr:
       type: object
       properties:
@@ -2632,8 +2603,6 @@ paths:
                   root_for_service_ops:
                     type: boolean
                     description: 为 true 时 Web 可对 ocserv 执行 systemctl 启停/重启（qosnatd 以 root 运行）
-                  version_info:
-                    $ref: '#/components/schemas/OCServVersionStatus'
     put:
       tags: [vpn]
       summary: 保存 ocserv 配置
@@ -2709,49 +2678,13 @@ paths:
         '403':
           description: 非 root 运行 qosnatd
 
-  /api/v1/vpn/ocserv/version:
-    get:
-      tags: [vpn]
-      summary: 查询 ocserv 当前版本与可安装 release 列表
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OCServVersionStatus'
-
-  /api/v1/vpn/ocserv/version/switch:
-    post:
-      tags: [vpn]
-      summary: 下载并切换 ocserv release 版本（完成后重启 ocserv）
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OCServVersionSwitchPut'
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok: { type: boolean }
-                  message: { type: string }
-                  version: { type: string }
-        '403':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-
   /api/v1/vpn/ocserv/install:
     post:
       tags: [vpn]
-      summary: 后台安装 ocserv（默认 release 预编译包，需 root 运行 qosnatd）
+      summary: 后台源码编译安装 ocserv（需 root 运行 qosnatd）
       description: |
-        单实例任务；若已在安装中返回 409。`method=release` 时从 GitHub 下载 `ocserv-linux-amd64.tar.gz`；
-        `method=source` 仅开发构建允许。完成后用 `GET .../install/status` 或 GET 主接口的 `install_job` 查看日志尾部。
+        单实例任务；若已在安装中返回 409。从 GitLab 官方源码编译安装（默认 tag 1.4.2，可在 body 指定 version）。
+        完成后用 `GET .../install/status` 或 GET 主接口的 `install_job` 查看日志尾部。
       requestBody:
         content:
           application/json:

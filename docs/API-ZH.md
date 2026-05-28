@@ -54,36 +54,22 @@ GET 响应要点：
 - `config`：脱敏后的全局配置（含 groups、vhosts 列表）
 - `vhosts_meta`：各域名是否可管理独立用户等
 - `status`：ocserv 是否已安装
-- `version_info`：当前版本、release 列表、是否允许源码安装
 - `install_job`：安装任务（见下表）
 - `radius_secret_set` / `camouflage_secret_set`：是否已配置（不返回明文）
 
-### 安装与版本
+### 安装
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/v1/vpn/ocserv/version` | 当前 ocserv 版本与可安装 release 列表 |
-| POST | `/api/v1/vpn/ocserv/version/switch` | 切换 release 版本（需 root + `admin_password`） |
-| POST | `/api/v1/vpn/ocserv/install` | 后台安装（默认 `method=release` 下载预编译包），**需 root**，返回 202 |
-| POST | `/api/v1/vpn/ocserv/uninstall` | 卸载二进制（需 root + `admin_password`） |
+| POST | `/api/v1/vpn/ocserv/install` | 后台源码编译安装，**需 root**，返回 202 |
+| POST | `/api/v1/vpn/ocserv/uninstall` | 卸载（需 root + `admin_password`） |
 | GET | `/api/v1/vpn/ocserv/install/status` | 轮询任务状态 |
 
-`POST /api/v1/vpn/ocserv/install` 请求体（均可选）：
-
-```json
-{
-  "method": "release",
-  "version": "1.4.2"
-}
-```
-
-`method=source` 仅开发构建的 qosnatd 允许。
-
-**版本号规则**：
-- **qosnat2**：10 位 `YYYYMMDDNN`（UTC 日期 + 每日自增），清单 [`releases/qosnat2-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/qosnat2-versions.json)，Release tag `v2026052801`
-- **ocserv**：与官方上游一致（如 `1.4.2`），清单 [`releases/ocserv-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/ocserv-versions.json)，Release tag `ocserv-1.4.2`
+`POST /api/v1/vpn/ocserv/install` 请求体（可选）：`{ "version": "1.4.2" }` 指定官方源码 tag。
 
 `install_job.state`：`idle` | `running` | `ok` | `failed`；`log_tail` 为日志末尾约 80 行。
+
+**qosnat2 版本号**：10 位 `YYYYMMDDNN`，清单 [`releases/qosnat2-versions.json`](https://github.com/hk59775634/qosnat2/blob/main/releases/qosnat2-versions.json)。
 
 ## 系统版本管理 API（qosnatd）
 

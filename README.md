@@ -16,7 +16,7 @@
 | **QoS** | Per-IP HTB + eBPF `profile_lpm`；网段与单 IP（`/32`）均在 QoS 策略页，`POST /shaper/wizard` |
 | **网络** | 接口 4h 流量、实时速率（线速占比/手动基准）、ethtool、**netplan** IPv4/VLAN、路由、DHCP |
 | **可观测** | Dashboard、eBPF Maps、Mark 审计、conntrack、tcpdump 抓包 |
-| **VPN** | WireGuard；**ocserv**（OpenConnect，[`scripts/install-ocserv.sh`](scripts/install-ocserv.sh) release 预编译包安装，Web 可切换版本） |
+| **VPN** | WireGuard；**ocserv**（OpenConnect，[`scripts/install-ocserv.sh`](scripts/install-ocserv.sh) 官方源码编译安装） |
 
 ## 仓库结构
 
@@ -78,7 +78,7 @@ sudo ./deploy-qos-nat.sh -SkipWeb start
 >
 > **安装方式约定**：除开发环境外，统一使用 release 可执行文件安装/升级/切换版本；不再通过源码编译安装。
 >
-> **版本号**：qosnat2 使用 `YYYYMMDD` + 每日 2 位序号（如 `2026052801`），见 [`releases/qosnat2-versions.json`](releases/qosnat2-versions.json)；ocserv 使用**官方版本号**（如 `1.4.2`），见 [`releases/ocserv-versions.json`](releases/ocserv-versions.json)。设备/Web 从 GitHub raw 拉取可切换列表（各保留最新 5 个）。
+> **qosnat2 版本号**：`YYYYMMDD` + 每日 2 位序号（如 `2026052801`），见 [`releases/qosnat2-versions.json`](releases/qosnat2-versions.json)；Web 可从 GitHub 拉取清单并切换。**ocserv** 无版本切换，仅支持源码编译安装（官方 tag 如 `1.4.2`）。
 
 从 GitHub 下载 release 二进制并执行部署脚本（需 **root**）：
 

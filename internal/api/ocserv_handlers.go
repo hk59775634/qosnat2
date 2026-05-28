@@ -19,9 +19,8 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"config":                  pub,
 			"vhosts_meta":             ocservPublicVhosts(o.Vhosts, o, st.Certificates),
-			"status":                  ocserv.InstallInfo(),
-			"version_info":            ocserv.VersionInfo(),
-			"install_script":          ocserv.InstallScriptPath(),
+			"status":         ocserv.InstallInfo(),
+			"install_script": ocserv.InstallScriptPath(),
 			"install_job":             ocserv.GetInstallStatus(),
 			"conf_path":               ocserv.ConfPath,
 			"radius_secret_set":       strings.TrimSpace(o.Radius.Secret) != "",
@@ -146,13 +145,13 @@ func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	method := strings.TrimSpace(strings.ToLower(body.Method))
-	if method == "" {
-		method = "release"
+	method := "source"
+	if m := strings.TrimSpace(strings.ToLower(body.Method)); m != "" && m != "release" {
+		method = m
 	}
-	if method == "source" && !ocserv.AllowSourceInstall() {
+	if !ocserv.AllowSourceInstall() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "当前为 release 构建，仅支持下载预编译包安装；请使用 method=release",
+			"error": "当前构建不支持 ocserv 安装",
 		})
 		return
 	}
@@ -167,10 +166,7 @@ func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	srv.auditLog(r, "vpn.ocserv.install.start", method+":"+version)
-	msg := "已在后台开始安装预编译包，请稍候查看下方进度"
-	if method == "source" {
-		msg = "已在后台开始源码编译安装，请稍候查看下方进度"
-	}
+	msg := "已在后台开始源码编译安装，请稍候查看下方进度"
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok":      true,
 		"message": msg,

@@ -19,4 +19,15 @@ func TestRenderAutoWANInputRules(t *testing.T) {
 	if !strings.Contains(body, `iifname "ens18" drop`) {
 		t.Fatal("missing wan drop")
 	}
+	if !strings.Contains(body, `iifname "ifb0" accept`) {
+		t.Fatal("missing ifb0 accept")
+	}
+	if !strings.Contains(body, `drop comment "qosnat2-input-default-deny"`) {
+		t.Fatal("missing input default deny")
+	}
+	lanIdx := strings.Index(body, `iifname "ens19" accept`)
+	denyIdx := strings.Index(body, `qosnat2-input-default-deny`)
+	if lanIdx < 0 || denyIdx < 0 || lanIdx > denyIdx {
+		t.Fatalf("LAN accept must precede default deny in input chain:\n%s", body)
+	}
 }

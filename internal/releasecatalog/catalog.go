@@ -17,10 +17,7 @@ const (
 	VersionIDLen   = 10
 )
 
-var (
-	qosnatVersionIDRe = regexp.MustCompile(`^\d{10}$`)
-	ocservVersionRe   = regexp.MustCompile(`^\d+\.\d+(\.\d+)?([-.+][\w.-]*)?$`)
-)
+var qosnatVersionIDRe = regexp.MustCompile(`^\d{10}$`)
 
 // Manifest 存于 releases/{product}-versions.json（main 分支 raw 内容）。
 type Manifest struct {
@@ -86,14 +83,6 @@ func NormalizeID(s string) string {
 	return s
 }
 
-// NormalizeOcservVersion 去掉 ocserv-/v 前缀，得到官方风格版本号（如 1.4.2）。
-func NormalizeOcservVersion(s string) string {
-	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, "ocserv-")
-	s = strings.TrimPrefix(s, "v")
-	return s
-}
-
 // ValidQosnatID 校验 qosnat2 的 YYYYMMDDNN 格式。
 func ValidQosnatID(id string) bool {
 	id = NormalizeID(id)
@@ -112,11 +101,6 @@ func ValidQosnatID(id string) bool {
 // ValidID 为 ValidQosnatID 的别名（qosnat2 专用）。
 func ValidID(id string) bool { return ValidQosnatID(id) }
 
-// ValidOcservVersion 校验 ocserv 官方版本号（semver 风格，如 1.4.2）。
-func ValidOcservVersion(v string) bool {
-	return ocservVersionRe.MatchString(NormalizeOcservVersion(v))
-}
-
 // QosnatGitHubTag 将版本号转为 GitHub release tag（v2026052801）。
 func QosnatGitHubTag(versionID string) string {
 	id := NormalizeID(versionID)
@@ -126,15 +110,6 @@ func QosnatGitHubTag(versionID string) string {
 	return "v" + id
 }
 
-// OcservGitHubTag 将官方版本号转为 ocserv release tag（ocserv-1.4.2）。
-func OcservGitHubTag(version string) string {
-	v := NormalizeOcservVersion(version)
-	if v == "" {
-		return ""
-	}
-	return "ocserv-" + v
-}
-
 // QosnatDownloadURL release 资产下载地址。
 func QosnatDownloadURL(versionID string) string {
 	tag := QosnatGitHubTag(versionID)
@@ -142,15 +117,6 @@ func QosnatDownloadURL(versionID string) string {
 		return ""
 	}
 	return fmt.Sprintf("https://github.com/%s/releases/download/%s/qosnat2-linux-amd64.tar.gz", GitHubRepo, tag)
-}
-
-// OcservDownloadURL ocserv release 资产下载地址。
-func OcservDownloadURL(version string) string {
-	tag := OcservGitHubTag(version)
-	if tag == "" {
-		return ""
-	}
-	return fmt.Sprintf("https://github.com/%s/releases/download/%s/ocserv-linux-amd64.tar.gz", GitHubRepo, tag)
 }
 
 // ToReleaseMaps 转为 API/Web 使用的 releases 列表（tag 字段为 10 位版本号）。

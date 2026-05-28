@@ -134,8 +134,6 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/mark-policy", srv.requireAuth(srv.handleMarkPolicy))
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
-	m.HandleFunc("/api/v1/system/version", srv.requireAuth(srv.handleSystemVersion))
-	m.HandleFunc("/api/v1/system/version/switch", srv.requireAuth(srv.handleSystemVersionSwitch))
 	m.HandleFunc("/api/v1/system/tls/acme", srv.requireAuth(srv.handleTLSAcme))
 	m.HandleFunc("/api/v1/system/notifications", srv.requireAuth(srv.handleNotifications))
 	m.HandleFunc("/api/v1/system/certificates/auto-renew", srv.requireAuth(srv.handleCertificateAutoRenew))
@@ -167,8 +165,6 @@ func (srv *Server) routes() {
 
 	m.HandleFunc("/api/v1/vpn/ocserv/install/status", srv.requireAuth(srv.handleOCServInstallStatus))
 	m.HandleFunc("/api/v1/vpn/ocserv/install", srv.requireAuth(srv.handleOCServInstall))
-	m.HandleFunc("/api/v1/vpn/ocserv/version", srv.requireAuth(srv.handleOCServVersion))
-	m.HandleFunc("/api/v1/vpn/ocserv/version/switch", srv.requireAuth(srv.handleOCServVersionSwitch))
 	m.HandleFunc("/api/v1/vpn/ocserv/uninstall", srv.requireAuth(srv.handleOCServUninstall))
 	m.HandleFunc("/api/v1/vpn/ocserv/service", srv.requireAuth(srv.handleOCServService))
 	m.HandleFunc("/api/v1/vpn/ocserv/apply", srv.requireAuth(srv.handleOCServApply))

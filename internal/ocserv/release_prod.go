@@ -2,5 +2,5 @@
 
 package ocserv
 
-// AllowSourceInstall release 构建仅使用预编译可执行文件安装/切换。
-func AllowSourceInstall() bool { return false }
+// AllowSourceInstall release 构建通过源码编译安装 ocserv（不提供预编译包切换）。
+func AllowSourceInstall() bool { return true }
