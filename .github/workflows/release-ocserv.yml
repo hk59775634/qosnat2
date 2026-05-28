@@ -43,9 +43,9 @@ jobs:
 
       - name: Build ocserv release tarball
         env:
-          OCSERV_TAG: ${{ steps.ver.outputs.version_id }}
+          OCSERV_UPSTREAM_TAG: "1.4.2"
+          OCSERV_PACKAGE_VERSION: ${{ steps.ver.outputs.version_id }}
         run: |
-          export OCSERV_TAG
           chmod +x ./scripts/build-ocserv-release.sh ./scripts/install-ocserv.sh
           sudo -E ./scripts/build-ocserv-release.sh
 
