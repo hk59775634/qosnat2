@@ -1,5 +1,11 @@
 {
   "schema": 1,
   "max_keep": 5,
-  "versions": []
+  "versions": [
+    {
+      "id": "2026052801",
+      "tag": "ocserv-2026052801",
+      "published_at": "2026-05-28T15:15:03Z"
+    }
+  ]
 }
