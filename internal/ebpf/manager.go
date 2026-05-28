@@ -1,6 +1,7 @@
 package ebpf
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
+	"github.com/hk59775634/qosnat2/internal/webassets"
 )
 
 const (
@@ -52,19 +54,29 @@ func New() *Manager {
 	return &Manager{objPath: p, attached: map[string]struct{}{}}
 }
 
+func (m *Manager) loadCollectionSpec() (*ebpf.CollectionSpec, error) {
+	if p := os.Getenv("BPF_OBJ"); p != "" {
+		return ebpf.LoadCollectionSpec(p)
+	}
+	if webassets.Enabled() && len(webassets.BPF) > 0 {
+		return ebpf.LoadCollectionSpecFromReader(bytes.NewReader(webassets.BPF))
+	}
+	if _, err := os.Stat(m.objPath); err != nil {
+		return nil, fmt.Errorf("bpf object %s: %w (run: make bpf && deploy, or use release build)", m.objPath, err)
+	}
+	return ebpf.LoadCollectionSpec(m.objPath)
+}
+
 func (m *Manager) Load() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.loaded {
 		return nil
 	}
-	if _, err := os.Stat(m.objPath); err != nil {
-		return fmt.Errorf("bpf object %s: %w (run: make bpf && deploy)", m.objPath, err)
-	}
 	if err := netif.EnsureIFB(); err != nil {
 		return err
 	}
-	spec, err := ebpf.LoadCollectionSpec(m.objPath)
+	spec, err := m.loadCollectionSpec()
 	if err != nil {
 		return err
 	}

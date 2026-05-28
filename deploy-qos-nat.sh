@@ -13,6 +13,7 @@ INITIAL_ADMIN_FILE="${CONFIG_DIR}/initial-admin.txt"
 ADMIN_PORT="${ADMIN_PORT:-}"
 SKIP_WEB_BUILD="${SKIP_WEB_BUILD:-0}"
 BUILD_WEB="${BUILD_WEB:-0}"
+SKIP_BUILD="${SKIP_BUILD:-0}"
 IPSSL="${IPSSL:-0}"
 
 QOSNATD_SRC="${ROOT}/cmd/qosnatd"
@@ -304,9 +305,16 @@ cmd_start() {
   [[ -f "${DEPLOY_ENV}" ]] && set -a && source "${DEPLOY_ENV}" && set +a
   pick_admin_port_if_unset
   install_deps
-  build_bpf
-  build_web
-  build_qosnatd
+  if [[ "${SKIP_BUILD}" == "1" ]]; then
+    if [[ ! -x "${QOSNATD_BIN}" ]]; then
+      die "SKIP_BUILD=1 但未找到 ${QOSNATD_BIN}"
+    fi
+    log "SKIP_BUILD=1：跳过 BPF/Web/qosnatd 编译，使用已安装二进制"
+  else
+    build_bpf
+    build_web
+    build_qosnatd
+  fi
   write_env_file
   write_initial_admin_notice
   init_state
@@ -380,7 +388,7 @@ usage() {
   cat <<EOF
 用法: $0 [选项] {start|stop|status|uninstall}
 
-  start     — 编译安装 qosnatd + Web UI，仅启动控制面（不加载 NAT/QoS）
+  start     — 安装并启动控制面（默认会编译 qosnatd/BPF/Web）
   stop      — 停止服务并 flush nft ruleset
   status    — 服务与健康检查
   uninstall — 一键卸载（等同 scripts/uninstall.sh，支持 -y --purge-repo 等）
@@ -388,13 +396,14 @@ usage() {
 选项:
   -BuildWeb     强制 npm run build（即使 web/dist 已存在）
   -SkipWeb      跳过前端构建（等同 SKIP_WEB_BUILD=1）
+  -SkipBuild    跳过 BPF/Web/qosnatd 编译，直接使用 /usr/local/bin/qosnatd
 
 首次安装会生成随机管理员口令（可用 ADMIN_PASS= 覆盖）；请先登录再完成「初始设置」向导。
 数据面在向导点击「完成」后才会 apply（并启用 qos-nat.service）。
 
 可选环境变量:
   DEV_LAN=... DEV_WAN=... ADMIN_USER=admin ADMIN_PASS=...（不设则随机 20 位）
-  ADMIN_PORT=（不设则自动选取未占用端口）  SKIP_WEB_BUILD=1  BUILD_WEB=1
+  ADMIN_PORT=（不设则自动选取未占用端口）  SKIP_WEB_BUILD=1  BUILD_WEB=1  SKIP_BUILD=1
   IPSSL=1  ACME_EMAIL=...  PUBLIC_IP=1.2.3.4  ACME_STAGING=1
   （ipssl 未设 ACME_EMAIL 时默认 hk59775634@gmail.com）
 
@@ -416,6 +425,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -BuildWeb) BUILD_WEB=1; shift ;;
     -SkipWeb)  SKIP_WEB_BUILD=1; shift ;;
+    -SkipBuild) SKIP_BUILD=1; shift ;;
     ipssl|IPSSL) IPSSL=1; shift ;;
     uninstall|remove)
       shift

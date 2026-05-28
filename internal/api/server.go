@@ -21,6 +21,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/stats"
 	"github.com/hk59775634/qosnat2/internal/store"
+	"github.com/hk59775634/qosnat2/internal/webassets"
 	wgusertraffic "github.com/hk59775634/qosnat2/internal/wg/usertraffic"
 )
 
@@ -470,6 +471,13 @@ func (srv *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		http.NotFound(w, r)
 		return
+	}
+	if webassets.Enabled() && webassets.HasIndex() {
+		sub, err := webassets.SubStatic()
+		if err == nil {
+			webassets.SPAHandler(sub).ServeHTTP(w, r)
+			return
+		}
 	}
 	root := filepath.Clean(srv.webRoot())
 	path := r.URL.Path

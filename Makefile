@@ -2,9 +2,13 @@
 BPF_CLANG ?= clang
 BPF_CFLAGS := -O2 -g -target bpf -D__TARGET_ARCH_x86
 
-.PHONY: all bpf go install clean
+.PHONY: all bpf go install clean release
 
 all: go bpf
+
+# 单文件 release（内嵌 web/dist + classify.bpf.o），见 scripts/build-release.sh
+release:
+	./scripts/build-release.sh
 
 go:
 	go build -o bin/qosnatd ./cmd/qosnatd

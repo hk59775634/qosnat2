@@ -16,5 +16,10 @@ nat-qos-bpf/cmd/nat-qos-bpf/nat-qos-bpf
 web/node_modules/
 web/dist/
 
+# release embed 暂存（由 scripts/build-release.sh 生成）
+internal/webassets/static/
+internal/webassets/classify.bpf.o
+dist/
+
 # Legacy reference trees (not built)
 reference/legacy/

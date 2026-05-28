@@ -38,6 +38,8 @@ reference/                # 旧项目对照（勿部署）
 
 ## 构建
 
+### 开发构建（源码树 + web/dist 目录）
+
 ```bash
 cd /opt/qosnat2
 apt install -y golang-go clang libbpf-dev npm
@@ -48,13 +50,33 @@ make bpf                               # 需 clang + libbpf → bpf/classify.bpf
 cd web && npm install && npm run build # 产出 web/dist（部署前必须）
 ```
 
+### Release 单文件（推荐：编译机一次打包，目标机免 npm/Go）
+
+在 **Ubuntu 24.04 x86_64** 且具备 `go`、`clang`、`npm` 的机器上执行（仅构建机需要完整工具链）：
+
+```bash
+cd /opt/qosnat2
+./scripts/build-release.sh
+# 产出: dist/qosnatd-linux-amd64
+#       dist/qosnat2-linux-amd64.tar.gz
+```
+
+该二进制通过 `-tags release` **内嵌** `web/dist` 与 `classify.bpf.o`，目标主机只需：
+
+```bash
+sudo install -m 0755 dist/qosnatd-linux-amd64 /usr/local/bin/qosnatd
+sudo ./deploy-qos-nat.sh -SkipWeb start
+```
+
+无需在目标机安装 Node/npm，也无需 `web/dist` 目录。仍需要运行时依赖（nftables、iproute2、tc 等），见 `scripts/install-deps.sh`。
+
 浏览器访问 `http://<host>:8080/`（Vue 3 + hash 路由）。
 
 ## 一键安装（curl | bash）
 
-> **平台说明**：一键安装脚本会自动安装必要 apt 软件包（Go、clang/BPF、nftables、Node/npm 等）。该流程**仅在 Ubuntu 24.04 上完成安装验证**，**强烈推荐使用 Ubuntu 24.04**。其他版本可设置 `QOSNAT_SKIP_OS_CHECK=1` 强制继续（不保证成功）。
+> **平台说明**：一键安装默认从 GitHub Release 下载 `qosnatd-linux-amd64` 并部署（目标机不编译），自动安装运行时 apt 依赖（`nftables`、`iproute2`、`dnsmasq` 等）。该流程**仅在 Ubuntu 24.04 x86_64 上完成安装验证**，**强烈推荐使用 Ubuntu 24.04**。其他版本可设置 `QOSNAT_SKIP_OS_CHECK=1` 强制继续（不保证成功）。
 
-从 GitHub 拉取源码并执行 `deploy-qos-nat.sh`（需 **root**）：
+从 GitHub 下载 release 二进制并执行部署脚本（需 **root**）：
 
 ```bash
 # 默认 HTTP（管理端口自动选取未占用端口）
@@ -66,7 +88,7 @@ export ACME_EMAIL=you@example.com
 curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh | bash -s -- ipssl
 ```
 
-可选：`PUBLIC_IP=1.2.3.4`、`ACME_STAGING=1`（测试环境）、`QOSNAT_INSTALL_DIR=/opt/qosnat2`、`QOSNAT_SKIP_OS_CHECK=1`（非 24.04 时）。
+可选：`QOSNAT_RELEASE_TAG=v1.2.3`（固定版本）、`PUBLIC_IP=1.2.3.4`、`ACME_STAGING=1`（测试环境）、`QOSNAT_INSTALL_DIR=/opt/qosnat2`、`QOSNAT_SKIP_OS_CHECK=1`（非 24.04 时）。
 
 ## 一键卸载
 

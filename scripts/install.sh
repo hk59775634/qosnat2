@@ -18,7 +18,7 @@
 #   QOSNAT_SKIP_OS_CHECK=1       非 Ubuntu 24.04 时仍继续（不推荐）
 #   QOSNAT_INSTALL_DIR=/opt/qosnat2
 #   QOSNAT_REPO=https://github.com/hk59775634/qosnat2.git
-#   QOSNAT_BRANCH=main
+#   QOSNAT_RELEASE_TAG=vX.Y.Z    指定 release tag（默认 latest）
 #   QOSNAT_SKIP_SCRIPT_REFRESH=1  跳过从 GitHub 重新拉取 install.sh（仅本地调试）
 #
 # 卸载见 scripts/uninstall.sh 或 deploy-qos-nat.sh uninstall
@@ -26,9 +26,12 @@
 set -euo pipefail
 
 QOSNAT_REPO="${QOSNAT_REPO:-https://github.com/hk59775634/qosnat2.git}"
-QOSNAT_BRANCH="${QOSNAT_BRANCH:-main}"
 QOSNAT_INSTALL_DIR="${QOSNAT_INSTALL_DIR:-/opt/qosnat2}"
 QOSNAT_INSTALL_RAW_URL="${QOSNAT_INSTALL_RAW_URL:-https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/install.sh}"
+QOSNAT_RELEASE_TAG="${QOSNAT_RELEASE_TAG:-}"
+QOSNAT_RELEASE_API="${QOSNAT_RELEASE_API:-https://api.github.com/repos/hk59775634/qosnat2/releases/latest}"
+QOSNAT_RELEASE_ASSET="${QOSNAT_RELEASE_ASSET:-qosnat2-linux-amd64.tar.gz}"
+QOSNAT_BIN_PATH="${QOSNAT_BIN_PATH:-/usr/local/bin/qosnatd}"
 DEFAULT_ACME_EMAIL="${DEFAULT_ACME_EMAIL:-hk59775634@gmail.com}"
 IPSSL=0
 
@@ -85,24 +88,22 @@ check_os_for_one_click() {
 }
 
 install_system_packages() {
-  log "安装必要软件包（apt）…"
+  log "安装运行时必要软件包（apt）…"
   if ! DEBIAN_FRONTEND=noninteractive apt-get update -qq; then
     die "apt-get update 失败"
   fi
-  # 与 scripts/install-deps.sh 保持一致的包列表（克隆前内联，避免依赖未下载的仓库文件）
+  # release 安装仅保留运行时依赖（目标机不编译）
   if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     ca-certificates curl git gnupg \
     iproute2 nftables \
-    golang-go clang llvm libbpf-dev make pkg-config build-essential \
     wireguard-tools tcpdump conntrack dnsmasq \
-    nodejs npm; then
+    tar; then
     die "必要软件包安装失败，请检查 apt 源与网络后重试"
   fi
   log "必要软件包已安装"
   need_cmd git
   need_cmd curl
-  need_cmd go
-  need_cmd npm
+  need_cmd tar
 }
 
 need_cmd() {
@@ -136,12 +137,16 @@ bootstrap_refresh_install_script() {
 }
 
 clone_or_update() {
+  local ref="${QOSNAT_RELEASE_TAG:-main}"
   if [[ -d "${QOSNAT_INSTALL_DIR}/.git" ]]; then
-    log "同步仓库至 origin/${QOSNAT_BRANCH} 最新…"
-    git -C "${QOSNAT_INSTALL_DIR}" fetch --depth 1 origin "${QOSNAT_BRANCH}" \
+    log "同步仓库到 ${ref}…"
+    git -C "${QOSNAT_INSTALL_DIR}" fetch --tags origin \
       || die "git fetch 失败（请检查网络，或删除 ${QOSNAT_INSTALL_DIR} 后重试）"
-    git -C "${QOSNAT_INSTALL_DIR}" reset --hard "origin/${QOSNAT_BRANCH}" \
-      || die "git reset 失败"
+    if [[ "${ref}" == "main" ]]; then
+      git -C "${QOSNAT_INSTALL_DIR}" reset --hard "origin/main" || die "git reset 失败"
+    else
+      git -C "${QOSNAT_INSTALL_DIR}" checkout -f "${ref}" || die "git checkout ${ref} 失败"
+    fi
     local rev
     rev="$(git -C "${QOSNAT_INSTALL_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     log "当前代码版本: ${rev}"
@@ -149,8 +154,44 @@ clone_or_update() {
     die "${QOSNAT_INSTALL_DIR} 已存在且不是 git 仓库"
   else
     log "克隆 ${QOSNAT_REPO} -> ${QOSNAT_INSTALL_DIR}"
-    git clone --depth 1 --branch "${QOSNAT_BRANCH}" "${QOSNAT_REPO}" "${QOSNAT_INSTALL_DIR}"
+    git clone --depth 1 "${QOSNAT_REPO}" "${QOSNAT_INSTALL_DIR}"
+    if [[ "${ref}" != "main" ]]; then
+      git -C "${QOSNAT_INSTALL_DIR}" fetch --depth 1 origin "refs/tags/${ref}:refs/tags/${ref}" \
+        || die "拉取 tag ${ref} 失败"
+      git -C "${QOSNAT_INSTALL_DIR}" checkout -f "${ref}" || die "checkout ${ref} 失败"
+    fi
   fi
+}
+
+detect_release_tag() {
+  if [[ -n "${QOSNAT_RELEASE_TAG}" ]]; then
+    echo "${QOSNAT_RELEASE_TAG}"
+    return 0
+  fi
+  local tag
+  tag="$(curl -fsSL "${QOSNAT_RELEASE_API}" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  [[ -n "${tag}" ]] || die "无法获取 latest release tag，请设置 QOSNAT_RELEASE_TAG=vX.Y.Z"
+  echo "${tag}"
+}
+
+download_release_binary() {
+  local tag url tmp tgz
+  tag="$(detect_release_tag)"
+  QOSNAT_RELEASE_TAG="${tag}"
+  url="https://github.com/hk59775634/qosnat2/releases/download/${tag}/${QOSNAT_RELEASE_ASSET}"
+  tmp="$(mktemp -d /tmp/qosnat2-release.XXXXXX)"
+  tgz="${tmp}/${QOSNAT_RELEASE_ASSET}"
+  log "下载 release: ${url}"
+  curl -fL --retry 3 --retry-delay 2 "${url}" -o "${tgz}" || die "下载 release 失败: ${url}"
+  tar -xzf "${tgz}" -C "${tmp}" || die "解压 release 包失败"
+  [[ -f "${tmp}/qosnatd-linux-amd64" ]] || die "release 包缺少 qosnatd-linux-amd64"
+  install -m 0755 "${tmp}/qosnatd-linux-amd64" "${QOSNAT_BIN_PATH}"
+  if [[ -f "${tmp}/lib/classify.bpf.o" ]]; then
+    install -d /usr/lib/qosnat2
+    install -m 0644 "${tmp}/lib/classify.bpf.o" /usr/lib/qosnat2/classify.bpf.o
+  fi
+  rm -rf "${tmp}"
+  log "已安装 release 二进制: ${QOSNAT_BIN_PATH} (tag=${QOSNAT_RELEASE_TAG})"
 }
 
 detect_public_ipv4() {
@@ -186,6 +227,7 @@ main() {
   check_os_for_one_click
   install_system_packages
   bootstrap_refresh_install_script "$@"
+  download_release_binary
   clone_or_update
 
   export IPSSL
@@ -204,7 +246,8 @@ main() {
     log "ipssl：将为公网 IP ${PUBLIC_IP} 申请 Let's Encrypt 短期证书（约 6 天，自动续期）"
   fi
 
-  exec bash "${QOSNAT_INSTALL_DIR}/deploy-qos-nat.sh" start
+  export SKIP_BUILD=1
+  exec bash "${QOSNAT_INSTALL_DIR}/deploy-qos-nat.sh" -SkipBuild start
 }
 
 main "$@"
