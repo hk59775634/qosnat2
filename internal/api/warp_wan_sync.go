@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/warpnetns"
 )
@@ -15,7 +16,12 @@ func (srv *Server) applyWarpWanLink(device string) error {
 		return err
 	}
 	srv.applyManagedRoutes()
-	return srv.applyWanLinkDataPlane()
+	// WARP 在 netns 内维护 cloudflare-warp nft 表；reloadNft(flush ruleset) 会破坏隧道并损坏 veth peer。
+	if err := policyroute.Apply(srv.store.Get()); err != nil {
+		return err
+	}
+	warpnetns.ReconcileHostNAT()
+	return nil
 }
 
 func (srv *Server) removeWarpWanLink() error {
