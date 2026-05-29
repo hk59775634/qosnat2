@@ -532,6 +532,20 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "warp connected but wan link sync failed: " + err.Error()})
 		return
 	}
+	if err := warpnetns.ReconcileAfterWanLink(); err != nil || !warpnetns.IsConnected() {
+		warpnetns.ResetBroken()
+		_ = srv.removeWarpWanLink()
+		msg := "warp netns broken after wan link sync"
+		if err != nil {
+			msg += ": " + err.Error()
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error":       msg,
+			"diagnostics": collectWarpConnectDiagnostics(),
+		})
+		return
+	}
+	statusNow = cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
 	srv.auditLog(r, "network.warp.connect", iface)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":        true,

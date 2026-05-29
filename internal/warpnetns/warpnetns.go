@@ -121,6 +121,8 @@ func forceResetNetns() {
 		stopSvcInNetns()
 		deleteWarpLinksInNetns()
 		deleteLinkInNetns(VethNS)
+	} else {
+		killProcsInNamedNetns()
 	}
 	hostIface := strings.TrimSpace(st.HostIface)
 	if hostIface == "" {
@@ -132,7 +134,12 @@ func forceResetNetns() {
 	forceDeleteLink(VethNS)
 	removeNATRule(uplink)
 	forceDeleteNetns()
-	saveState(State{Netns: NetnsName})
+	saveState(State{Netns: NetnsName, UplinkDev: uplink})
+}
+
+// ResetBroken 对外暴露的损坏 netns 强制清理（断开/重连失败时调用）。
+func ResetBroken() {
+	forceResetNetns()
 }
 
 // forceDeleteNetns 删除 netns 挂载点；损坏状态下 ip link del 后重试。
@@ -140,6 +147,7 @@ func forceDeleteNetns() {
 	if !netnsExists() {
 		return
 	}
+	killProcsInNamedNetns()
 	for i := 0; i < 5; i++ {
 		forceDeleteLink(VethHost)
 		forceDeleteLink(VethNS)
@@ -151,6 +159,32 @@ func forceDeleteNetns() {
 	if !netnsUsable() {
 		_ = os.Remove(filepath.Join("/var/run/netns", NetnsName))
 	}
+}
+
+func killProcsInNamedNetns() {
+	target, err := os.Readlink(filepath.Join("/var/run/netns", NetnsName))
+	if err != nil {
+		return
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		ns, err := os.Readlink(filepath.Join("/proc", e.Name(), "ns/net"))
+		if err != nil || ns != target {
+			continue
+		}
+		_, _ = exec.Command("kill", "-9", strconv.Itoa(pid)).CombinedOutput()
+	}
+	time.Sleep(200 * time.Millisecond)
 }
 
 func run(args ...string) ([]byte, error) {
@@ -505,6 +539,11 @@ func forceDeleteLink(name string) {
 		return
 	}
 	_, _ = run("ip", "link", "set", name, "down")
+	if _, err := run("ip", "link", "del", name); err == nil {
+		return
+	}
+	// 对端 netns 已损坏时，先移入 init netns 再删。
+	_, _ = run("ip", "link", "set", name, "netns", "1")
 	_, _ = run("ip", "link", "del", name)
 }
 
@@ -550,9 +589,23 @@ func Reconcile() {
 		nftEnsureHostWarpUplinkMasq(uplink)
 		cleanupLegacyIPTablesNAT(uplink, "")
 	}
-	if st.Connected {
+	if st.Connected || linkExists(VethHost) {
 		ensureNetnsBypassRules()
 	}
+}
+
+// ReconcileAfterWanLink 在 applyWarpWanLink/nft reload 后校验 netns 仍可用。
+func ReconcileAfterWanLink() error {
+	Reconcile()
+	if needsNetnsReset() {
+		forceResetNetns()
+		return fmt.Errorf("warp netns broken after firewall reload")
+	}
+	if !NetnsHealthy() {
+		clearConnectedState()
+		return fmt.Errorf("warp netns unhealthy after firewall reload")
+	}
+	return nil
 }
 
 // ReconcileHostNAT 确保 netns veth 网段到主 WAN 的 NAT 规则存在。
@@ -607,9 +660,24 @@ func ensureNetnsGatewayNAT(warpIface string) {
 	}
 }
 
-// Teardown 删除 WARP 隧道、veth 与 netns（断开时完整清理）。
+// Teardown 删除 WARP 隧道、veth 与 netns（仅在 netns 损坏时由 Reconcile 调用）。
 func Teardown() {
 	forceResetNetns()
+}
+
+// softDisconnect 在 netns 内断开 WARP 并停止 warp-svc，但保留 netns/veth 供下次连接复用。
+func softDisconnect() {
+	StopHostWarpSvc()
+	st := loadState()
+	uplink := strings.TrimSpace(st.UplinkDev)
+	if netnsUsable() {
+		if warpDaemonReady() {
+			_, _ = netnsExec(warpCLI, "--accept-tos", "disconnect")
+		}
+		stopSvcInNetns()
+		deleteWarpLinksInNetns()
+	}
+	saveState(State{Netns: NetnsName, UplinkDev: uplink})
 }
 
 func warpIfaceInNetns() string {
@@ -632,6 +700,7 @@ func warpIfaceInNetns() string {
 // Connect 在 netns 内启用 WARP，并将宿主机 qwp0 作为策略路由出口（经 netns 转发到 WARP）。
 func Connect() (string, error) {
 	StopHostWarpSvc()
+	Reconcile()
 	if needsNetnsReset() {
 		forceResetNetns()
 	}
@@ -670,6 +739,9 @@ func Connect() (string, error) {
 	// WARP will manage its own policy routing/tables inside the namespace.
 	_, _ = netnsExec("ip", "route", "replace", "default", "via", NSVethGW, "dev", VethNS)
 	ensureNetnsGatewayNAT(iface)
+	if !NetnsHealthy() {
+		return "", fmt.Errorf("warp netns unhealthy after tunnel up")
+	}
 	st := loadState()
 	st.SvcPID = pid
 	st.HostIface = VethHost
@@ -679,9 +751,13 @@ func Connect() (string, error) {
 	return VethHost, nil
 }
 
-// Disconnect 断开 WARP，并删除 netns / veth / 隧道接口。
+// Disconnect 断开 WARP；保留 netns/veth，避免反复销毁导致 peer 引用损坏。
 func Disconnect() {
-	Teardown()
+	if needsNetnsReset() {
+		forceResetNetns()
+		return
+	}
+	softDisconnect()
 }
 
 // HostInterface 返回已移到宿主机的 WARP 隧道接口名。
