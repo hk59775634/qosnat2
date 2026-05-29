@@ -16,6 +16,12 @@ func TestRenderForwardDefaultDenyAndVPN(t *testing.T) {
 	if !strings.Contains(body, `comment "qosnat2-forward-vpn-wg"`) {
 		t.Fatal("missing forward wg accept")
 	}
+	if !strings.Contains(body, `comment "qosnat2-forward-warp-netns"`) {
+		t.Fatal("missing forward warp netns accept")
+	}
+	if !strings.Contains(body, `comment "qosnat2-input-warp-netns"`) {
+		t.Fatal("missing input warp netns accept")
+	}
 	if !strings.Contains(body, `comment "qosnat2-forward-vpn-ocserv"`) {
 		t.Fatal("missing forward ocserv accept")
 	}
@@ -23,9 +29,15 @@ func TestRenderForwardDefaultDenyAndVPN(t *testing.T) {
 		t.Fatal("missing forward default deny")
 	}
 	vpnIdx := strings.Index(body, `qosnat2-forward-vpn-wg`)
+	warpFwdIdx := strings.Index(body, `qosnat2-forward-warp-netns`)
 	denyIdx := strings.Index(body, `qosnat2-forward-default-deny`)
-	if vpnIdx < 0 || denyIdx < 0 || vpnIdx > denyIdx {
-		t.Fatalf("VPN forward must precede default deny:\n%s", body)
+	if vpnIdx < 0 || warpFwdIdx < 0 || denyIdx < 0 || warpFwdIdx > denyIdx || vpnIdx > denyIdx {
+		t.Fatalf("WARP/VPN forward must precede default deny:\n%s", body)
+	}
+	inputDenyIdx := strings.Index(body, `qosnat2-input-default-deny`)
+	warpInIdx := strings.Index(body, `qosnat2-input-warp-netns`)
+	if warpInIdx < 0 || inputDenyIdx < 0 || warpInIdx > inputDenyIdx {
+		t.Fatalf("WARP input must precede default deny:\n%s", body)
 	}
 	// forward chain ends before input chain
 	fwdEnd := strings.Index(body, "    }\n\n    chain input")

@@ -178,6 +178,9 @@ func Render(cfg Config, st store.State) (string, error) {
 			}
 		}
 	}
+	// WARP netns veth（qwp0↔qwp1）；须在默认丢弃之前，否则 netns 无法经主 WAN 建连/注册。
+	b.WriteString("        iifname \"qwp0\" accept comment \"qosnat2-forward-warp-netns\"\n")
+	b.WriteString("        oifname \"qwp0\" accept comment \"qosnat2-forward-warp-netns\"\n")
 	// VPN 隧道转发（与 input 隧道放行一致；须在默认丢弃之前）
 	b.WriteString("        iifname \"wg*\" accept comment \"qosnat2-forward-vpn-wg\"\n")
 	b.WriteString("        oifname \"wg*\" accept comment \"qosnat2-forward-vpn-wg\"\n")
@@ -198,6 +201,8 @@ func Render(cfg Config, st store.State) (string, error) {
 	}
 	// IFB 上行整形（mirred 重定向）须放行入站，否则 u32/BPF 路径异常。
 	b.WriteString("        iifname \"ifb0\" accept\n")
+	// WARP netns veth 网关（10.99.0.1）；须在默认丢弃之前。
+	b.WriteString("        iifname \"qwp0\" accept comment \"qosnat2-input-warp-netns\"\n")
 	// VPN 隧道口：客户端访问隧道网关/DNS（控制面接入仍由 WAN auto 规则处理）。
 	b.WriteString("        iifname \"wg*\" accept comment \"qosnat2-vpn-wg\"\n")
 	b.WriteString("        iifname \"vpns*\" accept comment \"qosnat2-vpn-ocserv\"\n")
