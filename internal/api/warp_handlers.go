@@ -474,6 +474,7 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 	iface, err := warpnetns.Connect()
 	if err != nil {
 		if !warpnetns.RecoverQuick() {
+			warpnetns.ScrubAfterFailedConnect()
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
 				"error":       err.Error(),
 				"diagnostics": collectWarpConnectDiagnostics(),
@@ -481,6 +482,7 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		if !warpnetns.IsConnected() {
+			warpnetns.ScrubAfterFailedConnect()
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
 				"error":       err.Error(),
 				"diagnostics": collectWarpConnectDiagnostics(),
@@ -501,6 +503,7 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 			}
 			statusNow = cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
 			if !warpConnectedFromStatus(statusNow) {
+				warpnetns.ScrubAfterFailedConnect()
 				writeJSON(w, http.StatusInternalServerError, map[string]any{
 					"error":       "warp recover completed but tunnel is still unhealthy",
 					"diagnostics": collectWarpConnectDiagnostics(),
@@ -508,6 +511,7 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 				return
 			}
 		} else {
+			warpnetns.ScrubAfterFailedConnect()
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
 				"error":       "warp connect reported success but tunnel is not healthy",
 				"diagnostics": collectWarpConnectDiagnostics(),
@@ -516,6 +520,7 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if stable, finalStatus := waitWarpHealthyStable(8, 1*time.Second, 3); !stable {
+		warpnetns.ScrubAfterFailedConnect()
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": "warp connected transiently but did not remain healthy",
 			"diagnostics": func() map[string]any {

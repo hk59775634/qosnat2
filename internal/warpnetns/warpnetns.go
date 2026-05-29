@@ -103,18 +103,21 @@ func needsNetnsReset() bool {
 	return false
 }
 
-// PrepareForConnect 连接前清理损坏 netns 并确保 veth/NAT 就绪。
+// PrepareForConnect 连接前强制完整清理并重建 netns/veth（避免孤儿 qwp0 残留）。
 func PrepareForConnect() error {
-	StopHostWarpSvc()
 	RestoreHostResolv()
-	if needsNetnsReset() {
-		forceResetNetns()
-	}
+	scrubWarpStack()
 	uplink := mainUplinkDev()
 	if uplink == "" {
 		return fmt.Errorf("cannot detect main WAN device for warp netns uplink")
 	}
 	return Ensure(uplink)
+}
+
+// ScrubAfterFailedConnect 连接失败后清理，便于 UI 再次点击连接。
+func ScrubAfterFailedConnect() {
+	scrubWarpStack()
+	RestoreHostResolv()
 }
 
 func clearConnectedState() {
@@ -125,22 +128,24 @@ func clearConnectedState() {
 	saveState(State{Netns: NetnsName, UplinkDev: st.UplinkDev})
 }
 
-// forceResetNetns 强制拆除损坏的 netns/veth，便于 Ensure 干净重建。
-func forceResetNetns() {
+// ResetBroken 对外暴露的损坏 netns 强制清理（断开/重连失败时调用）。
+func ResetBroken() {
+	scrubWarpStack()
+}
+
+// scrubWarpStack 无条件拆除 WARP netns/veth/进程，恢复干净初始状态。
+func scrubWarpStack() {
 	st := loadState()
 	uplink := strings.TrimSpace(st.UplinkDev)
 	if uplink == "" {
 		uplink = mainUplinkDev()
 	}
 	StopHostWarpSvc()
+	_, _ = run("bash", "-lc", "pkill -9 -x warp-svc 2>/dev/null; pkill -9 -x warp-cli 2>/dev/null; true")
+	time.Sleep(200 * time.Millisecond)
 	if netnsUsable() {
-		if warpDaemonReady() {
-			_, _ = netnsExec(warpCLI, "--accept-tos", "disconnect")
-		}
 		stopSvcInNetns()
-		deleteWarpLinksInNetns()
-		deleteLinkInNetns(VethNS)
-	} else {
+	} else if netnsExists() {
 		killProcsInNamedNetns()
 	}
 	hostIface := strings.TrimSpace(st.HostIface)
@@ -148,17 +153,17 @@ func forceResetNetns() {
 		hostIface = detectHostWarpIface()
 	}
 	deleteLink(hostIface)
-	// 损坏 netns 时须先删宿主机 veth，否则 ip netns delete 可能失败且 qwp0 残留。
 	forceDeleteLink(VethHost)
 	forceDeleteLink(VethNS)
 	removeNATRule(uplink)
 	forceDeleteNetns()
+	_ = os.Remove(filepath.Join("/var/run/netns", NetnsName))
 	saveState(State{Netns: NetnsName, UplinkDev: uplink})
 }
 
-// ResetBroken 对外暴露的损坏 netns 强制清理（断开/重连失败时调用）。
-func ResetBroken() {
-	forceResetNetns()
+// forceResetNetns 强制拆除损坏的 netns/veth，便于 Ensure 干净重建。
+func forceResetNetns() {
+	scrubWarpStack()
 }
 
 // forceDeleteNetns 删除 netns 挂载点；损坏状态下 ip link del 后重试。
@@ -496,12 +501,11 @@ func netnsWarpConnectedStable() bool {
 
 // RecoverQuick 在 connect 失败后执行一次人工可复现的最小修复序列。
 func RecoverQuick() bool {
-	forceResetNetns()
-	RestoreHostResolv()
 	if err := PrepareForConnect(); err != nil {
 		return false
 	}
 	if _, err := startSvcInNetns(); err != nil {
+		scrubWarpStack()
 		return false
 	}
 	enforceNetnsBaseline()
@@ -509,7 +513,11 @@ func RecoverQuick() bool {
 	_, _ = netnsExec("nft", "insert", "rule", "inet", "cloudflare-warp", "input", "iifname", VethNS, "accept")
 	_, _ = netnsExec(warpCLI, "--accept-tos", "mode", "warp")
 	_, _ = netnsExec(warpCLI, "--accept-tos", "connect")
-	return netnsWarpConnectedStable()
+	ok := netnsWarpConnectedStable()
+	if !ok {
+		scrubWarpStack()
+	}
+	return ok
 }
 
 func startSvcInNetns() (int, error) {
@@ -684,28 +692,9 @@ func ensureNetnsGatewayNAT(warpIface string) {
 	}
 }
 
-// Teardown 删除 WARP 隧道、veth 与 netns（仅在 netns 损坏时由 Reconcile 调用）。
+// Teardown 删除 WARP 隧道、veth 与 netns。
 func Teardown() {
-	forceResetNetns()
-}
-
-// softDisconnect 在 netns 内断开 WARP 并停止 warp-svc，但保留 netns/veth 供下次连接复用。
-func softDisconnect() {
-	StopHostWarpSvc()
-	st := loadState()
-	uplink := strings.TrimSpace(st.UplinkDev)
-	if netnsUsable() {
-		if warpDaemonReady() {
-			_, _ = netnsExec(warpCLI, "--accept-tos", "disconnect")
-		}
-		stopSvcInNetns()
-		deleteWarpLinksInNetns()
-	}
-	saveState(State{Netns: NetnsName, UplinkDev: uplink})
-	RestoreHostResolv()
-	if needsNetnsReset() {
-		forceResetNetns()
-	}
+	scrubWarpStack()
 }
 
 func warpIfaceInNetns() string {
@@ -730,6 +719,12 @@ func Connect() (string, error) {
 	if err := PrepareForConnect(); err != nil {
 		return "", err
 	}
+	ok := false
+	defer func() {
+		if !ok {
+			scrubWarpStack()
+		}
+	}()
 	uplink := mainUplinkDev()
 	pid, err := startSvcInNetns()
 	if err != nil {
@@ -771,17 +766,14 @@ func Connect() (string, error) {
 	st.Connected = true
 	st.UplinkDev = uplink
 	saveState(st)
+	ok = true
 	return VethHost, nil
 }
 
-// Disconnect 断开 WARP；保留 netns/veth，避免反复销毁导致 peer 引用损坏。
+// Disconnect 断开 WARP 并完整清理 netns/veth。
 func Disconnect() {
 	RestoreHostResolv()
-	if needsNetnsReset() {
-		forceResetNetns()
-		return
-	}
-	softDisconnect()
+	scrubWarpStack()
 }
 
 // HostInterface 返回已移到宿主机的 WARP 隧道接口名。
@@ -796,6 +788,9 @@ func HostInterface() string {
 }
 
 func detectHostWarpIface() string {
+	if linkExists(VethHost) {
+		return VethHost
+	}
 	out, err := run("ip", "-o", "link", "show")
 	if err != nil {
 		return ""
@@ -807,10 +802,18 @@ func detectHostWarpIface() string {
 		}
 		fields := strings.Fields(line)
 		if len(fields) >= 2 {
-			return strings.TrimSuffix(fields[1], ":")
+			return linkNameFromField(fields[1])
 		}
 	}
 	return ""
+}
+
+func linkNameFromField(raw string) string {
+	raw = strings.TrimSuffix(strings.TrimSpace(raw), ":")
+	if i := strings.Index(raw, "@"); i >= 0 {
+		raw = raw[:i]
+	}
+	return raw
 }
 
 // IsConnected 报告 WARP 是否在 netns 中已连接且隧道在宿主机可用。
