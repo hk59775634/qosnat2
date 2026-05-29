@@ -59,18 +59,20 @@ curl_github_url() {
   if [[ "${out}" != "-" ]]; then
     curl_out=(-o "${out}")
   fi
-  if curl -fsSL --connect-timeout 8 --max-time 120 --retry 2 --retry-delay 1 \
-      "${curl_out[@]}" "${url}"; then
-    return 0
-  fi
+  # 国内优先 v4.gh-proxy.org，直连 GitHub 作最后备选。
   for proxy in "${GH_PROXY_MIRRORS[@]}"; do
     url_try="${proxy}${url}"
-    warn "GitHub 直连失败，尝试加速: ${url_try}"
     if curl -fsSL --connect-timeout 8 --max-time 300 --retry 2 --retry-delay 1 \
         "${curl_out[@]}" "${url_try}"; then
       return 0
     fi
+    warn "加速失败，尝试下一镜像: ${url_try}"
   done
+  warn "gh-proxy 均失败，尝试直连 GitHub: ${url}"
+  if curl -fsSL --connect-timeout 8 --max-time 120 --retry 2 --retry-delay 1 \
+      "${curl_out[@]}" "${url}"; then
+    return 0
+  fi
   return 1
 }
 

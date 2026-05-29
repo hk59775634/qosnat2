@@ -22,17 +22,17 @@ var ghProxyPrefixes = []string{
 	"https://cdn.gh-proxy.org/",
 }
 
-// MirrorURLs 返回直连 URL 及 gh-proxy 加速镜像 URL（顺序：直连 → v4 → cdn）。
+// MirrorURLs 返回 gh-proxy 加速 URL，直连 GitHub 作为最后备选（v4 优先于 cdn）。
 func MirrorURLs(directURL string) []string {
 	directURL = strings.TrimSpace(directURL)
 	if directURL == "" {
 		return nil
 	}
 	out := make([]string, 0, 1+len(ghProxyPrefixes))
-	out = append(out, directURL)
 	for _, prefix := range ghProxyPrefixes {
 		out = append(out, prefix+directURL)
 	}
+	out = append(out, directURL)
 	return out
 }
 
@@ -53,7 +53,8 @@ func fetchBytes(urls []string, directTimeout, proxyTimeout time.Duration) (body 
 	var lastErr error
 	for i, u := range urls {
 		timeout := proxyTimeout
-		if i == 0 {
+		// 最后一跳为直连 GitHub 时使用较短超时。
+		if i == len(urls)-1 && !strings.Contains(u, "gh-proxy.org") {
 			timeout = directTimeout
 		}
 		b, err := fetchOne(u, timeout)

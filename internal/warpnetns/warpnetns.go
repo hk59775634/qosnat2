@@ -54,8 +54,68 @@ func saveState(st State) {
 }
 
 func netnsExists() bool {
-	out, err := exec.Command("ip", "netns", "list").Output()
-	return err == nil && strings.Contains(string(out), NetnsName)
+	_, err := os.Stat(filepath.Join("/var/run/netns", NetnsName))
+	return err == nil
+}
+
+// netnsUsable netns 存在且 ip netns exec 可用（排除 Peer netns reference is invalid 等损坏状态）。
+func netnsUsable() bool {
+	if !netnsExists() {
+		return false
+	}
+	_, err := netnsExec("true")
+	return err == nil
+}
+
+// vethPairHealthy 宿主机 qwp0 与 netns 内 qwp1 成对且可用。
+func vethPairHealthy() bool {
+	if !linkExists(VethHost) {
+		return false
+	}
+	if !netnsUsable() {
+		return false
+	}
+	_, err := netnsExec("ip", "link", "show", VethNS)
+	return err == nil
+}
+
+// needsNetnsReset 检测孤儿 veth 或 netns 损坏（常见于 WARP 连接中断后）。
+func needsNetnsReset() bool {
+	if linkExists(VethHost) && !vethPairHealthy() {
+		return true
+	}
+	if netnsExists() && !netnsUsable() {
+		return true
+	}
+	return false
+}
+
+// forceResetNetns 强制拆除损坏的 netns/veth，便于 Ensure 干净重建。
+func forceResetNetns() {
+	st := loadState()
+	uplink := strings.TrimSpace(st.UplinkDev)
+	if uplink == "" {
+		uplink = mainUplinkDev()
+	}
+	if netnsUsable() {
+		if warpDaemonReady() {
+			_, _ = netnsExec(warpCLI, "--accept-tos", "disconnect")
+		}
+		stopSvcInNetns()
+		deleteWarpLinksInNetns()
+		deleteLinkInNetns(VethNS)
+	}
+	hostIface := strings.TrimSpace(st.HostIface)
+	if hostIface == "" {
+		hostIface = detectHostWarpIface()
+	}
+	deleteLink(hostIface)
+	deleteLink(VethHost)
+	removeNATRule(uplink)
+	if netnsExists() {
+		_, _ = run("ip", "netns", "delete", NetnsName)
+	}
+	saveState(State{Netns: NetnsName})
 }
 
 func run(args ...string) ([]byte, error) {
@@ -208,6 +268,9 @@ func mainUplinkDev() string {
 
 // Ensure 创建 netns、veth，并为 netns 提供经主 WAN 的 NAT 出口（供 WARP 建连）。
 func Ensure(uplink string) error {
+	if needsNetnsReset() {
+		forceResetNetns()
+	}
 	if uplink == "" {
 		uplink = mainUplinkDev()
 	}
@@ -220,14 +283,22 @@ func Ensure(uplink string) error {
 		}
 	}
 	_, _ = netnsExec("ip", "link", "set", "lo", "up")
-	// veth
-	if _, err := run("ip", "link", "show", VethHost); err != nil {
+	// veth：若宿主机残留 qwp0 但 netns 内无 qwp1，先拆除再建。
+	if linkExists(VethHost) {
+		if _, err := netnsExec("ip", "link", "show", VethNS); err != nil {
+			deleteLink(VethHost)
+		}
+	}
+	if !linkExists(VethHost) {
 		if out, err := run("ip", "link", "add", VethHost, "type", "veth", "peer", "name", VethNS); err != nil {
 			return fmt.Errorf("veth: %s %w", strings.TrimSpace(string(out)), err)
 		}
 	}
 	if _, err := netnsExec("ip", "link", "show", VethNS); err != nil {
-		_, _ = run("ip", "link", "set", VethNS, "netns", NetnsName)
+		if out, err := run("ip", "link", "set", VethNS, "netns", NetnsName); err != nil {
+			forceResetNetns()
+			return fmt.Errorf("move veth to netns: %s %w", strings.TrimSpace(string(out)), err)
+		}
 	}
 	_, _ = netnsExec("ip", "addr", "replace", NSVethCIDR, "dev", VethNS)
 	_, _ = netnsExec("ip", "link", "set", VethNS, "up")
@@ -461,31 +532,7 @@ func ensureNetnsGatewayNAT(warpIface string) {
 
 // Teardown 删除 WARP 隧道、veth 与 netns（断开时完整清理）。
 func Teardown() {
-	st := loadState()
-	uplink := st.UplinkDev
-
-	if netnsExists() {
-		if warpDaemonReady() {
-			_, _ = netnsExec(warpCLI, "--accept-tos", "disconnect")
-		}
-		stopSvcInNetns()
-	}
-
-	hostIface := strings.TrimSpace(st.HostIface)
-	if hostIface == "" {
-		hostIface = detectHostWarpIface()
-	}
-	deleteLink(hostIface)
-	deleteWarpLinksInNetns()
-	deleteLink(VethHost)
-	deleteLinkInNetns(VethNS)
-
-	removeNATRule(uplink)
-	if netnsExists() {
-		_, _ = run("ip", "netns", "delete", NetnsName)
-	}
-
-	saveState(State{Netns: NetnsName})
+	forceResetNetns()
 }
 
 func warpIfaceInNetns() string {
@@ -510,7 +557,14 @@ func Connect() (string, error) {
 	StopHostWarpSvc()
 	uplink := mainUplinkDev()
 	if err := Ensure(uplink); err != nil {
-		return "", err
+		if needsNetnsReset() {
+			forceResetNetns()
+			if err2 := Ensure(uplink); err2 != nil {
+				return "", err2
+			}
+		} else {
+			return "", err
+		}
 	}
 	pid, err := startSvcInNetns()
 	if err != nil {
