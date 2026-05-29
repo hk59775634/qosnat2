@@ -11,8 +11,13 @@ func TestFilterRuleNftLine(t *testing.T) {
 	if line == "" {
 		t.Fatal("empty line")
 	}
-	if !containsAll(line, "iifname", "drop", "tcp", "dport 443") {
+	if !containsAll(line, "iifname", "drop", "tcp", "dport 443", "ip saddr") {
 		t.Fatalf("unexpected: %s", line)
+	}
+	ipIdx := indexOf(line, "ip saddr")
+	tcpIdx := indexOf(line, " tcp ")
+	if ipIdx < 0 || tcpIdx < 0 || ipIdx > tcpIdx {
+		t.Fatalf("ip match must precede tcp: %s", line)
 	}
 }
 

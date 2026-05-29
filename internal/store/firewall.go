@@ -156,9 +156,6 @@ func (r FilterRule) NftRuleLine() string {
 	if r.Oif != "" {
 		parts = append(parts, fmt.Sprintf(`oifname "%s"`, r.Oif))
 	}
-	if r.Proto != "" && r.Proto != "all" {
-		parts = append(parts, r.Proto)
-	}
 	addrFam := "ip"
 	if strings.ToLower(strings.TrimSpace(r.IPVersion)) == "ipv6" {
 		addrFam = "ip6"
@@ -172,6 +169,10 @@ func (r FilterRule) NftRuleLine() string {
 		parts = append(parts, addrFam+" daddr @alias_"+r.DstAlias)
 	} else if r.DstAddr != "" {
 		parts = append(parts, addrFam+" daddr "+r.DstAddr)
+	}
+	// L4 协议与端口须在 ip/ip6 地址匹配之后（nft 语法要求）。
+	if r.Proto != "" && r.Proto != "all" {
+		parts = append(parts, r.Proto)
 	}
 	if r.SrcPort > 0 {
 		parts = append(parts, fmt.Sprintf("sport %d", r.SrcPort))

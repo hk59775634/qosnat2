@@ -26,7 +26,7 @@ func TestRenderWanForwardHairpin(t *testing.T) {
 		t.Fatalf("missing hairpin snat:\n%s", body)
 	}
 	wantFilter := `auto-fwd-fwd-1-tcp`
-	if !strings.Contains(body, `iifname "ens18" oifname "ens19" tcp ip daddr 192.168.1.10 dport 443 accept`) {
+	if !strings.Contains(body, `iifname "ens18" oifname "ens19" ip daddr 192.168.1.10 tcp dport 443 accept`) {
 		t.Fatalf("missing auto forward filter in render:\n%s", body)
 	}
 	_ = wantFilter
