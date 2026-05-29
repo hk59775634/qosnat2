@@ -4,7 +4,6 @@ package releasecatalog
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -39,24 +38,15 @@ func ManifestURL(product string) string {
 		GitHubRepo, DefaultBranch, product)
 }
 
-// FetchManifest 拉取版本清单（防火墙/设备侧用于列举可切换版本）。
+// FetchManifest 拉取版本清单（直连 GitHub 超时则依次尝试 gh-proxy 镜像）。
 func FetchManifest(product string) (*Manifest, error) {
-	req, err := http.NewRequest(http.MethodGet, ManifestURL(product), nil)
+	urls := MirrorURLs(ManifestURL(product))
+	body, _, err := FetchBytes(urls)
 	if err != nil {
 		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	cli := &http.Client{Timeout: 10 * time.Second}
-	resp, err := cli.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("manifest %s: %s", product, resp.Status)
 	}
 	var m Manifest
-	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+	if err := json.Unmarshal(body, &m); err != nil {
 		return nil, err
 	}
 	return &m, nil
@@ -110,13 +100,18 @@ func QosnatGitHubTag(versionID string) string {
 	return "v" + id
 }
 
-// QosnatDownloadURL release 资产下载地址。
+// QosnatDownloadURL release 资产直连下载地址。
 func QosnatDownloadURL(versionID string) string {
 	tag := QosnatGitHubTag(versionID)
 	if tag == "" {
 		return ""
 	}
 	return fmt.Sprintf("https://github.com/%s/releases/download/%s/qosnat2-linux-amd64.tar.gz", GitHubRepo, tag)
+}
+
+// QosnatDownloadURLs 直连 + gh-proxy 备选下载地址。
+func QosnatDownloadURLs(versionID string) []string {
+	return MirrorURLs(QosnatDownloadURL(versionID))
 }
 
 // ToReleaseMaps 转为 API/Web 使用的 releases 列表（tag 字段为 10 位版本号）。

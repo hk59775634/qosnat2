@@ -72,7 +72,7 @@ func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password incorrect"})
 		return
 	}
-	if err := installQosnatReleaseVersion(versionID); err != nil {
+	if err := releasecatalog.InstallReleaseBinary(versionID, qosnatBinPath); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
@@ -129,24 +129,4 @@ func readTextFile(path string) string {
 		return ""
 	}
 	return string(b)
-}
-
-func installQosnatReleaseVersion(versionID string) error {
-	url := releasecatalog.QosnatDownloadURL(versionID)
-	if url == "" {
-		return fmt.Errorf("invalid version id")
-	}
-	cmd := exec.Command("bash", "-lc", fmt.Sprintf(
-		`set -euo pipefail; tmp="$(mktemp -d /tmp/qosnat2-switch.XXXXXX)"; trap 'rm -rf "$tmp"' EXIT; curl -fL --retry 3 --retry-delay 2 "%s" -o "$tmp/release.tar.gz"; tar -xzf "$tmp/release.tar.gz" -C "$tmp"; test -f "$tmp/qosnatd-linux-amd64"; install -m 0755 "$tmp/qosnatd-linux-amd64" "%s"; if [ -f "$tmp/lib/classify.bpf.o" ]; then install -d /usr/lib/qosnat2; install -m 0644 "$tmp/lib/classify.bpf.o" /usr/lib/qosnat2/classify.bpf.o; fi`,
-		url, qosnatBinPath,
-	))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("download/install failed: %s", msg)
-	}
-	return nil
 }

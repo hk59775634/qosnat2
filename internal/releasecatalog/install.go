@@ -1,0 +1,120 @@
+package releasecatalog
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// FetchReleaseArchive 下载 release 压缩包（直连 GitHub 失败时走 gh-proxy）。
+func FetchReleaseArchive(versionID string) ([]byte, string, error) {
+	urls := QosnatDownloadURLs(versionID)
+	if len(urls) == 0 {
+		return nil, "", fmt.Errorf("invalid version id")
+	}
+	return FetchBytes(urls)
+}
+
+// InstallReleaseBinary 下载并安装指定版本的 qosnatd 与 BPF 对象。
+func InstallReleaseBinary(versionID, binPath string) error {
+	gz, _, err := FetchReleaseArchive(versionID)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp("", "qosnat2-switch-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+
+	if err := extractReleaseTarGz(gz, tmp); err != nil {
+		return fmt.Errorf("extract release: %w", err)
+	}
+	bin := filepath.Join(tmp, "qosnatd-linux-amd64")
+	if _, err := os.Stat(bin); err != nil {
+		return fmt.Errorf("release missing qosnatd-linux-amd64")
+	}
+	if err := copyFile(bin, binPath, 0755); err != nil {
+		return fmt.Errorf("install binary: %w", err)
+	}
+	bpf := filepath.Join(tmp, "lib", "classify.bpf.o")
+	if _, err := os.Stat(bpf); err == nil {
+		destDir := "/usr/lib/qosnat2"
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			return err
+		}
+		if err := copyFile(bpf, filepath.Join(destDir, "classify.bpf.o"), 0644); err != nil {
+			return fmt.Errorf("install bpf: %w", err)
+		}
+	}
+	return nil
+}
+
+func extractReleaseTarGz(gz []byte, destDir string) error {
+	gr, err := gzip.NewReader(bytes.NewReader(gz))
+	if err != nil {
+		return err
+	}
+	defer gr.Close()
+	tr := tar.NewReader(gr)
+	destClean := filepath.Clean(destDir)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		name := strings.TrimPrefix(hdr.Name, "./")
+		name = filepath.Clean(name)
+		if name == "." || strings.HasPrefix(name, "..") || filepath.IsAbs(name) {
+			continue
+		}
+		target := filepath.Join(destClean, name)
+		if !strings.HasPrefix(target, destClean+string(os.PathSeparator)) {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		mode := os.FileMode(hdr.Mode) & 0777
+		f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(f, tr); err != nil {
+			f.Close()
+			return err
+		}
+		f.Close()
+	}
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Chmod(mode)
+}

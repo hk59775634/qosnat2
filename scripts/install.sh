@@ -46,6 +46,34 @@ log()  { echo "[$(date '+%F %T')] $*"; }
 warn() { echo "[$(date '+%F %T')] WARN: $*" >&2; }
 die()  { echo "[$(date '+%F %T')] ERROR: $*" >&2; exit 1; }
 
+# GitHub 直连超时/失败时依次尝试 gh-proxy 加速（中国等地区）。
+GH_PROXY_MIRRORS=(
+  "https://v4.gh-proxy.org/"
+  "https://cdn.gh-proxy.org/"
+)
+
+curl_github_url() {
+  local url="$1"
+  local out="${2:--}"
+  local proxy url_try curl_out=()
+  if [[ "${out}" != "-" ]]; then
+    curl_out=(-o "${out}")
+  fi
+  if curl -fsSL --connect-timeout 8 --max-time 120 --retry 2 --retry-delay 1 \
+      "${curl_out[@]}" "${url}"; then
+    return 0
+  fi
+  for proxy in "${GH_PROXY_MIRRORS[@]}"; do
+    url_try="${proxy}${url}"
+    warn "GitHub 直连失败，尝试加速: ${url_try}"
+    if curl -fsSL --connect-timeout 8 --max-time 120 --retry 2 --retry-delay 1 \
+        "${curl_out[@]}" "${url_try}"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 require_root() {
   [[ "$(id -u)" -eq 0 ]] || die "请使用 root 或 sudo 运行一键安装"
 }
@@ -125,8 +153,7 @@ bootstrap_refresh_install_script() {
   should_refresh_install_script || return 0
   local tmp
   tmp="$(mktemp /tmp/qosnat2-install.XXXXXX.sh)"
-  if ! curl -fsSL -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
-      "${QOSNAT_INSTALL_RAW_URL}?t=$(date +%s)" -o "${tmp}" 2>/dev/null; then
+  if ! curl_github_url "${QOSNAT_INSTALL_RAW_URL}?t=$(date +%s)" "${tmp}" 2>/dev/null; then
     rm -f "${tmp}"
     warn "无法从 GitHub 拉取最新 install.sh，将使用当前脚本继续"
     return 0
@@ -179,11 +206,13 @@ detect_release_tag() {
     normalize_qosnat_tag "${QOSNAT_RELEASE_TAG}"
     return 0
   fi
-  local tag
+  local tag json
   if command -v jq >/dev/null 2>&1; then
-    tag="$(curl -fsSL "${QOSNAT_VERSIONS_URL}" | jq -r '.versions[0].tag // empty')"
+    json="$(curl_github_url "${QOSNAT_VERSIONS_URL}" || die "无法拉取版本清单: ${QOSNAT_VERSIONS_URL}")"
+    tag="$(echo "${json}" | jq -r '.versions[0].tag // empty')"
   else
-    tag="$(curl -fsSL "${QOSNAT_VERSIONS_URL}" | python3 -c "import json,sys; d=json.load(sys.stdin); v=d.get('versions') or []; print(v[0].get('tag','') if v else '')" 2>/dev/null || true)"
+    json="$(curl_github_url "${QOSNAT_VERSIONS_URL}" || die "无法拉取版本清单: ${QOSNAT_VERSIONS_URL}")"
+    tag="$(echo "${json}" | python3 -c "import json,sys; d=json.load(sys.stdin); v=d.get('versions') or []; print(v[0].get('tag','') if v else '')" 2>/dev/null || true)"
   fi
   [[ -n "${tag}" ]] || die "无法从版本清单获取 release tag，请设置 QOSNAT_RELEASE_TAG 或检查 ${QOSNAT_VERSIONS_URL}"
   normalize_qosnat_tag "${tag}"
@@ -197,7 +226,7 @@ download_release_binary() {
   tmp="$(mktemp -d /tmp/qosnat2-release.XXXXXX)"
   tgz="${tmp}/${QOSNAT_RELEASE_ASSET}"
   log "下载 release: ${url}"
-  curl -fL --retry 3 --retry-delay 2 "${url}" -o "${tgz}" || die "下载 release 失败: ${url}"
+  curl_github_url "${url}" "${tgz}" || die "下载 release 失败（已尝试 gh-proxy）: ${url}"
   tar -xzf "${tgz}" -C "${tmp}" || die "解压 release 包失败"
   [[ -f "${tmp}/qosnatd-linux-amd64" ]] || die "release 包缺少 qosnatd-linux-amd64"
   install -m 0755 "${tmp}/qosnatd-linux-amd64" "${QOSNAT_BIN_PATH}"
