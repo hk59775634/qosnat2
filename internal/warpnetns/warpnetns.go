@@ -626,24 +626,45 @@ func Reconcile() {
 	}
 }
 
-// ReconcileAfterWanLink 在 applyWarpWanLink/nft reload 后校验 netns 仍可用。
+// ReconcileAfterWanLink 在 applyWarpWanLink 后校验 netns 仍可用。
 func ReconcileAfterWanLink() error {
-	Reconcile()
+	EnsureHostNATOnly()
 	if needsNetnsReset() {
-		forceResetNetns()
-		return fmt.Errorf("warp netns broken after firewall reload")
+		scrubWarpStack()
+		return fmt.Errorf("warp netns broken after wan link sync")
 	}
 	if !NetnsHealthy() {
 		clearConnectedState()
-		return fmt.Errorf("warp netns unhealthy after firewall reload")
+		return fmt.Errorf("warp netns unhealthy after wan link sync")
 	}
 	return nil
+}
+
+// EnsureHostNATOnly 仅回补宿主机 NAT/bypass 规则，不触发 netns 重置（WARP 已连接时）。
+func EnsureHostNATOnly() {
+	st := loadState()
+	uplink := strings.TrimSpace(st.UplinkDev)
+	if uplink == "" {
+		uplink = mainUplinkDev()
+	}
+	if uplink == "" {
+		return
+	}
+	nftEnsureHostWarpUplinkMasq(uplink)
+	cleanupLegacyIPTablesNAT(uplink, "")
+	if netnsUsable() {
+		ensureNetnsBypassRules()
+	}
 }
 
 // ReconcileHostNAT 确保 netns veth 网段到主 WAN 的 NAT 规则存在。
 // 说明：qosnat 的 nft 加载会 flush ruleset，可能清掉 iptables-nft 管理的 nat 规则；
 // 因此在每次数据面重载后执行一次该校准，避免 netns 失联。
 func ReconcileHostNAT() {
+	if IsConnected() || ServiceRunning() || linkExists(VethHost) {
+		EnsureHostNATOnly()
+		return
+	}
 	Reconcile()
 }
 

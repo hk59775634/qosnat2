@@ -20,7 +20,7 @@ func (srv *Server) applyWarpWanLink(device string) error {
 	if err := policyroute.Apply(srv.store.Get()); err != nil {
 		return err
 	}
-	warpnetns.ReconcileHostNAT()
+	warpnetns.EnsureHostNATOnly()
 	return nil
 }
 
