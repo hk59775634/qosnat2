@@ -57,6 +57,8 @@ func Render(cfg Config, st store.State) (string, error) {
 			OCServUDP:     cfg.VPN.OCServUDP,
 			WGPorts:       cfg.VPN.WGPorts,
 		},
+		st.Firewall.WanPortForwards,
+		cfg.DevLAN,
 	)
 	routes := st.Nat.IPv4.PolicyRoutes
 	if len(routes) == 0 {
@@ -82,6 +84,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("    chain prerouting {\n")
 	b.WriteString("        type nat hook prerouting priority dstnat; policy accept;\n")
 	writeWanForwardRules(&b, cfg, st.Firewall.WanPortForwards)
+	writeWanForwardHairpinRules(&b, cfg, st.Firewall.WanPortForwards)
 	writeNPTv6Prerouting(&b, st.Nat)
 	b.WriteString("    }\n\n")
 
@@ -133,6 +136,7 @@ func Render(cfg Config, st store.State) (string, error) {
 			))
 		}
 	}
+	writeWanForwardHairpinSNAT(&b, cfg, st.Firewall.WanPortForwards)
 	b.WriteString(fmt.Sprintf("        oifname \"%s\" masquerade\n", cfg.DevWAN))
 	b.WriteString("    }\n\n")
 

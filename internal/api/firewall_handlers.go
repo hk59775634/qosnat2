@@ -30,7 +30,7 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			OCServTCP:     vp.OCServTCP,
 			OCServUDP:     vp.OCServUDP,
 			WGPorts:       vp.WGPorts,
-		}); ok {
+		}, st.Firewall.WanPortForwards, srv.env.DevLAN); ok {
 			rules = synced
 			needSave = true
 		}
@@ -236,7 +236,7 @@ func (srv *Server) handleFirewallRulesOrder(w http.ResponseWriter, r *http.Reque
 			OCServTCP:     vp.OCServTCP,
 			OCServUDP:     vp.OCServUDP,
 			WGPorts:       vp.WGPorts,
-		})
+		}, st.Firewall.WanPortForwards, srv.env.DevLAN)
 		st.Firewall.FilterRules = synced
 		reordered = synced
 	})

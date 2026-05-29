@@ -23,6 +23,8 @@ type FilterRule struct {
 	DstPort int    `json:"dst_port,omitempty"`
 	Comment string `json:"comment,omitempty"`
 	Enabled bool   `json:"enabled"`
+	// IPVersion 可选 ipv4|ipv6，影响 nft 中 ip/ip6 匹配（端口转发自动规则使用）。
+	IPVersion string `json:"ip_version,omitempty"`
 	// System 为 true 时表示平台内置/受管规则，禁止通过 API 修改或删除。
 	System bool `json:"system,omitempty"`
 }
@@ -157,15 +159,19 @@ func (r FilterRule) NftRuleLine() string {
 	if r.Proto != "" && r.Proto != "all" {
 		parts = append(parts, r.Proto)
 	}
+	addrFam := "ip"
+	if strings.ToLower(strings.TrimSpace(r.IPVersion)) == "ipv6" {
+		addrFam = "ip6"
+	}
 	if r.SrcAlias != "" {
-		parts = append(parts, "ip saddr @alias_"+r.SrcAlias)
+		parts = append(parts, addrFam+" saddr @alias_"+r.SrcAlias)
 	} else if r.SrcAddr != "" {
-		parts = append(parts, "ip saddr "+r.SrcAddr)
+		parts = append(parts, addrFam+" saddr "+r.SrcAddr)
 	}
 	if r.DstAlias != "" {
-		parts = append(parts, "ip daddr @alias_"+r.DstAlias)
+		parts = append(parts, addrFam+" daddr @alias_"+r.DstAlias)
 	} else if r.DstAddr != "" {
-		parts = append(parts, "ip daddr "+r.DstAddr)
+		parts = append(parts, addrFam+" daddr "+r.DstAddr)
 	}
 	if r.SrcPort > 0 {
 		parts = append(parts, fmt.Sprintf("sport %d", r.SrcPort))

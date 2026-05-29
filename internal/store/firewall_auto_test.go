@@ -6,7 +6,7 @@ func TestSyncAutoFilterRules(t *testing.T) {
 	vpn := AutoInputVPN{OCServEnabled: true, OCServTCP: 443, OCServUDP: 443, WGPorts: []int{51820}}
 	user := FilterRule{ID: "fr-1", Chain: "forward", Action: "drop", Enabled: true}
 	wanDevs := []string{"eth0"}
-	merged, changed := SyncAutoFilterRules([]FilterRule{user}, wanDevs, "8443", vpn)
+	merged, changed := SyncAutoFilterRules([]FilterRule{user}, wanDevs, "8443", vpn, nil, "br-lan")
 	if !changed {
 		t.Fatal("expected change on first sync")
 	}
@@ -22,7 +22,7 @@ func TestSyncAutoFilterRules(t *testing.T) {
 	if merged[len(merged)-1].ID != "auto-input-wan-drop-eth0" {
 		t.Fatalf("unexpected last id: %s", merged[len(merged)-1].ID)
 	}
-	_, changed2 := SyncAutoFilterRules(merged, wanDevs, "8443", vpn)
+	_, changed2 := SyncAutoFilterRules(merged, wanDevs, "8443", vpn, nil, "br-lan")
 	if changed2 {
 		t.Fatal("second sync should be no-op")
 	}

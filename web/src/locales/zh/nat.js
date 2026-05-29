@@ -62,7 +62,7 @@ export default {
   },
   forwards: {
     title: '端口转发',
-    description: '在指定接口匹配入站并重定向到内网',
+    description: '在指定接口匹配入站并重定向到内网；自动同步 forward 放行规则与回流 NAT',
     addRule: '添加规则',
     iface: '接口',
     ipVersion: '协议版本',

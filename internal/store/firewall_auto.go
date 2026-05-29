@@ -177,12 +177,16 @@ func autoRuleEqual(a, b FilterRule) bool {
 		a.SrcAddr == b.SrcAddr && a.DstAddr == b.DstAddr &&
 		a.SrcAlias == b.SrcAlias && a.DstAlias == b.DstAlias &&
 		a.SrcPort == b.SrcPort && a.DstPort == b.DstPort &&
+		a.IPVersion == b.IPVersion &&
 		a.Comment == b.Comment && a.Enabled == b.Enabled && a.System == b.System
 }
 
-// SyncAutoFilterRules 合并用户规则与自动规则；自动规则固定在数组末尾（input 链在 forward 之后）。
-func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN) ([]FilterRule, bool) {
-	desired := BuildAutoInputRules(wanDevs, adminPort, vpn)
+// SyncAutoFilterRules 合并用户规则与自动规则；自动规则固定在数组末尾（forward 端口转发 → input WAN）。
+func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, devLAN string) ([]FilterRule, bool) {
+	desired := append(
+		BuildAutoForwardFilterRules(forwards, devLAN),
+		BuildAutoInputRules(wanDevs, adminPort, vpn)...,
+	)
 	var user []FilterRule
 	for _, r := range rules {
 		if !IsAutoManagedRule(r) {

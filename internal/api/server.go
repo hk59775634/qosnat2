@@ -306,18 +306,24 @@ func (srv *Server) StartBackground() {
 }
 
 func (srv *Server) persistAutoFirewallRules() {
-	vp := nft.VPNFirewallFromState(srv.store.Get())
-	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, srv.store.Get())
+	srv.syncAutoFirewallRules()
+	_ = srv.store.Save()
+}
+
+// syncAutoFirewallRules 同步 WAN 入站与端口转发关联的受管防火墙规则（写入 state，不单独 Save）。
+func (srv *Server) syncAutoFirewallRules() {
+	st := srv.store.Get()
+	vp := nft.VPNFirewallFromState(st)
+	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
 	_ = srv.store.Update(func(s *store.State) {
 		synced, _ := store.SyncAutoFilterRules(s.Firewall.FilterRules, wanDevs, srv.env.AdminPort, store.AutoInputVPN{
 			OCServEnabled: vp.OCServEnabled,
 			OCServTCP:     vp.OCServTCP,
 			OCServUDP:     vp.OCServUDP,
 			WGPorts:       vp.WGPorts,
-		})
+		}, s.Firewall.WanPortForwards, srv.env.DevLAN)
 		s.Firewall.FilterRules = synced
 	})
-	_ = srv.store.Save()
 }
 
 // tryReloadNft 在 setup 完成后重载 nft；失败时记录日志并返回警告文案（不中断已完成的 VPN 等操作）。

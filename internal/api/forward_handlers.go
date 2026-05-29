@@ -74,6 +74,7 @@ func (srv *Server) handleWanForwardsPost(w http.ResponseWriter, r *http.Request)
 	_ = srv.store.Update(func(st *store.State) {
 		st.Firewall.WanPortForwards = append(st.Firewall.WanPortForwards, f)
 	})
+	srv.syncAutoFirewallRules()
 	_ = srv.store.Save()
 	if err := srv.reloadNft(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -104,6 +105,7 @@ func (srv *Server) handleWanForwardsDelete(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
+	srv.syncAutoFirewallRules()
 	_ = srv.store.Save()
 	if err := srv.reloadNft(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

@@ -62,7 +62,7 @@ export default {
   },
   forwards: {
     title: 'Port forwards',
-    description: 'DNAT on selected interface to internal targets',
+    description: 'DNAT on selected interface to internal targets; auto-syncs forward allow rules and hairpin NAT',
     addRule: 'Add forward rule',
     iface: 'Interface',
     ipVersion: 'IP version',
