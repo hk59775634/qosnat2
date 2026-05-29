@@ -97,6 +97,7 @@ func forceResetNetns() {
 	if uplink == "" {
 		uplink = mainUplinkDev()
 	}
+	StopHostWarpSvc()
 	if netnsUsable() {
 		if warpDaemonReady() {
 			_, _ = netnsExec(warpCLI, "--accept-tos", "disconnect")
@@ -110,12 +111,26 @@ func forceResetNetns() {
 		hostIface = detectHostWarpIface()
 	}
 	deleteLink(hostIface)
-	deleteLink(VethHost)
+	// 损坏 netns 时须先删宿主机 veth，否则 ip netns delete 可能失败且 qwp0 残留。
+	forceDeleteLink(VethHost)
+	forceDeleteLink(VethNS)
 	removeNATRule(uplink)
-	if netnsExists() {
-		_, _ = run("ip", "netns", "delete", NetnsName)
-	}
+	forceDeleteNetns()
 	saveState(State{Netns: NetnsName})
+}
+
+// forceDeleteNetns 删除 netns 挂载点；损坏状态下 ip link del 后重试。
+func forceDeleteNetns() {
+	if !netnsExists() {
+		return
+	}
+	for i := 0; i < 3; i++ {
+		forceDeleteLink(VethHost)
+		if _, err := run("ip", "netns", "delete", NetnsName); err == nil {
+			return
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
 }
 
 func run(args ...string) ([]byte, error) {
@@ -268,35 +283,48 @@ func mainUplinkDev() string {
 
 // Ensure 创建 netns、veth，并为 netns 提供经主 WAN 的 NAT 出口（供 WARP 建连）。
 func Ensure(uplink string) error {
-	if needsNetnsReset() {
-		forceResetNetns()
-	}
 	if uplink == "" {
 		uplink = mainUplinkDev()
 	}
 	if uplink == "" {
 		return fmt.Errorf("cannot detect main WAN device for warp netns uplink")
 	}
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if needsNetnsReset() || (netnsExists() && !netnsUsable()) {
+			forceResetNetns()
+		}
+		lastErr = ensureNetnsVeth(uplink)
+		if lastErr == nil {
+			return nil
+		}
+		forceResetNetns()
+	}
+	return lastErr
+}
+
+func ensureNetnsVeth(uplink string) error {
 	if !netnsExists() {
 		if out, err := run("ip", "netns", "add", NetnsName); err != nil {
 			return fmt.Errorf("ip netns add: %s %w", strings.TrimSpace(string(out)), err)
 		}
 	}
+	if !netnsUsable() {
+		return fmt.Errorf("warp netns %q exists but is not usable", NetnsName)
+	}
 	_, _ = netnsExec("ip", "link", "set", "lo", "up")
-	// veth：若宿主机残留 qwp0 但 netns 内无 qwp1，先拆除再建。
-	if linkExists(VethHost) {
+	if ifaceSysfsExists(VethHost) {
 		if _, err := netnsExec("ip", "link", "show", VethNS); err != nil {
-			deleteLink(VethHost)
+			forceDeleteLink(VethHost)
 		}
 	}
-	if !linkExists(VethHost) {
+	if !ifaceSysfsExists(VethHost) {
 		if out, err := run("ip", "link", "add", VethHost, "type", "veth", "peer", "name", VethNS); err != nil {
 			return fmt.Errorf("veth: %s %w", strings.TrimSpace(string(out)), err)
 		}
 	}
 	if _, err := netnsExec("ip", "link", "show", VethNS); err != nil {
 		if out, err := run("ip", "link", "set", VethNS, "netns", NetnsName); err != nil {
-			forceResetNetns()
 			return fmt.Errorf("move veth to netns: %s %w", strings.TrimSpace(string(out)), err)
 		}
 	}
@@ -306,10 +334,8 @@ func Ensure(uplink string) error {
 	_, _ = run("ip", "link", "set", VethHost, "up")
 	_, _ = netnsExec("ip", "route", "replace", "default", "via", NSVethGW, "dev", VethNS)
 	_, _ = run("sysctl", "-w", "net.ipv4.ip_forward=1")
-	// WARP / WireGuard 相关标记路由在部分内核配置下依赖 src_valid_mark=1
 	_, _ = run("sysctl", "-w", "net.ipv4.conf.all.src_valid_mark=1")
 	_, _ = netnsExec("sysctl", "-w", "net.ipv4.conf.all.src_valid_mark=1")
-	// NAT：netns 到主 WAN 的建连出口（nft 原生）
 	nftEnsureHostWarpUplinkMasq(uplink)
 	cleanupLegacyIPTablesNAT(uplink, "")
 	st := loadState()
@@ -319,7 +345,7 @@ func Ensure(uplink string) error {
 }
 
 func ensureNetnsBypassRules() {
-	if !netnsExists() {
+	if !netnsUsable() {
 		return
 	}
 	// WARP 会异步重写 cloudflare-warp 链，短时间内可能把 qwp1 放行规则抹掉。
@@ -347,7 +373,7 @@ func ensureNetnsBypassRules() {
 }
 
 func enforceNetnsBaseline() {
-	if !netnsExists() {
+	if !netnsUsable() {
 		return
 	}
 	_, _ = netnsExec("ip", "route", "replace", "default", "via", NSVethGW, "dev", VethNS)
@@ -395,7 +421,10 @@ func netnsWarpConnectedStable() bool {
 
 // RecoverQuick 在 connect 失败后执行一次人工可复现的最小修复序列。
 func RecoverQuick() bool {
-	if !netnsExists() {
+	if needsNetnsReset() || (netnsExists() && !netnsUsable()) {
+		forceResetNetns()
+	}
+	if err := Ensure(mainUplinkDev()); err != nil {
 		return false
 	}
 	enforceNetnsBaseline()
@@ -439,19 +468,28 @@ func stopSvcInNetns() {
 }
 
 func linkExists(name string) bool {
-	if strings.TrimSpace(name) == "" {
+	return ifaceSysfsExists(name)
+}
+
+func ifaceSysfsExists(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
 		return false
 	}
-	_, err := run("ip", "link", "show", name)
+	_, err := os.Stat(filepath.Join("/sys/class/net", name))
 	return err == nil
 }
 
-func deleteLink(name string) {
-	if !linkExists(name) {
+func forceDeleteLink(name string) {
+	if !ifaceSysfsExists(name) {
 		return
 	}
 	_, _ = run("ip", "link", "set", name, "down")
 	_, _ = run("ip", "link", "del", name)
+}
+
+func deleteLink(name string) {
+	forceDeleteLink(name)
 }
 
 func removeNATRule(uplink string) {
@@ -555,16 +593,12 @@ func warpIfaceInNetns() string {
 // Connect 在 netns 内启用 WARP，并将宿主机 qwp0 作为策略路由出口（经 netns 转发到 WARP）。
 func Connect() (string, error) {
 	StopHostWarpSvc()
+	if needsNetnsReset() {
+		forceResetNetns()
+	}
 	uplink := mainUplinkDev()
 	if err := Ensure(uplink); err != nil {
-		if needsNetnsReset() {
-			forceResetNetns()
-			if err2 := Ensure(uplink); err2 != nil {
-				return "", err2
-			}
-		} else {
-			return "", err
-		}
+		return "", err
 	}
 	pid, err := startSvcInNetns()
 	if err != nil {
