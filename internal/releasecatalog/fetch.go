@@ -9,8 +9,11 @@ import (
 )
 
 const (
-	directFetchTimeout = 8 * time.Second
-	proxyFetchTimeout  = 15 * time.Second
+	manifestDirectTimeout = 8 * time.Second
+	manifestProxyTimeout  = 15 * time.Second
+	// release 包约 6MB，国内链路常需更长时间。
+	releaseDirectTimeout = 45 * time.Second
+	releaseProxyTimeout  = 3 * time.Minute
 )
 
 // gh-proxy 镜像前缀（中国等地区 GitHub 直连超时时备选）。
@@ -33,16 +36,25 @@ func MirrorURLs(directURL string) []string {
 	return out
 }
 
-// FetchBytes 依次尝试 urls，首个成功响应体返回；全部失败则返回最后一次错误。
+// FetchBytes 依次尝试 urls 拉取小文件（如 manifest）；首个成功响应体返回。
 func FetchBytes(urls []string) (body []byte, usedURL string, err error) {
+	return fetchBytes(urls, manifestDirectTimeout, manifestProxyTimeout)
+}
+
+// FetchBytesRelease 拉取 release 压缩包等大文件，超时更长。
+func FetchBytesRelease(urls []string) (body []byte, usedURL string, err error) {
+	return fetchBytes(urls, releaseDirectTimeout, releaseProxyTimeout)
+}
+
+func fetchBytes(urls []string, directTimeout, proxyTimeout time.Duration) (body []byte, usedURL string, err error) {
 	if len(urls) == 0 {
 		return nil, "", fmt.Errorf("no urls to fetch")
 	}
 	var lastErr error
 	for i, u := range urls {
-		timeout := proxyFetchTimeout
+		timeout := proxyTimeout
 		if i == 0 {
-			timeout = directFetchTimeout
+			timeout = directTimeout
 		}
 		b, err := fetchOne(u, timeout)
 		if err == nil {

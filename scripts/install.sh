@@ -66,7 +66,7 @@ curl_github_url() {
   for proxy in "${GH_PROXY_MIRRORS[@]}"; do
     url_try="${proxy}${url}"
     warn "GitHub 直连失败，尝试加速: ${url_try}"
-    if curl -fsSL --connect-timeout 8 --max-time 120 --retry 2 --retry-delay 1 \
+    if curl -fsSL --connect-timeout 8 --max-time 300 --retry 2 --retry-delay 1 \
         "${curl_out[@]}" "${url_try}"; then
       return 0
     fi

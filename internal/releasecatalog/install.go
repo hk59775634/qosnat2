@@ -17,7 +17,7 @@ func FetchReleaseArchive(versionID string) ([]byte, string, error) {
 	if len(urls) == 0 {
 		return nil, "", fmt.Errorf("invalid version id")
 	}
-	return FetchBytes(urls)
+	return FetchBytesRelease(urls)
 }
 
 // InstallReleaseBinary 下载并安装指定版本的 qosnatd 与 BPF 对象。
