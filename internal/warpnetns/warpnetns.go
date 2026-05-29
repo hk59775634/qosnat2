@@ -79,8 +79,16 @@ func vethPairHealthy() bool {
 	return err == nil
 }
 
+// NetnsHealthy netns 可 exec 且 veth 成对可用。
+func NetnsHealthy() bool {
+	return netnsUsable() && vethPairHealthy()
+}
+
 // needsNetnsReset 检测孤儿 veth 或 netns 损坏（常见于 WARP 连接中断后）。
 func needsNetnsReset() bool {
+	if linkExists(VethHost) && !netnsExists() {
+		return true
+	}
 	if linkExists(VethHost) && !vethPairHealthy() {
 		return true
 	}
@@ -88,6 +96,14 @@ func needsNetnsReset() bool {
 		return true
 	}
 	return false
+}
+
+func clearConnectedState() {
+	st := loadState()
+	if !st.Connected && st.SvcPID == 0 && st.HostIface == "" {
+		return
+	}
+	saveState(State{Netns: NetnsName, UplinkDev: st.UplinkDev})
 }
 
 // forceResetNetns 强制拆除损坏的 netns/veth，便于 Ensure 干净重建。
@@ -124,12 +140,16 @@ func forceDeleteNetns() {
 	if !netnsExists() {
 		return
 	}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		forceDeleteLink(VethHost)
+		forceDeleteLink(VethNS)
 		if _, err := run("ip", "netns", "delete", NetnsName); err == nil {
 			return
 		}
-		time.Sleep(150 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !netnsUsable() {
+		_ = os.Remove(filepath.Join("/var/run/netns", NetnsName))
 	}
 }
 
@@ -504,23 +524,42 @@ func removeNATRule(uplink string) {
 		"-s", "10.99.0.0/30", "-o", uplink, "-j", "MASQUERADE").Run()
 }
 
-// ReconcileHostNAT 确保 netns veth 网段到主 WAN 的 NAT 规则存在。
-// 说明：qosnat 的 nft 加载会 flush ruleset，可能清掉 iptables-nft 管理的 nat 规则；
-// 因此在每次数据面重载后执行一次该校准，避免 netns 失联。
-func ReconcileHostNAT() {
-	if !netnsExists() {
+// Reconcile 检测并修复损坏 netns，flush ruleset 后回补 NAT/bypass，并清理虚假 connected 状态。
+func Reconcile() {
+	StopHostWarpSvc()
+	if needsNetnsReset() {
+		forceResetNetns()
 		return
 	}
 	st := loadState()
+	if st.Connected && !NetnsHealthy() {
+		clearConnectedState()
+		return
+	}
+	if !netnsUsable() {
+		if st.Connected {
+			clearConnectedState()
+		}
+		return
+	}
 	uplink := strings.TrimSpace(st.UplinkDev)
 	if uplink == "" {
 		uplink = mainUplinkDev()
 	}
-	if uplink == "" {
-		return
+	if uplink != "" {
+		nftEnsureHostWarpUplinkMasq(uplink)
+		cleanupLegacyIPTablesNAT(uplink, "")
 	}
-	nftEnsureHostWarpUplinkMasq(uplink)
-	cleanupLegacyIPTablesNAT(uplink, "")
+	if st.Connected {
+		ensureNetnsBypassRules()
+	}
+}
+
+// ReconcileHostNAT 确保 netns veth 网段到主 WAN 的 NAT 规则存在。
+// 说明：qosnat 的 nft 加载会 flush ruleset，可能清掉 iptables-nft 管理的 nat 规则；
+// 因此在每次数据面重载后执行一次该校准，避免 netns 失联。
+func ReconcileHostNAT() {
+	Reconcile()
 }
 
 func deleteLinkInNetns(name string) {
@@ -676,15 +715,14 @@ func detectHostWarpIface() string {
 
 // IsConnected 报告 WARP 是否在 netns 中已连接且隧道在宿主机可用。
 func IsConnected() bool {
-	if !netnsExists() {
-		return false
-	}
 	st := loadState()
 	if !st.Connected {
 		return false
 	}
-	iface := HostInterface()
-	if iface == "" {
+	if !NetnsHealthy() {
+		return false
+	}
+	if HostInterface() == "" {
 		return false
 	}
 	out, err := netnsExec(warpCLI, "--accept-tos", "status")
@@ -697,7 +735,7 @@ func IsConnected() bool {
 
 // ServiceRunning  netns 内 warp-svc 是否在运行。
 func ServiceRunning() bool {
-	if !netnsExists() {
+	if !netnsUsable() {
 		return false
 	}
 	out, err := netnsExec("pgrep", "-x", "warp-svc")

@@ -271,6 +271,7 @@ func (srv *Server) applyNetworkVLANs() {
 }
 
 func (srv *Server) replayWanLinksOnBoot() {
+	warpnetns.Reconcile()
 	st := srv.store.Get()
 	if len(st.Network.WanLinks) == 0 && !warpnetns.IsConnected() {
 		return

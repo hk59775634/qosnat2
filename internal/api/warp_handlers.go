@@ -44,15 +44,19 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	warpnetns.Reconcile()
+	srv.reconcileWarpStoreState()
 	installed := commandExists("warp-cli")
-	service := warpnetns.ServiceRunning() || serviceActive("warp-svc")
+	netnsHealthy := warpnetns.NetnsHealthy()
+	service := warpnetns.ServiceRunning()
 	statusOut := ""
 	connected := warpnetns.IsConnected()
 	if connected {
 		if out, err := exec.Command("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status").CombinedOutput(); err == nil {
 			statusOut = strings.TrimSpace(string(out))
 		}
-	} else if installed {
+	} else if installed && !netnsHealthy {
+		// 仅 netns 模式未启用时展示宿主机 warp-cli（避免损坏 netns 时误报已连接）。
 		if out, err := exec.Command("warp-cli", "--accept-tos", "status").CombinedOutput(); err == nil {
 			statusOut = strings.TrimSpace(string(out))
 		}
@@ -62,13 +66,14 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 		iface = detectWarpInterface()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"installed":   installed,
-		"service_up":  service,
-		"connected":   connected,
-		"interface":   iface,
-		"status_raw":  statusOut,
-		"root":        os.Getuid() == 0,
-		"install_job": getWarpInstallStatus(),
+		"installed":     installed,
+		"service_up":    service,
+		"connected":     connected,
+		"netns_healthy": netnsHealthy,
+		"interface":     iface,
+		"status_raw":    statusOut,
+		"root":          os.Getuid() == 0,
+		"install_job":   getWarpInstallStatus(),
 	})
 }
 
@@ -438,6 +443,7 @@ func collectWarpConnectDiagnostics() map[string]any {
 	diag := map[string]any{
 		"netns":                warpnetns.NetnsName,
 		"netns_exists":         strings.Contains(cmdOutput("ip", "netns", "list"), warpnetns.NetnsName),
+		"netns_healthy":        warpnetns.NetnsHealthy(),
 		"service_running":      warpnetns.ServiceRunning(),
 		"connected":            warpnetns.IsConnected(),
 		"host_iface":           warpnetns.HostInterface(),
@@ -466,17 +472,23 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 	}
 	iface, err := warpnetns.Connect()
 	if err != nil {
-		if warpnetns.RecoverQuick() {
-			iface = warpnetns.HostInterface()
-			if iface == "" {
-				iface = "qwp0"
-			}
-		} else {
+		if !warpnetns.RecoverQuick() {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
 				"error":       err.Error(),
 				"diagnostics": collectWarpConnectDiagnostics(),
 			})
 			return
+		}
+		if !warpnetns.IsConnected() {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{
+				"error":       err.Error(),
+				"diagnostics": collectWarpConnectDiagnostics(),
+			})
+			return
+		}
+		iface = warpnetns.HostInterface()
+		if iface == "" {
+			iface = "qwp0"
 		}
 	}
 	statusNow := cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")

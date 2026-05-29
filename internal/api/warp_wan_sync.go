@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/hk59775634/qosnat2/internal/store"
+	"github.com/hk59775634/qosnat2/internal/warpnetns"
 )
 
 func (srv *Server) applyWarpWanLink(device string) error {
@@ -28,4 +29,23 @@ func (srv *Server) removeWarpWanLink() error {
 	}
 	srv.applyManagedRoutes()
 	return srv.applyWanLinkDataPlane()
+}
+
+// reconcileWarpStoreState 清除 state 中残留的 WARP WAN 链路（netns 已损坏或未连接时）。
+func (srv *Server) reconcileWarpStoreState() {
+	st := srv.store.Get()
+	hasWarp := false
+	for _, w := range st.Network.WanLinks {
+		if store.IsWarpWanLink(w) {
+			hasWarp = true
+			break
+		}
+	}
+	if !hasWarp {
+		return
+	}
+	if warpnetns.IsConnected() {
+		return
+	}
+	_ = srv.removeWarpWanLink()
 }
