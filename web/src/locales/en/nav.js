@@ -27,6 +27,7 @@ export default {
   markIsolation: 'Mark isolation',
   conntrack: 'Conntrack',
   capture: 'Packet capture',
+  terminal: 'Web terminal',
   system: 'System',
   general: 'General',
   certificates: 'Certificates',

@@ -30,4 +30,19 @@ export default {
     colFlags: 'Flags',
     noMatch: 'No matching connections',
   },
+  terminal: {
+    title: 'Web terminal',
+    description: 'Browser shell on this host when SSH is unavailable',
+    hint: 'Runs with the same privileges as qosnatd (max 2 concurrent sessions). Use only on trusted networks.',
+    reconnect: 'Reconnect',
+    connectFailed: 'Could not connect (check login and service)',
+    sessionEnded: 'session ended',
+    closed: 'Connection closed (code {code})',
+    status: {
+      connecting: 'Connecting…',
+      connected: 'Connected',
+      closed: 'Disconnected',
+      error: 'Connection failed',
+    },
+  },
 }

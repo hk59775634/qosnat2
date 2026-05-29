@@ -69,6 +69,7 @@ const menu = computed(() => [
       { path: '/status/mark', label: t('nav.markIsolation') },
       { path: '/diagnostics/conntrack', label: t('nav.conntrack') },
       { path: '/diagnostics/capture', label: t('nav.capture') },
+      { path: '/diagnostics/terminal', label: t('nav.terminal') },
     ],
   },
   {

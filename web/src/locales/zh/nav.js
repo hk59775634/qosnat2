@@ -27,6 +27,7 @@ export default {
   markIsolation: 'Mark 隔离审计',
   conntrack: '连接跟踪',
   capture: '抓包',
+  terminal: 'Web 终端',
   system: '系统',
   general: '常规设置',
   certificates: '证书管理',

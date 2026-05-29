@@ -30,4 +30,19 @@ export default {
     colFlags: '标志',
     noMatch: '无匹配连接',
   },
+  terminal: {
+    title: 'Web 终端',
+    description: '在浏览器中打开本机 Shell，SSH 不可用时可用于排障与管理',
+    hint: '会话与 qosnatd 同权限运行；最多 2 个并发连接。请仅在受信任网络使用。',
+    reconnect: '重新连接',
+    connectFailed: '无法连接终端（请确认已登录且服务正常）',
+    sessionEnded: '会话已结束',
+    closed: '连接已关闭 (code {code})',
+    status: {
+      connecting: '连接中…',
+      connected: '已连接',
+      closed: '已断开',
+      error: '连接失败',
+    },
+  },
 }

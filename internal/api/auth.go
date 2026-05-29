@@ -83,14 +83,20 @@ func (s *sessionStore) delete(tok string) {
 	_ = s.saveLocked()
 }
 
+func (srv *Server) requestAuthorized(r *http.Request) bool {
+	if srv.checkAPIKey(r) {
+		return true
+	}
+	c, err := r.Cookie(sessionCookie)
+	if err != nil {
+		return false
+	}
+	return srv.sessions.valid(c.Value)
+}
+
 func (srv *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if srv.checkAPIKey(r) {
-			next(w, r)
-			return
-		}
-		c, err := r.Cookie(sessionCookie)
-		if err != nil || !srv.sessions.valid(c.Value) {
+		if !srv.requestAuthorized(r) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}

@@ -40,6 +40,7 @@ const routes = [
       },
       { path: 'diagnostics/capture', name: 'diag-capture', component: () => import('@/views/diagnostics/Capture.vue') },
       { path: 'diagnostics/conntrack', name: 'diag-conntrack', component: () => import('@/views/diagnostics/Conntrack.vue') },
+      { path: 'diagnostics/terminal', name: 'diag-terminal', component: () => import('@/views/diagnostics/Terminal.vue') },
       { path: 'system/general', name: 'system-general', component: () => import('@/views/system/General.vue') },
       { path: 'system/certificates', name: 'system-certificates', component: () => import('@/views/system/Certificates.vue') },
       { path: 'system/advanced', name: 'system-advanced', component: () => import('@/views/system/Advanced.vue') },
