@@ -86,16 +86,35 @@ func NetnsHealthy() bool {
 
 // needsNetnsReset 检测孤儿 veth 或 netns 损坏（常见于 WARP 连接中断后）。
 func needsNetnsReset() bool {
-	if linkExists(VethHost) && !netnsExists() {
+	hasNetns := netnsExists()
+	hasVeth := linkExists(VethHost)
+	if hasVeth && !hasNetns {
 		return true
 	}
-	if linkExists(VethHost) && !vethPairHealthy() {
+	if hasNetns && !netnsUsable() {
 		return true
 	}
-	if netnsExists() && !netnsUsable() {
+	if hasNetns && !hasVeth {
+		return true
+	}
+	if hasVeth && hasNetns && !vethPairHealthy() {
 		return true
 	}
 	return false
+}
+
+// PrepareForConnect 连接前清理损坏 netns 并确保 veth/NAT 就绪。
+func PrepareForConnect() error {
+	StopHostWarpSvc()
+	RestoreHostResolv()
+	if needsNetnsReset() {
+		forceResetNetns()
+	}
+	uplink := mainUplinkDev()
+	if uplink == "" {
+		return fmt.Errorf("cannot detect main WAN device for warp netns uplink")
+	}
+	return Ensure(uplink)
 }
 
 func clearConnectedState() {
@@ -159,6 +178,8 @@ func forceDeleteNetns() {
 	if !netnsUsable() {
 		_ = os.Remove(filepath.Join("/var/run/netns", NetnsName))
 	}
+	forceDeleteLink(VethHost)
+	forceDeleteLink(VethNS)
 }
 
 func killProcsInNamedNetns() {
@@ -475,10 +496,12 @@ func netnsWarpConnectedStable() bool {
 
 // RecoverQuick 在 connect 失败后执行一次人工可复现的最小修复序列。
 func RecoverQuick() bool {
-	if needsNetnsReset() || (netnsExists() && !netnsUsable()) {
-		forceResetNetns()
+	forceResetNetns()
+	RestoreHostResolv()
+	if err := PrepareForConnect(); err != nil {
+		return false
 	}
-	if err := Ensure(mainUplinkDev()); err != nil {
+	if _, err := startSvcInNetns(); err != nil {
 		return false
 	}
 	enforceNetnsBaseline()
@@ -498,7 +521,7 @@ func startSvcInNetns() (int, error) {
 			}
 		}
 	}
-	cmd := exec.Command("ip", "netns", "exec", NetnsName, warpSvc)
+	cmd := exec.Command("ip", warpSvcStartArgs()...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return 0, err
@@ -566,6 +589,7 @@ func removeNATRule(uplink string) {
 // Reconcile 检测并修复损坏 netns，flush ruleset 后回补 NAT/bypass，并清理虚假 connected 状态。
 func Reconcile() {
 	StopHostWarpSvc()
+	RestoreHostResolv()
 	if needsNetnsReset() {
 		forceResetNetns()
 		return
@@ -678,6 +702,10 @@ func softDisconnect() {
 		deleteWarpLinksInNetns()
 	}
 	saveState(State{Netns: NetnsName, UplinkDev: uplink})
+	RestoreHostResolv()
+	if needsNetnsReset() {
+		forceResetNetns()
+	}
 }
 
 func warpIfaceInNetns() string {
@@ -699,15 +727,10 @@ func warpIfaceInNetns() string {
 
 // Connect 在 netns 内启用 WARP，并将宿主机 qwp0 作为策略路由出口（经 netns 转发到 WARP）。
 func Connect() (string, error) {
-	StopHostWarpSvc()
-	Reconcile()
-	if needsNetnsReset() {
-		forceResetNetns()
-	}
-	uplink := mainUplinkDev()
-	if err := Ensure(uplink); err != nil {
+	if err := PrepareForConnect(); err != nil {
 		return "", err
 	}
+	uplink := mainUplinkDev()
 	pid, err := startSvcInNetns()
 	if err != nil {
 		return "", fmt.Errorf("start warp-svc in netns: %w", err)
@@ -753,6 +776,7 @@ func Connect() (string, error) {
 
 // Disconnect 断开 WARP；保留 netns/veth，避免反复销毁导致 peer 引用损坏。
 func Disconnect() {
+	RestoreHostResolv()
 	if needsNetnsReset() {
 		forceResetNetns()
 		return

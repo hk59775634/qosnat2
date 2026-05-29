@@ -470,6 +470,7 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "warp not installed"})
 		return
 	}
+	warpnetns.Reconcile()
 	iface, err := warpnetns.Connect()
 	if err != nil {
 		if !warpnetns.RecoverQuick() {
@@ -577,6 +578,7 @@ func (srv *Server) handleNetworkWarpDisconnect(w http.ResponseWriter, r *http.Re
 	warpnetns.Disconnect()
 	_ = restoreRoutesAfterWarpConnect(srv)
 	_ = srv.removeWarpWanLink()
+	warpnetns.Reconcile()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
