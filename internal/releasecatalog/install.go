@@ -39,7 +39,9 @@ func InstallReleaseBinary(versionID, binPath string) error {
 	if _, err := os.Stat(bin); err != nil {
 		return fmt.Errorf("release missing qosnatd-linux-amd64")
 	}
-	if err := copyFile(bin, binPath, 0755); err != nil {
+	// 不能覆盖正在运行的可执行文件（会 ETXTBSY/text file busy）；
+	// 先写到 .new，再 rename 换入目标路径（进程仍持有旧 inode，重启后加载新文件）。
+	if err := replaceFileAtomic(bin, binPath, 0755); err != nil {
 		return fmt.Errorf("install binary: %w", err)
 	}
 	bpf := filepath.Join(tmp, "lib", "classify.bpf.o")
@@ -48,7 +50,8 @@ func InstallReleaseBinary(versionID, binPath string) error {
 		if err := os.MkdirAll(destDir, 0755); err != nil {
 			return err
 		}
-		if err := copyFile(bpf, filepath.Join(destDir, "classify.bpf.o"), 0644); err != nil {
+		bpfDest := filepath.Join(destDir, "classify.bpf.o")
+		if err := replaceFileAtomic(bpf, bpfDest, 0644); err != nil {
 			return fmt.Errorf("install bpf: %w", err)
 		}
 	}
@@ -97,6 +100,30 @@ func extractReleaseTarGz(gz []byte, destDir string) error {
 		}
 		f.Close()
 	}
+}
+
+// replaceFileAtomic 用 staging+rename 替换目标文件，避免覆盖正在使用中的路径（ETXTBSY）。
+func replaceFileAtomic(src, dst string, mode os.FileMode) error {
+	staging := dst + ".new"
+	if err := copyFile(src, staging, mode); err != nil {
+		return err
+	}
+	backup := dst + ".old"
+	_ = os.Remove(backup)
+	if _, err := os.Stat(dst); err == nil {
+		if err := os.Rename(dst, backup); err != nil {
+			_ = os.Remove(staging)
+			return fmt.Errorf("rename %s aside: %w", dst, err)
+		}
+	}
+	if err := os.Rename(staging, dst); err != nil {
+		if _, err2 := os.Stat(backup); err2 == nil {
+			_ = os.Rename(backup, dst)
+		}
+		return fmt.Errorf("activate %s: %w", dst, err)
+	}
+	_ = os.Remove(backup)
+	return nil
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

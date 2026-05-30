@@ -1,0 +1,63 @@
+# 重新上传指定 tag 的 release 资产（不新增版本号），用于热修已发布版本。
+name: republish-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: '已有 release tag（如 v2026053005）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  republish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.version_tag }}"
+          TAG="${TAG#v}"
+          if [[ ! "${TAG}" =~ ^[0-9]{10}$ ]]; then
+            echo "invalid tag: need vYYYYMMDDNN" >&2
+            exit 1
+          fi
+          echo "version_tag=v${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libbpf-dev make rsync jq
+
+      - name: Build release assets
+        run: |
+          chmod +x ./scripts/build-release.sh
+          ./scripts/build-release.sh
+
+      - name: Upload release assets (replace)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.version_tag }}"
+          gh release upload "${TAG}" \
+            dist/qosnatd-linux-amd64 \
+            dist/qosnat2-linux-amd64.tar.gz \
+            --clobber
