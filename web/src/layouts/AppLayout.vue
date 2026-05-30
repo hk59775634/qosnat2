@@ -7,6 +7,7 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import GitHubProjectLink from '@/components/GitHubProjectLink.vue'
 import NotificationTray from '@/components/NotificationTray.vue'
 import { displayName } from '@/composables/useBranding'
+import { appVersionLabel } from '@/composables/useAppVersion'
 
 const router = useRouter()
 const route = useRoute()
@@ -239,7 +240,16 @@ const groupShort = computed(() => ({
               <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <h1 class="text-lg font-semibold tracking-tight">{{ displayName }}</h1>
+          <div class="flex items-baseline gap-2 min-w-0">
+            <h1 class="text-lg font-semibold tracking-tight truncate">{{ displayName }}</h1>
+            <span
+              v-if="appVersionLabel"
+              class="text-xs font-mono text-blue-200/90 shrink-0"
+              :title="t('common.appVersionTitle', { v: appVersionLabel })"
+            >
+              {{ appVersionLabel }}
+            </span>
+          </div>
           <span class="text-xs text-blue-200 hidden sm:inline">QoS · NAT · eBPF</span>
         </div>
         <div class="flex items-center gap-2">
@@ -367,7 +377,7 @@ const groupShort = computed(() => ({
           </div>
 
           <div
-            class="mt-auto border-t border-slate-700/80 pt-2 pb-3"
+            class="mt-auto border-t border-slate-700/80 pt-2 pb-3 space-y-1.5"
             :class="sidebarCollapsed ? 'px-1' : 'px-2'"
           >
             <GitHubProjectLink
@@ -379,6 +389,14 @@ const groupShort = computed(() => ({
               variant="sidebar"
               icon-only
             />
+            <p
+              v-if="appVersionLabel"
+              class="font-mono text-slate-500 leading-tight"
+              :class="sidebarCollapsed ? 'text-[9px] text-center truncate px-0.5' : 'text-[10px] px-3'"
+              :title="t('common.appVersionTitle', { v: appVersionLabel })"
+            >
+              <span v-if="!sidebarCollapsed" class="text-slate-600">{{ t('common.appVersion') }} </span>{{ appVersionLabel }}
+            </p>
           </div>
         </nav>
       </aside>

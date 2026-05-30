@@ -19,6 +19,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/ocserv/usertraffic"
 	"github.com/hk59775634/qosnat2/internal/policyroute"
+	"github.com/hk59775634/qosnat2/internal/releasecatalog"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/stats"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -409,6 +410,8 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"ok":             true,
 		"service":        "qosnatd",
 		"display_name":   store.EffectiveDisplayName(st.System.DisplayName),
+		"release_tag":    releasecatalog.NormalizeID(readTextFile(qosnatReleaseTag)),
+		"build_version":  detectQosnatVersion(),
 		"phase":          phase,
 		"setup_complete": complete,
 		"setup_required": !complete,

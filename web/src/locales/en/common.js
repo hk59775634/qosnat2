@@ -79,4 +79,6 @@ export default {
   githubOn: 'Source on',
   githubViewRepo: 'View on GitHub',
   githubRepoTitle: 'Open {repo} on GitHub',
+  appVersion: 'Version',
+  appVersionTitle: 'Running version {v}',
 }

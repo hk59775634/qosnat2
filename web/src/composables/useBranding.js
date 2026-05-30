@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { setAppVersionFromHealth } from '@/composables/useAppVersion'
 
 /** 默认 UI 产品名（与后端 store.DefaultDisplayName 一致） */
 export const DEFAULT_DISPLAY_NAME = 'qosnat2'
@@ -20,6 +21,7 @@ export async function refreshBrandingFromHealth(apiClient) {
   try {
     const h = await apiClient.health()
     setDisplayName(h.display_name)
+    setAppVersionFromHealth(h)
   } catch {
     /* keep current */
   }

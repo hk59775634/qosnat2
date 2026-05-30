@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { api } from '@/api/client'
-import { refreshBrandingFromHealth } from '@/composables/useBranding'
+import { setDisplayName, refreshBrandingFromHealth } from '@/composables/useBranding'
+import { setAppVersionFromHealth } from '@/composables/useAppVersion'
 
 refreshBrandingFromHealth(api).catch(() => {})
 
@@ -69,6 +70,8 @@ router.beforeEach(async (to) => {
   let setupRequired = false
   try {
     const h = await api.health()
+    setDisplayName(h.display_name)
+    setAppVersionFromHealth(h)
     setupRequired = h.setup_required === true
   } catch {
     if (to.name !== 'login') return { name: 'login' }
