@@ -55,7 +55,13 @@ export default {
     versionSwitchFailed: '版本升级失败',
     versionSwitchStatusLost: '无法获取切换进度（服务可能正在重启），请稍后刷新页面查看当前版本',
     versionNeedTag: '请选择目标版本',
+    versionAlreadyCurrent: '已是当前版本，无需切换',
     versionRootHint: '当前 qosnatd 非 root 运行，无法执行版本切换',
+    versionSwitchModalTitle: '确认切换版本',
+    versionSwitchModalBody: '将下载并安装版本 {tag}，随后重启 qosnatd。请输入管理员当前密码以继续。',
+    versionSwitchPasswordLabel: '当前密码',
+    versionSwitchConfirm: '确认切换',
+    needPasswordForVersionSwitch: '请输入当前密码',
   },
   advanced: {
     title: '高级设置 · 系统优化',

@@ -55,7 +55,13 @@ export default {
     versionSwitchFailed: 'Upgrade failed',
     versionSwitchStatusLost: 'Could not poll switch status (service may be restarting). Refresh to check the current version.',
     versionNeedTag: 'Please choose a target version',
+    versionAlreadyCurrent: 'Already on this version',
     versionRootHint: 'qosnatd is not running as root; version switching is disabled',
+    versionSwitchModalTitle: 'Confirm version switch',
+    versionSwitchModalBody: 'Version {tag} will be downloaded and installed, then qosnatd will restart. Enter your current admin password to continue.',
+    versionSwitchPasswordLabel: 'Current password',
+    versionSwitchConfirm: 'Switch now',
+    needPasswordForVersionSwitch: 'Current password is required',
   },
   advanced: {
     title: 'Advanced · system tuning',

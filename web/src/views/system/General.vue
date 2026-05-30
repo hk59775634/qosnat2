@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { setDisplayName } from '@/composables/useBranding'
@@ -34,6 +34,11 @@ const switchTag = ref('')
 const versionSwitchJob = ref(null)
 const versionSwitchPoll = ref(null)
 const versionSwitchPollErrs = ref(0)
+const versionSwitchModalOpen = ref(false)
+const versionSwitchPassword = ref('')
+const versionSwitchModalErr = ref('')
+const versionSwitchSubmitting = ref(false)
+const versionSwitchPasswordRef = ref(null)
 
 const activeTab = ref('basic')
 const generalTabs = computed(() => [
@@ -272,24 +277,49 @@ async function runAcme(action) {
   }
 }
 
-async function switchVersion() {
-  err.value = ''
-  ok.value = ''
-  warn.value = ''
+function openVersionSwitchModal() {
   if (versionSwitchRunning.value) return
   if (!switchTag.value) {
     err.value = t('system.general.versionNeedTag')
     return
   }
-  if (!form.value.current_password) {
-    err.value = t('system.general.needPasswordForTls')
+  if (versionInfo.value?.current_tag && switchTag.value === versionInfo.value.current_tag) {
+    err.value = t('system.general.versionAlreadyCurrent')
     return
   }
+  versionSwitchModalErr.value = ''
+  versionSwitchPassword.value = ''
+  versionSwitchModalOpen.value = true
+  nextTick(() => versionSwitchPasswordRef.value?.focus())
+}
+
+function closeVersionSwitchModal() {
+  if (versionSwitchSubmitting.value) return
+  versionSwitchModalOpen.value = false
+  versionSwitchPassword.value = ''
+  versionSwitchModalErr.value = ''
+}
+
+async function confirmVersionSwitch() {
+  versionSwitchModalErr.value = ''
+  err.value = ''
+  ok.value = ''
+  warn.value = ''
+  if (versionSwitchRunning.value) return
+  if (!switchTag.value) {
+    versionSwitchModalErr.value = t('system.general.versionNeedTag')
+    return
+  }
+  if (!versionSwitchPassword.value) {
+    versionSwitchModalErr.value = t('system.general.needPasswordForVersionSwitch')
+    return
+  }
+  const passwd = versionSwitchPassword.value
+  versionSwitchSubmitting.value = true
   try {
-    const r = await api.system.version.switch({
-      tag: switchTag.value,
-      current_password: form.value.current_password,
-    })
+    await api.system.version.switchVerify({ current_password: passwd })
+    const r = await api.system.version.switch({ tag: switchTag.value })
+    closeVersionSwitchModal()
     const job = r?.job || {}
     if (job.state === 'ok') {
       ok.value = r.result?.message || r.message || t('system.general.versionSwitchSuccess')
@@ -300,8 +330,13 @@ async function switchVersion() {
     versionSwitchJob.value = job.state ? job : { state: 'running', target_tag: switchTag.value }
     startVersionSwitchPoll()
   } catch (e) {
-    err.value = e.data?.error || e.message
-    if (e.data?.job) applyVersionSwitchJob(e.data.job)
+    versionSwitchModalErr.value = e.data?.error || e.message
+    if (e.data?.job) {
+      closeVersionSwitchModal()
+      applyVersionSwitchJob(e.data.job)
+    }
+  } finally {
+    versionSwitchSubmitting.value = false
   }
 }
 
@@ -381,7 +416,7 @@ onUnmounted(stopVersionSwitchPoll)
             type="button"
             class="btn-secondary"
             :disabled="versionSwitchRunning || !versionInfo?.root_required"
-            @click="switchVersion"
+            @click="openVersionSwitchModal"
           >
             {{ versionSwitchRunning ? t('system.general.versionSwitching') : t('system.general.switchVersion') }}
           </button>
@@ -530,5 +565,73 @@ onUnmounted(stopVersionSwitchPoll)
         {{ t('common.save') }}
       </button>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="versionSwitchModalOpen"
+        class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+        role="presentation"
+        @click.self="closeVersionSwitchModal"
+      >
+        <div
+          class="bg-white rounded-xl shadow-xl w-full max-w-md border border-slate-200"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="version-switch-modal-title"
+          @click.stop
+        >
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <h3 id="version-switch-modal-title" class="font-medium text-slate-900">
+              {{ t('system.general.versionSwitchModalTitle') }}
+            </h3>
+            <button
+              type="button"
+              class="text-slate-500 hover:text-slate-800 text-xl leading-none px-2"
+              :aria-label="t('common.cancel')"
+              :disabled="versionSwitchSubmitting"
+              @click="closeVersionSwitchModal"
+            >
+              ×
+            </button>
+          </div>
+          <div class="p-4 space-y-3">
+            <p class="text-sm text-slate-600">
+              {{ t('system.general.versionSwitchModalBody', { tag: switchTag }) }}
+            </p>
+            <label class="block text-sm text-slate-700">
+              {{ t('system.general.versionSwitchPasswordLabel') }}
+              <input
+                ref="versionSwitchPasswordRef"
+                v-model="versionSwitchPassword"
+                type="password"
+                autocomplete="current-password"
+                class="input-field mt-1 w-full"
+                :disabled="versionSwitchSubmitting"
+                @keydown.enter.prevent="confirmVersionSwitch"
+              >
+            </label>
+            <p v-if="versionSwitchModalErr" class="text-sm text-red-600">{{ versionSwitchModalErr }}</p>
+            <div class="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                class="btn-secondary"
+                :disabled="versionSwitchSubmitting"
+                @click="closeVersionSwitchModal"
+              >
+                {{ t('common.cancel') }}
+              </button>
+              <button
+                type="button"
+                class="btn-primary"
+                :disabled="versionSwitchSubmitting"
+                @click="confirmVersionSwitch"
+              >
+                {{ versionSwitchSubmitting ? t('common.processing') : t('system.general.versionSwitchConfirm') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

@@ -41,6 +41,46 @@ func (srv *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (srv *Server) handleSystemVersionSwitchVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		CurrentPasswd string `json:"current_password"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		return
+	}
+	st := srv.store.Get()
+	if !srv.verifyAdmin(st.AdminUser, body.CurrentPasswd) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password incorrect"})
+		return
+	}
+	if tok := sessionTokenFromRequest(r); tok != "" {
+		srv.versionSwitchGrants.grant(tok)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (srv *Server) versionSwitchAuthorized(r *http.Request, passwd string) (ok bool, viaGrant bool) {
+	if tok := sessionTokenFromRequest(r); tok != "" && srv.versionSwitchGrants.consume(tok) {
+		return true, true
+	}
+	if passwd == "" {
+		return false, false
+	}
+	st := srv.store.Get()
+	return srv.verifyAdmin(st.AdminUser, passwd), false
+}
+
+func (srv *Server) versionSwitchRegrant(r *http.Request) {
+	if tok := sessionTokenFromRequest(r); tok != "" {
+		srv.versionSwitchGrants.grant(tok)
+	}
+}
+
 func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -67,12 +107,15 @@ func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid version id (expected YYYYMMDDNN)"})
 		return
 	}
-	st := srv.store.Get()
-	if !srv.verifyAdmin(st.AdminUser, body.CurrentPasswd) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password incorrect"})
+	authorized, viaGrant := srv.versionSwitchAuthorized(r, body.CurrentPasswd)
+	if !authorized {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password verification required; confirm in version switch dialog"})
 		return
 	}
 	if err := srv.startVersionSwitchAsync(r, versionID); err != nil {
+		if viaGrant {
+			srv.versionSwitchRegrant(r)
+		}
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error": err.Error(),
 			"job":   getVersionSwitchStatus(),

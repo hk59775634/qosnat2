@@ -58,6 +58,7 @@ type Server struct {
 	wgTrafficCancel      context.CancelFunc
 	mux                  *http.ServeMux
 	loginLim             *loginLimiter
+	versionSwitchGrants  *versionSwitchGrants
 	tlsReloader          *tlsCertReloader
 	httpListen           *httpListener
 	ocservRestartHints   []string
@@ -80,7 +81,8 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 		bpf:      bpfM,
 		sessions: newSessionStore(env.SessionFile),
 		hosts:    shaper.NewHostShaper(shaperDevLAN(env.DevLAN), st.Get().Shaper.Leaf),
-		loginLim: newLoginLimiter(),
+		loginLim:            newLoginLimiter(),
+		versionSwitchGrants: newVersionSwitchGrants(),
 	}
 	s.mux = http.NewServeMux()
 	s.routes()
@@ -136,8 +138,9 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/mark-policy", srv.requireAuth(srv.handleMarkPolicy))
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
-	m.HandleFunc("/api/v1/system/version/switch", srv.requireAuth(srv.handleSystemVersionSwitch))
+	m.HandleFunc("/api/v1/system/version/switch/verify", srv.requireAuth(srv.handleSystemVersionSwitchVerify))
 	m.HandleFunc("/api/v1/system/version/switch/status", srv.requireAuth(srv.handleSystemVersionSwitchStatus))
+	m.HandleFunc("/api/v1/system/version/switch", srv.requireAuth(srv.handleSystemVersionSwitch))
 	m.HandleFunc("/api/v1/system/version", srv.requireAuth(srv.handleSystemVersion))
 	m.HandleFunc("/api/v1/system/tls/acme", srv.requireAuth(srv.handleTLSAcme))
 	m.HandleFunc("/api/v1/system/notifications", srv.requireAuth(srv.handleNotifications))

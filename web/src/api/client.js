@@ -105,6 +105,11 @@ export const api = {
     },
     version: {
       get: () => request('/api/v1/system/version'),
+      switchVerify: (body) =>
+        request('/api/v1/system/version/switch/verify', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
       switch: (body) =>
         request('/api/v1/system/version/switch', { method: 'POST', body: JSON.stringify(body) }),
       switchStatus: () => request('/api/v1/system/version/switch/status'),
