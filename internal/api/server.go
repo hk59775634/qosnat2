@@ -136,6 +136,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
 	m.HandleFunc("/api/v1/system/version/switch", srv.requireAuth(srv.handleSystemVersionSwitch))
+	m.HandleFunc("/api/v1/system/version/switch/status", srv.requireAuth(srv.handleSystemVersionSwitchStatus))
 	m.HandleFunc("/api/v1/system/version", srv.requireAuth(srv.handleSystemVersion))
 	m.HandleFunc("/api/v1/system/tls/acme", srv.requireAuth(srv.handleTLSAcme))
 	m.HandleFunc("/api/v1/system/notifications", srv.requireAuth(srv.handleNotifications))

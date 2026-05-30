@@ -68,7 +68,7 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 	if iface == "" {
 		iface = detectWarpInterface()
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"installed":     installed,
 		"service_up":    service,
 		"connected":     connected,
@@ -78,7 +78,11 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 		"root":          os.Getuid() == 0,
 		"install_job":   getWarpInstallStatus(),
 		"task":          getWarpTaskStatus(),
-	})
+	}
+	if connected && netnsHealthy {
+		resp["exit_info"] = warpnetns.GetExitInfo(true)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (srv *Server) handleNetworkWarpInstallStatus(w http.ResponseWriter, r *http.Request) {

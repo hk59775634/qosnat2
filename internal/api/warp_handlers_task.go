@@ -213,6 +213,7 @@ func (srv *Server) runWarpConnect() (map[string]any, error) {
 		return nil, fmt.Errorf("warp policies applied but tunnel is unhealthy: %s", err.Error())
 	}
 	statusNow = cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
+	warpnetns.ClearExitInfoCache()
 	return map[string]any{
 		"ok":        true,
 		"interface": iface,
@@ -260,6 +261,7 @@ func (srv *Server) startWarpDisconnectAsync(r *http.Request) error {
 func (srv *Server) runWarpDisconnect() (map[string]any, error) {
 	warpnetns.BeginOp()
 	defer warpnetns.EndOp()
+	warpnetns.ClearExitInfoCache()
 	warpnetns.Disconnect()
 	_ = restoreRoutesAfterWarpConnect(srv)
 	_ = srv.removeWarpWanLink()

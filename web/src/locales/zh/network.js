@@ -191,6 +191,8 @@ export default {
     warpNotInstalledLabel: '未安装',
     warpConnectedLabel: '已连接',
     warpDisconnectedLabel: '未连接',
+    warpExitLabel: '出口',
+    warpExitLoading: '正在查询出口 IP…',
     warpTask: '任务状态',
     warpTaskOpConnect: '连接',
     warpTaskOpDisconnect: '断开',

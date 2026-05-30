@@ -103,6 +103,12 @@ export const api = {
       get: () => request('/api/v1/system/general'),
       put: (body) => request('/api/v1/system/general', { method: 'PUT', body: JSON.stringify(body) }),
     },
+    version: {
+      get: () => request('/api/v1/system/version'),
+      switch: (body) =>
+        request('/api/v1/system/version/switch', { method: 'POST', body: JSON.stringify(body) }),
+      switchStatus: () => request('/api/v1/system/version/switch/status'),
+    },
     tuning: {
       get: () => request('/api/v1/system/tuning'),
       put: (body) => request('/api/v1/system/tuning', { method: 'PUT', body: JSON.stringify(body) }),

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { setDisplayName } from '@/composables/useBranding'
@@ -30,15 +30,56 @@ const warn = ref('')
 const acmeBusy = ref(false)
 const versionInfo = ref(null)
 const switchTag = ref('')
-const switchBusy = ref(false)
+const versionSwitchJob = ref(null)
+const versionSwitchPoll = ref(null)
+const versionSwitchPollErrs = ref(0)
+
+const versionSwitchRunning = computed(() => versionSwitchJob.value?.state === 'running')
+
+const versionSwitchPanelVisible = computed(() => {
+  const j = versionSwitchJob.value
+  if (!j) return false
+  return j.state === 'running' || j.state === 'failed' || j.state === 'ok'
+})
+
+function normalizeVersionSwitchJob(job) {
+  if (!job || job.state === 'idle') return null
+  return job
+}
+
+function applyVersionSwitchJob(job) {
+  const j = normalizeVersionSwitchJob(job)
+  versionSwitchJob.value = j
+  if (!j) return
+  if (j.state === 'running' && !versionSwitchPoll.value) {
+    startVersionSwitchPoll()
+    return
+  }
+  if (j.state === 'failed') {
+    err.value = j.message || t('system.general.versionSwitchFailed')
+    ok.value = ''
+  } else if (j.state === 'ok') {
+    const msg = j.result?.message || j.message || t('system.general.versionSwitchSuccess')
+    ok.value = `${t('system.general.versionSwitchSuccess')} (${j.target_tag || j.result?.tag || ''}) — ${msg}`
+    err.value = ''
+  }
+}
+
+async function loadVersionInfo() {
+  try {
+    const v = await api.system.version.get()
+    versionInfo.value = v
+    applyVersionSwitchJob(v?.switch_task)
+    return v
+  } catch {
+    versionInfo.value = null
+    return null
+  }
+}
 
 async function load() {
   cfg.value = await api.system.general.get()
-  try {
-    versionInfo.value = await api.get('/api/v1/system/version')
-  } catch {
-    versionInfo.value = null
-  }
+  const v = await loadVersionInfo()
   const tlsCfg = cfg.value.tls || {}
   form.value.hostname = cfg.value.hostname || ''
   form.value.display_name = cfg.value.display_name || ''
@@ -53,8 +94,45 @@ async function load() {
   form.value.tls_cert = ''
   form.value.tls_key = ''
   if (!switchTag.value) {
-    switchTag.value = versionInfo.value?.current_tag || versionInfo.value?.releases?.[0]?.tag || ''
+    switchTag.value = v?.current_tag || v?.releases?.[0]?.tag || ''
   }
+}
+
+function stopVersionSwitchPoll() {
+  if (versionSwitchPoll.value) {
+    clearInterval(versionSwitchPoll.value)
+    versionSwitchPoll.value = null
+  }
+}
+
+function startVersionSwitchPoll() {
+  stopVersionSwitchPoll()
+  versionSwitchPollErrs.value = 0
+  versionSwitchPoll.value = setInterval(async () => {
+    try {
+      const j = await api.system.version.switchStatus()
+      versionSwitchPollErrs.value = 0
+      versionSwitchJob.value = normalizeVersionSwitchJob(j) || j
+      if (j.state === 'ok') {
+        stopVersionSwitchPoll()
+        const msg = j.result?.message || j.message || t('system.general.versionSwitchSuccess')
+        ok.value = `${t('system.general.versionSwitchSuccess')} (${j.target_tag || j.result?.tag || ''}) — ${msg}`
+        err.value = ''
+        versionSwitchJob.value = null
+        await loadVersionInfo()
+      } else if (j.state === 'failed') {
+        stopVersionSwitchPoll()
+        err.value = j.message || t('system.general.versionSwitchFailed')
+        ok.value = ''
+      }
+    } catch {
+      versionSwitchPollErrs.value += 1
+      if (versionSwitchPollErrs.value >= 15) {
+        stopVersionSwitchPoll()
+        err.value = t('system.general.versionSwitchStatusLost')
+      }
+    }
+  }, 2000)
 }
 
 const useLibraryCert = computed(() => !!form.value.tls_managed_cert_id)
@@ -190,6 +268,7 @@ async function switchVersion() {
   err.value = ''
   ok.value = ''
   warn.value = ''
+  if (versionSwitchRunning.value) return
   if (!switchTag.value) {
     err.value = t('system.general.versionNeedTag')
     return
@@ -198,21 +277,28 @@ async function switchVersion() {
     err.value = t('system.general.needPasswordForTls')
     return
   }
-  switchBusy.value = true
   try {
-    const r = await api.post('/api/v1/system/version/switch', {
+    const r = await api.system.version.switch({
       tag: switchTag.value,
       current_password: form.value.current_password,
     })
+    const job = r?.job || {}
+    if (job.state === 'ok') {
+      ok.value = r.result?.message || r.message || t('system.general.versionSwitchSuccess')
+      await loadVersionInfo()
+      return
+    }
     ok.value = r.message || t('system.general.versionSwitchQueued')
+    versionSwitchJob.value = job.state ? job : { state: 'running', target_tag: switchTag.value }
+    startVersionSwitchPoll()
   } catch (e) {
     err.value = e.data?.error || e.message
-  } finally {
-    switchBusy.value = false
+    if (e.data?.job) applyVersionSwitchJob(e.data.job)
   }
 }
 
 onMounted(load)
+onUnmounted(stopVersionSwitchPoll)
 </script>
 
 <template>
@@ -276,7 +362,7 @@ onMounted(load)
         <div class="flex flex-wrap gap-2 items-end">
           <label class="flex-1 min-w-[16rem]">
             <span class="text-xs text-slate-500">{{ t('system.general.switchToVersion') }}</span>
-            <select v-model="switchTag" class="input-field mt-1 font-mono" :disabled="switchBusy || !versionInfo?.root_required">
+            <select v-model="switchTag" class="input-field mt-1 font-mono" :disabled="versionSwitchRunning || !versionInfo?.root_required">
               <option v-for="r in (versionInfo?.releases || [])" :key="r.tag" :value="r.tag">
                 {{ r.tag }}{{ r.prerelease ? ' (pre)' : '' }}
               </option>
@@ -285,11 +371,38 @@ onMounted(load)
           <button
             type="button"
             class="btn-secondary"
-            :disabled="switchBusy || !versionInfo?.root_required"
+            :disabled="versionSwitchRunning || !versionInfo?.root_required"
             @click="switchVersion"
           >
-            {{ switchBusy ? t('common.processing') : t('system.general.switchVersion') }}
+            {{ versionSwitchRunning ? t('system.general.versionSwitching') : t('system.general.switchVersion') }}
           </button>
+          <button
+            type="button"
+            class="btn-secondary"
+            :disabled="versionSwitchRunning"
+            @click="loadVersionInfo"
+          >
+            {{ t('common.refresh') }}
+          </button>
+        </div>
+        <div
+          v-if="versionSwitchPanelVisible"
+          class="p-3 rounded border text-xs space-y-2"
+          :class="versionSwitchJob?.state === 'failed' ? 'border-red-200 bg-red-50' : versionSwitchJob?.state === 'ok' ? 'border-green-200 bg-green-50' : 'border-slate-200 bg-slate-50'"
+        >
+          <p class="text-sm">
+            {{ t('system.general.versionSwitchTask') }}:
+            <strong>{{ versionSwitchJob?.target_tag || switchTag }}</strong>
+            · <strong>{{ versionSwitchJob?.state }}</strong>
+          </p>
+          <p v-if="versionSwitchJob?.message" class="text-slate-600">{{ versionSwitchJob.message }}</p>
+          <p v-if="versionSwitchJob?.state === 'ok'" class="text-green-700">
+            {{ t('system.general.versionSwitchSuccess') }}:
+            {{ versionSwitchJob.result?.message || versionSwitchJob.message }}
+          </p>
+          <p v-if="versionSwitchJob?.state === 'failed'" class="text-red-700">
+            {{ t('system.general.versionSwitchFailed') }}: {{ versionSwitchJob.message }}
+          </p>
         </div>
         <p v-if="versionInfo && !versionInfo.root_required" class="text-xs text-amber-700">
           {{ t('system.general.versionRootHint') }}

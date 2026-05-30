@@ -17,6 +17,7 @@ const warpStatusDefaults = {
   interface: '',
   root: false,
   status_raw: '',
+  exit_info: null,
 }
 const warpStatus = ref({ ...warpStatusDefaults })
 const installingWarp = ref(false)
@@ -95,6 +96,19 @@ const warpUiConnected = computed(() => {
     !raw.includes('disconnected') &&
     !raw.includes('unable to connect')
   )
+})
+
+const warpExitInfo = computed(() => warpStatus.value?.exit_info || null)
+
+const warpExitLine = computed(() => {
+  const e = warpExitInfo.value
+  if (!e) return ''
+  if (e.ip) {
+    const loc = [e.city, e.region, e.country].filter(Boolean).join(', ')
+    return loc ? `${e.ip} · ${loc}` : e.ip
+  }
+  if (e.error) return e.error
+  return ''
 })
 
 const warpActiveJob = computed(() => {
@@ -601,7 +615,7 @@ onUnmounted(() => {
         <span v-if="warpStatus.netns_healthy" class="text-slate-500"> · netns OK</span>
         <span v-if="warpStatus.interface" class="font-mono"> · {{ warpStatus.interface }}</span>
       </div>
-      <div class="flex flex-wrap gap-2">
+      <div class="flex flex-wrap gap-2 items-center">
         <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || warpStatus.installed || warpInstallRunning" @click="installWarp">
           {{ warpInstallRunning ? t('network.wanLinks.warpInstalling') : t('network.wanLinks.warpInstallBtn') }}
         </button>
@@ -611,6 +625,14 @@ onUnmounted(() => {
         <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || !warpUiConnected" @click="disconnectWarp">
           {{ warpDisconnecting ? t('network.wanLinks.warpDisconnecting') : t('network.wanLinks.warpDisconnectBtn') }}
         </button>
+        <span
+          v-if="warpUiConnected"
+          class="text-xs text-slate-600 font-mono pl-1 border-l border-slate-200"
+          :title="warpExitInfo?.org || ''"
+        >
+          <span v-if="warpExitLine">{{ t('network.wanLinks.warpExitLabel') }}: {{ warpExitLine }}</span>
+          <span v-else class="text-slate-400">{{ t('network.wanLinks.warpExitLoading') }}</span>
+        </span>
       </div>
       <div
         v-if="warpTaskPanelVisible"

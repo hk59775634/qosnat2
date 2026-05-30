@@ -42,4 +42,17 @@ func TestRoutesSystemVersionRegistered(t *testing.T) {
 	if res2.StatusCode == http.StatusNotFound {
 		t.Fatal("/api/v1/system/version/switch returned 404 (route not registered)")
 	}
+
+	req3, err := http.NewRequest(http.MethodGet, ts.URL+"/api/v1/system/version/switch/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res3, err := http.DefaultClient.Do(req3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res3.Body.Close()
+	if res3.StatusCode == http.StatusNotFound {
+		t.Fatal("/api/v1/system/version/switch/status returned 404 (route not registered)")
+	}
 }

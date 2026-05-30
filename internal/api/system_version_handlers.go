@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -38,6 +37,7 @@ func (srv *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 	if listErr != nil {
 		resp["list_error"] = listErr.Error()
 	}
+	resp["switch_task"] = getVersionSwitchStatus()
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -72,21 +72,18 @@ func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password incorrect"})
 		return
 	}
-	if err := releasecatalog.InstallReleaseBinary(versionID, qosnatBinPath); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+	if err := srv.startVersionSwitchAsync(r, versionID); err != nil {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error": err.Error(),
+			"job":   getVersionSwitchStatus(),
+		})
 		return
 	}
-	_ = os.MkdirAll(filepath.Dir(qosnatReleaseTag), 0755)
-	_ = os.WriteFile(qosnatReleaseTag, []byte(versionID+"\n"), 0644)
-	srv.auditLog(r, "system.version.switch", versionID)
-
-	cmd := exec.Command("bash", "-lc", "sleep 1; systemctl restart qosnatd.service")
-	_ = cmd.Start()
-
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok":      true,
-		"message": "版本切换完成，服务即将重启",
+		"message": "版本切换已在后台开始",
 		"tag":     versionID,
+		"job":     getVersionSwitchStatus(),
 	})
 }
 

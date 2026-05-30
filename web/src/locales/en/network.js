@@ -191,6 +191,8 @@ export default {
     warpNotInstalledLabel: 'Not installed',
     warpConnectedLabel: 'Connected',
     warpDisconnectedLabel: 'Disconnected',
+    warpExitLabel: 'Egress',
+    warpExitLoading: 'Looking up egress IP…',
     warpTask: 'Task status',
     warpTaskOpConnect: 'Connect',
     warpTaskOpDisconnect: 'Disconnect',
