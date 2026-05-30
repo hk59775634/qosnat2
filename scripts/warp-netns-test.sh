@@ -45,10 +45,38 @@ add_host_nat_forward() {
   if ! iptables_rule_exists filter FORWARD -i "${uplink}" -o "${VETH_HOST}" -m state --state RELATED,ESTABLISHED -j ACCEPT; then
     iptables -A FORWARD -i "${uplink}" -o "${VETH_HOST}" -m state --state RELATED,ESTABLISHED -j ACCEPT
   fi
+  ensure_test_nft_rules "${uplink}"
+}
+
+ensure_test_nft_rules() {
+  local uplink="$1"
+  # qosnat 默认 forward 链会 drop 非 qwp0 流量；测试 veth 需临时放行。
+  if nft list chain inet qosnat forward >/dev/null 2>&1; then
+    nft list chain inet qosnat forward 2>/dev/null | grep -q "iifname \"${VETH_HOST}\"" || \
+      nft insert rule inet qosnat forward iifname "${VETH_HOST}" accept comment "warp-netns-test" || true
+    nft list chain inet qosnat forward 2>/dev/null | grep -q "oifname \"${VETH_HOST}\"" || \
+      nft insert rule inet qosnat forward oifname "${VETH_HOST}" accept comment "warp-netns-test" || true
+  fi
+  nft add table ip qosnat2_warp_test >/dev/null 2>&1 || true
+  nft 'add chain ip qosnat2_warp_test postrouting { type nat hook postrouting priority srcnat; policy accept; }' >/dev/null 2>&1 || true
+  local masq_rule="ip saddr ${NS_SUBNET} oifname \"${uplink}\" masquerade"
+  nft list chain ip qosnat2_warp_test postrouting 2>/dev/null | grep -qF "${masq_rule}" || \
+    nft add rule ip qosnat2_warp_test postrouting ip saddr "${NS_SUBNET}" oifname "${uplink}" masquerade || true
+}
+
+remove_test_nft_rules() {
+  local uplink="$1"
+  nft -a list chain inet qosnat forward 2>/dev/null | awk -v dev="${VETH_HOST}" '
+    /warp-netns-test/ && $0 ~ dev { if (match($0,/handle ([0-9]+)/,a)) print a[1] }
+  ' | sort -rn | while read -r h; do
+    [[ -n "${h}" ]] && nft delete rule inet qosnat forward handle "${h}" 2>/dev/null || true
+  done
+  nft delete table ip qosnat2_warp_test >/dev/null 2>&1 || true
 }
 
 del_host_nat_forward() {
   local uplink="$1"
+  remove_test_nft_rules "${uplink}"
   iptables -t nat -D POSTROUTING -s "${NS_SUBNET}" -o "${uplink}" -j MASQUERADE >/dev/null 2>&1 || true
   iptables -D FORWARD -i "${VETH_HOST}" -o "${uplink}" -j ACCEPT >/dev/null 2>&1 || true
   iptables -D FORWARD -i "${uplink}" -o "${VETH_HOST}" -m state --state RELATED,ESTABLISHED -j ACCEPT >/dev/null 2>&1 || true
@@ -91,6 +119,61 @@ start_warp_in_netns() {
   ip netns exec "${NS_NAME}" warp-cli --accept-tos registration new >/dev/null 2>&1 || true
   ip netns exec "${NS_NAME}" warp-cli --accept-tos mode warp >/dev/null
   ip netns exec "${NS_NAME}" warp-cli --accept-tos connect >/dev/null
+
+  tries=0
+  until ip netns exec "${NS_NAME}" warp-cli --accept-tos status 2>/dev/null | grep -qi '^Status update: Connected'; do
+    tries=$((tries + 1))
+    if [[ ${tries} -gt 45 ]]; then
+      echo "WARP did not reach Connected in netns. Check ${WARP_LOG}" >&2
+      ip netns exec "${NS_NAME}" warp-cli --accept-tos status || true
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+warp_connected() {
+  local st
+  st="$(ip netns exec "${NS_NAME}" warp-cli --accept-tos status 2>/dev/null || true)"
+  local low
+  low="$(printf '%s' "${st}" | tr '[:upper:]' '[:lower:]')"
+  [[ "${low}" == *"status update: connected"* ]] && return 0
+  [[ "${low}" == *"connected"* && "${low}" != *"disconnected"* && "${low}" != *"unable to connect"* && "${low}" != *"no network"* ]]
+}
+
+netns_healthy() {
+  ip netns exec "${NS_NAME}" true >/dev/null 2>&1 && \
+    ip -d -o link show "${VETH_HOST}" 2>/dev/null | grep -qv 'link-netnsid 0'
+}
+
+apply_policy_phase() {
+  local uplink="$1"
+  echo "=== phase 2: apply host policies (no netns reset, no nft flush) ==="
+  ensure_test_nft_rules "${uplink}"
+  nft add table ip qosnat2_warp >/dev/null 2>&1 || true
+  nft 'add chain ip qosnat2_warp postrouting { type nat hook postrouting priority srcnat; policy accept; }' >/dev/null 2>&1 || true
+  nft add rule ip qosnat2_warp postrouting ip saddr "${NS_SUBNET}" oifname "${uplink}" masquerade >/dev/null 2>&1 || true
+  ip route flush table 202 >/dev/null 2>&1 || true
+  ip route replace default dev "${VETH_HOST}" table 202
+  ip rule del lookup 202 priority 32000 >/dev/null 2>&1 || true
+  ip rule add lookup 202 priority 32000 >/dev/null 2>&1 || true
+}
+
+verify_after_policy() {
+  echo "=== verify WARP after policy apply ==="
+  if ! netns_healthy; then
+    echo "FAIL: netns unhealthy (ip netns exec or veth peer broken)" >&2
+    ip -d link show "${VETH_HOST}" 2>&1 | head -3 || true
+    return 1
+  fi
+  if ! warp_connected; then
+    echo "FAIL: WARP not connected after policy apply" >&2
+    ip netns exec "${NS_NAME}" warp-cli --accept-tos status || true
+    return 1
+  fi
+  echo "OK: WARP Connected, netns healthy"
+  ip netns exec "${NS_NAME}" warp-cli --accept-tos status | head -2
+  return 0
 }
 
 show_status() {
@@ -120,10 +203,34 @@ do_up() {
     exit 1
   fi
 
+  echo "=== phase 1: netns + WARP tunnel ==="
   create_netns_topology "${uplink}"
   start_warp_in_netns
   show_status
+  echo "=== phase 1 verify ==="
+  verify_after_policy
+  apply_policy_phase "${uplink}"
+  verify_after_policy
   test_egress
+}
+
+do_policy_test() {
+  local uplink
+  uplink="$(detect_uplink)"
+  if [[ -z "${uplink}" ]]; then
+    echo "Cannot detect host uplink interface." >&2
+    exit 1
+  fi
+  if ! ip netns list | grep -qx "${NS_NAME}"; then
+    echo "Netns ${NS_NAME} not found. Run: $0 up" >&2
+    exit 1
+  fi
+  if ! warp_connected; then
+    echo "WARP not connected. Run: $0 up" >&2
+    exit 1
+  fi
+  apply_policy_phase "${uplink}"
+  verify_after_policy
 }
 
 do_down() {
@@ -139,12 +246,13 @@ do_down() {
 
 usage() {
   cat <<EOF
-Usage: $0 {up|down|status|test}
+Usage: $0 {up|down|status|test|policy-test}
 
-  up      Create netns+veth, start WARP in netns, and test egress
-  down    Remove netns+veth and host NAT/FORWARD test rules
-  status  Print link/route/WARP status for this test namespace
-  test    Run trace curl from inside netns
+  up           Phase 1: netns+veth+WARP; Phase 2: apply policies; verify tunnel stays up
+  down         Remove netns+veth and host NAT/FORWARD test rules
+  status       Print link/route/WARP status for this test namespace
+  test         Run trace curl from inside netns
+  policy-test  Re-run phase 2 policy apply on an existing connected test netns
 
 Environment overrides:
   NS_NAME, VETH_HOST, VETH_NS, HOST_CIDR, NS_CIDR, NS_SUBNET, WARP_LOG
@@ -158,6 +266,7 @@ main() {
     down) do_down ;;
     status) show_status ;;
     test) test_egress ;;
+    policy-test) do_policy_test ;;
     *) usage; exit 1 ;;
   esac
 }

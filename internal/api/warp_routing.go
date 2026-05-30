@@ -101,7 +101,7 @@ func restoreRoutesAfterWarpConnect(srv *Server) error {
 		iface = detectWarpInterface()
 	}
 	removeDefaultRoutesViaDevice(iface)
-	_, _ = exec.Command("warp-cli", "--accept-tos", "override", "local-network", "allow").CombinedOutput()
+	_, _ = exec.Command("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "override", "local-network", "allow").CombinedOutput()
 	st := srv.store.Get()
 	sync := st
 	store.SyncWanRoutes(&sync)

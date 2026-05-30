@@ -9,13 +9,30 @@ const links = ref([])
 const egress = ref([])
 const resolved = ref([])
 const cloudflareCIDRs = ref([])
-const warpStatus = ref({ installed: false, service_up: false, connected: false, interface: '', root: false })
+const warpStatusDefaults = {
+  installed: false,
+  service_up: false,
+  connected: false,
+  netns_healthy: false,
+  interface: '',
+  root: false,
+  status_raw: '',
+}
+const warpStatus = ref({ ...warpStatusDefaults })
 const installingWarp = ref(false)
 const warpInstallJob = ref(null)
 const warpInstallPoll = ref(null)
 const warpInstallPollErrs = ref(0)
+const warpStatusPoll = ref(null)
+const warpTaskJob = ref(null)
+const warpTaskPoll = ref(null)
+const warpTaskPollErrs = ref(0)
 const warpConnecting = ref(false)
+const warpDisconnecting = ref(false)
 const warpConnectResult = ref(null)
+const WARP_ACTION_LOCK_MS = 4000
+const warpActionLocked = ref(false)
+let warpActionLockTimer = null
 const devWan = ref('')
 const err = ref('')
 const ok = ref('')
@@ -62,9 +79,107 @@ const linkOptions = computed(() =>
   (links.value || []).filter((w) => w.enabled).map((w) => ({ id: w.id, label: `${w.name} (${w.device})` }))
 )
 const warpInstallRunning = computed(() => installingWarp.value || warpInstallJob.value?.state === 'running')
+const warpTaskRunning = computed(
+  () => warpTaskJob.value?.state === 'running' || warpConnecting.value || warpDisconnecting.value
+)
+
+const warpUiConnected = computed(() => {
+  const s = warpStatus.value
+  if (s.connected) return true
+  const raw = String(s.status_raw || '').toLowerCase()
+  if (raw.includes('status update: connected')) return true
+  return !!(
+    s.service_up &&
+    s.netns_healthy &&
+    raw.includes('connected') &&
+    !raw.includes('disconnected') &&
+    !raw.includes('unable to connect')
+  )
+})
+
+const warpActiveJob = computed(() => {
+  if (warpTaskJob.value?.state === 'running' || warpTaskJob.value?.state === 'failed') {
+    return warpTaskJob.value
+  }
+  if (warpConnecting.value) {
+    return { op: 'connect', state: 'running', message: '' }
+  }
+  if (warpDisconnecting.value) {
+    return { op: 'disconnect', state: 'running', message: '' }
+  }
+  return null
+})
+
+const warpTaskPanelVisible = computed(() => {
+  const j = warpActiveJob.value
+  if (j?.state === 'running' || j?.state === 'failed') return true
+  return !!warpConnectResult.value?.diagnostics
+})
+
+const warpTaskStatusLine = computed(() => {
+  const r = warpConnectResult.value
+  if (r?.netns_status) return r.netns_status
+  if (r?.diagnostics?.netns_warp_status) return r.diagnostics.netns_warp_status
+  const health = warpTaskJob.value?.result?.health
+  if (health?.netns_status) return health.netns_status
+  return ''
+})
+
+const warpTaskDiagnostics = computed(
+  () => warpConnectResult.value?.diagnostics || warpTaskJob.value?.result?.diagnostics || null
+)
+
+function warpTaskOpLabel(op) {
+  if (op === 'connect') return t('network.wanLinks.warpTaskOpConnect')
+  if (op === 'disconnect') return t('network.wanLinks.warpTaskOpDisconnect')
+  return op || '—'
+}
 
 function resolvedRow(policyId) {
   return resolved.value.find((r) => r.policy?.id === policyId)
+}
+
+function normalizeWarpTask(job) {
+  if (!job || job.state === 'idle') return null
+  return job
+}
+
+function applyConnectTaskResult(result) {
+  if (!result) return
+  const health = result.health || null
+  warpConnectResult.value = health
+  warpStatus.value = {
+    ...warpStatus.value,
+    installed: true,
+    connected: !!health?.connected,
+    service_up: !!health?.service_running,
+    netns_healthy: true,
+    interface: result.interface || warpStatus.value.interface,
+    status_raw: health?.netns_status || warpStatus.value.status_raw,
+  }
+}
+
+function applyWarpStatus(ws) {
+  if (!ws) return
+  warpStatus.value = { ...warpStatusDefaults, ...ws }
+  warpInstallJob.value = normalizeWarpJob(ws.install_job)
+  installingWarp.value = ws.install_job?.state === 'running'
+  if (installingWarp.value && !warpInstallPoll.value) {
+    startWarpInstallPoll()
+  }
+  const task = normalizeWarpTask(ws.task)
+  warpTaskJob.value = task
+  if (task?.state === 'running' && !warpTaskPoll.value) {
+    if (task.op === 'connect') warpConnecting.value = true
+    if (task.op === 'disconnect') warpDisconnecting.value = true
+    startWarpTaskPoll()
+  }
+}
+
+async function refreshWarpStatus() {
+  const ws = await api.network.warp.status()
+  applyWarpStatus(ws)
+  return ws
 }
 
 async function load() {
@@ -78,12 +193,7 @@ async function load() {
   egress.value = eg.egress_policies || []
   resolved.value = eg.resolved || []
   cloudflareCIDRs.value = eg.cloudflare_cdn_cidrs_ipv4 || []
-  warpStatus.value = ws || warpStatus.value
-  warpInstallJob.value = normalizeWarpJob(ws?.install_job)
-  installingWarp.value = ws?.install_job?.state === 'running'
-  if (installingWarp.value && !warpInstallPoll.value) {
-    startWarpInstallPoll()
-  }
+  applyWarpStatus(ws)
   if (!form.value.device && devWan.value) form.value.device = devWan.value
   if (!egForm.value.wan_link_id && links.value.length) {
     const pick =
@@ -104,6 +214,87 @@ function stopWarpInstallPoll() {
     clearInterval(warpInstallPoll.value)
     warpInstallPoll.value = null
   }
+}
+
+function stopWarpStatusPoll() {
+  if (warpStatusPoll.value) {
+    clearInterval(warpStatusPoll.value)
+    warpStatusPoll.value = null
+  }
+}
+
+function lockWarpButtons() {
+  warpActionLocked.value = true
+  if (warpActionLockTimer) clearTimeout(warpActionLockTimer)
+  warpActionLockTimer = setTimeout(() => {
+    warpActionLocked.value = false
+    warpActionLockTimer = null
+  }, WARP_ACTION_LOCK_MS)
+}
+
+function startWarpStatusPoll() {
+  stopWarpStatusPoll()
+  warpStatusPoll.value = setInterval(async () => {
+    try {
+      await refreshWarpStatus()
+    } catch {
+      /* 轮询失败不打断页面 */
+    }
+  }, 4000)
+}
+
+function stopWarpTaskPoll() {
+  if (warpTaskPoll.value) {
+    clearInterval(warpTaskPoll.value)
+    warpTaskPoll.value = null
+  }
+}
+
+function startWarpTaskPoll() {
+  stopWarpTaskPoll()
+  warpTaskPollErrs.value = 0
+  warpTaskPoll.value = setInterval(async () => {
+    try {
+      const j = await api.network.warp.taskStatus()
+      warpTaskPollErrs.value = 0
+      warpTaskJob.value = normalizeWarpTask(j) || j
+      if (j.state === 'ok') {
+        stopWarpTaskPoll()
+        warpConnecting.value = false
+        warpDisconnecting.value = false
+        if (j.op === 'connect') {
+          applyConnectTaskResult(j.result)
+          ok.value = t('network.wanLinks.warpConnected')
+        } else {
+          ok.value = t('network.wanLinks.warpDisconnected')
+        }
+        warpConnectResult.value = null
+        warpTaskJob.value = null
+        await load()
+        if (j.op === 'connect') {
+          const warpLink = links.value.find((w) => w.warp_managed)
+          if (warpLink) egForm.value.wan_link_id = warpLink.id
+        }
+      } else if (j.state === 'failed') {
+        stopWarpTaskPoll()
+        warpConnecting.value = false
+        warpDisconnecting.value = false
+        err.value = j.message || t('network.wanLinks.warpTaskFailed')
+        if (j.op === 'connect' && j.result?.diagnostics) {
+          warpConnectResult.value = { diagnostics: j.result.diagnostics }
+        }
+        warpTaskJob.value = j
+      }
+    } catch {
+      warpTaskPollErrs.value += 1
+      if (warpTaskPollErrs.value >= 3) {
+        stopWarpTaskPoll()
+        warpConnecting.value = false
+        warpDisconnecting.value = false
+        err.value = t('network.wanLinks.warpTaskStatusLost')
+      }
+    }
+  }, 2000)
 }
 
 function startWarpInstallPoll() {
@@ -137,6 +328,7 @@ function startWarpInstallPoll() {
 }
 
 async function installWarp() {
+  lockWarpButtons()
   err.value = ''
   ok.value = ''
   try {
@@ -160,36 +352,51 @@ async function installWarp() {
 }
 
 async function connectWarp() {
+  lockWarpButtons()
   err.value = ''
   ok.value = ''
   warpConnectResult.value = null
   warpConnecting.value = true
   try {
     const r = await api.network.warp.connect()
-    warpConnectResult.value = r?.health || null
-    ok.value = (r?.health?.connected ? t('network.wanLinks.warpConnected') : t('network.wanLinks.warpConnectPending'))
-    await load()
-    const warpLink = links.value.find((w) => w.warp_managed)
-    if (warpLink) {
-      egForm.value.wan_link_id = warpLink.id
+    const job = r?.job || {}
+    if (job.state === 'ok' && r?.result?.health) {
+      applyConnectTaskResult(r.result)
+      ok.value = t('network.wanLinks.warpConnected')
+      await load()
+      return
     }
+    ok.value = r?.message || t('network.wanLinks.warpConnectPending')
+    warpTaskJob.value = job.state ? job : { state: 'running', op: 'connect' }
+    startWarpTaskPoll()
   } catch (e) {
     warpConnectResult.value = e?.data?.diagnostics ? { diagnostics: e.data.diagnostics } : null
     err.value = e.message
-  } finally {
     warpConnecting.value = false
   }
 }
 
 async function disconnectWarp() {
+  lockWarpButtons()
   err.value = ''
   ok.value = ''
+  warpDisconnecting.value = true
   try {
-    await api.network.warp.disconnect()
-    ok.value = t('network.wanLinks.warpDisconnected')
-    await load()
+    const r = await api.network.warp.disconnect()
+    const job = r?.job || {}
+    if (job.state === 'ok') {
+      warpConnectResult.value = null
+      ok.value = t('network.wanLinks.warpDisconnected')
+      await load()
+      warpDisconnecting.value = false
+      return
+    }
+    ok.value = r?.message || t('network.wanLinks.warpDisconnectPending')
+    warpTaskJob.value = job.state ? job : { state: 'running', op: 'disconnect' }
+    startWarpTaskPoll()
   } catch (e) {
     err.value = e.message
+    warpDisconnecting.value = false
   }
 }
 
@@ -330,8 +537,16 @@ async function removeEgress(id) {
   }
 }
 
-onMounted(load)
-onUnmounted(stopWarpInstallPoll)
+onMounted(async () => {
+  await load()
+  startWarpStatusPoll()
+})
+onUnmounted(() => {
+  stopWarpInstallPoll()
+  stopWarpStatusPoll()
+  stopWarpTaskPoll()
+  if (warpActionLockTimer) clearTimeout(warpActionLockTimer)
+})
 </script>
 
 <template>
@@ -382,31 +597,38 @@ onUnmounted(stopWarpInstallPoll)
       <div class="text-xs text-slate-600 rounded bg-slate-50 p-2">
         {{ t('network.wanLinks.warpState') }}:
         {{ warpStatus.installed ? t('network.wanLinks.warpInstalledLabel') : t('network.wanLinks.warpNotInstalledLabel') }}
-        · {{ warpStatus.connected ? t('network.wanLinks.warpConnectedLabel') : t('network.wanLinks.warpDisconnectedLabel') }}
+        · {{ warpUiConnected ? t('network.wanLinks.warpConnectedLabel') : t('network.wanLinks.warpDisconnectedLabel') }}
+        <span v-if="warpStatus.netns_healthy" class="text-slate-500"> · netns OK</span>
         <span v-if="warpStatus.interface" class="font-mono"> · {{ warpStatus.interface }}</span>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button type="button" class="btn-secondary" :disabled="!warpStatus.root || warpStatus.installed || warpInstallRunning" @click="installWarp">
+        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || warpStatus.installed || warpInstallRunning" @click="installWarp">
           {{ warpInstallRunning ? t('network.wanLinks.warpInstalling') : t('network.wanLinks.warpInstallBtn') }}
         </button>
-        <button type="button" class="btn-secondary" :disabled="!warpStatus.root || !warpStatus.installed || warpStatus.connected" @click="connectWarp">
+        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || warpUiConnected" @click="connectWarp">
           {{ warpConnecting ? t('network.wanLinks.warpConnecting') : t('network.wanLinks.warpConnectBtn') }}
         </button>
-        <button type="button" class="btn-secondary" :disabled="!warpStatus.root || !warpStatus.installed || !warpStatus.connected" @click="disconnectWarp">
-          {{ t('network.wanLinks.warpDisconnectBtn') }}
+        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || !warpUiConnected" @click="disconnectWarp">
+          {{ warpDisconnecting ? t('network.wanLinks.warpDisconnecting') : t('network.wanLinks.warpDisconnectBtn') }}
         </button>
       </div>
-      <div v-if="warpConnecting || warpConnectResult" class="mt-1 p-3 rounded border text-xs space-y-2 border-slate-200 bg-slate-50">
-        <div class="flex gap-3 text-sm">
-          <span>{{ t('network.wanLinks.warpConnectTask') }}: <strong>{{ warpConnecting ? 'running' : 'done' }}</strong></span>
-          <span v-if="warpConnectResult?.netns_status || warpConnectResult?.diagnostics?.netns_warp_status" class="text-slate-600">
-            {{ warpConnectResult?.netns_status || warpConnectResult?.diagnostics?.netns_warp_status }}
+      <div
+        v-if="warpTaskPanelVisible"
+        class="mt-1 p-3 rounded border text-xs space-y-2"
+        :class="warpActiveJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'"
+      >
+        <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+          <span>
+            {{ t('network.wanLinks.warpTask') }}:
+            <strong>{{ warpTaskOpLabel(warpActiveJob?.op) }} / {{ warpActiveJob?.state || 'running' }}</strong>
           </span>
+          <span v-if="warpActiveJob?.message" class="text-slate-600">{{ warpActiveJob.message }}</span>
+          <span v-if="warpTaskStatusLine" class="text-slate-600 font-mono text-xs">{{ warpTaskStatusLine }}</span>
         </div>
         <pre
-          v-if="warpConnectResult?.diagnostics"
+          v-if="warpTaskDiagnostics"
           class="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700"
-        >{{ JSON.stringify(warpConnectResult.diagnostics, null, 2) }}</pre>
+        >{{ JSON.stringify(warpTaskDiagnostics, null, 2) }}</pre>
       </div>
       <div
         v-if="warpInstallRunning || (warpInstallJob && (warpInstallJob.state === 'running' || warpInstallJob.state === 'failed'))"

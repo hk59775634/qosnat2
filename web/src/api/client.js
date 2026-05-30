@@ -1,11 +1,22 @@
 const base = ''
 
 export async function request(path, opts = {}) {
-  const res = await fetch(`${base}${path}`, {
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
-    ...opts,
-  })
+  let res
+  try {
+    res = await fetch(`${base}${path}`, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      ...opts,
+    })
+  } catch (e) {
+    const err = new Error(
+      e?.name === 'AbortError'
+        ? 'request timeout'
+        : 'network error (connection closed or blocked before server responded; WARP operations may still be running in background)',
+    )
+    err.cause = e
+    throw err
+  }
   const text = await res.text()
   let data = null
   if (text) {
@@ -208,6 +219,7 @@ export const api = {
       installStatus: () => request('/api/v1/network/warp/install/status'),
       connect: () => request('/api/v1/network/warp/connect', { method: 'POST', body: '{}' }),
       disconnect: () => request('/api/v1/network/warp/disconnect', { method: 'POST', body: '{}' }),
+      taskStatus: () => request('/api/v1/network/warp/task/status'),
     },
   },
   interfacesEthtool: (device) => request(`/api/v1/interfaces/ethtool?device=${encodeURIComponent(device)}`),

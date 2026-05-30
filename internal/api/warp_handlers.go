@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/warpnetns"
 )
 
@@ -44,19 +43,23 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	warpnetns.Reconcile()
-	srv.reconcileWarpStoreState()
+	// 轻量校准：勿在 status 轮询时调用 Reconcile()（会 StopHostWarpSvc / clearConnectedState）。
+	warpnetns.EnsureHostNATOnly()
 	installed := commandExists("warp-cli")
 	netnsHealthy := warpnetns.NetnsHealthy()
 	service := warpnetns.ServiceRunning()
 	statusOut := ""
-	connected := warpnetns.IsConnected()
-	if connected {
+	connected := warpnetns.RefreshConnectedState()
+	srv.reconcileWarpStoreState()
+	if netnsHealthy || connected {
 		if out, err := exec.Command("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status").CombinedOutput(); err == nil {
 			statusOut = strings.TrimSpace(string(out))
+			if !connected && warpnetns.WarpStatusConnected(statusOut) && warpnetns.ServiceRunning() {
+				connected = warpnetns.RefreshConnectedState()
+				srv.reconcileWarpStoreState()
+			}
 		}
-	} else if installed && !netnsHealthy {
-		// 仅 netns 模式未启用时展示宿主机 warp-cli（避免损坏 netns 时误报已连接）。
+	} else if installed {
 		if out, err := exec.Command("warp-cli", "--accept-tos", "status").CombinedOutput(); err == nil {
 			statusOut = strings.TrimSpace(string(out))
 		}
@@ -74,6 +77,7 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 		"status_raw":    statusOut,
 		"root":          os.Getuid() == 0,
 		"install_job":   getWarpInstallStatus(),
+		"task":          getWarpTaskStatus(),
 	})
 }
 
@@ -417,8 +421,7 @@ func cmdOutput(args ...string) string {
 }
 
 func warpConnectedFromStatus(raw string) bool {
-	low := strings.ToLower(strings.TrimSpace(raw))
-	return strings.Contains(low, "connected") && !strings.Contains(low, "disconnected") && !strings.Contains(low, "no network")
+	return warpnetns.WarpStatusConnected(raw)
 }
 
 func waitWarpHealthyStable(samples int, interval time.Duration, needConsecutive int) (bool, string) {
@@ -455,136 +458,6 @@ func collectWarpConnectDiagnostics() map[string]any {
 		"host_route_table_202": cmdOutput("ip", "-4", "route", "show", "table", "202"),
 	}
 	return diag
-}
-
-func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "connect requires root"})
-		return
-	}
-	if !commandExists("warp-cli") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "warp not installed"})
-		return
-	}
-	warpnetns.Reconcile()
-	iface, err := warpnetns.Connect()
-	if err != nil {
-		if !warpnetns.RecoverQuick() {
-			warpnetns.ScrubAfterFailedConnect()
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error":       err.Error(),
-				"diagnostics": collectWarpConnectDiagnostics(),
-			})
-			return
-		}
-		if !warpnetns.IsConnected() {
-			warpnetns.ScrubAfterFailedConnect()
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error":       err.Error(),
-				"diagnostics": collectWarpConnectDiagnostics(),
-			})
-			return
-		}
-		iface = warpnetns.HostInterface()
-		if iface == "" {
-			iface = "qwp0"
-		}
-	}
-	statusNow := cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
-	if !warpConnectedFromStatus(statusNow) {
-		if warpnetns.RecoverQuick() {
-			iface = warpnetns.HostInterface()
-			if iface == "" {
-				iface = "qwp0"
-			}
-			statusNow = cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
-			if !warpConnectedFromStatus(statusNow) {
-				warpnetns.ScrubAfterFailedConnect()
-				writeJSON(w, http.StatusInternalServerError, map[string]any{
-					"error":       "warp recover completed but tunnel is still unhealthy",
-					"diagnostics": collectWarpConnectDiagnostics(),
-				})
-				return
-			}
-		} else {
-			warpnetns.ScrubAfterFailedConnect()
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error":       "warp connect reported success but tunnel is not healthy",
-				"diagnostics": collectWarpConnectDiagnostics(),
-			})
-			return
-		}
-	}
-	if stable, finalStatus := waitWarpHealthyStable(8, 1*time.Second, 3); !stable {
-		warpnetns.ScrubAfterFailedConnect()
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": "warp connected transiently but did not remain healthy",
-			"diagnostics": func() map[string]any {
-				d := collectWarpConnectDiagnostics()
-				d["final_status"] = finalStatus
-				return d
-			}(),
-		})
-		return
-	} else {
-		statusNow = finalStatus
-	}
-	_ = restoreRoutesAfterWarpConnect(srv)
-	if err := srv.applyWarpWanLink(iface); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "warp connected but wan link sync failed: " + err.Error()})
-		return
-	}
-	if err := warpnetns.ReconcileAfterWanLink(); err != nil || !warpnetns.IsConnected() {
-		warpnetns.ResetBroken()
-		_ = srv.removeWarpWanLink()
-		msg := "warp netns broken after wan link sync"
-		if err != nil {
-			msg += ": " + err.Error()
-		}
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error":       msg,
-			"diagnostics": collectWarpConnectDiagnostics(),
-		})
-		return
-	}
-	statusNow = cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
-	srv.auditLog(r, "network.warp.connect", iface)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":        true,
-		"interface": iface,
-		"netns":     warpnetns.NetnsName,
-		"wan_link":  store.WarpWanLink(iface),
-		"message":   "WARP 已在隔离网络命名空间中连接，主路由未改变",
-		"health": map[string]any{
-			"connected":       warpConnectedFromStatus(statusNow),
-			"service_running": warpnetns.ServiceRunning(),
-			"netns_status":    statusNow,
-		},
-	})
-}
-
-func (srv *Server) handleNetworkWarpDisconnect(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "disconnect requires root"})
-		return
-	}
-	if !commandExists("warp-cli") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "warp not installed"})
-		return
-	}
-	warpnetns.Disconnect()
-	_ = restoreRoutesAfterWarpConnect(srv)
-	_ = srv.removeWarpWanLink()
-	warpnetns.Reconcile()
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func commandExists(name string) bool {

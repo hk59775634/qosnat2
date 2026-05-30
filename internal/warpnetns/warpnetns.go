@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -26,6 +28,28 @@ const (
 	warpSvc   = "/usr/bin/warp-svc"
 	warpCLI   = "/usr/bin/warp-cli"
 )
+
+var (
+	warpOpMu       sync.Mutex
+	warpOpInFlight int32
+)
+
+// BeginOp 标记 WARP 连接/断开/恢复正在进行；此期间 Reconcile 不得重置 netns。
+func BeginOp() {
+	warpOpMu.Lock()
+	atomic.AddInt32(&warpOpInFlight, 1)
+}
+
+// EndOp 结束 WARP 操作标记。
+func EndOp() {
+	atomic.AddInt32(&warpOpInFlight, -1)
+	warpOpMu.Unlock()
+}
+
+// OpActive 是否有 WARP 连接/断开/恢复正在进行。
+func OpActive() bool {
+	return atomic.LoadInt32(&warpOpInFlight) > 0
+}
 
 type State struct {
 	Netns     string `json:"netns"`
@@ -60,11 +84,30 @@ func netnsExists() bool {
 
 // netnsUsable netns 存在且 ip netns exec 可用（排除 Peer netns reference is invalid 等损坏状态）。
 func netnsUsable() bool {
-	if !netnsExists() {
+	if !netnsExists() || !netnsPinValid() {
+		return false
+	}
+	if hostVethPeerBroken() {
 		return false
 	}
 	_, err := netnsExec("true")
 	return err == nil
+}
+
+func netnsPinValid() bool {
+	st, err := os.Stat(filepath.Join("/var/run/netns", NetnsName))
+	if err != nil {
+		return false
+	}
+	return st.Mode()&0777 != 0
+}
+
+func hostVethPeerBroken() bool {
+	if !linkExists(VethHost) {
+		return false
+	}
+	out, _ := run("ip", "-d", "-o", "link", "show", VethHost)
+	return strings.Contains(string(out), "link-netnsid 0")
 }
 
 // vethPairHealthy 宿主机 qwp0 与 netns 内 qwp1 成对且可用。
@@ -82,6 +125,11 @@ func vethPairHealthy() bool {
 // NetnsHealthy netns 可 exec 且 veth 成对可用。
 func NetnsHealthy() bool {
 	return netnsUsable() && vethPairHealthy()
+}
+
+// NeedsReset 检测孤儿 veth 或损坏 netns，连接前应强制清理。
+func NeedsReset() bool {
+	return needsNetnsReset()
 }
 
 // needsNetnsReset 检测孤儿 veth 或 netns 损坏（常见于 WARP 连接中断后）。
@@ -106,6 +154,7 @@ func needsNetnsReset() bool {
 // PrepareForConnect 连接前强制完整清理并重建 netns/veth（避免孤儿 qwp0 残留）。
 func PrepareForConnect() error {
 	RestoreHostResolv()
+	ensureNetnsResolvFile()
 	scrubWarpStack()
 	uplink := mainUplinkDev()
 	if uplink == "" {
@@ -148,11 +197,7 @@ func scrubWarpStack() {
 	} else if netnsExists() {
 		killProcsInNamedNetns()
 	}
-	hostIface := strings.TrimSpace(st.HostIface)
-	if hostIface == "" {
-		hostIface = detectHostWarpIface()
-	}
-	deleteLink(hostIface)
+	deleteWarpLinksInNetns()
 	forceDeleteLink(VethHost)
 	forceDeleteLink(VethNS)
 	removeNATRule(uplink)
@@ -424,6 +469,18 @@ func ensureNetnsVeth(uplink string) error {
 	return nil
 }
 
+func restoreVethIfBroken(uplink string) error {
+	if !hostVethPeerBroken() && vethPairHealthy() {
+		return nil
+	}
+	forceDeleteLink(VethHost)
+	forceDeleteLink(VethNS)
+	if needsNetnsReset() {
+		forceResetNetns()
+	}
+	return Ensure(uplink)
+}
+
 func ensureNetnsBypassRules() {
 	if !netnsUsable() {
 		return
@@ -484,12 +541,12 @@ func connectWarpWithRecovery() error {
 
 func netnsWarpConnectedStable() bool {
 	consecutive := 0
-	for i := 0; i < 60; i++ {
+	for i := 0; i < 80; i++ {
 		time.Sleep(250 * time.Millisecond)
 		iface := warpIfaceInNetns()
-		if warpDaemonReady() && iface != "" {
+		if out, err := netnsExec(warpCLI, "--accept-tos", "status"); err == nil && WarpStatusConnected(string(out)) && iface != "" {
 			consecutive++
-			if consecutive >= 16 {
+			if consecutive >= 8 {
 				return true
 			}
 			continue
@@ -511,6 +568,7 @@ func RecoverQuick() bool {
 	enforceNetnsBaseline()
 	_, _ = netnsExec("nft", "insert", "rule", "inet", "cloudflare-warp", "output", "oifname", VethNS, "accept")
 	_, _ = netnsExec("nft", "insert", "rule", "inet", "cloudflare-warp", "input", "iifname", VethNS, "accept")
+	_, _ = netnsExec(warpCLI, "--accept-tos", "debug", "connectivity-check", "disable")
 	_, _ = netnsExec(warpCLI, "--accept-tos", "mode", "warp")
 	_, _ = netnsExec(warpCLI, "--accept-tos", "connect")
 	ok := netnsWarpConnectedStable()
@@ -596,6 +654,10 @@ func removeNATRule(uplink string) {
 
 // Reconcile 检测并修复损坏 netns，flush ruleset 后回补 NAT/bypass，并清理虚假 connected 状态。
 func Reconcile() {
+	if OpActive() {
+		EnsureHostNATOnly()
+		return
+	}
 	StopHostWarpSvc()
 	RestoreHostResolv()
 	if needsNetnsReset() {
@@ -763,6 +825,9 @@ func Connect() (string, error) {
 	if err := connectWarpWithRecovery(); err != nil {
 		return "", err
 	}
+	if err := restoreVethIfBroken(uplink); err != nil {
+		return "", fmt.Errorf("restore veth after warp connect: %w", err)
+	}
 	var iface string
 	for i := 0; i < 25; i++ {
 		time.Sleep(400 * time.Millisecond)
@@ -778,6 +843,10 @@ func Connect() (string, error) {
 	// WARP will manage its own policy routing/tables inside the namespace.
 	_, _ = netnsExec("ip", "route", "replace", "default", "via", NSVethGW, "dev", VethNS)
 	ensureNetnsGatewayNAT(iface)
+	if err := restoreVethIfBroken(uplink); err != nil {
+		return "", fmt.Errorf("restore veth after warp gateway nat: %w", err)
+	}
+	enforceNetnsBaseline()
 	if !NetnsHealthy() {
 		return "", fmt.Errorf("warp netns unhealthy after tunnel up")
 	}
@@ -837,24 +906,9 @@ func linkNameFromField(raw string) string {
 	return raw
 }
 
-// IsConnected 报告 WARP 是否在 netns 中已连接且隧道在宿主机可用。
+// IsConnected 报告 WARP 是否在 netns 中已连接（以运行时探测为准，不单独依赖 state 文件）。
 func IsConnected() bool {
-	st := loadState()
-	if !st.Connected {
-		return false
-	}
-	if !NetnsHealthy() {
-		return false
-	}
-	if HostInterface() == "" {
-		return false
-	}
-	out, err := netnsExec(warpCLI, "--accept-tos", "status")
-	if err != nil {
-		return false
-	}
-	low := strings.ToLower(string(out))
-	return strings.Contains(low, "connected") && !strings.Contains(low, "disconnected")
+	return probeConnectedRuntime()
 }
 
 // ServiceRunning  netns 内 warp-svc 是否在运行。

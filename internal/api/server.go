@@ -162,6 +162,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/network/warp/install/status", srv.requireAuth(srv.handleNetworkWarpInstallStatus))
 	m.HandleFunc("/api/v1/network/warp/connect", srv.requireAuth(srv.handleNetworkWarpConnect))
 	m.HandleFunc("/api/v1/network/warp/disconnect", srv.requireAuth(srv.handleNetworkWarpDisconnect))
+	m.HandleFunc("/api/v1/network/warp/task/status", srv.requireAuth(srv.handleNetworkWarpTaskStatus))
 	m.HandleFunc("/api/v1/shaper/tc", srv.requireAuth(srv.handleShaperTC))
 
 	m.HandleFunc("/api/v1/vpn/wireguard/instances/", srv.requireAuth(srv.handleWireGuardInstancesSubtree))
@@ -345,6 +346,9 @@ func (srv *Server) reloadNft() error {
 	}
 	srv.persistAutoFirewallRules()
 	warpnetns.ReconcileHostNAT()
+	if warpnetns.IsConnected() {
+		_ = warpnetns.ReconcileAfterWanLink()
+	}
 	return nil
 }
 

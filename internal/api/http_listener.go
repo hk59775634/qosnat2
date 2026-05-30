@@ -60,6 +60,8 @@ func (hl *httpListener) runOnce() error {
 	httpSrv := &http.Server{
 		Handler:           h,
 		ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      10 * time.Minute,
 		IdleTimeout:       120 * time.Second,
 	}
 	if tlsOn {

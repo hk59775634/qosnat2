@@ -12,16 +12,14 @@ const (
 	hostResolvBackup = "/var/lib/qosnat2/warp-host-resolv.bak"
 )
 
+var netnsResolvContent = []byte("nameserver 1.1.1.1\nnameserver 1.0.0.1\n")
+
 func ensureNetnsResolvFile() {
 	_ = os.MkdirAll(netnsResolvDir, 0755)
-	if _, err := os.Stat(netnsResolvFile); err == nil {
+	if b, err := os.ReadFile(netnsResolvFile); err == nil && bytes.Equal(bytes.TrimSpace(b), bytes.TrimSpace(netnsResolvContent)) {
 		return
 	}
-	content := []byte("nameserver 1.1.1.1\nnameserver 1.0.0.1\n")
-	if b, err := os.ReadFile(hostResolvBackup); err == nil && len(bytes.TrimSpace(b)) > 0 {
-		content = b
-	}
-	_ = os.WriteFile(netnsResolvFile, content, 0644)
+	_ = os.WriteFile(netnsResolvFile, netnsResolvContent, 0644)
 }
 
 // BackupHostResolv 在首次启用 WARP 前保存宿主机 resolv.conf。
