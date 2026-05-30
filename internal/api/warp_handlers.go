@@ -48,6 +48,10 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 	installed := commandExists("warp-cli")
 	netnsHealthy := warpnetns.NetnsHealthy()
 	service := warpnetns.ServiceRunning()
+	if !netnsHealthy && warpnetns.NetnsExists() && (service || warpnetns.IsConnected()) {
+		_ = warpnetns.TryRepairConnectedNetns()
+		netnsHealthy = warpnetns.NetnsHealthy()
+	}
 	statusOut := ""
 	connected := warpnetns.RefreshConnectedState()
 	srv.reconcileWarpStoreState()

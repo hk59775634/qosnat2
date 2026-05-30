@@ -8,6 +8,9 @@ func RefreshConnectedState() bool {
 	if OpActive() {
 		return probeConnectedRuntime()
 	}
+	if !netnsUsable() && (loadState().Connected || linkExists(VethHost)) {
+		_ = TryRepairConnectedNetns()
+	}
 	if !netnsUsable() {
 		if loadState().Connected {
 			clearConnectedState()

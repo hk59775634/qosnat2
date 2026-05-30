@@ -96,6 +96,21 @@ func (srv *Server) reconcileWarpStoreState() {
 	if !hasWarp {
 		return
 	}
+	// netns 与 warp-svc 仍在时勿因瞬时探测失败删除 WARP WAN（会触发 reloadNft 并加剧 netns 抖动）。
+	if warpnetns.NetnsExists() && warpnetns.ServiceRunning() {
+		iface := warpnetns.HostInterface()
+		if iface == "" {
+			iface = "qwp0"
+		}
+		_ = warpnetns.TryRepairConnectedNetns()
+		_ = srv.store.Update(func(st *store.State) {
+			store.UpsertWarpWanLink(st, iface)
+			store.SyncWanRoutes(st)
+			store.SyncEgressRoutes(st)
+		})
+		_ = srv.store.Save()
+		return
+	}
 	_ = srv.removeWarpWanLink()
 }
 

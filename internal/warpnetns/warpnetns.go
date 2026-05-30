@@ -82,6 +82,11 @@ func netnsExists() bool {
 	return err == nil
 }
 
+// NetnsExists reports whether the qosnat2-warp network namespace mount is present.
+func NetnsExists() bool {
+	return netnsExists()
+}
+
 // netnsUsable netns 存在且 ip netns exec 可用（排除 Peer netns reference is invalid 等损坏状态）。
 func netnsUsable() bool {
 	if !netnsExists() || !netnsPinValid() {
@@ -107,7 +112,15 @@ func hostVethPeerBroken() bool {
 		return false
 	}
 	out, _ := run("ip", "-d", "-o", "link", "show", VethHost)
-	return strings.Contains(string(out), "link-netnsid 0")
+	if !strings.Contains(string(out), "link-netnsid 0") {
+		return false
+	}
+	// link-netnsid 0 仅表示对端 netns 引用失效；若 netns 内 qwp1 仍在则勿判损坏。
+	if netnsUsable() {
+		_, err := netnsExec("ip", "link", "show", VethNS)
+		return err != nil
+	}
+	return true
 }
 
 // vethPairHealthy 宿主机 qwp0 与 netns 内 qwp1 成对且可用。
@@ -652,15 +665,51 @@ func removeNATRule(uplink string) {
 		"-s", "10.99.0.0/30", "-o", uplink, "-j", "MASQUERADE").Run()
 }
 
+// connectedStackRecoverable WARP 已连接或 netns 内 warp-svc 仍在运行，应尽量修复而非拆除 netns。
+func connectedStackRecoverable() bool {
+	if OpActive() {
+		return true
+	}
+	st := loadState()
+	if linkExists(VethHost) || st.Connected {
+		if netnsExists() {
+			return ServiceRunning() || st.Connected || netnsUsable()
+		}
+	}
+	return false
+}
+
+// TryRepairConnectedNetns 在策略/nft 重载后尝试修复 veth/netns，避免误删 qosnat2-warp。
+func TryRepairConnectedNetns() error {
+	st := loadState()
+	uplink := strings.TrimSpace(st.UplinkDev)
+	if uplink == "" {
+		uplink = mainUplinkDev()
+	}
+	if err := restoreVethIfBroken(uplink); err != nil {
+		return err
+	}
+	enforceNetnsBaseline()
+	return nil
+}
+
 // Reconcile 检测并修复损坏 netns，flush ruleset 后回补 NAT/bypass，并清理虚假 connected 状态。
 func Reconcile() {
 	if OpActive() {
 		EnsureHostNATOnly()
 		return
 	}
-	StopHostWarpSvc()
-	RestoreHostResolv()
+	preserve := connectedStackRecoverable()
+	if !preserve {
+		StopHostWarpSvc()
+		RestoreHostResolv()
+	}
 	if needsNetnsReset() {
+		if preserve {
+			_ = TryRepairConnectedNetns()
+			EnsureHostNATOnly()
+			return
+		}
 		forceResetNetns()
 		return
 	}
@@ -692,10 +741,24 @@ func Reconcile() {
 func ReconcileAfterWanLink() error {
 	EnsureHostNATOnly()
 	if needsNetnsReset() {
+		if connectedStackRecoverable() {
+			if err := TryRepairConnectedNetns(); err != nil {
+				return fmt.Errorf("warp netns repair after wan link sync: %w", err)
+			}
+			if !NetnsHealthy() {
+				return fmt.Errorf("warp netns unhealthy after wan link sync (repaired)")
+			}
+			return nil
+		}
 		scrubWarpStack()
 		return fmt.Errorf("warp netns broken after wan link sync")
 	}
 	if !NetnsHealthy() {
+		if connectedStackRecoverable() {
+			if err := TryRepairConnectedNetns(); err == nil && NetnsHealthy() {
+				return nil
+			}
+		}
 		clearConnectedState()
 		return fmt.Errorf("warp netns unhealthy after wan link sync")
 	}
