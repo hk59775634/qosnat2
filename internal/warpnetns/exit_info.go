@@ -1,16 +1,18 @@
 package warpnetns
 
 import (
-	"encoding/json"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
 )
 
-const exitInfoCacheTTL = 60 * time.Second
+const (
+	exitInfoCacheTTL    = 60 * time.Second
+	cloudflareTraceURL  = "https://1.1.1.1/cdn-cgi/trace"
+)
 
-// ExitInfo is the WARP tunnel egress as seen from the isolated netns (via ipinfo.io).
+// ExitInfo is the WARP tunnel egress as seen from the isolated netns (Cloudflare trace).
 type ExitInfo struct {
 	IP        string `json:"ip,omitempty"`
 	Country   string `json:"country,omitempty"`
@@ -57,37 +59,37 @@ func GetExitInfo(connected bool) ExitInfo {
 	return st
 }
 
-type ipinfoResponse struct {
-	IP      string `json:"ip"`
-	City    string `json:"city"`
-	Region  string `json:"region"`
-	Country string `json:"country"`
-	Org     string `json:"org"`
-	Error   string `json:"error"`
-}
-
-func parseIPInfoJSON(raw []byte) ExitInfo {
-	raw = []byte(strings.TrimSpace(string(raw)))
-	if len(raw) == 0 {
-		return ExitInfo{Error: "empty response from ipinfo.io"}
+func parseCloudflareTrace(raw []byte) ExitInfo {
+	vars := map[string]string{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		i := strings.IndexByte(line, '=')
+		if i <= 0 {
+			continue
+		}
+		vars[line[:i]] = strings.TrimSpace(line[i+1:])
 	}
-	var resp ipinfoResponse
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		return ExitInfo{Error: "parse ipinfo: " + err.Error()}
-	}
-	if msg := strings.TrimSpace(resp.Error); msg != "" {
-		return ExitInfo{Error: msg}
-	}
-	ip := strings.TrimSpace(resp.IP)
+	ip := strings.TrimSpace(vars["ip"])
 	if ip == "" {
-		return ExitInfo{Error: "ipinfo response missing ip"}
+		return ExitInfo{Error: "cloudflare trace missing ip"}
+	}
+	country := strings.TrimSpace(vars["loc"])
+	region := strings.TrimSpace(vars["colo"])
+	org := ""
+	if w := strings.TrimSpace(vars["warp"]); w != "" {
+		org = "warp=" + w
+		if g := strings.TrimSpace(vars["gateway"]); g != "" {
+			org += ", gateway=" + g
+		}
 	}
 	return ExitInfo{
 		IP:        ip,
-		Country:   strings.TrimSpace(resp.Country),
-		City:      strings.TrimSpace(resp.City),
-		Region:    strings.TrimSpace(resp.Region),
-		Org:       strings.TrimSpace(resp.Org),
+		Country:   country,
+		Region:    region,
+		Org:       org,
 		FetchedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 }
@@ -99,7 +101,7 @@ func fetchExitInfoFromNetns() ExitInfo {
 	if !NetnsHealthy() {
 		return ExitInfo{Error: "warp netns not ready"}
 	}
-	out, err := netnsExec("curl", "-fsS", "--max-time", "12", "https://ipinfo.io/json")
+	out, err := netnsExec("curl", "-fsS", "--max-time", "12", cloudflareTraceURL)
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if msg == "" {
@@ -107,5 +109,8 @@ func fetchExitInfoFromNetns() ExitInfo {
 		}
 		return ExitInfo{Error: msg}
 	}
-	return parseIPInfoJSON(out)
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return ExitInfo{Error: "empty response from cloudflare trace"}
+	}
+	return parseCloudflareTrace(out)
 }
