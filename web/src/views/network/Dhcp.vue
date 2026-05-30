@@ -85,9 +85,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('network.dhcp.title')" :description="t('network.dhcp.description')" />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageHeader :title="t('network.dhcp.title')" :description="t('network.dhcp.description')" :ok="ok" :err="err" />
 
     <div v-if="cfg" class="card card-body mb-0 space-y-3">
       <label class="flex items-center gap-2 text-sm font-medium">

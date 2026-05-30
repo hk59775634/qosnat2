@@ -27,8 +27,7 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('status.active.title')" :description="t('status.active.description')" />
-    <p v-if="err" class="text-red-600 mb-2">{{ err }}</p>
+    <PageHeader :title="t('status.active.title')" :description="t('status.active.description')" :err="err" />
 
     <div class="card table-wrap p-4">
       <table class="data w-full">

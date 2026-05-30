@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { setDisplayName } from '@/composables/useBranding'
 import PageHeader from '@/components/PageHeader.vue'
+import PageTabs from '@/components/PageTabs.vue'
 import CertSelect from '@/components/CertSelect.vue'
 
 const { t } = useI18n()
@@ -33,6 +34,13 @@ const switchTag = ref('')
 const versionSwitchJob = ref(null)
 const versionSwitchPoll = ref(null)
 const versionSwitchPollErrs = ref(0)
+
+const activeTab = ref('basic')
+const generalTabs = computed(() => [
+  { id: 'basic', label: t('system.general.tabBasic') },
+  { id: 'version', label: t('system.general.tabVersion') },
+  { id: 'tls', label: t('system.general.tabTls') },
+])
 
 const versionSwitchRunning = computed(() => versionSwitchJob.value?.state === 'running')
 
@@ -306,13 +314,14 @@ onUnmounted(stopVersionSwitchPoll)
     <PageHeader
       :title="t('system.general.title')"
       :description="t('system.general.description')"
+      :ok="ok"
+      :warn="warn"
+      :err="err"
     />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="warn" class="text-amber-700 text-sm mb-2">{{ warn }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageTabs v-model="activeTab" :tabs="generalTabs" />
 
-    <div v-if="cfg" class="card card-body space-y-6">
-      <section class="space-y-4">
+    <div v-if="cfg" class="card card-body space-y-4">
+      <section v-show="activeTab === 'basic'" class="space-y-4">
         <h3 class="text-sm font-semibold text-slate-800">{{ t('system.general.basic') }}</h3>
         <p class="text-sm text-slate-600">
           {{ t('system.general.adminSection') }}
@@ -350,7 +359,7 @@ onUnmounted(stopVersionSwitchPoll)
         </div>
       </section>
 
-      <section class="space-y-4 pt-4 border-t border-slate-200">
+      <section v-show="activeTab === 'version'" class="space-y-4">
         <h3 class="text-sm font-semibold text-slate-800">{{ t('system.general.versionSection') }}</h3>
         <p class="text-xs text-slate-500">{{ t('system.general.versionFormatHint') }}</p>
         <div v-if="versionInfo" class="text-xs text-slate-600 space-y-1 bg-slate-50 rounded p-3">
@@ -409,7 +418,7 @@ onUnmounted(stopVersionSwitchPoll)
         </p>
       </section>
 
-      <section class="space-y-4 pt-4 border-t border-slate-200">
+      <section v-show="activeTab === 'tls'" class="space-y-4">
         <h3 class="text-sm font-semibold text-slate-800">{{ t('system.general.httpsSection') }}</h3>
         <div v-if="cfg.tls" class="text-xs text-slate-600 space-y-1 bg-slate-50 rounded p-3">
           <p>
@@ -512,7 +521,14 @@ onUnmounted(stopVersionSwitchPoll)
         </template>
       </section>
 
-      <button type="button" class="btn-primary" @click="save">{{ t('common.save') }}</button>
+      <button
+        v-if="activeTab === 'basic' || activeTab === 'tls'"
+        type="button"
+        class="btn-primary"
+        @click="save"
+      >
+        {{ t('common.save') }}
+      </button>
     </div>
   </div>
 </template>

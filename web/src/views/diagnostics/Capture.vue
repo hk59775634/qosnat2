@@ -67,8 +67,7 @@ onMounted(async () => {
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('diagnostics.capture.title')" :description="t('diagnostics.capture.description')" />
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageHeader :title="t('diagnostics.capture.title')" :description="t('diagnostics.capture.description')" :err="err" />
 
     <div class="card card-body mb-0 grid gap-3">
       <input v-model="dev" class="input-field font-mono" :placeholder="t('diagnostics.capture.ifacePh')" />

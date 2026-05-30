@@ -120,9 +120,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('nat.forwards.title')" :description="t('nat.forwards.description')" />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageHeader :title="t('nat.forwards.title')" :description="t('nat.forwards.description')" :ok="ok" :err="err" />
 
     <div class="card card-body mb-0">
       <h3 class="font-medium mb-3">{{ t('nat.forwards.addRule') }}</h3>

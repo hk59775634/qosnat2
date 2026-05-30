@@ -147,9 +147,8 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('nat.ipv6.title')" :description="t('nat.ipv6.description')" />
+    <PageHeader :title="t('nat.ipv6.title')" :description="t('nat.ipv6.description')" :err="err" />
     <p v-if="msg" class="text-green-700 text-sm">{{ msg }}</p>
-    <p v-if="err" class="text-red-600 text-sm">{{ err }}</p>
 
     <div class="card p-4 space-y-4">
       <div class="flex flex-wrap items-center gap-3">

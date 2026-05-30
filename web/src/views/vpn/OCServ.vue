@@ -1141,8 +1141,7 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <PageHeader :title="t('ocserv.title')" :description="t('ocserv.description')" />
-    <p v-if="err" class="text-sm text-red-600 mb-2">{{ err }}</p>
+    <PageHeader :title="t('ocserv.title')" :description="t('ocserv.description')" :ok="ok" :err="err" />
     <p v-if="ok" class="text-sm text-green-700 mb-2">{{ ok }}</p>
 
     <div class="card p-4 mb-4 space-y-3">

@@ -458,9 +458,7 @@ onUnmounted(() => {
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('vpn.wg.title')" :description="t('vpn.wg.description')" />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageHeader :title="t('vpn.wg.title')" :description="t('vpn.wg.description')" :ok="ok" :err="err" />
 
     <div v-if="instances.length" class="flex flex-wrap items-center gap-2 mb-4 text-sm">
       <label class="text-slate-600 shrink-0">{{ t('vpn.wg.instanceLabel') }}</label>

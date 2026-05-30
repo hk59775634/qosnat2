@@ -113,9 +113,8 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('nat.outbound.title')" :description="t('nat.outbound.description')" />
+    <PageHeader :title="t('nat.outbound.title')" :description="t('nat.outbound.description')" :err="err" />
     <p v-if="msg" class="text-green-700 text-sm mb-2">{{ msg }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div class="grid lg:grid-cols-2 gap-6">
       <section class="card p-4">

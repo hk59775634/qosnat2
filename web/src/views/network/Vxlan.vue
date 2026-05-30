@@ -80,9 +80,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('network.vxlan.title')" :description="t('network.vxlan.description')" />
-    <p v-if="ok" class="text-green-700 text-sm">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm">{{ err }}</p>
+    <PageHeader :title="t('network.vxlan.title')" :description="t('network.vxlan.description')" :ok="ok" :err="err" />
 
     <div class="card card-body grid sm:grid-cols-2 gap-3 text-sm">
       <div>

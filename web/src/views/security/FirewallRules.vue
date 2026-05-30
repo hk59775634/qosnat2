@@ -392,10 +392,8 @@ onMounted(load)
 
 <template>
   <div class="page-stack fw-page">
-    <PageHeader :title="t('security.firewall.title')" :description="t('security.firewall.description')" />
+    <PageHeader :title="t('security.firewall.title')" :description="t('security.firewall.description')" :ok="ok" :err="err" />
 
-    <p v-if="ok" class="text-green-700 text-sm">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm">{{ err }}</p>
 
     <!-- 网卡切换（pfSense 风格） -->
     <div class="card overflow-hidden">

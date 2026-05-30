@@ -37,7 +37,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('diagnostics.conntrack.title')" :description="t('diagnostics.conntrack.description')" />
+    <PageHeader :title="t('diagnostics.conntrack.title')" :description="t('diagnostics.conntrack.description')" :err="err" />
 
     <div class="card card-body mb-4 flex flex-wrap gap-3 items-end">
       <div>
@@ -52,8 +52,6 @@ onMounted(load)
         {{ loading ? t('common.loading') : t('common.refresh') }}
       </button>
     </div>
-
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
 
     <div v-if="data" class="card card-body mb-4 text-sm flex flex-wrap gap-4">
       <span>{{ t('diagnostics.conntrack.tableTotal') }}: <strong>{{ data.count }}</strong></span>

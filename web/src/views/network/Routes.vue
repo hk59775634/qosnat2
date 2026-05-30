@@ -110,9 +110,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('network.routes.title')" :description="t('network.routes.description')" />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageHeader :title="t('network.routes.title')" :description="t('network.routes.description')" :ok="ok" :err="err" />
 
     <div class="card card-body mb-0">
       <h3 class="font-medium mb-3">{{ t('network.routes.add') }}</h3>

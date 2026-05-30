@@ -40,9 +40,7 @@ onMounted(load)
   <div class="page-stack">
     <PageHeader
       :title="t('system.apiKeys.title')"
-      :description="t('system.apiKeys.description')"
-    />
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+      :description="t('system.apiKeys.description')" :err="err" />
     <div v-if="created?.key" class="card card-body mb-4 bg-amber-50 border-amber-200">
       <p class="text-sm font-medium text-amber-900 mb-1">{{ t('system.apiKeys.newSecret') }}</p>
       <code class="text-xs break-all">{{ created.key }}</code>

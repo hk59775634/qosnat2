@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
+import PageTabs from '@/components/PageTabs.vue'
 
 const { t } = useI18n()
 const links = ref([])
@@ -99,6 +100,13 @@ const warpUiConnected = computed(() => {
 })
 
 const warpExitInfo = computed(() => warpStatus.value?.exit_info || null)
+
+const activeTab = ref('wan')
+const wanTabs = computed(() => [
+  { id: 'wan', label: t('network.wanLinks.tabWan') },
+  { id: 'warp', label: t('network.wanLinks.tabWarp') },
+  { id: 'egress', label: t('network.wanLinks.tabEgress') },
+])
 
 const warpExitLine = computed(() => {
   const e = warpExitInfo.value
@@ -565,12 +573,16 @@ onUnmounted(() => {
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('network.wanLinks.title')" :description="t('network.wanLinks.description')" />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageHeader
+      :title="t('network.wanLinks.title')"
+      :description="t('network.wanLinks.description')"
+      :ok="ok"
+      :err="err"
+    />
+    <PageTabs v-model="activeTab" :tabs="wanTabs" />
 
-    <div class="card card-body mb-0 space-y-3 text-sm">
-      <h3 class="font-medium text-slate-800">{{ t('network.wanLinks.title') }}</h3>
+    <div v-show="activeTab === 'wan'" class="card card-body mb-0 space-y-3 text-sm">
+      <h3 class="font-medium text-slate-800">{{ t('network.wanLinks.tabAddWan') }}</h3>
       <div class="grid sm:grid-cols-2 gap-3">
         <div>
           <label class="text-xs text-slate-500">{{ t('common.name') }}</label>
@@ -603,69 +615,7 @@ onUnmounted(() => {
       <button type="button" class="btn-primary" @click="add">{{ t('common.add') }}</button>
     </div>
 
-    <div class="card card-body mb-0 space-y-3 text-sm">
-      <div>
-        <h3 class="font-medium text-slate-800">{{ t('network.wanLinks.warpTitle') }}</h3>
-        <p class="text-xs text-slate-500 mt-1">{{ t('network.wanLinks.warpHint') }}</p>
-      </div>
-      <div class="text-xs text-slate-600 rounded bg-slate-50 p-2">
-        {{ t('network.wanLinks.warpState') }}:
-        {{ warpStatus.installed ? t('network.wanLinks.warpInstalledLabel') : t('network.wanLinks.warpNotInstalledLabel') }}
-        · {{ warpUiConnected ? t('network.wanLinks.warpConnectedLabel') : t('network.wanLinks.warpDisconnectedLabel') }}
-        <span v-if="warpStatus.netns_healthy" class="text-slate-500"> · netns OK</span>
-        <span v-if="warpStatus.interface" class="font-mono"> · {{ warpStatus.interface }}</span>
-      </div>
-      <div class="flex flex-wrap gap-2 items-center">
-        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || warpStatus.installed || warpInstallRunning" @click="installWarp">
-          {{ warpInstallRunning ? t('network.wanLinks.warpInstalling') : t('network.wanLinks.warpInstallBtn') }}
-        </button>
-        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || warpUiConnected" @click="connectWarp">
-          {{ warpConnecting ? t('network.wanLinks.warpConnecting') : t('network.wanLinks.warpConnectBtn') }}
-        </button>
-        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || !warpUiConnected" @click="disconnectWarp">
-          {{ warpDisconnecting ? t('network.wanLinks.warpDisconnecting') : t('network.wanLinks.warpDisconnectBtn') }}
-        </button>
-        <span
-          v-if="warpUiConnected"
-          class="text-xs text-slate-600 font-mono pl-1 border-l border-slate-200"
-          :title="warpExitInfo?.org || ''"
-        >
-          <span v-if="warpExitLine">{{ t('network.wanLinks.warpExitLabel') }}: {{ warpExitLine }}</span>
-          <span v-else class="text-slate-400">{{ t('network.wanLinks.warpExitLoading') }}</span>
-        </span>
-      </div>
-      <div
-        v-if="warpTaskPanelVisible"
-        class="mt-1 p-3 rounded border text-xs space-y-2"
-        :class="warpActiveJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'"
-      >
-        <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
-          <span>
-            {{ t('network.wanLinks.warpTask') }}:
-            <strong>{{ warpTaskOpLabel(warpActiveJob?.op) }} / {{ warpActiveJob?.state || 'running' }}</strong>
-          </span>
-          <span v-if="warpActiveJob?.message" class="text-slate-600">{{ warpActiveJob.message }}</span>
-          <span v-if="warpTaskStatusLine" class="text-slate-600 font-mono text-xs">{{ warpTaskStatusLine }}</span>
-        </div>
-        <pre
-          v-if="warpTaskDiagnostics"
-          class="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700"
-        >{{ JSON.stringify(warpTaskDiagnostics, null, 2) }}</pre>
-      </div>
-      <div
-        v-if="warpInstallRunning || (warpInstallJob && (warpInstallJob.state === 'running' || warpInstallJob.state === 'failed'))"
-        class="mt-1 p-3 rounded border text-xs space-y-2"
-        :class="warpInstallJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'"
-      >
-        <div class="flex gap-3 text-sm">
-          <span>{{ t('network.wanLinks.warpInstallTask') }}: <strong>{{ warpInstallJob?.state || 'running' }}</strong></span>
-          <span v-if="warpInstallJob?.message" class="text-slate-600">{{ warpInstallJob.message }}</span>
-        </div>
-        <pre v-if="warpInstallJob?.log_tail" class="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700">{{ warpInstallJob.log_tail }}</pre>
-      </div>
-    </div>
-
-    <div class="table-wrap card">
+    <div v-show="activeTab === 'wan'" class="table-wrap card">
       <table class="data w-full text-sm">
         <thead>
           <tr>
@@ -734,7 +684,69 @@ onUnmounted(() => {
       </table>
     </div>
 
-    <div class="card card-body space-y-3 text-sm">
+    <div v-show="activeTab === 'warp'" class="card card-body mb-0 space-y-3 text-sm">
+      <div>
+        <h3 class="font-medium text-slate-800">{{ t('network.wanLinks.warpTitle') }}</h3>
+        <p class="text-xs text-slate-500 mt-1">{{ t('network.wanLinks.warpHint') }}</p>
+      </div>
+      <div class="text-xs text-slate-600 rounded bg-slate-50 p-2">
+        {{ t('network.wanLinks.warpState') }}:
+        {{ warpStatus.installed ? t('network.wanLinks.warpInstalledLabel') : t('network.wanLinks.warpNotInstalledLabel') }}
+        · {{ warpUiConnected ? t('network.wanLinks.warpConnectedLabel') : t('network.wanLinks.warpDisconnectedLabel') }}
+        <span v-if="warpStatus.netns_healthy" class="text-slate-500"> · netns OK</span>
+        <span v-if="warpStatus.interface" class="font-mono"> · {{ warpStatus.interface }}</span>
+      </div>
+      <div class="flex flex-wrap gap-2 items-center">
+        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || warpStatus.installed || warpInstallRunning" @click="installWarp">
+          {{ warpInstallRunning ? t('network.wanLinks.warpInstalling') : t('network.wanLinks.warpInstallBtn') }}
+        </button>
+        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || warpUiConnected" @click="connectWarp">
+          {{ warpConnecting ? t('network.wanLinks.warpConnecting') : t('network.wanLinks.warpConnectBtn') }}
+        </button>
+        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || !warpUiConnected" @click="disconnectWarp">
+          {{ warpDisconnecting ? t('network.wanLinks.warpDisconnecting') : t('network.wanLinks.warpDisconnectBtn') }}
+        </button>
+        <span
+          v-if="warpUiConnected"
+          class="text-xs text-slate-600 font-mono pl-1 border-l border-slate-200"
+          :title="warpExitInfo?.org || ''"
+        >
+          <span v-if="warpExitLine">{{ t('network.wanLinks.warpExitLabel') }}: {{ warpExitLine }}</span>
+          <span v-else class="text-slate-400">{{ t('network.wanLinks.warpExitLoading') }}</span>
+        </span>
+      </div>
+      <div
+        v-if="warpTaskPanelVisible"
+        class="mt-1 p-3 rounded border text-xs space-y-2"
+        :class="warpActiveJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'"
+      >
+        <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+          <span>
+            {{ t('network.wanLinks.warpTask') }}:
+            <strong>{{ warpTaskOpLabel(warpActiveJob?.op) }} / {{ warpActiveJob?.state || 'running' }}</strong>
+          </span>
+          <span v-if="warpActiveJob?.message" class="text-slate-600">{{ warpActiveJob.message }}</span>
+          <span v-if="warpTaskStatusLine" class="text-slate-600 font-mono text-xs">{{ warpTaskStatusLine }}</span>
+        </div>
+        <pre
+          v-if="warpTaskDiagnostics"
+          class="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700"
+        >{{ JSON.stringify(warpTaskDiagnostics, null, 2) }}</pre>
+      </div>
+      <div
+        v-if="warpInstallRunning || (warpInstallJob && (warpInstallJob.state === 'running' || warpInstallJob.state === 'failed'))"
+        class="mt-1 p-3 rounded border text-xs space-y-2"
+        :class="warpInstallJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'"
+      >
+        <div class="flex gap-3 text-sm">
+          <span>{{ t('network.wanLinks.warpInstallTask') }}: <strong>{{ warpInstallJob?.state || 'running' }}</strong></span>
+          <span v-if="warpInstallJob?.message" class="text-slate-600">{{ warpInstallJob.message }}</span>
+        </div>
+        <pre v-if="warpInstallJob?.log_tail" class="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700">{{ warpInstallJob.log_tail }}</pre>
+      </div>
+    </div>
+
+    <div v-show="activeTab === 'egress'" class="card card-body space-y-3 text-sm">
       <div>
         <h3 class="font-medium text-slate-800">{{ t('network.wanLinks.egressTitle') }}</h3>
         <p class="text-xs text-slate-500 mt-1">{{ t('network.wanLinks.egressHint') }}</p>
@@ -787,7 +799,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="table-wrap card">
+    <div v-show="activeTab === 'egress'" class="table-wrap card">
       <table class="data w-full text-sm">
         <thead>
           <tr>

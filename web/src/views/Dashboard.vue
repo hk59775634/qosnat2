@@ -114,8 +114,7 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('nav.dashboard')" :description="t('dashboard.description')" />
-    <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
+    <PageHeader :title="t('nav.dashboard')" :description="t('dashboard.description')" :err="err" />
 
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
       <StatCard :label="t('nav.activePerIp')" :value="data?.active_hosts ?? '—'" sub="eBPF active_host" />

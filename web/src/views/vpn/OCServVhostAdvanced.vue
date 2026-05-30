@@ -90,8 +90,7 @@ onMounted(load)
   <div class="space-y-4 max-w-5xl">
     <PageHeader
       :title="t('ocserv.vhostAdvancedTitle', { domain })"
-      :subtitle="t('ocserv.vhostAdvancedSubtitle')"
-    >
+      :subtitle="t('ocserv.vhostAdvancedSubtitle')" :ok="ok" :err="err">
       <template #actions>
         <button type="button" class="btn-secondary text-sm" @click="goBack">
           {{ t('ocserv.backToVhostList') }}

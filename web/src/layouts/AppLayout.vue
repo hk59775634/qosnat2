@@ -9,6 +9,11 @@ import NotificationTray from '@/components/NotificationTray.vue'
 import { displayName } from '@/composables/useBranding'
 import { appVersionLabel } from '@/composables/useAppVersion'
 
+const pageWrapClass = computed(() => {
+  if (isApiDocs.value) return ''
+  return route.meta.pageWidth === 'full' ? 'w-full' : 'max-w-6xl mx-auto w-full'
+})
+
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
@@ -35,7 +40,7 @@ const menu = computed(() => [
       { path: '/network/vlans', label: t('nav.vlans') },
       { path: '/network/vxlan', label: t('nav.vxlan') },
       { path: '/network/wan-links', label: t('nav.wanLinks') },
-      { path: '/interfaces/queues', label: t('nav.rssQueues') },
+      { path: '/network/queues', label: t('nav.rssQueues') },
     ],
   },
   {
@@ -197,7 +202,7 @@ const groupShort = computed(() => ({
   [t('nav.traffic')]: 'T',
   [t('nav.vpn')]: 'V',
   [t('nav.observability')]: 'O',
-  [t('nav.system')]: 'Y',
+  [t('nav.system')]: 'M',
 }))
 </script>
 
@@ -240,17 +245,8 @@ const groupShort = computed(() => ({
               <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <div class="flex items-baseline gap-2 min-w-0">
-            <h1 class="text-lg font-semibold tracking-tight truncate">{{ displayName }}</h1>
-            <span
-              v-if="appVersionLabel"
-              class="text-xs font-mono text-blue-200/90 shrink-0"
-              :title="t('common.appVersionTitle', { v: appVersionLabel })"
-            >
-              {{ appVersionLabel }}
-            </span>
-          </div>
-          <span class="text-xs text-blue-200 hidden sm:inline">QoS · NAT · eBPF</span>
+          <h1 class="text-lg font-semibold tracking-tight truncate min-w-0">{{ displayName }}</h1>
+          <span class="text-xs text-blue-200 hidden md:inline shrink-0">QoS · NAT · eBPF</span>
         </div>
         <div class="flex items-center gap-2">
           <NotificationTray />
@@ -262,8 +258,7 @@ const groupShort = computed(() => ({
         <span>{{ t('common.techHtb') }}</span>
         <span>{{ t('common.techNft') }}</span>
         <span>{{ t('common.techEbpf') }}</span>
-        <span class="text-blue-200">{{ t('common.apiFirstControl') }}</span>
-        <GitHubProjectLink variant="inline" class="ml-auto shrink-0" />
+        <span class="text-blue-200 ml-auto">{{ t('common.apiFirstControl') }}</span>
       </div>
     </header>
 
@@ -416,7 +411,9 @@ const groupShort = computed(() => ({
         "
         @click="closeFlyout"
       >
-        <router-view />
+        <div :class="pageWrapClass">
+          <router-view />
+        </div>
       </main>
     </div>
   </div>

@@ -43,9 +43,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('status.ebpf.title')" :description="t('status.ebpf.description')" />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageHeader :title="t('status.ebpf.title')" :description="t('status.ebpf.description')" :ok="ok" :err="err" />
 
     <div class="flex gap-2 mb-4">
       <button type="button" class="btn-primary" :disabled="reloading" @click="reload">

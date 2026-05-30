@@ -11,6 +11,47 @@ body {
   @apply space-y-3;
 }
 
+/* 表单/设置类页面限制行宽，表格页用 page-stack--wide */
+.page-stack--constrained {
+  @apply max-w-6xl mx-auto w-full;
+}
+
+.page-stack--wide {
+  @apply max-w-[96rem] mx-auto w-full;
+}
+
+.page-header-block {
+  @apply space-y-2;
+}
+
+.page-alerts {
+  @apply sticky top-0 z-20 rounded-md border border-slate-200 bg-white/95 backdrop-blur-sm shadow-sm px-3 py-2 space-y-1 text-sm;
+}
+
+.page-alerts__ok {
+  @apply text-green-700;
+}
+
+.page-alerts__warn {
+  @apply text-amber-700;
+}
+
+.page-alerts__err {
+  @apply text-red-600;
+}
+
+.page-tabs {
+  @apply flex flex-wrap gap-1 border-b border-slate-200 pb-px;
+}
+
+.page-tabs__btn {
+  @apply px-3 py-2 text-sm text-slate-600 rounded-t-md hover:bg-slate-100 hover:text-slate-900 transition-colors;
+}
+
+.page-tabs__btn--active {
+  @apply text-slate-900 font-medium bg-white border border-slate-200 border-b-white -mb-px;
+}
+
 .page-hint {
   @apply text-xs text-slate-500 leading-snug;
 }

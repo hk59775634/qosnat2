@@ -265,10 +265,7 @@ onUnmounted(() => {
   <div class="page-stack">
     <PageHeader
       :title="t('network.interfaces.title')"
-      :description="t('network.interfaces.description')"
-    />
-    <p v-if="err" class="text-red-600 text-sm mb-4">{{ err }}</p>
-    <p v-if="ok" class="text-green-700 text-sm mb-4">{{ ok }}</p>
+      :description="t('network.interfaces.description')" :ok="ok" :err="err" />
 
     <div class="card p-4 mb-4">
       <h3 class="text-sm font-semibold text-slate-800 mb-3">{{ t('network.interfaces.wanLan') }}</h3>
@@ -524,7 +521,7 @@ onUnmounted(() => {
             <router-link to="/shaper/profiles" class="text-blue-600 hover:underline">{{ t('nav.qosProfiles') }}</router-link>
           </li>
           <li>
-            <router-link to="/interfaces/queues" class="text-blue-600 hover:underline">{{ t('nav.rssQueues') }}</router-link>
+            <router-link to="/network/queues" class="text-blue-600 hover:underline">{{ t('nav.rssQueues') }}</router-link>
           </li>
         </ul>
       </DashboardWidget>

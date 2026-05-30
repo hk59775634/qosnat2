@@ -86,9 +86,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('network.vlans.title')" :description="t('network.vlans.description')" />
-    <p v-if="ok" class="text-green-700 text-sm mb-2">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm mb-2">{{ err }}</p>
+    <PageHeader :title="t('network.vlans.title')" :description="t('network.vlans.description')" :ok="ok" :err="err" />
 
     <div class="card card-body mb-0 space-y-3 text-sm">
       <h3 class="font-medium">{{ editing ? t('network.vlans.edit') : t('network.vlans.new') }}</h3>

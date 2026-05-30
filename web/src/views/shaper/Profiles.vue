@@ -113,7 +113,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('shaper.profiles.title')" :description="t('shaper.profiles.description')" />
+    <PageHeader :title="t('shaper.profiles.title')" :description="t('shaper.profiles.description')" :ok="ok" :err="err" />
 
     <div class="card card-body text-sm space-y-2">
       <ShaperBindBar

@@ -125,7 +125,7 @@ onMounted(load)
 
 <template>
   <div class="space-y-4">
-    <PageHeader :title="t('certificates.title')" :subtitle="t('certificates.subtitle')" />
+    <PageHeader :title="t('certificates.title')" :subtitle="t('certificates.subtitle')" :ok="ok" :err="err" />
     <p class="text-xs text-slate-500 -mt-2">{{ t('certificates.acmeHint') }}</p>
 
     <p v-if="err" class="text-sm text-red-600">{{ err }}</p>

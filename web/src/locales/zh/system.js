@@ -2,6 +2,9 @@ export default {
   general: {
     title: '常规设置',
     description: '主机名、管理员密码、HTTPS 与 ACME 证书',
+    tabBasic: '基础',
+    tabVersion: '版本',
+    tabTls: 'HTTPS',
     basic: '基本',
     adminSection: '管理员',
     hostname: '主机名',

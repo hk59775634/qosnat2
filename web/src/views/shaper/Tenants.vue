@@ -68,9 +68,7 @@ onMounted(load)
 
 <template>
   <div class="page-stack">
-    <PageHeader :title="t('shaper.tenants.title')" :description="t('shaper.tenants.description')" />
-    <p v-if="ok" class="text-green-700 text-sm">{{ ok }}</p>
-    <p v-if="err" class="text-red-600 text-sm">{{ err }}</p>
+    <PageHeader :title="t('shaper.tenants.title')" :description="t('shaper.tenants.description')" :ok="ok" :err="err" />
 
     <div class="card card-body space-y-3 text-sm">
       <h3 class="font-medium">{{ editing ? t('shaper.tenants.edit') : t('shaper.tenants.new') }}</h3>

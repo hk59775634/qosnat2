@@ -2,6 +2,9 @@ export default {
   general: {
     title: 'General settings',
     description: 'Hostname, admin password, HTTPS and ACME certificates',
+    tabBasic: 'Basic',
+    tabVersion: 'Version',
+    tabTls: 'HTTPS',
     basic: 'Basic',
     adminSection: 'Administrator',
     hostname: 'Hostname',
