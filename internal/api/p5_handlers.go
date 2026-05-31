@@ -23,10 +23,10 @@ func (srv *Server) handleIfaceQueues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"queues":   stats.IfaceQueues(dev),
-		"softirq":  stats.SoftirqNET(),
-		"lan":      stats.IfaceQueues(srv.env.DevLAN),
-		"wan":      stats.IfaceQueues(srv.env.DevWAN),
+		"queues":  stats.IfaceQueues(dev),
+		"softirq": stats.SoftirqNET(),
+		"lan":     stats.IfaceQueues(srv.env.DevLAN),
+		"wan":     stats.IfaceQueues(srv.env.DevWAN),
 	})
 }
 

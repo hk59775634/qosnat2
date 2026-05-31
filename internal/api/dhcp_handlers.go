@@ -41,13 +41,13 @@ func (srv *Server) handleDHCPGet(w http.ResponseWriter, r *http.Request) {
 		leases = []dnsmasq.LeaseEntry{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"config":      cfg,
-		"status":      dnsSt,
-		"leases":      leases,
-		"interfaces":  ifaces,
-		"dev_lan":     srv.env.DevLAN,
-		"dev_wan":     srv.env.DevWAN,
-		"rendered":    rendered,
+		"config":     cfg,
+		"status":     dnsSt,
+		"leases":     leases,
+		"interfaces": ifaces,
+		"dev_lan":    srv.env.DevLAN,
+		"dev_wan":    srv.env.DevWAN,
+		"rendered":   rendered,
 	})
 }
 

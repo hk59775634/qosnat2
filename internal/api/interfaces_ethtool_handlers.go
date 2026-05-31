@@ -27,8 +27,8 @@ func (srv *Server) handleInterfacesEthtool(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, info)
 	case http.MethodPut:
 		var body struct {
-			RxRing   int                      `json:"rx_ring"`
-			TxRing   int                      `json:"tx_ring"`
+			RxRing   int                     `json:"rx_ring"`
+			TxRing   int                     `json:"tx_ring"`
 			Offloads netif.OffloadSetRequest `json:"offloads"`
 		}
 		if err := readJSON(r, &body); err != nil {

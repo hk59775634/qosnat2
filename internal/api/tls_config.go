@@ -35,8 +35,8 @@ type TLSStatus struct {
 	AcmeStaging   bool   `json:"acme_staging,omitempty"`
 	AcmeRenewDays int    `json:"acme_renew_days,omitempty"`
 	AcmeLastOK    string `json:"acme_last_ok,omitempty"`
-	AcmeLastError    string `json:"acme_last_error,omitempty"`
-	ManagedCertID    string `json:"managed_cert_id,omitempty"`
+	AcmeLastError string `json:"acme_last_error,omitempty"`
+	ManagedCertID string `json:"managed_cert_id,omitempty"`
 }
 
 func (srv *Server) tlsStatus() TLSStatus {
@@ -150,7 +150,7 @@ func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart 
 		st.System.TLSEnabled = enabled
 	})
 	if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
+		return false, err
 	}
 	srv.reloadEnv()
 	nowActive := srv.tlsActive()

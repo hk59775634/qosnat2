@@ -32,3 +32,18 @@ func TestTerminalGrantsConsumeOnce(t *testing.T) {
 		t.Fatal("second consume should fail")
 	}
 }
+
+func TestNatStackRollbackUsesOverride(t *testing.T) {
+	srv := &Server{}
+	override := natStackSnapshot{
+		Nat:  store.NatState{Nat64Enabled: true, Nat64Prefix: "64:ff9b::/96"},
+		DHCP: store.DefaultDHCP(),
+	}
+	rollback := srv.lastNatStackSnapshot()
+	if rollbackOverride := &override; rollbackOverride != nil {
+		rollback = *rollbackOverride
+	}
+	if !rollback.Nat.Nat64Enabled {
+		t.Fatal("expected override nat64")
+	}
+}

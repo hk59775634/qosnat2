@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"net/http"
 	"strings"
 
@@ -37,12 +36,12 @@ func (srv *Server) listProfileItems() ([]ProfileListItem, error) {
 	out := make([]ProfileListItem, 0, len(ordered))
 	for _, p := range ordered {
 		item := ProfileListItem{
-			CIDR:     p.CIDR,
-			Down:     p.Down,
-			Up:       p.Up,
-			Mask:     p.Mask,
-			ID: p.ID,
-			Device:   srv.profileDevice(p, st),
+			CIDR:   p.CIDR,
+			Down:   p.Down,
+			Up:     p.Up,
+			Mask:   p.Mask,
+			ID:     p.ID,
+			Device: srv.profileDevice(p, st),
 		}
 		if br, ok := bpfRates[p.CIDR]; ok {
 			item.DownBPS = br.DownBPS
@@ -91,8 +90,8 @@ func (srv *Server) handleShaperProfilesOrder(w http.ResponseWriter, r *http.Requ
 		}
 		srv.rebuildShaperDataPlane()
 	}
-	if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
+	if !srv.persistState(w) {
+		return
 	}
 	list, _ := srv.listProfileItems()
 	writeJSON(w, http.StatusOK, srv.shaperProfilesPayload(list))
@@ -174,12 +173,12 @@ func (srv *Server) assignProfileOnAdd(st *store.State, cidr, down, up string, ma
 	}
 	if !found {
 		st.Shaper.Profiles = append(st.Shaper.Profiles, store.ProfileEntry{
-			CIDR:     cidr,
-			Down:     down,
-			Up:       up,
-			Mask:     mask,
-			Device:   dev,
-			ID: store.NextProfileID(st.Shaper.Profiles),
+			CIDR:   cidr,
+			Down:   down,
+			Up:     up,
+			Mask:   mask,
+			Device: dev,
+			ID:     store.NextProfileID(st.Shaper.Profiles),
 		})
 	}
 }

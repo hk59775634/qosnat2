@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"net/http"
 	"strings"
 
@@ -50,9 +49,9 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "group not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		st := srv.store.Get().VPN.OCServ
 		if err := store.NormalizeOCServ(&st); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -169,9 +168,9 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		st = srv.store.Get().VPN.OCServ
 		if err := store.NormalizeOCServ(&st); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -218,9 +217,9 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		full := srv.store.Get()
 		if err := ocserv.WriteConf(full.VPN.OCServ, full.Certificates); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -236,9 +235,9 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 
 type ocservVhostPublic struct {
 	store.OCServVhost
-	RadiusSecretSet     bool                    `json:"radius_secret_set"`
-	CamouflageSecretSet bool                    `json:"camouflage_secret_set"`
-	Connection          ocserv.ConnectionInfo   `json:"connection,omitempty"`
+	RadiusSecretSet     bool                  `json:"radius_secret_set"`
+	CamouflageSecretSet bool                  `json:"camouflage_secret_set"`
+	Connection          ocserv.ConnectionInfo `json:"connection,omitempty"`
 }
 
 func ocservPublicVhosts(vhosts []store.OCServVhost, global store.OCServState, managed []store.ManagedCertificate) []ocservVhostPublic {
@@ -370,9 +369,9 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 				Group:    body.Group,
 			})
 		})
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
@@ -424,9 +423,9 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
@@ -461,9 +460,9 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {

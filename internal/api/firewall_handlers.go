@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -39,9 +38,9 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			_ = srv.store.Update(func(s *store.State) {
 				s.Firewall.FilterRules = rules
 			})
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistState(w) {
+				return
+			}
 		}
 		aliases := st.Firewall.Aliases
 		if aliases == nil {
@@ -67,20 +66,20 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 		}
 		ifaces := store.BuildFirewallIfaceList(st, srv.env.DevLAN, srv.env.DevWAN, sysDevs)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"rules":      rules,
-			"nft_lines":  firewallNftLines(rules),
-			"dev_lan":    srv.env.DevLAN,
-			"dev_wan":    srv.env.DevWAN,
-			"admin_port": srv.env.AdminPort,
-			"interfaces": ifaces,
+			"rules":       rules,
+			"nft_lines":   firewallNftLines(rules),
+			"dev_lan":     srv.env.DevLAN,
+			"dev_wan":     srv.env.DevWAN,
+			"admin_port":  srv.env.AdminPort,
+			"interfaces":  ifaces,
 			"alias_names": aliasNames,
 			"vpn": map[string]any{
-				"ocserv_enabled":     vp.OCServEnabled,
-				"ocserv_tcp_port":    vp.OCServTCP,
-				"ocserv_udp_port":    vp.OCServUDP,
-				"wireguard_enabled":  wgEnabled,
-				"wireguard_port":     wgPrimary,
-				"wireguard_ports":    vp.WGPorts,
+				"ocserv_enabled":    vp.OCServEnabled,
+				"ocserv_tcp_port":   vp.OCServTCP,
+				"ocserv_udp_port":   vp.OCServUDP,
+				"wireguard_enabled": wgEnabled,
+				"wireguard_port":    wgPrimary,
+				"wireguard_ports":   vp.WGPorts,
 			},
 			"acme_temp_allow_http01": st.System.AcmeTempAllowHTTP01,
 			"rendered":               srv.firewallRendered(),

@@ -63,32 +63,10 @@ func (srv *Server) handleSystemStateImport(w http.ResponseWriter, r *http.Reques
 		writeAPIError(w, http.StatusBadRequest, "VALID_BAD_STATE", "invalid state json: "+err.Error())
 		return
 	}
-	if strings.TrimSpace(imported.AdminUser) == "" {
-		imported.AdminUser = st.AdminUser
-	}
-	if imported.AdminPassHash == "" {
-		imported.AdminPassHash = st.AdminPassHash
-	}
-	srv.store.ReplaceState(imported)
-	if err := srv.store.Save(); err != nil {
-		writeSaveError(w, err)
-		return
-	}
-	warn := srv.tryReloadNft()
-	if imported.Nat.Nat64Enabled || imported.Nat.Nptv6Enabled {
-		if err := srv.applyNatStack(); err != nil {
-			warn = strings.TrimSpace(warn + "; nat stack: " + err.Error())
-		}
-	}
-	srv.auditLog(r, "system.state.import", srv.store.Path())
-	resp := map[string]any{"ok": true}
-	if warn != "" {
-		resp["warning"] = warn
-	}
-	writeJSON(w, http.StatusOK, resp)
+	srv.commitStateImport(w, r, imported, srv.store.Path())
 }
 
-// handleSystemStateImportFile accepts raw state.json upload (multipart or raw body) with password query/header.
+// handleSystemStateImportRaw accepts raw state.json upload with password query/header.
 func (srv *Server) handleSystemStateImportRaw(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -113,27 +91,5 @@ func (srv *Server) handleSystemStateImportRaw(w http.ResponseWriter, r *http.Req
 		writeAPIError(w, http.StatusBadRequest, "VALID_BAD_STATE", "invalid state json: "+err.Error())
 		return
 	}
-	if strings.TrimSpace(imported.AdminUser) == "" {
-		imported.AdminUser = st.AdminUser
-	}
-	if imported.AdminPassHash == "" {
-		imported.AdminPassHash = st.AdminPassHash
-	}
-	srv.store.ReplaceState(imported)
-	if err := srv.store.Save(); err != nil {
-		writeSaveError(w, err)
-		return
-	}
-	warn := srv.tryReloadNft()
-	if imported.Nat.Nat64Enabled || imported.Nat.Nptv6Enabled {
-		if err := srv.applyNatStack(); err != nil {
-			warn = strings.TrimSpace(warn + "; nat stack: " + err.Error())
-		}
-	}
-	srv.auditLog(r, "system.state.import", "raw")
-	resp := map[string]any{"ok": true}
-	if warn != "" {
-		resp["warning"] = warn
-	}
-	writeJSON(w, http.StatusOK, resp)
+	srv.commitStateImport(w, r, imported, "raw")
 }

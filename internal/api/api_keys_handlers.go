@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
@@ -68,9 +67,9 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Update(func(st *store.State) {
 			st.APIKeys = append(st.APIKeys, ak)
 		})
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.auditLog(r, "apikey.create", ak.Name)
 		writeJSON(w, http.StatusCreated, map[string]any{
 			"id": ak.ID, "name": ak.Name, "role": ak.Role, "key": key, "created_at": ak.CreatedAt,
@@ -97,9 +96,9 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.auditLog(r, "apikey.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:

@@ -38,14 +38,14 @@ func (srv *Server) handleStatsDashboard(w http.ResponseWriter, r *http.Request) 
 	mark := nft.AuditMarkIsolation()
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"phase":            "P5",
-		"active_hosts":     activeN,
-		"top_hosts":        top,
-		"lan":              lan,
-		"wan":              wan,
-		"traffic_history":  c.TrafficHistory(),
-		"system":           sys,
-		"ebpf":         srv.bpfStatus(),
+		"phase":           "P5",
+		"active_hosts":    activeN,
+		"top_hosts":       top,
+		"lan":             lan,
+		"wan":             wan,
+		"traffic_history": c.TrafficHistory(),
+		"system":          sys,
+		"ebpf":            srv.bpfStatus(),
 		"shaper": map[string]any{
 			"policy_cidr":      st.Shaper.PolicyCIDR,
 			"idle_timeout_sec": st.Shaper.IdleTimeoutSec,

@@ -1,5 +1,8 @@
 package api
 
+// Web Terminal intentionally runs with qosnatd privileges (typically root) for SSH-outage
+// emergency recovery only — keep disabled for routine administration.
+
 import (
 	"encoding/json"
 	"log"

@@ -41,9 +41,9 @@ func (srv *Server) handleWanForwardsGet(w http.ResponseWriter, r *http.Request) 
 		forwards = []store.WanPortForward{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"forwards":  forwards,
-		"dev_lan":   srv.env.DevLAN,
-		"dev_wan":   srv.env.DevWAN,
+		"forwards":   forwards,
+		"dev_lan":    srv.env.DevLAN,
+		"dev_wan":    srv.env.DevWAN,
 		"interfaces": ifaces,
 		"defaults": map[string]any{
 			"interface":     defIface,

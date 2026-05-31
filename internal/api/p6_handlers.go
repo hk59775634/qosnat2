@@ -32,9 +32,9 @@ func (srv *Server) handleCaptures(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, srv.captures().List())
 	case http.MethodPost:
 		var body struct {
-			Device     string `json:"device"`
-			Filter     string `json:"filter"`
-			DurationSec int   `json:"duration_sec"`
+			Device      string `json:"device"`
+			Filter      string `json:"filter"`
+			DurationSec int    `json:"duration_sec"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})

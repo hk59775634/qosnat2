@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -39,9 +39,9 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Update(func(st *store.State) {
 			st.Shaper.Tenants = append(st.Shaper.Tenants, body)
 		})
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.refreshShaperAfterChange()
 		srv.auditLog(r, "shaper.tenant.add", body.Name)
 		writeJSON(w, http.StatusOK, body)
@@ -89,9 +89,9 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		})
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.refreshShaperAfterChange()
 		srv.auditLog(r, "shaper.tenant.put", body.Name)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tenant": body})
@@ -117,9 +117,9 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "tenant not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.removeTenantProfiles(id)
 		srv.refreshShaperAfterChange()
 		srv.auditLog(r, "shaper.tenant.delete", id)
@@ -152,8 +152,8 @@ func (srv *Server) applyTenantProfiles(t store.TenantEntry, refreshEach bool) er
 			}
 		})
 		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			return fmt.Errorf("save tenant profile: %w", err)
+		}
 	}
 	return nil
 }
@@ -181,7 +181,5 @@ func (srv *Server) removeTenantProfiles(tenantID string) {
 			st.Shaper.Profiles = out
 		})
 	}
-	if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+	_ = srv.persistStateOrLog("remove tenant profiles")
 }

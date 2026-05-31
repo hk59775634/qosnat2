@@ -52,11 +52,11 @@ func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"dev_lan":          srv.env.DevLAN,
-		"dev_wan":          srv.env.DevWAN,
-		"netplan_path":     netif.NetplanConfigPathForAPI(),
-		"interfaces":       out,
-		"traffic_history":  c.TrafficHistory(),
+		"dev_lan":         srv.env.DevLAN,
+		"dev_wan":         srv.env.DevWAN,
+		"netplan_path":    netif.NetplanConfigPathForAPI(),
+		"interfaces":      out,
+		"traffic_history": c.TrafficHistory(),
 	})
 }
 
@@ -160,9 +160,9 @@ func (srv *Server) handleInterfacesRoles(w http.ResponseWriter, r *http.Request)
 	}
 	srv.auditLog(r, "iface.roles", body.DevWAN+","+body.DevLAN)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":        applyErr == "",
-		"dev_lan":   body.DevLAN,
-		"dev_wan":   body.DevWAN,
+		"ok":          applyErr == "",
+		"dev_lan":     body.DevLAN,
+		"dev_wan":     body.DevWAN,
 		"apply_error": applyErr,
 	})
 }

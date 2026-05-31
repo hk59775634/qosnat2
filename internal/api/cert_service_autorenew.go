@@ -31,9 +31,7 @@ func (srv *Server) rebindServiceCertID(oldID, newID string) {
 			}
 		}
 	})
-	if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+	_ = srv.persistStateOrLog("rebind service cert")
 }
 
 func (srv *Server) applyOCServCertAfterChange(certID string, switchedFrom string) {

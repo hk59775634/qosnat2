@@ -17,14 +17,14 @@ const warpConsumerOverridesPath = "/var/lib/cloudflare-warp/consumer_overrides.j
 
 // warpConsumerOverrides 将 WARP 设为 Include 分流，仅 Cloudflare CDN 网段走隧道（不劫持默认出口）。
 type warpConsumerOverrides struct {
-	OperationMode       string          `json:"operation_mode,omitempty"`
-	DisableAutoFallback *bool           `json:"disable_auto_fallback,omitempty"`
+	OperationMode       string           `json:"operation_mode,omitempty"`
+	DisableAutoFallback *bool            `json:"disable_auto_fallback,omitempty"`
 	SplitConfig         *warpSplitConfig `json:"split_config,omitempty"`
 }
 
 type warpSplitConfig struct {
-	Mode string              `json:"mode"`
-	IPs  []warpSplitIP       `json:"ips"`
+	Mode string        `json:"mode"`
+	IPs  []warpSplitIP `json:"ips"`
 }
 
 type warpSplitIP struct {

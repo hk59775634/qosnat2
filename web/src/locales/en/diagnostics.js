@@ -33,7 +33,7 @@ export default {
   terminal: {
     title: 'Web terminal',
     description: 'Browser shell on this host when SSH is unavailable',
-    hint: 'Runs with the same privileges as qosnatd (max 2 concurrent sessions). Use only on trusted networks.',
+    hint: 'Runs with the same privileges as qosnatd (root). For SSH-outage emergency only — not daily use.',
     dangerTitle: 'High risk',
     dangerBody: 'This terminal is equivalent to root shell access on the gateway. Enable only in System → General when needed.',
     disabled: 'Web Terminal is disabled. Enable it under System → General (not recommended for production).',

@@ -1,10 +1,10 @@
 package api
 
 import (
-	"log"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"sync"
@@ -140,8 +140,8 @@ func (srv *Server) checkAPIKey(r *http.Request) bool {
 					}
 				})
 				if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+					log.Printf("upgrade api key hash: save: %v", err)
+				}
 			}
 		}
 		return true

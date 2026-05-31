@@ -1751,17 +1751,27 @@ paths:
     get:
       tags: [system]
       summary: 导出完整 state.json
+      parameters:
+        - name: If-None-Match
+          in: header
+          schema: { type: string }
+          description: 上次 ETag；匹配时返回 304
       responses:
         '200':
+          headers:
+            ETag:
+              schema: { type: string }
           content:
             application/json:
               schema:
                 type: object
+        '304':
+          description: 未修改
 
   /api/v1/system/state/import:
     post:
       tags: [system]
-      summary: 导入 state（需 current_password）
+      summary: 导入 state（需 current_password；apply 失败自动回滚）
       requestBody:
         content:
           application/json:
@@ -1779,24 +1789,36 @@ paths:
                 type: object
                 properties:
                   ok: { type: boolean }
-                  warning: { type: string }
+        '500':
+          description: 导入或 dataplane apply 失败（state 已回滚）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/v1/system/state/import/raw:
-    post:
+    put:
       tags: [system]
-      summary: 导入原始 state JSON（需 current_password）
+      summary: 上传原始 state JSON（需 current_password 查询参数或 X-Current-Password）
+      parameters:
+        - name: current_password
+          in: query
+          schema: { type: string }
       requestBody:
         content:
           application/json:
             schema:
               type: object
-              required: [current_password]
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Ok'
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '500':
+          description: apply 失败，state 已回滚
 
   /api/v1/system/notifications:
     get:
@@ -1859,20 +1881,28 @@ paths:
   /api/v1/system/version/switch/verify:
     post:
       tags: [system]
-      summary: 校验目标版本包完整性
+      summary: 验证管理员密码以短时授权版本切换
       requestBody:
         content:
           application/json:
             schema:
               type: object
+              required: [current_password]
               properties:
-                tag: { type: string }
+                current_password: { type: string }
       responses:
         '200':
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  ok: { type: boolean }
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/v1/system/tls/acme:
     post:

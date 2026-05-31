@@ -24,10 +24,10 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 		}
 		resolved := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
 		writeJSON(w, http.StatusOK, map[string]any{
-			"egress_policies":            policies,
-			"wan_links":                  links,
-			"resolved":                   resolved,
-			"dev_wan":                    srv.env.DevWAN,
+			"egress_policies":           policies,
+			"wan_links":                 links,
+			"resolved":                  resolved,
+			"dev_wan":                   srv.env.DevWAN,
 			"cloudflare_cdn_cidrs_ipv4": store.CloudflareCDNCIDRsV4(),
 		})
 	case http.MethodPost:

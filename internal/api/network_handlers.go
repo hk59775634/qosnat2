@@ -20,8 +20,8 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 			vlans = []store.VLANIface{}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"vlans":        vlans,
-			"netplan_path": netif.NetplanConfigPathForAPI(),
+			"vlans":           vlans,
+			"netplan_path":    netif.NetplanConfigPathForAPI(),
 			"cloud_init_note": "基线网口可由 /etc/netplan/50-cloud-init.yaml 提供；本页变更写入 99-qosnat2.yaml",
 		})
 	case http.MethodPost:
@@ -176,9 +176,9 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			store.SyncWanRoutes(st)
 			store.SyncEgressRoutes(st)
 		})
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -224,9 +224,9 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "wan link not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -255,9 +255,9 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			store.SyncWanRoutes(st)
 			store.SyncEgressRoutes(st)
 		})
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -294,7 +294,5 @@ func (srv *Server) replayWanLinksOnBoot() {
 		store.SyncWanRoutes(st)
 		store.SyncEgressRoutes(st)
 	})
-	if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+	_ = srv.persistStateOrLog("replay wan links on boot")
 }

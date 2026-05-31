@@ -30,11 +30,11 @@ func (srv *Server) handleRoutesGet(w http.ResponseWriter, r *http.Request) {
 	live = route.MarkManaged(live, st.Routes)
 	managed := store.EnrichManagedRoutes(st.Routes, st)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"managed":  managed,
-		"live":     live,
-		"dev_lan":  srv.env.DevLAN,
-		"dev_wan":  srv.env.DevWAN,
-		"table":    254,
+		"managed": managed,
+		"live":    live,
+		"dev_lan": srv.env.DevLAN,
+		"dev_wan": srv.env.DevWAN,
+		"table":   254,
 	})
 }
 
@@ -56,8 +56,8 @@ func (srv *Server) handleRoutesPost(w http.ResponseWriter, r *http.Request) {
 	_ = srv.store.Update(func(st *store.State) {
 		st.Routes = append(st.Routes, entry)
 	})
-	if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
+	if !srv.persistState(w) {
+		return
 	}
 	st := srv.store.Get()
 	writeJSON(w, http.StatusOK, store.EnrichRouteEntry(entry, st))
@@ -180,9 +180,9 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = route.Delete(old)
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -238,13 +238,13 @@ func (srv *Server) normalizeRouteInput(body store.RouteEntry) (store.RouteEntry,
 
 type errDevice string
 
-func (e errDevice) Error() string { return "interface not found: " + string(e) }
+func (e errDevice) Error() string         { return "interface not found: " + string(e) }
 func errDeviceNotFound(name string) error { return errDevice(name) }
 
 type errGwDev struct{}
 
 func (errGwDev) Error() string { return "non-default route requires gateway or device" }
-func errNeedGwOrDev() error { return errGwDev{} }
+func errNeedGwOrDev() error    { return errGwDev{} }
 
 func (srv *Server) applyManagedRoutes() {
 	st := srv.store.Get()

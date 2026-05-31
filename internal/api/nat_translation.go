@@ -15,14 +15,27 @@ import (
 
 // applyNatStack nft + Jool + Unbound + dnsmasq（NAT64/NPTv6/DNS64 变更时）
 func (srv *Server) applyNatStack() error {
+	return srv.applyNatStackWithRollback(nil)
+}
+
+func (srv *Server) applyNatStackWithRollback(override *natStackSnapshot) error {
 	return srv.withNftApply(func() error {
-		return srv.applyNatStackLocked()
+		return srv.applyNatStackLocked(override)
 	})
 }
 
-func (srv *Server) applyNatStackLocked() (err error) {
+func (srv *Server) applyNatStackLocked(rollbackOverride *natStackSnapshot) (err error) {
 	start := time.Now()
 	rollback := srv.lastNatStackSnapshot()
+	if rollbackOverride != nil {
+		rollback = *rollbackOverride
+	} else if !srv.lastNatStackOK {
+		st0 := srv.store.Get()
+		rollback = natStackSnapshot{
+			Nat:  store.CloneNatState(st0.Nat),
+			DHCP: store.CloneDHCP(st0.DHCP),
+		}
+	}
 	var prog natStackProgress
 	defer func() {
 		if err != nil && (prog.nft || prog.jool || prog.unbound || prog.dnsmasq) {
@@ -128,11 +141,11 @@ func (srv *Server) recommendedDNS64(st store.State) map[string]any {
 		addr = "[" + host + "]"
 	}
 	return map[string]any{
-		"mode":     "local_unbound",
-		"address":  addr,
-		"port":     port,
-		"hint":     "Point VPN DNS to this gateway address (no dnsmasq/DHCP required).",
-		}
+		"mode":    "local_unbound",
+		"address": addr,
+		"port":    port,
+		"hint":    "Point VPN DNS to this gateway address (no dnsmasq/DHCP required).",
+	}
 }
 
 func (srv *Server) dnsmasqOpts(st store.State) dnsmasq.ApplyOpts {

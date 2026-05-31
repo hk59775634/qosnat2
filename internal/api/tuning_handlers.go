@@ -13,42 +13,42 @@ import (
 )
 
 type tuningResponse struct {
-	Catalog          []sysctl.Entry    `json:"catalog"`
-	AppCatalog       []tuning.AppParam `json:"app_catalog"`
-	Defaults         map[string]string `json:"defaults"`
-	Performance      map[string]string `json:"performance_preset"`
-	Saved            map[string]string `json:"saved"`
-	Effective        map[string]string `json:"effective"`
-	Live             map[string]string `json:"live"`
-	App              map[string]any    `json:"app"`
-	Recommended      tuning.Result     `json:"recommended"`
-	Hardware         tuning.HostInfo   `json:"hardware"`
-	HardwareTier     string            `json:"hardware_tier"`
-	HardwareTierLabel string           `json:"hardware_tier_label"`
-	PerfPreset       bool              `json:"perf_preset"`
-	TuningAutoApplied bool             `json:"tuning_auto_applied"`
-	TuningTier       string            `json:"tuning_tier"`
-	DevLAN           string            `json:"dev_lan"`
-	DevWAN           string            `json:"dev_wan"`
-	TxQueueLenLAN    int               `json:"txqueuelen_lan"`
-	TxQueueLenWAN    int               `json:"txqueuelen_wan"`
-	LiveTxQLenLAN    int               `json:"live_txqueuelen_lan"`
-	LiveTxQLenWAN    int               `json:"live_txqueuelen_wan"`
-	RpsLAN           bool              `json:"rps_lan"`
-	RpsWAN           bool              `json:"rps_wan"`
-	ConfPath         string            `json:"conf_path"`
+	Catalog           []sysctl.Entry    `json:"catalog"`
+	AppCatalog        []tuning.AppParam `json:"app_catalog"`
+	Defaults          map[string]string `json:"defaults"`
+	Performance       map[string]string `json:"performance_preset"`
+	Saved             map[string]string `json:"saved"`
+	Effective         map[string]string `json:"effective"`
+	Live              map[string]string `json:"live"`
+	App               map[string]any    `json:"app"`
+	Recommended       tuning.Result     `json:"recommended"`
+	Hardware          tuning.HostInfo   `json:"hardware"`
+	HardwareTier      string            `json:"hardware_tier"`
+	HardwareTierLabel string            `json:"hardware_tier_label"`
+	PerfPreset        bool              `json:"perf_preset"`
+	TuningAutoApplied bool              `json:"tuning_auto_applied"`
+	TuningTier        string            `json:"tuning_tier"`
+	DevLAN            string            `json:"dev_lan"`
+	DevWAN            string            `json:"dev_wan"`
+	TxQueueLenLAN     int               `json:"txqueuelen_lan"`
+	TxQueueLenWAN     int               `json:"txqueuelen_wan"`
+	LiveTxQLenLAN     int               `json:"live_txqueuelen_lan"`
+	LiveTxQLenWAN     int               `json:"live_txqueuelen_wan"`
+	RpsLAN            bool              `json:"rps_lan"`
+	RpsWAN            bool              `json:"rps_wan"`
+	ConfPath          string            `json:"conf_path"`
 }
 
 type tuningPutBody struct {
-	Sysctl              map[string]string `json:"sysctl"`
-	App                 map[string]any    `json:"app"`
-	PerfPreset          *bool             `json:"perf_preset"`
-	TxQueueLenLAN       *int              `json:"txqueuelen_lan"`
-	TxQueueLenWAN       *int              `json:"txqueuelen_wan"`
-	RpsLAN              *bool             `json:"rps_lan"`
-	RpsWAN              *bool             `json:"rps_wan"`
-	Apply               bool              `json:"apply"`
-	ApplyRecommended    bool              `json:"apply_recommended"`
+	Sysctl           map[string]string `json:"sysctl"`
+	App              map[string]any    `json:"app"`
+	PerfPreset       *bool             `json:"perf_preset"`
+	TxQueueLenLAN    *int              `json:"txqueuelen_lan"`
+	TxQueueLenWAN    *int              `json:"txqueuelen_wan"`
+	RpsLAN           *bool             `json:"rps_lan"`
+	RpsWAN           *bool             `json:"rps_wan"`
+	Apply            bool              `json:"apply"`
+	ApplyRecommended bool              `json:"apply_recommended"`
 }
 
 func (srv *Server) handleSystemTuning(w http.ResponseWriter, r *http.Request) {
@@ -69,9 +69,9 @@ func (srv *Server) getSystemTuning(w http.ResponseWriter, _ *http.Request) {
 			_ = srv.store.Update(func(st *store.State) {
 				tuning.AutoApplyOnSetup(st)
 			})
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistState(w) {
+				return
+			}
 		}
 	}
 	st := srv.store.Get()

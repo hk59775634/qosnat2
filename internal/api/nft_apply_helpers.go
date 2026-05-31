@@ -1,8 +1,8 @@
 package api
 
 import (
-	"log"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -89,9 +89,9 @@ func (srv *Server) reloadNftWithFilterRevert(backup []store.FilterRule) error {
 	return srv.withNftApply(func() error {
 		if err := srv.reloadNftLocked(); err != nil {
 			srv.setFilterRules(backup)
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistStateOrLog("revert filter rules") {
+				log.Printf("revert filter rules: save failed")
+			}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -105,9 +105,8 @@ func (srv *Server) reloadNftWithForwardRevert(backupFwd []store.WanPortForward, 
 			srv.setWanForwards(backupFwd)
 			srv.setFilterRules(backupRules)
 			srv.syncAutoFirewallRules()
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistStateOrLog("nft revert save") {
+			}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -119,9 +118,8 @@ func (srv *Server) reloadNftWithAliasRevert(backup []store.AliasSet) error {
 	return srv.withNftApply(func() error {
 		if err := srv.reloadNftLocked(); err != nil {
 			srv.setAliases(backup)
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistStateOrLog("nft revert save") {
+			}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -156,9 +154,8 @@ func (srv *Server) reloadNftWithNatRevert(backup store.NatState) error {
 	return srv.withNftApply(func() error {
 		if err := srv.reloadNftLocked(); err != nil {
 			srv.setNatState(backup)
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistStateOrLog("nft revert save") {
+			}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -170,9 +167,8 @@ func (srv *Server) reloadNftWithNatIPv4Revert(backup store.NatIPv4State) error {
 	return srv.withNftApply(func() error {
 		if err := srv.reloadNftLocked(); err != nil {
 			srv.setNatIPv4(backup)
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistStateOrLog("nft revert save") {
+			}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -197,9 +193,8 @@ func (srv *Server) reloadNftAfterEgressRevert(backupPolicies []store.EgressPolic
 	return srv.withNftApply(func() error {
 		if err := srv.applyEgressDataPlaneLocked(); err != nil {
 			srv.setEgressPolicies(backupPolicies)
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistStateOrLog("nft revert save") {
+			}
 			_ = srv.applyEgressDataPlaneLocked()
 			return err
 		}

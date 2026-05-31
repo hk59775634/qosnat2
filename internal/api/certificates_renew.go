@@ -20,7 +20,7 @@ func (srv *Server) updateCertificateByID(id string, fn func(*store.ManagedCertif
 		}
 	})
 	if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
+		log.Printf("update certificate %s: save: %v", id, err)
 	}
 }
 

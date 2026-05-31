@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/hk59775634/qosnat2/internal/shaper"
@@ -42,9 +41,9 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 				st.Shaper.FQQuantum = body.FQQuantum
 			}
 		})
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		if body.Apply && srv.setupComplete() {
 			st := srv.store.Get()
 			if err := shaper.SetupP0(shaper.Config{

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"fmt"
 	"net/http"
 	"strings"
@@ -28,20 +27,20 @@ func (srv *Server) handleWireGuardInstancesRoot(w http.ResponseWriter, r *http.R
 				iface = "wg0"
 			}
 			out = append(out, map[string]any{
-				"id":     inst.ID,
-				"name":   inst.Name,
-				"mode":   inst.Mode,
-				"enabled": inst.Enabled,
-				"interface": iface,
+				"id":          inst.ID,
+				"name":        inst.Name,
+				"mode":        inst.Mode,
+				"enabled":     inst.Enabled,
+				"interface":   iface,
 				"listen_port": inst.ListenPort,
-				"status": wg.ShowStatus(iface),
+				"status":      wg.ShowStatus(iface),
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"instances": out})
 	case http.MethodPost:
 		var body struct {
-			ID   string             `json:"id"`
-			Name string             `json:"name"`
+			ID   string              `json:"id"`
+			Name string              `json:"name"`
 			Mode store.WireGuardMode `json:"mode"`
 		}
 		if err := readJSON(r, &body); err != nil {
@@ -86,9 +85,9 @@ func (srv *Server) handleWireGuardInstancesRoot(w http.ResponseWriter, r *http.R
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": errStr})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -192,9 +191,9 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": errStr})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.setupWGShaper()
 		nftWarn := srv.tryReloadNft()
 		if nftWarn != "" {
@@ -226,9 +225,9 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 			writeJSON(w, code, map[string]string{"error": errStr})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.setupWGShaper()
 		nftWarn := srv.tryReloadNft()
 		if nftWarn != "" {
@@ -384,9 +383,9 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		srv.syncWGPeerRates()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
@@ -420,9 +419,9 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		if removed != nil {
 			srv.removeWGPeerShaper(instSnapshot, *removed)
 		}

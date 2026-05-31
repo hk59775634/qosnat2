@@ -18,7 +18,7 @@ var certAcmeMu sync.Mutex
 
 type certificatePublic struct {
 	store.ManagedCertificate
-	DaysUntilExpiry int            `json:"days_until_expiry,omitempty"`
+	DaysUntilExpiry int               `json:"days_until_expiry,omitempty"`
 	InUse           []store.CertUsage `json:"in_use,omitempty"`
 }
 
@@ -59,14 +59,14 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var body struct {
-			Type      string `json:"type"`
-			Name      string `json:"name"`
-			Domain    string `json:"domain"`
-			Email     string `json:"email"`
-			Staging   bool   `json:"staging"`
-			CertPEM   string `json:"cert_pem"`
-			KeyPEM    string `json:"key_pem"`
-			CaPEM     string `json:"ca_pem"`
+			Type    string `json:"type"`
+			Name    string `json:"name"`
+			Domain  string `json:"domain"`
+			Email   string `json:"email"`
+			Staging bool   `json:"staging"`
+			CertPEM string `json:"cert_pem"`
+			KeyPEM  string `json:"key_pem"`
+			CaPEM   string `json:"ca_pem"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
@@ -125,9 +125,9 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Update(func(s *store.State) {
 			s.Certificates = append(s.Certificates, mc)
 		})
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		st := srv.store.Get()
 		srv.auditLog(r, "system.certificates.create", mc.ID)
 		pub := certificatePublic{ManagedCertificate: mc}
@@ -164,9 +164,9 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "certificate not found"})
 			return
 		}
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		if !srv.persistState(w) {
+			return
+		}
 		_ = certs.RemoveDir(id)
 		srv.auditLog(r, "system.certificates.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -236,9 +236,7 @@ func (srv *Server) migrateCertificateAutoRenew() {
 		}
 	})
 	if changed {
-		if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+		_ = srv.persistStateOrLog("migrate managed certs defaults")
 	}
 }
 

@@ -85,11 +85,11 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 		env.SessionFile = "/var/lib/qosnat2/sessions.json"
 	}
 	s := &Server{
-		env:      env,
-		store:    st,
-		bpf:      bpfM,
-		sessions: newSessionStore(env.SessionFile),
-		hosts:    shaper.NewHostShaper(shaperDevLAN(env.DevLAN), st.Get().Shaper.Leaf),
+		env:                 env,
+		store:               st,
+		bpf:                 bpfM,
+		sessions:            newSessionStore(env.SessionFile),
+		hosts:               shaper.NewHostShaper(shaperDevLAN(env.DevLAN), st.Get().Shaper.Leaf),
 		loginLim:            newLoginLimiter(),
 		versionSwitchGrants: newVersionSwitchGrants(),
 		terminalGrants:      newVersionSwitchGrants(),

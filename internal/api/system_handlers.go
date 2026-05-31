@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"fmt"
 	"net/http"
 	"os"
@@ -20,33 +19,33 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 		srv.ensureSystemTLSLinkedToLibrary()
 		st := srv.store.Get()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"hostname":       st.System.Hostname,
-			"display_name": st.System.DisplayName,
-			"admin_user":     st.AdminUser,
-			"admin_port":     srv.env.AdminPort,
-			"dev_lan":        srv.env.DevLAN,
-			"dev_wan":        srv.env.DevWAN,
-			"setup_complete": st.SetupComplete,
+			"hostname":                     st.System.Hostname,
+			"display_name":                 st.System.DisplayName,
+			"admin_user":                   st.AdminUser,
+			"admin_port":                   srv.env.AdminPort,
+			"dev_lan":                      srv.env.DevLAN,
+			"dev_wan":                      srv.env.DevWAN,
+			"setup_complete":               st.SetupComplete,
 			"diagnostics_terminal_enabled": st.System.DiagnosticsTerminalEnabled,
-			"tls":            srv.tlsStatusWithAcme(),
+			"tls":                          srv.tlsStatusWithAcme(),
 		})
 	case http.MethodPut:
 		var body struct {
-			Hostname         string `json:"hostname"`
-			DisplayName      *string `json:"display_name"`
-			AdminPort        string `json:"admin_port"`
-			NewPassword      string `json:"new_password"`
-			CurrentPassword  string `json:"current_password"`
-			TLSEnabled       *bool  `json:"tls_enabled"`
-			TLSCert          string `json:"tls_cert"`
-			TLSKey           string `json:"tls_key"`
-			TLSDomain        string `json:"tls_domain"`
-			TLSAcmeEnabled   *bool  `json:"tls_acme_enabled"`
-			TLSAcmeEmail     string `json:"tls_acme_email"`
-			TLSAcmeStaging   *bool  `json:"tls_acme_staging"`
-			TLSAcmeRenewDays *int   `json:"tls_acme_renew_days"`
-			TLSManagedCertID *string `json:"tls_managed_cert_id"`
-			DiagnosticsTerminalEnabled *bool `json:"diagnostics_terminal_enabled"`
+			Hostname                   string  `json:"hostname"`
+			DisplayName                *string `json:"display_name"`
+			AdminPort                  string  `json:"admin_port"`
+			NewPassword                string  `json:"new_password"`
+			CurrentPassword            string  `json:"current_password"`
+			TLSEnabled                 *bool   `json:"tls_enabled"`
+			TLSCert                    string  `json:"tls_cert"`
+			TLSKey                     string  `json:"tls_key"`
+			TLSDomain                  string  `json:"tls_domain"`
+			TLSAcmeEnabled             *bool   `json:"tls_acme_enabled"`
+			TLSAcmeEmail               string  `json:"tls_acme_email"`
+			TLSAcmeStaging             *bool   `json:"tls_acme_staging"`
+			TLSAcmeRenewDays           *int    `json:"tls_acme_renew_days"`
+			TLSManagedCertID           *string `json:"tls_managed_cert_id"`
+			DiagnosticsTerminalEnabled *bool   `json:"diagnostics_terminal_enabled"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
@@ -89,9 +88,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 					s.System.TLSAcmeRenewDays = *body.TLSAcmeRenewDays
 				}
 			})
-			if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+			if !srv.persistState(w) {
+				return
+			}
 		}
 		if acmeTouched && !tlsModeTouched {
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tls": srv.tlsStatusWithAcme()})
@@ -113,9 +112,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 						s.System.TLSManagedCertID = ""
 						s.System.TLSEnabled = false
 					})
-					if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+					if !srv.persistState(w) {
+						return
+					}
 					writeJSON(w, http.StatusOK, map[string]any{
 						"ok":      true,
 						"warning": "已切换为 HTTP 监听（未重启 qosnatd）。请使用 http:// 访问。",
@@ -137,9 +136,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				_ = srv.store.Update(func(s *store.State) { s.System.TLSManagedCertID = "" })
-				if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+				if !srv.persistState(w) {
+					return
+				}
 			}
 			useAcme := st.System.TLSAcmeEnabled
 			if body.TLSAcmeEnabled != nil {
@@ -156,9 +155,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				}
 				// ACME 模式：不在此粘贴证书，由「申请证书」触发
 				_ = srv.store.Update(func(s *store.State) { s.System.TLSEnabled = true })
-				if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+				if !srv.persistState(w) {
+					return
+				}
 				writeJSON(w, http.StatusOK, map[string]any{
 					"ok":      true,
 					"warning": "已保存 ACME 设置，请点击「申请证书」获取 Let's Encrypt 证书（需 80 端口公网可达）",
@@ -170,9 +169,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				cert := strings.TrimSpace(body.TLSCert)
 				key := strings.TrimSpace(body.TLSKey)
 				_ = srv.store.Update(func(s *store.State) { s.System.TLSAcmeEnabled = false })
-				if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
+				if !srv.persistState(w) {
+					return
+				}
 				if _, applyErr := srv.applyTLS(true, cert, key); applyErr != nil {
 					writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
 					return
