@@ -174,11 +174,46 @@ build_install() {
 }
 
 install_systemd_from_source() {
-  if [[ -f "${BUILD_DIR}/ocserv/doc/systemd/ocserv.service" ]]; then
-    sed "s|/usr/sbin/ocserv|${OCSERV_BIN}|g; s|/etc/ocserv|${OCSERV_SYSCONFDIR}|g" \
-      "${BUILD_DIR}/ocserv/doc/systemd/ocserv.service" > /etc/systemd/system/ocserv.service
-    systemctl daemon-reload
+  local src=""
+  local candidates=(
+    "${BUILD_DIR}/ocserv/doc/systemd/standalone/ocserv.service"
+    "${BUILD_DIR}/ocserv/doc/systemd/ocserv.service"
+    "${BUILD_DIR}/ocserv/doc/systemd/socket-activated/ocserv.service"
+  )
+  for c in "${candidates[@]}"; do
+    if [[ -f "${c}" ]]; then
+      src="${c}"
+      break
+    fi
+  done
+  if [[ -n "${src}" ]]; then
+    log "安装 systemd 单元（来自 ${src}）..."
+    sed "s|/usr/sbin/ocserv|${OCSERV_BIN}|g; s|/usr/local/sbin/ocserv|${OCSERV_BIN}|g; s|/etc/ocserv|${OCSERV_SYSCONFDIR}|g" \
+      "${src}" > /etc/systemd/system/ocserv.service
+  else
+    warn "未找到上游 systemd 模板，写入内置 ocserv.service"
+    write_builtin_ocserv_unit
   fi
+  systemctl daemon-reload
+}
+
+write_builtin_ocserv_unit() {
+  cat > /etc/systemd/system/ocserv.service <<EOF
+[Unit]
+Description=OpenConnect SSL VPN server
+Documentation=man:ocserv(8)
+After=network-online.target
+
+[Service]
+PrivateTmp=true
+PIDFile=/run/ocserv.pid
+Type=simple
+ExecStart=${OCSERV_BIN} --log-stderr --foreground --pid-file /run/ocserv.pid --config ${OCSERV_SYSCONFDIR}/ocserv.conf
+ExecReload=/bin/kill -HUP \$MAINPID
+
+[Install]
+WantedBy=multi-user.target
+EOF
 }
 
 seed_config() {

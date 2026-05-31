@@ -279,6 +279,9 @@ func Apply(o store.OCServState, managed []store.ManagedCertificate, up bool) (ap
 	if err := WriteConf(o, managed); err != nil {
 		return "", err
 	}
+	if err := EnsureSystemdUnit(); err != nil {
+		return "", err
+	}
 	var out []byte
 	if up {
 		out, err = exec.Command("systemctl", "enable", "ocserv").CombinedOutput()
@@ -319,6 +322,9 @@ func ServiceControl(action string) error {
 	st := InstallInfo()
 	if !st.Installed {
 		return fmt.Errorf("ocserv not installed")
+	}
+	if err := EnsureSystemdUnit(); err != nil {
+		return err
 	}
 	if action == "start" {
 		out, err := exec.Command("systemctl", "enable", "ocserv").CombinedOutput()
