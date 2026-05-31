@@ -1,17 +1,20 @@
 # qosnat2 Bug 专项报告
 
 **首轮日期**: 2026-05-30  
-**第二轮复验**: 2026-05-31 · `3f67d44` / `v2026053101`
+**第二轮复验**: 2026-05-31 · `v2026053101`  
+**第四轮复验**: 2026-05-31 · 迭代完成后 **`v2026053103`**
 
-| Bug | 首轮 | 复验 |
-|-----|------|------|
+| Bug | 首轮 | 第四轮 |
+|-----|------|--------|
 | BUG-001 flush | P0 OPEN | **FIXED** |
-| BUG-002 Terminal | P0 OPEN | **PARTIAL** |
+| BUG-002 Terminal | P0 OPEN | **ACCEPTED**（应急 root + grant） |
 | BUG-003 NAT revert | P1 OPEN | **FIXED** |
-| BUG-004 NatStack | P1 OPEN | **PARTIAL** |
+| BUG-004 NatStack | P1 OPEN | **FIXED**（rollback + 基线） |
 | BUG-005 nft race | P1 OPEN | **FIXED** |
 | BUG-006 atomic write | P2 OPEN | **FIXED** |
-| BUG-007+ | 见下文 | 部分 OPEN |
+| BUG-008 import | — | **FIXED**（`commitStateImport`） |
+| BUG-009 Save silent | P2 OPEN | **FIXED**（含 tuning PUT） |
+| BUG-010 Shaper wizard | — | **FIXED**（F-030） |
 
 **方法**: 静态代码审计 + 边界/并发/失败路径推演  
 **说明**: Redis/MySQL 非运行时组件，N/A

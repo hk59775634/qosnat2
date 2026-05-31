@@ -1,7 +1,17 @@
 # 审计修复追踪（第二轮复验 + 第三轮迭代）
 
 **更新日期**: 2026-05-31  
-**代码基准**: 迭代完成后待发布
+**代码基准**: 已发布 **`v2026053103`**
+
+---
+
+## 第五轮收尾（本次）
+
+| 项 | 状态 |
+|----|------|
+| tuning PUT 缺 Save | **FIXED** — `putSystemTuning` + `persistState` |
+| ACME 错误 envelope | **FIXED** — `renewErrorResponse` 含 `code` |
+| 审计文档同步 | **FIXED** — FINAL / BUG / API / PRODUCTION |
 
 ---
 
@@ -9,9 +19,9 @@
 
 | 状态 | 数量 |
 |------|------|
-| **FIXED / ACCEPTED** | 26+ |
-| **PARTIAL** | 2 |
-| **OPEN (路线图)** | 3 |
+| **FIXED / ACCEPTED** | 30+ |
+| **PARTIAL** | 0 |
+| **OPEN (路线图)** | 0 |
 
 ---
 
@@ -27,21 +37,26 @@
 
 ---
 
+## 第四轮迭代（本次）
+
+| ID | Item | 状态 |
+|----|------|------|
+| F-015/016 | error `code` envelope | **FIXED** — `writeAPIError` + helpers；handler 全量迁移 |
+| F-030 | Shaper wizard revert | **FIXED** — `captureShaperWizardBackup` / `revertShaperWizard` |
+| F-024 | Server 拆分 | **FIXED** — `server_boot.go` / `server_nft.go` |
+| F-031 | nft 规模化 | **FIXED** — PATCH 增量 `ReplaceFilterRuleByID`；`docs/NFT-SCALING.md` |
+
+---
+
 ## PARTIAL（剩余）
 
-| ID | Item |
-|----|------|
-| F-015/016 | error `code` 未全覆盖所有 handler |
-| F-030 | Shaper wizard reload 无 revert |
+_无_
 
 ---
 
 ## OPEN（路线图）
 
-| ID | Item |
-|----|------|
-| F-024 | Server 拆分 |
-| F-031 | nft 全表 reload 规模化 |
+_本轮计划项已全部落地；后续可按 HA/多节点等路线图另开项。_
 
 ---
 

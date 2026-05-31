@@ -48,11 +48,11 @@ qosnat2 设计为 **单机 Linux 路由器/NAT 网关**：
 
 | 问题 | 说明 |
 |------|------|
-| 全量 reload | 每次 `delete table inet qosnat` + 重载整表（**已非全局 flush ruleset**），延迟仍随规则线性增长 |
-| 无增量 update | 改一条规则仍重建全 ruleset |
+| 全量 reload | 每次 `delete table inet qosnat` + 重载整表，延迟仍随规则线性增长 |
+| 增量 update | **`QOSNAT_NFT_INCREMENTAL=1`** 时防火墙 forward/input 单条增删改可走 nft CLI 增量；失败回退全表 reload（见 `docs/NFT-SCALING.md`） |
 | 10 万用户相关规则 | 若每用户一条 filter，不可行；应使用 ipset/聚合 alias |
 
-**优化方向**: scoped flush、增量 nft、alias 聚合、减少 auto 规则膨胀。
+**优化方向**: alias 聚合、减少 auto 规则膨胀；NAT/排序等仍全表 apply。
 
 ### 3.2 tc / QoS 规模
 
@@ -121,7 +121,7 @@ qosnat2 设计为 **单机 Linux 路由器/NAT 网关**：
 
 | 项 | 内容 |
 |----|------|
-| P2-1 | nft 增量更新或 batch apply |
+| P2-1 | nft 增量更新 | **PARTIAL** — filter CRUD 增量（`QOSNAT_NFT_INCREMENTAL`）；NAT/排序仍全表 |
 | P2-2 | 规则/alias 数量监控与告警 |
 | P2-3 | metrics 导出（Prometheus）：nft reload 耗时、conntrack usage |
 | P2-4 | 读-only API replica（可选，仅读 state 副本） |
@@ -154,5 +154,5 @@ qosnat2 设计为 **单机 Linux 路由器/NAT 网关**：
 |------|------|
 | 能否单台支撑 10 万 VPN 并发？ | **不能**（现实预期：数千至万余取决于协议与硬件） |
 | 当前最适合场景？ | 单站点/单 POP 边缘网关，千级并发，全功能 NAT+QoS+VPN |
-| 最大生产风险？ | nft 全局 flush、Terminal、state 非原子写、apply 无事务 |
+| 最大生产风险？ | nft 全表 reload 规模（已 scoped delete + 部分增量）、Terminal 启用时 root |
 | 达标路径？ | 先 P0/P1 稳定性 → 压测定容量 → 多节点分流达 10 万 |

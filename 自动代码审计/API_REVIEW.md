@@ -1,9 +1,9 @@
 # qosnat2 API 设计审计报告
 
 **首轮日期**: 2026-05-30  
-**第二轮复验**: 2026-05-31 · `3f67d44` / `v2026053101`
+**第四轮复验**: 2026-05-31 · **`v2026053103`**
 
-**评分**: **8/10**（首轮 7/10）— grant/scope/ETag/CI 已补；error envelope 与 OpenAPI 细节仍待统一。
+**评分**: **9/10** — error envelope、import revert、OpenAPI CI 已统一；`http.Error` 用于部分 405 仍返回纯文本（低优先）。
 
 ---
 
@@ -11,19 +11,19 @@
 
 ### P1 — 高危
 
-| ID | 问题 | 位置 | 建议 |
+| ID | 问题 | 位置 | 状态 |
 |----|------|------|------|
-| API-1 | **写操作缺乏统一事务语义** | NAT/egress/shaper | **FIXED**（firewall/NAT/egress）；import **OPEN** |
-| API-2 | **破坏性操作无二次确认** | version/terminal | **FIXED**（grant 模式） |
+| API-1 | 写操作事务语义 | NAT/egress/import | **FIXED** |
+| API-2 | 破坏性操作二次确认 | version/terminal | **FIXED** |
 
 ### P2 — 中危
 
-| ID | 问题 | 位置 | 建议 |
+| ID | 问题 | 位置 | 状态 |
 |----|------|------|------|
-| API-3 | **HTTP 状态码不一致** | 部分校验失败用 400，部分用 500；别名占用 409（良好） | 文档化状态码矩阵并统一 handler |
-| API-4 | **错误体格式不统一** | 多数 handler | **PARTIAL** — `writeAPIError` ~10 处 |
-| API-9 | OpenAPI 与实现漂移 | openapi.yaml | **PARTIAL** — CI 路由 OK；spec 细节漂移 |
-| API-10 | 缺少 `ETag` | state export | **FIXED** — `If-None-Match` → 304 |
+| API-3 | HTTP 状态码矩阵 | 各 handler | 文档化（`docs/API-ZH.md`） |
+| API-4 | 错误体 envelope | `api_response.go` | **FIXED** |
+| API-9 | OpenAPI 漂移 | openapi.yaml | **FIXED**（路由 CI + 关键 path 同步） |
+| API-10 | ETag | state export | **FIXED** |
 
 ---
 
