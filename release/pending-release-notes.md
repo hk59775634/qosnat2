@@ -5,16 +5,15 @@
 
 ## 概要
 
-WARP License Key 任意状态可编辑、独立保存，断开重连后生效
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- `PUT /api/v1/network/warp/license` 持久化 WARP+ License Key（不立即调用 warp-cli）
+- （无）
 
 ## 优化
 
-- License Key 输入框在 WARP 已连接时也可显示与编辑
-- 启用 WARP 前若输入框有未保存内容会提示先保存
+- （无）
 
 ## 修复
 
@@ -22,8 +21,8 @@ WARP License Key 任意状态可编辑、独立保存，断开重连后生效
 
 ## 删除
 
-- 连接 WARP 接口不再接受 `license_key` 参数（改由独立保存接口）
+- （无）
 
 ## 其他
 
-- OpenAPI 更新 WARP license 与 connect 说明
+- （无）
