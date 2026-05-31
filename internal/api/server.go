@@ -63,6 +63,10 @@ type Server struct {
 	httpListen           *httpListener
 	ocservRestartHints   []string
 	ocservRestartHintsMu sync.Mutex
+	nftApplyMu           sync.Mutex
+	natStackStatusMu     sync.RWMutex
+	natStackStatus       map[string]any
+	dataplaneMetrics     dataplaneMetrics
 }
 
 func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
@@ -132,12 +136,17 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/shaper/active", srv.requireAuth(srv.handleShaperActive))
 
 	m.HandleFunc("/api/v1/stats/dashboard", srv.requireAuth(srv.handleStatsDashboard))
+	m.HandleFunc("/api/v1/metrics/ops", srv.requireAuth(srv.handleMetricsOps))
+	m.HandleFunc("/api/v1/metrics/prometheus", srv.requireAuth(srv.handleMetricsPrometheus))
 	m.HandleFunc("/api/v1/ebpf/maps", srv.requireAuth(srv.handleEbpfMaps))
 	m.HandleFunc("/api/v1/ebpf/programs", srv.requireAuth(srv.handleEbpfPrograms))
 	m.HandleFunc("/api/v1/ebpf/reload", srv.requireAuth(srv.handleEbpfReload))
 	m.HandleFunc("/api/v1/system/mark-policy", srv.requireAuth(srv.handleMarkPolicy))
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
+	m.HandleFunc("/api/v1/system/state/export", srv.requireAuth(srv.handleSystemStateExport))
+	m.HandleFunc("/api/v1/system/state/import", srv.requireAuth(srv.handleSystemStateImport))
+	m.HandleFunc("/api/v1/system/state/import/raw", srv.requireAuth(srv.handleSystemStateImportRaw))
 	m.HandleFunc("/api/v1/system/version/switch/verify", srv.requireAuth(srv.handleSystemVersionSwitchVerify))
 	m.HandleFunc("/api/v1/system/version/switch/status", srv.requireAuth(srv.handleSystemVersionSwitchStatus))
 	m.HandleFunc("/api/v1/system/version/switch", srv.requireAuth(srv.handleSystemVersionSwitch))
@@ -344,16 +353,33 @@ func (srv *Server) tryReloadNft() string {
 	return ""
 }
 
-func (srv *Server) reloadNft() error {
-	st := srv.store.Get()
-	if err := nft.Apply(srv.nftCfg(), st); err != nil {
-		return err
-	}
-	srv.persistAutoFirewallRules()
+func (srv *Server) reconcileWarpAfterNft() {
 	warpnetns.ReconcileHostNAT()
 	if warpnetns.IsConnected() {
 		_ = warpnetns.ReconcileAfterWanLink()
 	}
+}
+
+func (srv *Server) withNftApply(fn func() error) error {
+	srv.nftApplyMu.Lock()
+	defer srv.nftApplyMu.Unlock()
+	return fn()
+}
+
+func (srv *Server) reloadNft() error {
+	return srv.withNftApply(srv.reloadNftLocked)
+}
+
+func (srv *Server) reloadNftLocked() error {
+	start := time.Now()
+	st := srv.store.Get()
+	err := nft.Apply(srv.nftCfg(), st)
+	srv.dataplaneMetrics.recordNftReload(time.Since(start), err)
+	if err != nil {
+		return err
+	}
+	srv.persistAutoFirewallRules()
+	srv.reconcileWarpAfterNft()
 	return nil
 }
 
@@ -429,6 +455,7 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		resp["dev_wan"] = srv.env.DevWAN
 		resp["admin_port"] = srv.env.AdminPort
 	}
+	resp["diagnostics_terminal_enabled"] = st.System.DiagnosticsTerminalEnabled
 	writeJSON(w, http.StatusOK, resp)
 }
 

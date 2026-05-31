@@ -45,7 +45,7 @@ func (srv *Server) setAcmeTempAllowHTTP01(v bool) error {
 		s.System.AcmeTempAllowHTTP01 = v
 	})
 	_ = srv.store.Save()
-	// nft 重建会 flush ruleset，因此用 reload 保证规则变更立即生效。
+	// nft 重建会 delete table inet qosnat，因此用 reload 保证规则变更立即生效。
 	return srv.reloadNft()
 }
 

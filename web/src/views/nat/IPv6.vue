@@ -33,6 +33,10 @@ const joolMissing = computed(() => nat64Enabled.value && status.value?.jool_inst
 const unboundMissing = computed(
   () => nat64Enabled.value && dns64Mode.value === 'local_unbound' && status.value?.unbound_installed === false,
 )
+const stackApplyError = computed(() => {
+  const s = status.value?.stack_apply
+  return s?.last_error ? String(s.last_error) : ''
+})
 
 async function load() {
   msg.value = ''
@@ -149,6 +153,13 @@ onMounted(load)
   <div class="page-stack">
     <PageHeader :title="t('nat.ipv6.title')" :description="t('nat.ipv6.description')" :err="err" />
     <p v-if="msg" class="text-green-700 text-sm">{{ msg }}</p>
+    <div
+      v-if="stackApplyError"
+      class="rounded-lg border border-amber-300 bg-amber-50 text-amber-950 text-sm p-3"
+      role="alert"
+    >
+      {{ t('nat.ipv6.stackApplyFailed', { err: stackApplyError }) }}
+    </div>
 
     <div class="card p-4 space-y-4">
       <div class="flex flex-wrap items-center gap-3">

@@ -79,7 +79,7 @@ usage() {
   -h, --help          显示帮助
 
 说明:
-  - nft 将尝试删除 table inet qosnat；若不存在则执行 flush ruleset（与 deploy stop 一致）。
+  - nft 将尝试删除 table inet qosnat（不影响其他 nft 表）。
   - 不会卸载 apt 依赖（Go、clang、nodejs 等）；不会删除通过 install-ocserv.sh 安装的 ocserv。
   - 若曾启用 WireGuard/DHCP，请卸载后自行检查 wg0、dnsmasq 是否仍需运行。
 EOF
@@ -185,11 +185,7 @@ teardown_dataplane() {
 
   log "清理 nftables…"
   if command -v nft &>/dev/null; then
-    if nft list table inet qosnat &>/dev/null; then
-      nft delete table inet qosnat 2>/dev/null || nft flush ruleset 2>/dev/null || true
-    else
-      nft flush ruleset 2>/dev/null || true
-    fi
+    nft delete table inet qosnat 2>/dev/null || true
   fi
 
   if [[ -d "${BPF_PIN_DIR}" ]]; then

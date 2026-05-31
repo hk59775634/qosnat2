@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { setDisplayName } from '@/composables/useBranding'
-import PageHeader from '@/components/PageHeader.vue'
 import PageTabs from '@/components/PageTabs.vue'
 import CertSelect from '@/components/CertSelect.vue'
 
@@ -24,6 +23,7 @@ const form = ref({
   tls_acme_staging: false,
   tls_acme_renew_days: 30,
   tls_managed_cert_id: '',
+  diagnostics_terminal_enabled: false,
 })
 const err = ref('')
 const ok = ref('')
@@ -39,6 +39,9 @@ const versionSwitchPassword = ref('')
 const versionSwitchModalErr = ref('')
 const versionSwitchSubmitting = ref(false)
 const versionSwitchPasswordRef = ref(null)
+const importFile = ref(null)
+const importConfirm = ref(false)
+const backupBusy = ref(false)
 
 const activeTab = ref('basic')
 const generalTabs = computed(() => [
@@ -96,6 +99,7 @@ async function load() {
   const tlsCfg = cfg.value.tls || {}
   form.value.hostname = cfg.value.hostname || ''
   form.value.display_name = cfg.value.display_name || ''
+  form.value.diagnostics_terminal_enabled = cfg.value.diagnostics_terminal_enabled ?? false
   form.value.admin_port = cfg.value.admin_port || ''
   form.value.tls_enabled = tlsCfg.tls_enabled ?? false
   form.value.tls_domain = tlsCfg.domain || ''
@@ -165,6 +169,7 @@ function buildPutBody() {
   return {
     hostname: form.value.hostname,
     display_name: form.value.display_name,
+    diagnostics_terminal_enabled: form.value.diagnostics_terminal_enabled,
     admin_port: form.value.admin_port || undefined,
     new_password: form.value.new_password || undefined,
     current_password: form.value.current_password || undefined,
@@ -225,6 +230,77 @@ async function save() {
     await load()
   } catch (e) {
     err.value = e.data?.error || e.message
+  }
+}
+
+async function exportState() {
+  err.value = ''
+  ok.value = ''
+  backupBusy.value = true
+  try {
+    const res = await fetch(api.system.state.exportUrl(), { credentials: 'include' })
+    if (!res.ok) {
+      let msg = res.statusText
+      try {
+        const j = await res.json()
+        msg = j.error || msg
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg)
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `qosnat2-state-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    ok.value = t('system.general.stateExported')
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    backupBusy.value = false
+  }
+}
+
+async function importState() {
+  err.value = ''
+  ok.value = ''
+  warn.value = ''
+  if (!importConfirm.value) {
+    err.value = t('system.general.importNeedConfirm')
+    return
+  }
+  if (!form.value.current_password) {
+    err.value = t('system.general.importNeedPassword')
+    return
+  }
+  const file = importFile.value?.files?.[0]
+  if (!file) {
+    err.value = t('system.general.importNeedFile')
+    return
+  }
+  backupBusy.value = true
+  try {
+    const text = await file.text()
+    const state = JSON.parse(text)
+    const res = await api.system.state.import({
+      current_password: form.value.current_password,
+      state,
+    })
+    ok.value = t('system.general.stateImported')
+    if (res.warning) warn.value = res.warning
+    form.value.current_password = ''
+    importConfirm.value = false
+    if (importFile.value) importFile.value.value = ''
+    await load()
+  } catch (e) {
+    err.value = e.data?.error || e.message
+  } finally {
+    backupBusy.value = false
   }
 }
 
@@ -391,6 +467,34 @@ onUnmounted(stopVersionSwitchPoll)
         <div>
           <label class="text-xs text-slate-500">{{ t('system.general.currentPassword') }}</label>
           <input v-model="form.current_password" type="password" class="input-field mt-1" autocomplete="current-password" />
+        </div>
+        <div class="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+          <label class="flex items-start gap-2 text-sm text-red-900 cursor-pointer">
+            <input v-model="form.diagnostics_terminal_enabled" type="checkbox" class="mt-1" />
+            <span>
+              <span class="font-medium">{{ t('system.general.terminalEnable') }}</span>
+              <span class="block text-xs text-red-800 mt-1">{{ t('system.general.terminalEnableHint') }}</span>
+            </span>
+          </label>
+        </div>
+        <div class="border-t border-slate-200 pt-4 space-y-3">
+          <h4 class="text-sm font-semibold text-slate-800">{{ t('system.general.backupSection') }}</h4>
+          <p class="text-xs text-slate-500">{{ t('system.general.backupHint') }}</p>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-secondary text-sm" :disabled="backupBusy" @click="exportState">
+              {{ t('system.general.exportState') }}
+            </button>
+          </div>
+          <div class="space-y-2">
+            <input ref="importFile" type="file" accept="application/json,.json" class="text-sm" />
+            <label class="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+              <input v-model="importConfirm" type="checkbox" class="mt-1" />
+              <span>{{ t('system.general.importConfirm') }}</span>
+            </label>
+            <button type="button" class="btn-secondary text-sm" :disabled="backupBusy" @click="importState">
+              {{ t('system.general.importState') }}
+            </button>
+          </div>
         </div>
       </section>
 

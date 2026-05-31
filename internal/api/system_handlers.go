@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -25,6 +26,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			"dev_lan":        srv.env.DevLAN,
 			"dev_wan":        srv.env.DevWAN,
 			"setup_complete": st.SetupComplete,
+			"diagnostics_terminal_enabled": st.System.DiagnosticsTerminalEnabled,
 			"tls":            srv.tlsStatusWithAcme(),
 		})
 	case http.MethodPut:
@@ -43,6 +45,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			TLSAcmeStaging   *bool  `json:"tls_acme_staging"`
 			TLSAcmeRenewDays *int   `json:"tls_acme_renew_days"`
 			TLSManagedCertID *string `json:"tls_managed_cert_id"`
+			DiagnosticsTerminalEnabled *bool `json:"diagnostics_terminal_enabled"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
@@ -256,7 +259,16 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			})
 			srv.auditLog(r, "system.display_name", store.EffectiveDisplayName(dn))
 		}
-		_ = srv.store.Save()
+		if body.DiagnosticsTerminalEnabled != nil {
+			_ = srv.store.Update(func(st *store.State) {
+				st.System.DiagnosticsTerminalEnabled = *body.DiagnosticsTerminalEnabled
+			})
+			srv.auditLog(r, "system.diagnostics_terminal", fmt.Sprintf("enabled=%v", *body.DiagnosticsTerminalEnabled))
+		}
+		if err := srv.store.Save(); err != nil {
+			writeSaveError(w, err)
+			return
+		}
 		resp := map[string]any{"ok": true, "tls": srv.tlsStatusWithAcme(), "admin_port": srv.env.AdminPort}
 		if portWarn != "" {
 			resp["warning"] = portWarn

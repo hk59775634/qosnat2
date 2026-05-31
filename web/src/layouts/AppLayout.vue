@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
@@ -8,6 +8,7 @@ import GitHubProjectLink from '@/components/GitHubProjectLink.vue'
 import NotificationTray from '@/components/NotificationTray.vue'
 import { displayName } from '@/composables/useBranding'
 import { appVersionLabel } from '@/composables/useAppVersion'
+import { applyAlert, clearApplyAlert } from '@/composables/useApplyAlert'
 
 const pageWrapClass = computed(() => {
   if (isApiDocs.value) return ''
@@ -23,6 +24,16 @@ const NAV_GROUPS_KEY = 'qosnat2.nav.groups'
 
 const mobileOpen = ref(false)
 const sidebarCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === '1')
+const terminalEnabled = ref(false)
+
+onMounted(async () => {
+  try {
+    const h = await api.health()
+    terminalEnabled.value = !!h.diagnostics_terminal_enabled
+  } catch {
+    terminalEnabled.value = false
+  }
+})
 
 const isApiDocs = computed(() => route.name === 'docs-api')
 
@@ -75,7 +86,9 @@ const menu = computed(() => [
       { path: '/status/mark', label: t('nav.markIsolation') },
       { path: '/diagnostics/conntrack', label: t('nav.conntrack') },
       { path: '/diagnostics/capture', label: t('nav.capture') },
-      { path: '/diagnostics/terminal', label: t('nav.terminal') },
+      ...(terminalEnabled.value
+        ? [{ path: '/diagnostics/terminal', label: t('nav.terminal') }]
+        : []),
     ],
   },
   {
@@ -261,6 +274,17 @@ const groupShort = computed(() => ({
         <span class="text-blue-200 ml-auto">{{ t('common.apiFirstControl') }}</span>
       </div>
     </header>
+
+    <div
+      v-if="applyAlert && !isApiDocs"
+      class="bg-amber-100 border-b border-amber-300 text-amber-950 px-4 py-2 text-sm flex items-start gap-3 shrink-0"
+      role="alert"
+    >
+      <span class="flex-1">{{ applyAlert }}</span>
+      <button type="button" class="text-amber-900 underline text-xs shrink-0" @click="clearApplyAlert">
+        {{ t('common.dismiss') }}
+      </button>
+    </div>
 
     <div class="flex flex-1 min-h-0">
       <aside

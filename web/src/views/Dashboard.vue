@@ -13,6 +13,7 @@ import TrafficSparkline from '@/components/TrafficSparkline.vue'
 const { t } = useI18n()
 const data = ref(null)
 const health = ref(null)
+const ops = ref(null)
 const dhcp = ref(null)
 const wg = ref(null)
 const err = ref('')
@@ -41,7 +42,7 @@ const memColor = computed(() => {
   return 'blue'
 })
 
-const MAIN_WIDGETS = ['system', 'network', 'services', 'qos']
+const MAIN_WIDGETS = ['system', 'network', 'services', 'dataplane', 'qos']
 const BOTTOM_WIDGETS = ['quick', 'top_hosts']
 const { order: mainOrder, moveUp: mainUp, moveDown: mainDown } = useWidgetOrder(
   MAIN_WIDGETS,
@@ -80,11 +81,21 @@ function canDownBottom(id) {
   return i >= 0 && i < bottomOrder.value.length - 1
 }
 
+function formatMetricTime(iso) {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
+}
+
 async function load() {
   try {
-    const [dash, h, dhcpRes, list] = await Promise.all([
+    const [dash, h, opsRes, dhcpRes, list] = await Promise.all([
       api.dashboard(),
       api.health(),
+      api.metrics.ops().catch(() => null),
       api.get('/api/v1/dhcp').catch(() => null),
       api.get('/api/v1/vpn/wireguard/instances').catch(() => null),
     ])
@@ -97,6 +108,7 @@ async function load() {
     }
     data.value = dash
     health.value = h
+    ops.value = opsRes
     dhcp.value = dhcpRes
     wg.value = wgRes
     err.value = ''
@@ -233,6 +245,50 @@ onUnmounted(() => clearInterval(timer))
           :ok="data?.mark_policy?.rules_ok"
           :detail="data?.mark_policy?.rules_ok ? t('dashboard.nftOk') : t('dashboard.nftCheck')"
         />
+      </DashboardWidget>
+
+      <DashboardWidget
+        v-else-if="wid === 'dataplane'"
+        id="dataplane"
+        :title="t('dashboard.dataplaneOps')"
+        reorderable
+        :can-move-up="canUpMain('dataplane')"
+        :can-move-down="canDownMain('dataplane')"
+        @move-up="mainUp('dataplane')"
+        @move-down="mainDown('dataplane')"
+      >
+        <dl class="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+          <dt class="text-slate-500">{{ t('dashboard.nftReloadTotal') }}</dt>
+          <dd class="font-mono text-right">{{ ops?.nft_reload?.total ?? '—' }}</dd>
+          <dt class="text-slate-500">{{ t('dashboard.nftReloadLast') }}</dt>
+          <dd class="font-mono text-right">
+            {{ ops?.nft_reload?.last_ms != null ? `${ops.nft_reload.last_ms} ms` : '—' }}
+          </dd>
+          <dt class="text-slate-500">{{ t('dashboard.natStackTotal') }}</dt>
+          <dd class="font-mono text-right">{{ ops?.nat_stack_apply?.total ?? '—' }}</dd>
+          <dt class="text-slate-500">{{ t('dashboard.natStackLast') }}</dt>
+          <dd class="font-mono text-right">
+            {{ ops?.nat_stack_apply?.last_ms != null ? `${ops.nat_stack_apply.last_ms} ms` : '—' }}
+          </dd>
+        </dl>
+        <p v-if="ops?.nft_reload?.last_at" class="text-xs text-slate-400 mt-2">
+          {{ t('dashboard.lastNftReload') }} {{ formatMetricTime(ops.nft_reload.last_at) }}
+        </p>
+        <p
+          v-if="ops?.nft_reload?.last_error"
+          class="text-xs text-red-600 mt-2 break-words"
+        >
+          nft: {{ ops.nft_reload.last_error }}
+        </p>
+        <p
+          v-if="ops?.nat_stack_apply?.last_error"
+          class="text-xs text-red-600 mt-1 break-words"
+        >
+          NAT: {{ ops.nat_stack_apply.last_error }}
+        </p>
+        <p v-if="ops?.conntrack_max" class="text-xs text-slate-500 mt-2">
+          conntrack {{ ops.conntrack_count ?? '—' }} / {{ ops.conntrack_max }}
+        </p>
       </DashboardWidget>
 
       <DashboardWidget

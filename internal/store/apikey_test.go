@@ -22,3 +22,16 @@ func TestAPIKeyBcryptAndLegacy(t *testing.T) {
 		t.Fatal("bcrypt should not be legacy")
 	}
 }
+
+func TestNormalizeAPIKeyRole(t *testing.T) {
+	cases := map[string]string{
+		"": "admin", "admin": "admin", "ADMIN": "admin",
+		"readonly": "readonly", "read-only": "readonly", "read_only": "readonly",
+		"firewall": "firewall", "firewall-only": "firewall",
+	}
+	for in, want := range cases {
+		if got := NormalizeAPIKeyRole(in); got != want {
+			t.Fatalf("%q => %q want %q", in, got, want)
+		}
+	}
+}

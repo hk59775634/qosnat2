@@ -20,6 +20,12 @@ func TestRenderSNATAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(body, "delete table inet qosnat") {
+		t.Fatal("expected scoped delete table, not global flush")
+	}
+	if strings.Contains(body, "flush ruleset") {
+		t.Fatal("must not flush entire ruleset")
+	}
 	for _, want := range []string{"table inet qosnat", "masquerade", "ens18", "fr-1", "drop"} {
 		if !strings.Contains(body, want) && want != "fr-1" {
 			if !strings.Contains(body, "drop") {
@@ -196,6 +202,9 @@ func TestRenderUIFirewallRulesNftSyntax(t *testing.T) {
 		}
 	}
 	if err := nftCheckRuleset(body); err != nil {
+		if strings.Contains(err.Error(), "skip:") {
+			t.Skip(strings.TrimPrefix(err.Error(), "skip: "))
+		}
 		t.Fatalf("nft -c: %v\n%s", err, body)
 	}
 }
@@ -221,7 +230,11 @@ func nftCheckRuleset(body string) error {
 	f.Close()
 	out, err := exec.Command("nft", "-c", "-f", f.Name()).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(out)), err)
+		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, "Operation not permitted") {
+			return fmt.Errorf("skip: nft check requires privileges")
+		}
+		return fmt.Errorf("%s: %w", msg, err)
 	}
 	return nil
 }

@@ -6,7 +6,7 @@ import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
 const aliases = ref([])
-const form = ref({ name: '', type: 'ipv4_addr', asn: 0, membersText: '', comment: '' })
+const form = ref({ name: '', type: 'ipv4_addr', membersText: '', comment: '' })
 const err = ref('')
 
 async function load() {
@@ -14,28 +14,46 @@ async function load() {
   aliases.value = d.aliases || []
 }
 
+function validateForm() {
+  if (!String(form.value.name || '').trim()) {
+    err.value = t('security.aliases.errName')
+    return false
+  }
+  const members = form.value.membersText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
+  if (!members.length) {
+    err.value = t('security.aliases.errMembers')
+    return false
+  }
+  return true
+}
+
 async function add() {
   err.value = ''
+  if (!validateForm()) return
   const members = form.value.membersText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
   try {
     await api.firewall.aliases.add({
-      name: form.value.name,
-      type: form.value.type,
-      asn: form.value.type === 'asn' ? Number(form.value.asn) : undefined,
+      name: form.value.name.trim(),
+      type: 'ipv4_addr',
       members,
       comment: form.value.comment,
     })
-    form.value = { name: '', type: 'ipv4_addr', asn: 0, membersText: '', comment: '' }
+    form.value = { name: '', type: 'ipv4_addr', membersText: '', comment: '' }
     await load()
   } catch (e) {
-    err.value = e.message
+    err.value = e?.data?.error || e?.message || String(e)
   }
 }
 
 async function remove(name) {
   if (!confirm(t('security.aliases.confirmDelete', { name }))) return
-  await api.firewall.aliases.del(name)
-  await load()
+  err.value = ''
+  try {
+    await api.firewall.aliases.del(name)
+    await load()
+  } catch (e) {
+    err.value = e?.status === 409 ? t('security.aliases.errInUse') : e?.data?.error || e?.message || String(e)
+  }
 }
 
 onMounted(load)
@@ -46,19 +64,7 @@ onMounted(load)
     <PageHeader :title="t('security.aliases.title')" :description="t('security.aliases.description')" :err="err" />
     <div class="card card-body mb-0 space-y-3 text-sm">
       <input v-model="form.name" class="input-field font-mono" :placeholder="t('security.aliases.namePh')" />
-      <div class="flex flex-wrap gap-3 items-center">
-        <select v-model="form.type" class="input-field w-36">
-          <option value="ipv4_addr">ipv4_addr</option>
-          <option value="asn">asn</option>
-        </select>
-        <input
-          v-if="form.type === 'asn'"
-          v-model.number="form.asn"
-          type="number"
-          class="input-field w-32"
-          :placeholder="t('security.aliases.asnPh')"
-        />
-      </div>
+      <p class="text-xs text-slate-500">{{ t('security.aliases.typeIpv4') }}</p>
       <textarea
         v-model="form.membersText"
         class="input-field font-mono text-xs h-24"
@@ -72,17 +78,20 @@ onMounted(load)
         <thead>
           <tr>
             <th>{{ t('common.name') }}</th>
-            <th>Type</th>
-            <th>ASN</th>
-            <th>Members</th>
+            <th>{{ t('security.aliases.colType') }}</th>
+            <th>{{ t('security.aliases.colMembers') }}</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="a in aliases" :key="a.name">
             <td class="font-mono">{{ a.name }}</td>
-            <td>{{ a.type || 'ipv4_addr' }}</td>
-            <td>{{ a.asn || '—' }}</td>
+            <td>
+              <span v-if="(a.type || 'ipv4_addr') === 'asn'" class="text-amber-700 text-xs">
+                {{ t('security.aliases.asnUnsupported') }}
+              </span>
+              <span v-else>{{ a.type || 'ipv4_addr' }}</span>
+            </td>
             <td class="text-xs font-mono">{{ (a.members || []).join(', ') }}</td>
             <td><button type="button" class="text-red-600 text-xs" @click="remove(a.name)">{{ t('common.delete') }}</button></td>
           </tr>

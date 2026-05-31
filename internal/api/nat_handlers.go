@@ -35,17 +35,14 @@ func (srv *Server) handleSharedIPs(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ip required"})
 			return
 		}
-		var addErr error
-		_ = srv.store.Update(func(st *store.State) {
-			addErr = nft.AddSharedIP(st, body.IP)
-		})
-		if addErr != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": addErr.Error()})
+		trial := srv.store.Get()
+		if err := nft.AddSharedIP(&trial, body.IP); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
+			_ = nft.AddSharedIP(st, body.IP)
+		}) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -56,16 +53,13 @@ func (srv *Server) handleSharedIPs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		found := false
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			found = nft.RemoveSharedIP(st, ip)
-		})
-		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		}) {
 			return
 		}
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -101,12 +95,9 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "outer: " + err.Error()})
 			return
 		}
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			st.Nat.IPv4.StaticMappings[body.Inner] = body.Outer
-		})
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -117,19 +108,16 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		found := false
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			if _, ok := st.Nat.IPv4.StaticMappings[inner]; ok {
 				delete(st.Nat.IPv4.StaticMappings, inner)
 				found = true
 			}
-		})
-		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		}) {
 			return
 		}
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -165,12 +153,9 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "outer: " + err.Error()})
 			return
 		}
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			st.Nat.IPv4.PrefixMappings[body.Inner] = body.Outer
-		})
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -181,19 +166,16 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		found := false
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			if _, ok := st.Nat.IPv4.PrefixMappings[inner]; ok {
 				delete(st.Nat.IPv4.PrefixMappings, inner)
 				found = true
 			}
-		})
-		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		}) {
 			return
 		}
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -219,20 +201,20 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		if err := srv.store.Update(func(st *store.State) {
+		dup := false
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			for _, c := range st.Nat.IPv4.PolicyRoutes {
 				if c == body.CIDR {
+					dup = true
 					return
 				}
 			}
 			st.Nat.IPv4.PolicyRoutes = append(st.Nat.IPv4.PolicyRoutes, body.CIDR)
-		}); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}) {
 			return
 		}
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if dup {
+			writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -242,7 +224,7 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr query required"})
 			return
 		}
-		if err := srv.store.Update(func(st *store.State) {
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			var out []string
 			for _, c := range st.Nat.IPv4.PolicyRoutes {
 				if c != cidr {
@@ -250,13 +232,7 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			st.Nat.IPv4.PolicyRoutes = out
-		}); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

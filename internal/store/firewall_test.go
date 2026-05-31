@@ -21,6 +21,22 @@ func TestFilterRuleNftLine(t *testing.T) {
 	}
 }
 
+func TestFilterRuleNftLineComment(t *testing.T) {
+	r := FilterRule{
+		ID: "fr-1", Chain: "input", Action: "accept", Iif: "ens18", Proto: "tcp", DstPort: 443,
+		Comment: `note "admin"`, Enabled: true,
+	}
+	line := r.NftRuleLine()
+	if !contains(line, `comment "note \"admin\" qosnat2:rid:fr-1"`) {
+		t.Fatalf("expected escaped comment with id marker in: %s", line)
+	}
+	acceptIdx := indexOf(line, " accept")
+	commentIdx := indexOf(line, " comment ")
+	if acceptIdx < 0 || commentIdx < acceptIdx {
+		t.Fatalf("comment must follow action: %s", line)
+	}
+}
+
 func containsAll(s string, parts ...string) bool {
 	for _, p := range parts {
 		if !contains(s, p) {

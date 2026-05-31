@@ -20,6 +20,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 		type item struct {
 			ID        string `json:"id"`
 			Name      string `json:"name"`
+			Role      string `json:"role"`
 			CreatedAt string `json:"created_at"`
 			Prefix    string `json:"key_prefix"`
 		}
@@ -29,12 +30,16 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			if pfx == "" && k.KeyHash != "" {
 				pfx = k.KeyHash[:8] + "…"
 			}
-			out = append(out, item{ID: k.ID, Name: k.Name, CreatedAt: k.CreatedAt, Prefix: pfx})
+			out = append(out, item{
+				ID: k.ID, Name: k.Name, Role: store.NormalizeAPIKeyRole(k.Role),
+				CreatedAt: k.CreatedAt, Prefix: pfx,
+			})
 		}
 		writeJSON(w, http.StatusOK, out)
 	case http.MethodPost:
 		var body struct {
 			Name string `json:"name"`
+			Role string `json:"role"`
 		}
 		if err := readJSON(r, &body); err != nil || body.Name == "" {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
@@ -54,6 +59,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 		ak := store.APIKey{
 			ID:        "key-" + hex.EncodeToString(raw[:8]),
 			Name:      body.Name,
+			Role:      store.NormalizeAPIKeyRole(body.Role),
 			KeyHash:   keyHash,
 			KeyPrefix: store.APIKeyPrefix(key),
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
@@ -64,7 +70,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Save()
 		srv.auditLog(r, "apikey.create", ak.Name)
 		writeJSON(w, http.StatusCreated, map[string]any{
-			"id": ak.ID, "name": ak.Name, "key": key, "created_at": ak.CreatedAt,
+			"id": ak.ID, "name": ak.Name, "role": ak.Role, "key": key, "created_at": ak.CreatedAt,
 		})
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")

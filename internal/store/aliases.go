@@ -36,22 +36,23 @@ func NormalizeAlias(a *AliasSet) error {
 		typ = "ipv4_addr"
 	}
 	switch typ {
-	case "ipv4_addr", "asn":
+	case "ipv4_addr":
+	case "asn":
+		return fmt.Errorf("alias type asn is not supported yet")
 	default:
-		return fmt.Errorf("type must be ipv4_addr or asn")
+		return fmt.Errorf("type must be ipv4_addr")
 	}
 	a.Type = typ
-	if typ == "asn" {
-		if a.ASN <= 0 || a.ASN > 4294967295 {
-			return fmt.Errorf("asn number required for type asn")
-		}
-	}
 	var members []string
 	for _, m := range a.Members {
 		m = strings.TrimSpace(m)
-		if m != "" {
-			members = append(members, m)
+		if m == "" {
+			continue
 		}
+		if err := ValidateIPv4OrCIDR(m); err != nil {
+			return fmt.Errorf("member %q: %w", m, err)
+		}
+		members = append(members, m)
 	}
 	if len(members) == 0 {
 		return fmt.Errorf("members required")
@@ -85,4 +86,44 @@ func isValidAliasName(s string) bool {
 // NftSetName 生成 nft set 标识符
 func (a AliasSet) NftSetName() string {
 	return "alias_" + a.Name
+}
+
+// AliasReferencedByRules 是否有防火墙规则引用该别名。
+func AliasReferencedByRules(rules []FilterRule, name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, r := range rules {
+		if strings.TrimSpace(r.SrcAlias) == name || strings.TrimSpace(r.DstAlias) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateFilterRuleAliases 校验规则引用的别名存在且可渲染为 nft set。
+func ValidateFilterRuleAliases(r FilterRule, aliases []AliasSet) error {
+	byName := make(map[string]AliasSet, len(aliases))
+	for _, a := range aliases {
+		byName[a.Name] = a
+	}
+	check := func(field, name string) error {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil
+		}
+		a, ok := byName[name]
+		if !ok {
+			return fmt.Errorf("%s: alias %q not found", field, name)
+		}
+		if strings.ToLower(strings.TrimSpace(a.Type)) == "asn" {
+			return fmt.Errorf("%s: alias %q is not supported in nft rules", field, name)
+		}
+		return nil
+	}
+	if err := check("src_alias", r.SrcAlias); err != nil {
+		return err
+	}
+	return check("dst_alias", r.DstAlias)
 }

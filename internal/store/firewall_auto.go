@@ -181,18 +181,40 @@ func autoRuleEqual(a, b FilterRule) bool {
 		a.Comment == b.Comment && a.Enabled == b.Enabled && a.System == b.System
 }
 
-// SyncAutoFilterRules 合并用户规则与自动规则；自动规则固定在数组末尾（forward 端口转发 → input WAN）。
-func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, devLAN string) ([]FilterRule, bool) {
-	desired := append(
-		BuildAutoForwardFilterRules(forwards, devLAN),
-		BuildAutoInputRules(wanDevs, adminPort, vpn)...,
-	)
-	var user []FilterRule
+// splitAutoInputByDrop 将 input 自动规则拆为放行段与 WAN 默认丢弃段。
+func splitAutoInputByDrop(rules []FilterRule) (accepts, drops []FilterRule) {
 	for _, r := range rules {
-		if !IsAutoManagedRule(r) {
-			user = append(user, r)
+		if strings.HasPrefix(strings.TrimSpace(r.ID), autoIDInputWanDrop) {
+			drops = append(drops, r)
+		} else {
+			accepts = append(accepts, r)
 		}
 	}
-	merged := append(append([]FilterRule{}, user...), desired...)
+	return accepts, drops
+}
+
+// SyncAutoFilterRules 合并用户规则与自动规则。
+// forward：用户 → 端口转发自动规则。
+// input：自动放行(admin/VPN) → 用户 → 自动 WAN 丢弃（管理口/VPN 不被用户 drop 覆盖）。
+func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, devLAN string) ([]FilterRule, bool) {
+	desiredFwd := BuildAutoForwardFilterRules(forwards, devLAN)
+	autoInputAccept, autoInputDrop := splitAutoInputByDrop(BuildAutoInputRules(wanDevs, adminPort, vpn))
+	var userFwd, userInput []FilterRule
+	for _, r := range rules {
+		if IsAutoManagedRule(r) {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(r.Chain)) == "input" {
+			userInput = append(userInput, r)
+		} else {
+			userFwd = append(userFwd, r)
+		}
+	}
+	merged := append(append(append(append(
+		append([]FilterRule{}, userFwd...),
+		desiredFwd...),
+		autoInputAccept...),
+		userInput...),
+		autoInputDrop...)
 	return merged, !filterRulesEqual(merged, rules)
 }

@@ -31,10 +31,44 @@ func ValidateIPv4OrCIDR(s string) error {
 		return fmt.Errorf("invalid characters")
 	}
 	if strings.Contains(s, "/") {
-		return ValidateCIDR(s)
+		ip, n, err := net.ParseCIDR(s)
+		if err != nil {
+			return fmt.Errorf("invalid cidr: %w", err)
+		}
+		if ip.To4() == nil {
+			return fmt.Errorf("invalid ipv4 cidr: %s", s)
+		}
+		_ = n
+		return nil
 	}
 	if ip := net.ParseIP(s); ip == nil || ip.To4() == nil {
 		return fmt.Errorf("invalid ipv4: %s", s)
+	}
+	return nil
+}
+
+// ValidateIPv6OrCIDR 校验 IPv6 地址或 CIDR。
+func ValidateIPv6OrCIDR(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return fmt.Errorf("empty")
+	}
+	if strings.ContainsAny(s, "\n\r\t\"'\\") {
+		return fmt.Errorf("invalid characters")
+	}
+	if strings.Contains(s, "/") {
+		ip, _, err := net.ParseCIDR(s)
+		if err != nil {
+			return fmt.Errorf("invalid cidr: %w", err)
+		}
+		if ip.To4() != nil {
+			return fmt.Errorf("invalid ipv6 cidr: %s", s)
+		}
+		return nil
+	}
+	ip := net.ParseIP(s)
+	if ip == nil || ip.To4() != nil {
+		return fmt.Errorf("invalid ipv6: %s", s)
 	}
 	return nil
 }

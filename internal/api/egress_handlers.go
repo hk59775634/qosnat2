@@ -51,13 +51,10 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 				return
 			}
 		}
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitEgressChange(w, func(st *store.State) {
 			st.Network.EgressPolicies = append(st.Network.EgressPolicies, body)
 			store.SyncEgressRoutes(st)
-		})
-		_ = srv.store.Save()
-		if err := srv.applyEgressDataPlane(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}) {
 			return
 		}
 		srv.auditLog(r, "network.egress.add", body.ID)
@@ -91,6 +88,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 		}
 		var old store.EgressPolicy
 		found := false
+		backup := store.CloneEgressPolicies(stBefore.Network.EgressPolicies)
 		_ = srv.store.Update(func(st *store.State) {
 			for i, p := range st.Network.EgressPolicies {
 				if p.ID == id {
@@ -108,12 +106,21 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "egress policy not found"})
 			return
 		}
-		if old.ID != "" {
-			policyroute.DeletePolicy(old, srv.store.Get().Network.WanLinks)
+		proposed := srv.store.Get()
+		if err := srv.checkNftForState(proposed); err != nil {
+			srv.setEgressPolicies(backup)
+			writeNftApplyError(w, err)
+			return
 		}
-		_ = srv.store.Save()
-		if err := srv.applyEgressDataPlane(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if old.ID != "" {
+			policyroute.DeletePolicy(old, stBefore.Network.WanLinks)
+		}
+		if !srv.saveState(w) {
+			srv.setEgressPolicies(backup)
+			return
+		}
+		if err := srv.reloadNftAfterEgressRevert(backup); err != nil {
+			writeApplyError(w, err)
 			return
 		}
 		srv.auditLog(r, "network.egress.put", id)
@@ -127,6 +134,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 		var removed store.EgressPolicy
 		var links []store.WanLink
 		found := false
+		backup := store.CloneEgressPolicies(srv.store.Get().Network.EgressPolicies)
 		_ = srv.store.Update(func(st *store.State) {
 			links = append([]store.WanLink(nil), st.Network.WanLinks...)
 			var out []store.EgressPolicy
@@ -147,10 +155,19 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "egress policy not found"})
 			return
 		}
+		proposed := srv.store.Get()
+		if err := srv.checkNftForState(proposed); err != nil {
+			srv.setEgressPolicies(backup)
+			writeNftApplyError(w, err)
+			return
+		}
 		policyroute.DeletePolicy(removed, links)
-		_ = srv.store.Save()
-		if err := srv.applyEgressDataPlane(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if !srv.saveState(w) {
+			srv.setEgressPolicies(backup)
+			return
+		}
+		if err := srv.reloadNftAfterEgressRevert(backup); err != nil {
+			writeApplyError(w, err)
 			return
 		}
 		srv.auditLog(r, "network.egress.delete", id)
@@ -160,19 +177,25 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 	}
 }
 
-func (srv *Server) applyEgressDataPlane() error {
-	if !srv.store.Get().SetupComplete {
-		return nil
+func (srv *Server) commitEgressChange(w http.ResponseWriter, mutate func(*store.State)) bool {
+	st := srv.store.Get()
+	backup := store.CloneEgressPolicies(st.Network.EgressPolicies)
+	_ = srv.store.Update(mutate)
+	proposed := srv.store.Get()
+	if err := srv.checkNftForState(proposed); err != nil {
+		srv.setEgressPolicies(backup)
+		writeNftApplyError(w, err)
+		return false
 	}
-	_ = srv.store.Update(func(st *store.State) {
-		store.SyncEgressRoutes(st)
-	})
-	_ = srv.store.Save()
-	srv.applyManagedRoutes()
-	if err := policyroute.Apply(srv.store.Get()); err != nil {
-		return err
+	if !srv.saveState(w) {
+		srv.setEgressPolicies(backup)
+		return false
 	}
-	return srv.reloadNft()
+	if err := srv.reloadNftAfterEgressRevert(backup); err != nil {
+		writeApplyError(w, err)
+		return false
+	}
+	return true
 }
 
 func (srv *Server) replayEgressOnBoot() {
@@ -183,7 +206,9 @@ func (srv *Server) replayEgressOnBoot() {
 	_ = srv.store.Update(func(st *store.State) {
 		store.SyncEgressRoutes(st)
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("egress boot save: %v", err)
+	}
 }
 
 // applyEgressPolicyRoutes 回放 ip rule（applyState / 手动 apply 时调用）
@@ -229,7 +254,7 @@ func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *htt
 		normalized = append(normalized, p)
 	}
 	var added, skipped int
-	_ = srv.store.Update(func(st *store.State) {
+	if !srv.commitEgressChange(w, func(st *store.State) {
 		existingCIDR := map[string]struct{}{}
 		for _, p := range st.Network.EgressPolicies {
 			existingCIDR[p.CIDR] = struct{}{}
@@ -249,7 +274,9 @@ func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *htt
 		if added > 0 {
 			store.SyncEgressRoutes(st)
 		}
-	})
+	}) {
+		return
+	}
 	if added == 0 {
 		msg := "no policies added"
 		if skipped > 0 {
@@ -257,13 +284,6 @@ func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *htt
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return
-	}
-	_ = srv.store.Save()
-	if added > 0 {
-		if err := srv.applyEgressDataPlane(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
 	}
 	srv.auditLog(r, "network.egress.bulk", fmt.Sprintf("added=%d skipped=%d", added, skipped))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "added": added, "skipped": skipped})

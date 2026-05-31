@@ -4,7 +4,7 @@ info:
   description: |
     单机双网卡 QoS（HTB + eBPF + IFB）+ NAT（nftables）+ VPN（WireGuard / ocserv）控制面 REST API。
 
-    **鉴权**：除 `GET /api/v1/health`、`GET /openapi.yaml`、`/api/v1/setup/*` 与 `POST /api/v1/login` 外，需 Session Cookie `qosnat_sess` 或请求头 `X-API-Key`（实验性，见 `/api/v1/api-keys`）。
+    **鉴权**：除 `GET /api/v1/health`、`GET /openapi.yaml`、`/api/v1/setup/*` 与 `POST /api/v1/login` 外，需 Session Cookie `qosnat_sess` 或请求头 `X-API-Key`（实验性，见 `/api/v1/api-keys`）。API Key 可设 `role: readonly`，只读密钥禁止写操作（403 `AUTH_READ_ONLY`）。
 
     **交互文档**：Web UI → 开发 → API (Scalar)，或 `GET /openapi.yaml`。中文说明索引见仓库 `docs/API-ZH.md`。
 
@@ -79,8 +79,41 @@ components:
     Error:
       type: object
       properties:
+        ok:
+          type: boolean
+          example: false
         error:
           type: string
+        code:
+          type: string
+          description: 机器可读错误码（如 FIREWALL_NFT_INVALID、AUTH_READ_ONLY）
+    OpsMetricBlock:
+      type: object
+      properties:
+        total: { type: integer, format: int64 }
+        last_ms: { type: number, format: double }
+        last_error: { type: string }
+        last_at: { type: string, format: date-time }
+    OpsMetricsResponse:
+      type: object
+      properties:
+        conntrack_count: { type: integer }
+        conntrack_max: { type: integer }
+        cpu_percent: { type: number }
+        mem_percent: { type: number }
+        nft_reload:
+          $ref: '#/components/schemas/OpsMetricBlock'
+        nat_stack_apply:
+          $ref: '#/components/schemas/OpsMetricBlock'
+    DryRunOk:
+      type: object
+      properties:
+        ok: { type: boolean }
+        dry_run: { type: boolean }
+        nft_valid: { type: boolean }
+        nft_line: { type: string }
+        rule:
+          $ref: '#/components/schemas/FilterRule'
     RateLimit:
       type: object
       properties:
@@ -142,6 +175,52 @@ components:
         redirect_ip: { type: string }
         redirect_port: { type: integer }
         comment: { type: string }
+    FilterRule:
+      type: object
+      properties:
+        id: { type: string, description: "用户规则 fr-*；自动规则 auto-* / auto-fwd-*；不可改 sys-*" }
+        chain: { type: string, enum: [forward, input] }
+        action: { type: string, enum: [accept, drop, reject] }
+        iif: { type: string, description: 入接口 iifname }
+        oif: { type: string, description: forward 链出接口 oifname；input 链忽略 }
+        proto: { type: string, enum: [tcp, udp, icmp, icmpv6, sctp, udplite], description: 空表示任意 }
+        src_addr: { type: string, description: IPv4/IPv6 地址或 CIDR（与 ip_version 一致） }
+        dst_addr: { type: string }
+        src_alias: { type: string, description: 引用 firewall/aliases 中的 ipv4_addr 集 }
+        dst_alias: { type: string }
+        src_port: { type: integer, minimum: 0, maximum: 65535, description: "0 表示任意" }
+        dst_port: { type: integer, minimum: 0, maximum: 65535 }
+        comment: { type: string, description: 写入 nft comment 字段 }
+        enabled: { type: boolean }
+        ip_version: { type: string, enum: [ipv4, ipv6], description: 默认 ipv4；影响 nft ip/ip6 匹配 }
+        system: { type: boolean, description: true 表示平台受管规则，不可 PUT/DELETE }
+    FirewallAliasSet:
+      type: object
+      required: [name, members]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [ipv4_addr], description: "asn 类型暂不支持" }
+        members: { type: array, items: { type: string }, description: IPv4 地址或 CIDR }
+        asn: { type: integer, deprecated: true }
+        comment: { type: string }
+    FirewallRulesListResponse:
+      type: object
+      properties:
+        rules:
+          type: array
+          items: { $ref: '#/components/schemas/FilterRule' }
+        nft_lines:
+          type: object
+          additionalProperties: { type: string }
+          description: 规则 id 到单行 nft filter 语法；disabled 规则无条目
+        dev_lan: { type: string }
+        dev_wan: { type: string }
+        admin_port: { type: string }
+        interfaces: { type: array, items: { type: object } }
+        alias_names: { type: array, items: { type: string } }
+        vpn: { type: object }
+        acme_temp_allow_http01: { type: boolean }
+        rendered: { type: string, description: 完整 inet qosnat ruleset 文本预览 }
     NatIPv4State:
       type: object
       properties:
@@ -925,6 +1004,7 @@ paths:
                   properties:
                     id: { type: string }
                     name: { type: string }
+                    role: { type: string, enum: [admin, readonly, firewall] }
                     key_prefix: { type: string }
                     created_at: { type: string }
     post:
@@ -938,9 +1018,25 @@ paths:
               required: [name]
               properties:
                 name: { type: string }
+                role:
+                  type: string
+                  enum: [admin, readonly, firewall]
+                  default: admin
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  role: { type: string }
+                  key: { type: string }
+                  created_at: { type: string }
+        '403':
+          description: 只读 API Key 禁止写操作（AUTH_READ_ONLY）
     delete:
       tags: [auth]
       parameters:
@@ -1300,6 +1396,9 @@ paths:
     post:
       tags: [nat]
       summary: 添加 DNAT 规则并 reload nft
+      description: |
+        同步生成 prerouting DNAT、forward 链 `auto-fwd-{id}-{proto}` 放行规则与 LAN hairpin NAT。
+        删除转发会一并移除上述自动防火墙规则。
       requestBody:
         content:
           application/json:
@@ -1308,6 +1407,12 @@ paths:
       responses:
         '200':
           description: 创建的规则
+        '400':
+          description: 校验失败或 nft 预检失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     delete:
       tags: [nat]
       summary: 按 id 删除规则
@@ -1506,6 +1611,28 @@ paths:
               schema:
                 type: object
 
+  /api/v1/metrics/ops:
+    get:
+      tags: [stats]
+      summary: 运维指标（nft reload、NAT stack apply、conntrack）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpsMetricsResponse'
+
+  /api/v1/metrics/prometheus:
+    get:
+      tags: [stats]
+      summary: Prometheus text exposition（qosnat_* 指标）
+      responses:
+        '200':
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /api/v1/ebpf/maps:
     get:
       tags: [ebpf]
@@ -1615,6 +1742,68 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /api/v1/system/state/export:
+    get:
+      tags: [system]
+      summary: 导出完整 state.json
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/system/state/import:
+    post:
+      tags: [system]
+      summary: 导入 state（需 current_password）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, state]
+              properties:
+                current_password: { type: string }
+                state: { type: object }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  warning: { type: string }
+
+  /api/v1/system/state/import/raw:
+    post:
+      tags: [system]
+      summary: 导入原始 state JSON（需 current_password）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/system/notifications:
+    get:
+      tags: [system]
+      summary: 系统通知列表
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
   /api/v1/system/version:
     get:
       tags: [system]
@@ -1650,6 +1839,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /api/v1/system/version/switch/status:
+    get:
+      tags: [system]
+      summary: 版本切换任务状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/system/version/switch/verify:
+    post:
+      tags: [system]
+      summary: 校验目标版本包完整性
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
 
   /api/v1/system/tls/acme:
     post:
@@ -1767,24 +1985,124 @@ paths:
   /api/v1/firewall/rules:
     get:
       tags: [nat]
-      summary: 防火墙自定义规则列表
+      summary: 防火墙规则列表（含自动同步规则与 nft 预览）
+      responses:
+        '200':
+          description: 规则、nft_lines、rendered 完整 ruleset 等
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirewallRulesListResponse'
     post:
       tags: [nat]
-      summary: 添加规则并 reload nft
+      summary: 添加自定义规则并 reload nft
+      description: nft 预检通过后才写入 state；加载失败会回滚。`dry_run=1` 时仅预检不写盘。
+      parameters:
+        - name: dry_run
+          in: query
+          schema: { type: string, enum: ['1', 'true', 'yes'] }
+          description: 仅 nft 语法检查，不持久化
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterRule'
+      responses:
+        '200':
+          description: 创建成功；dry_run 时返回 DryRunOk（含 nft_line）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      ok: { type: boolean }
+                      id: { type: string }
+                      rule: { $ref: '#/components/schemas/FilterRule' }
+                  - $ref: '#/components/schemas/DryRunOk'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: nft 预检失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     put:
       tags: [nat]
-      summary: 更新规则（query id）
+      summary: 更新自定义规则（query id）
+      description: 支持 `dry_run=1` 仅预检。
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+        - name: dry_run
+          in: query
+          schema: { type: string, enum: ['1', 'true', 'yes'] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FilterRule'
+      responses:
+        '200':
+          description: 更新成功；dry_run 时返回 DryRunOk
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      ok: { type: boolean }
+                      rule: { $ref: '#/components/schemas/FilterRule' }
+                  - $ref: '#/components/schemas/DryRunOk'
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: nft 预检失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: 系统/自动规则不可修改
+        '404':
+          description: 规则不存在
     delete:
       tags: [nat]
-      summary: 删除规则（query id）
+      summary: 删除自定义规则（query id）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '403':
+          description: 系统/自动规则不可删除
+        '404':
+          description: 规则不存在
 
   /api/v1/firewall/rules/order:
     put:
       tags: [nat]
       summary: 调整防火墙规则顺序
       description: |
-        请求体 `order` 为规则 `id` 数组，按新顺序排列；保存 state 后 reload nft。
-        与 Web「防火墙规则」页拖动排序一致。
+        请求体 `order` 为可编辑规则 `id` 数组（可不含 auto-* / sys-*）。
+        未出现在 order 中的用户规则保持相对顺序并追加在末尾；保存前 nft 预检，失败则不写入。
       requestBody:
         required: true
         content:
@@ -1796,7 +2114,7 @@ paths:
                 order:
                   type: array
                   items: { type: string }
-                  description: 规则 id 列表，须包含全部现有 id
+                  description: 用户规则 id 的新顺序
       responses:
         '200':
           description: 排序成功，返回完整 rules
@@ -1806,7 +2124,12 @@ paths:
                 type: object
                 properties:
                   ok: { type: boolean }
-                  rules: { type: array, items: { type: object } }
+                  rules: { type: array, items: { $ref: '#/components/schemas/FilterRule' } }
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/v1/firewall/aliases:
     get:
@@ -1819,21 +2142,16 @@ paths:
               schema:
                 type: object
                 properties:
-                  aliases: { type: array, items: { type: object } }
+                  aliases: { type: array, items: { $ref: '#/components/schemas/FirewallAliasSet' } }
     post:
       tags: [nat]
-      summary: 添加或覆盖别名集
-      description: 同名则覆盖；保存后 reload nft。类型含 ipv4 网段集合或 asn 前缀集。
+      summary: 添加或覆盖 ipv4_addr 别名集
+      description: 同名则覆盖；members 须为合法 IPv4/CIDR；保存前 nft 预检。type=asn 暂不支持。
       requestBody:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                name: { type: string }
-                type: { type: string, enum: [ipv4, asn] }
-                members: { type: array, items: { type: string } }
-                asn: { type: integer }
+              $ref: '#/components/schemas/FirewallAliasSet'
       responses:
         '200':
           content:
@@ -1843,6 +2161,11 @@ paths:
                 properties:
                   ok: { type: boolean }
                   name: { type: string }
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     delete:
       tags: [nat]
       summary: 删除别名（query name）
@@ -1857,6 +2180,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Ok'
+        '409':
+          description: 仍有防火墙规则引用该别名
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/v1/system/mark-policy:
     get:
@@ -2237,6 +2566,93 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Ok'
+
+  /api/v1/network/egress-policies/bulk:
+    put:
+      tags: [network]
+      summary: 批量更新出站策略
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                egress_policies:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/EgressPolicy'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/network/warp/status:
+    get:
+      tags: [network]
+      summary: Cloudflare WARP 连接状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/network/warp/install:
+    post:
+      tags: [network]
+      summary: 安装 WARP 客户端（需 root）
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/network/warp/install/status:
+    get:
+      tags: [network]
+      summary: WARP 安装任务状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/network/warp/connect:
+    post:
+      tags: [network]
+      summary: 连接 WARP
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/network/warp/disconnect:
+    post:
+      tags: [network]
+      summary: 断开 WARP
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/network/warp/task/status:
+    get:
+      tags: [network]
+      summary: WARP 后台任务状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
 
   /api/v1/network/netplan:
     get:
@@ -3210,3 +3626,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /api/v1/diagnostics/terminal:
+    get:
+      tags: [diagnostics]
+      summary: Web 终端 WebSocket 升级端点（需 diagnostics_terminal_enabled）
+      description: |
+        使用 WebSocket 连接；仅在系统设置中启用「诊断终端」后可用。
+        非 WebSocket GET 返回 400。
+      responses:
+        '101':
+          description: Switching Protocols（WebSocket）
+        '403':
+          description: 终端未启用
+        '400':
+          description: 非 WebSocket 请求

@@ -81,4 +81,5 @@ export default {
   githubRepoTitle: '在 GitHub 打开 {repo}',
   appVersion: '版本',
   appVersionTitle: '当前运行版本 {v}',
+  dismiss: '关闭',
 }

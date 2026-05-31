@@ -3,8 +3,8 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -95,12 +95,15 @@ type SystemState struct {
 	// AcmeTempAllowHTTP01 在执行 HTTP-01 验证期间临时放开 tcp/80 入站访问。
 	// 该值由服务端在完成 ACME obtain/renew 后会自动恢复，不建议手动修改。
 	AcmeTempAllowHTTP01 bool `json:"acme_temp_allow_http01,omitempty"`
+	// DiagnosticsTerminalEnabled 为 true 时允许 Web Terminal（默认 false，等同 root shell）。
+	DiagnosticsTerminalEnabled bool `json:"diagnostics_terminal_enabled,omitempty"`
 }
 
 // APIKey 持久化 API Key（仅存 key_hash；创建时明文仅返回一次）
 type APIKey struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
+	Role      string `json:"role,omitempty"` // admin（默认）| readonly | firewall
 	KeyHash   string `json:"key_hash,omitempty"`
 	KeyPrefix string `json:"key_prefix,omitempty"`
 	Key       string `json:"key,omitempty"` // 迁移用，保存前清空
@@ -212,15 +215,19 @@ func (s *Store) Load() error {
 	}
 	for _, key := range []string{"policy_routes", "shared_ips", "static_mappings", "prefix_mappings"} {
 		if v, ok := raw[key]; ok {
+			var unmarshalErr error
 			switch key {
 			case "policy_routes":
-				_ = json.Unmarshal(v, &disk.Legacy.PolicyRoutes)
+				unmarshalErr = json.Unmarshal(v, &disk.Legacy.PolicyRoutes)
 			case "shared_ips":
-				_ = json.Unmarshal(v, &disk.Legacy.SharedIPs)
+				unmarshalErr = json.Unmarshal(v, &disk.Legacy.SharedIPs)
 			case "static_mappings":
-				_ = json.Unmarshal(v, &disk.Legacy.StaticMappings)
+				unmarshalErr = json.Unmarshal(v, &disk.Legacy.StaticMappings)
 			case "prefix_mappings":
-				_ = json.Unmarshal(v, &disk.Legacy.PrefixMappings)
+				unmarshalErr = json.Unmarshal(v, &disk.Legacy.PrefixMappings)
+			}
+			if unmarshalErr != nil {
+				log.Printf("state.json legacy field %q: %v", key, unmarshalErr)
 			}
 		}
 	}
@@ -238,10 +245,13 @@ func (s *Store) Save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0750); err != nil {
+	path := s.path
+	if err := WriteFileAtomic(path, b, 0600); err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, b, 0600)
+	// 保留一份 .bak 便于崩溃后人工恢复
+	_ = os.WriteFile(path+".bak", b, 0600)
+	return nil
 }
 
 func (s *Store) Get() State {

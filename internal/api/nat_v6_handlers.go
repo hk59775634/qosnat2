@@ -34,7 +34,7 @@ func (srv *Server) handleNptv6(w http.ResponseWriter, r *http.Request) {
 		})
 	case http.MethodPut:
 		var body struct {
-			Nptv6Enabled bool             `json:"nptv6_enabled"`
+			Nptv6Enabled bool              `json:"nptv6_enabled"`
 			Nptv6Rules   []store.Nptv6Rule `json:"nptv6_rules"`
 		}
 		if err := readJSON(r, &body); err != nil {
@@ -49,14 +49,11 @@ func (srv *Server) handleNptv6(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitNatStackChange(w, func(st *store.State) {
 			st.Nat.Nptv6Enabled = body.Nptv6Enabled
 			st.Nat.Nptv6Rules = body.Nptv6Rules
 			store.MigrateNptv6RuleIDs(&st.Nat.Nptv6Rules)
-		})
-		_ = srv.store.Save()
-		if err := srv.applyNatStack(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -114,16 +111,13 @@ func (srv *Server) handleNat64(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "jool not installed (apt install jool-tools jool-dkms)"})
 			return
 		}
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitNatStackChange(w, func(st *store.State) {
 			st.Nat.Nat64Enabled = body.Nat64Enabled
 			st.Nat.Nat64Prefix = body.Nat64Prefix
 			st.Nat.Nat64Pool4 = body.Nat64Pool4
 			st.Nat.DNS64 = body.DNS64
 			store.EnsureDNS64Defaults(&st.Nat.DNS64)
-		})
-		_ = srv.store.Save()
-		if err := srv.applyNatStack(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -150,13 +144,10 @@ func (srv *Server) handleDNS64(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = srv.store.Update(func(st *store.State) {
+		if !srv.commitNatStackChange(w, func(st *store.State) {
 			st.Nat.DNS64 = body
 			store.EnsureDNS64Defaults(&st.Nat.DNS64)
-		})
-		_ = srv.store.Save()
-		if err := srv.applyNatStack(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

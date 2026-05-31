@@ -1,3 +1,5 @@
+import { isApplyFailure, setApplyAlert } from '@/composables/useApplyAlert'
+
 const base = ''
 
 export async function request(path, opts = {}) {
@@ -30,6 +32,10 @@ export async function request(path, opts = {}) {
     const err = new Error(data?.error || res.statusText || 'request failed')
     err.status = res.status
     err.data = data
+    if (isApplyFailure(res.status, data)) {
+      const code = data?.code ? `[${data.code}] ` : ''
+      setApplyAlert(`${code}${err.message}`)
+    }
     throw err
   }
   return data
@@ -49,6 +55,9 @@ export const api = {
   logout: () => request('/api/v1/logout', { method: 'POST' }),
 
   dashboard: () => request('/api/v1/stats/dashboard'),
+  metrics: {
+    ops: () => request('/api/v1/metrics/ops'),
+  },
 
   policyRoutes: {
     list: () => request('/api/v1/nat/policy-routes'),
@@ -98,10 +107,15 @@ export const api = {
   ebpfMaps: () => request('/api/v1/ebpf/maps'),
   ebpfPrograms: () => request('/api/v1/ebpf/programs'),
   markPolicy: () => request('/api/v1/system/mark-policy'),
-  system: {
+    system: {
     general: {
       get: () => request('/api/v1/system/general'),
       put: (body) => request('/api/v1/system/general', { method: 'PUT', body: JSON.stringify(body) }),
+    },
+    state: {
+      exportUrl: () => '/api/v1/system/state/export',
+      import: (body) =>
+        request('/api/v1/system/state/import', { method: 'POST', body: JSON.stringify(body) }),
     },
     version: {
       get: () => request('/api/v1/system/version'),
@@ -149,19 +163,25 @@ export const api = {
     },
     apiKeys: {
       list: () => request('/api/v1/api-keys'),
-      create: (name) => request('/api/v1/api-keys', { method: 'POST', body: JSON.stringify({ name }) }),
+      create: (name, role = 'admin') =>
+        request('/api/v1/api-keys', { method: 'POST', body: JSON.stringify({ name, role }) }),
       del: (id) => request(`/api/v1/api-keys?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
   },
   firewall: {
     rules: {
       list: () => request('/api/v1/firewall/rules'),
-      add: (body) => request('/api/v1/firewall/rules', { method: 'POST', body: JSON.stringify(body) }),
-      put: (id, body) =>
-        request(`/api/v1/firewall/rules?id=${encodeURIComponent(id)}`, {
+      add: (body, opts = {}) => {
+        const q = opts.dryRun ? '?dry_run=1' : ''
+        return request(`/api/v1/firewall/rules${q}`, { method: 'POST', body: JSON.stringify(body) })
+      },
+      put: (id, body, opts = {}) => {
+        const dry = opts.dryRun ? '&dry_run=1' : ''
+        return request(`/api/v1/firewall/rules?id=${encodeURIComponent(id)}${dry}`, {
           method: 'PUT',
           body: JSON.stringify(body),
-        }),
+        })
+      },
       reorder: (order) =>
         request('/api/v1/firewall/rules/order', { method: 'PUT', body: JSON.stringify({ order }) }),
       del: (id) => request(`/api/v1/firewall/rules?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),

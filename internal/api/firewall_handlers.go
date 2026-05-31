@@ -65,6 +65,7 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 		ifaces := store.BuildFirewallIfaceList(st, srv.env.DevLAN, srv.env.DevWAN, sysDevs)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"rules":      rules,
+			"nft_lines":  firewallNftLines(rules),
 			"dev_lan":    srv.env.DevLAN,
 			"dev_wan":    srv.env.DevWAN,
 			"admin_port": srv.env.AdminPort,
@@ -92,15 +93,31 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		if err := srv.store.Update(func(st *store.State) {
-			st.Firewall.FilterRules = append(st.Firewall.FilterRules, body)
-		}); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		st := srv.store.Get()
+		if err := store.ValidateFilterRuleAliases(body, st.Firewall.Aliases); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		proposed := st
+		proposed.Firewall.FilterRules = append(cloneFilterRules(st.Firewall.FilterRules), body)
+		if err := srv.checkNftForState(proposed); err != nil {
+			writeNftApplyError(w, err)
+			return
+		}
+		if queryDryRun(r) {
+			writeDryRunOK(w, map[string]any{"rule": body, "nft_line": body.NftRuleLine()})
+			return
+		}
+		backup := cloneFilterRules(st.Firewall.FilterRules)
+		_ = srv.store.Update(func(st *store.State) {
+			st.Firewall.FilterRules = append(st.Firewall.FilterRules, body)
+		})
+		if !srv.saveState(w) {
+			srv.setFilterRules(backup)
+			return
+		}
+		if err := srv.reloadFilterWithOptionalIncremental(backup, filterOpAdd, body); err != nil {
+			writeApplyError(w, err)
 			return
 		}
 		srv.auditLog(r, "firewall.rule.add", body.ID+" "+body.Action)
@@ -141,6 +158,29 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
+		st := srv.store.Get()
+		if err := store.ValidateFilterRuleAliases(body, st.Firewall.Aliases); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		newRules := cloneFilterRules(st.Firewall.FilterRules)
+		for i := range newRules {
+			if newRules[i].ID == id {
+				newRules[i] = body
+				break
+			}
+		}
+		proposed := st
+		proposed.Firewall.FilterRules = newRules
+		if err := srv.checkNftForState(proposed); err != nil {
+			writeNftApplyError(w, err)
+			return
+		}
+		if queryDryRun(r) {
+			writeDryRunOK(w, map[string]any{"rule": body, "nft_line": body.NftRuleLine()})
+			return
+		}
+		backup := cloneFilterRules(st.Firewall.FilterRules)
 		_ = srv.store.Update(func(st *store.State) {
 			for i, rule := range st.Firewall.FilterRules {
 				if rule.ID == id {
@@ -149,9 +189,12 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		})
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if !srv.saveState(w) {
+			srv.setFilterRules(backup)
+			return
+		}
+		if err := srv.reloadNftWithFilterRevert(backup); err != nil {
+			writeApplyError(w, err)
 			return
 		}
 		srv.auditLog(r, "firewall.rule.put", id)
@@ -178,18 +221,26 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "system rule cannot be deleted"})
 			return
 		}
-		_ = srv.store.Update(func(st *store.State) {
-			var out []store.FilterRule
-			for _, rule := range st.Firewall.FilterRules {
-				if rule.ID != id {
-					out = append(out, rule)
-				}
+		var newRules []store.FilterRule
+		for _, rule := range st.Firewall.FilterRules {
+			if rule.ID != id {
+				newRules = append(newRules, rule)
 			}
-			st.Firewall.FilterRules = out
-		})
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		proposed := st
+		proposed.Firewall.FilterRules = newRules
+		if err := srv.checkNftForState(proposed); err != nil {
+			writeNftApplyError(w, err)
+			return
+		}
+		backup := cloneFilterRules(st.Firewall.FilterRules)
+		srv.setFilterRules(newRules)
+		if !srv.saveState(w) {
+			srv.setFilterRules(backup)
+			return
+		}
+		if err := srv.reloadFilterWithOptionalIncremental(backup, filterOpDelete, *target); err != nil {
+			writeApplyError(w, err)
 			return
 		}
 		srv.auditLog(r, "firewall.rule.delete", id)
@@ -224,36 +275,41 @@ func (srv *Server) handleFirewallRulesOrder(w http.ResponseWriter, r *http.Reque
 	}
 	var reordered []store.FilterRule
 	var err error
-	_ = srv.store.Update(func(st *store.State) {
-		reordered, err = store.ReorderFirewallRules(st.Firewall.FilterRules, body.Order)
-		if err != nil {
-			return
-		}
-		vp := nft.VPNFirewallFromState(*st)
-		wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, *st)
-		synced, _ := store.SyncAutoFilterRules(reordered, wanDevs, srv.env.AdminPort, store.AutoInputVPN{
-			OCServEnabled: vp.OCServEnabled,
-			OCServTCP:     vp.OCServTCP,
-			OCServUDP:     vp.OCServUDP,
-			WGPorts:       vp.WGPorts,
-		}, st.Firewall.WanPortForwards, srv.env.DevLAN)
-		st.Firewall.FilterRules = synced
-		reordered = synced
-	})
+	st := srv.store.Get()
+	reordered, err = store.ReorderFirewallRules(st.Firewall.FilterRules, body.Order)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	_ = srv.store.Save()
-	if err := srv.reloadNft(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	vp := nft.VPNFirewallFromState(st)
+	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
+	synced, _ := store.SyncAutoFilterRules(reordered, wanDevs, srv.env.AdminPort, store.AutoInputVPN{
+		OCServEnabled: vp.OCServEnabled,
+		OCServTCP:     vp.OCServTCP,
+		OCServUDP:     vp.OCServUDP,
+		WGPorts:       vp.WGPorts,
+	}, st.Firewall.WanPortForwards, srv.env.DevLAN)
+	proposed := st
+	proposed.Firewall.FilterRules = synced
+	if err := srv.checkNftForState(proposed); err != nil {
+		writeNftApplyError(w, err)
+		return
+	}
+	backup := cloneFilterRules(st.Firewall.FilterRules)
+	srv.setFilterRules(synced)
+	if !srv.saveState(w) {
+		srv.setFilterRules(backup)
+		return
+	}
+	if err := srv.reloadNftWithFilterRevert(backup); err != nil {
+		writeApplyError(w, err)
 		return
 	}
 	srv.auditLog(r, "firewall.rule.order", "reordered")
-	if reordered == nil {
-		reordered = []store.FilterRule{}
+	if synced == nil {
+		synced = []store.FilterRule{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "rules": reordered})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "rules": synced})
 }
 
 func (srv *Server) firewallRendered() string {

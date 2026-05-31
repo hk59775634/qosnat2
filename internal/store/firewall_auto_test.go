@@ -28,6 +28,28 @@ func TestSyncAutoFilterRules(t *testing.T) {
 	}
 }
 
+func TestSyncAutoFilterRulesInputOrder(t *testing.T) {
+	userDrop := FilterRule{ID: "fr-wan-drop", Chain: "input", Action: "drop", Iif: "eth0", Enabled: true}
+	merged, _ := SyncAutoFilterRules([]FilterRule{userDrop}, []string{"eth0"}, "8443", AutoInputVPN{}, nil, "br-lan")
+	idx := func(id string) int {
+		for i, r := range merged {
+			if r.ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+	admin := idx("auto-input-admin-eth0")
+	user := idx("fr-wan-drop")
+	wanDrop := idx("auto-input-wan-drop-eth0")
+	if admin < 0 || user < 0 || wanDrop < 0 {
+		t.Fatalf("missing rules in %v", merged)
+	}
+	if !(admin < user && user < wanDrop) {
+		t.Fatalf("want admin < user drop < auto wan drop, got admin=%d user=%d wanDrop=%d", admin, user, wanDrop)
+	}
+}
+
 func TestBuildAutoInputRulesAdminPort(t *testing.T) {
 	rules := BuildAutoInputRules([]string{"wan0"}, "9090", AutoInputVPN{})
 	if len(rules) < 2 {

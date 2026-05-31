@@ -77,6 +77,8 @@
 
 `*` 表示 GET/POST/PUT/DELETE 中 UI 会用到的一种或多种，详见 `server.go`。
 
+**FirewallRules 深链**：hash query 支持 `chain`、`iface`、`rule`（端口转发页 `auto-fwd-*` 可跳转定位）；GET `/api/v1/firewall/rules` 含 `nft_lines`、`rendered`。详见 [API-ZH.md](./API-ZH.md#防火墙与端口转发)。
+
 ## OpenAPI
 
 规范文件：`api/openapi.yaml`；中文索引与 ocserv 说明：`docs/API-ZH.md`。
@@ -84,7 +86,7 @@
 已纳入 OpenAPI（与 UI / `server.go` 一致）的条目包括：
 
 - `PUT /api/v1/interfaces/roles`、`GET/POST /api/v1/network/netplan`、`POST .../netplan/apply`
-- `PUT /api/v1/firewall/rules/order`、`/api/v1/firewall/aliases`
+- `PUT /api/v1/firewall/rules/order`、`FilterRule` / `FirewallRulesListResponse`（含 `nft_lines`）、`/api/v1/firewall/aliases`
 - `GET /api/v1/vpn/ocserv/install/status`、`/api/v1/vpn/ocserv/vhosts/users`（CRUD）
 - 扩展 `OCServVhost`、`OCServInstallJobStatus` 等 schema 与各接口 `description`
 

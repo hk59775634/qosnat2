@@ -9,6 +9,8 @@
 | Session Cookie | `POST /api/v1/login` 成功后设置 `qosnat_sess` |
 | API Key | 请求头 `X-API-Key`（实验性，`/api/v1/api-keys` 管理） |
 
+创建 API Key 时可指定 `role`：`admin`（默认，读写）、`firewall`（仅 `/api/v1/firewall/*` 写）或 `readonly`（仅 GET/HEAD/OPTIONS；写操作 403）。
+
 **无需登录**：`GET /api/v1/health`、`GET /openapi.yaml`、`GET/POST /api/v1/setup/*`、`POST /api/v1/login`。
 
 详见 [API-AUTH.md](./API-AUTH.md)。
@@ -17,9 +19,45 @@
 
 - 基路径：`/api/v1/...`
 - 成功写操作常见响应：`{"ok": true}`
-- 错误：`{"error": "..."}`，HTTP 4xx/5xx
+- 错误：`{"ok": false, "error": "...", "code": "..."}`（`error` 字段始终存在，供 UI 展示；`code` 为机器可读错误码）
 - 更新类接口常用 query `id` / `name` / `domain` / `username` 指定对象
 - 敏感字段（密码、RADIUS secret、伪装密钥）：**GET 不返回**；**PUT 留空表示不修改**
+
+### HTTP 状态码
+
+| 状态 | 场景 | 示例 code |
+|------|------|-----------|
+| 400 | JSON/参数校验失败 | `VALID_BAD_JSON`、`VALID_REQUIRED` |
+| 403 | 未登录或密码确认失败 | `AUTH_FORBIDDEN` |
+| 409 | 资源冲突（如别名仍被引用） | — |
+| 422 | nft 规则集语法/语义检查失败 | `FIREWALL_NFT_INVALID` |
+| 500 | Save 失败或 dataplane apply 失败 | `APPLY_FAILED` |
+
+### 防火墙 dry-run
+
+`POST /api/v1/firewall/rules?dry_run=1`（或 `PUT ...?dry_run=true`）仅执行 `checkNftForState`，不写盘、不 reload nft。成功响应：
+
+```json
+{"ok": true, "dry_run": true, "nft_valid": true, "nft_line": "...", "rule": { ... }}
+```
+
+### 配置备份
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/system/state/export` | 下载完整 `state.json` |
+| POST | `/api/v1/system/state/import` | body: `{"current_password":"...", "state":{...}}` |
+
+导入后自动 `reloadNft`；若启用 NAT64/NPTv6 会调用 `applyNatStack`。响应可含 `warning`。
+
+### 运维指标
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/metrics/ops` | JSON：nft reload / NAT stack apply 次数、耗时、最近错误 |
+| GET | `/api/v1/metrics/prometheus` | Prometheus text exposition（同名计数器/直方图） |
+
+详见 [PROMETHEUS-METRICS.md](./PROMETHEUS-METRICS.md)。
 
 ## 功能域索引
 
@@ -153,12 +191,55 @@ ocserv 配置项为服务端上下行。Web UI「客户端上行/下行」映射
 | GET | `/api/v1/network/netplan` | 预览合并后的 netplan YAML |
 | POST | `/api/v1/network/netplan/apply` | 应用 netplan（失败回滚） |
 
-## 防火墙补充接口
+## 防火墙与端口转发
+
+### REST 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| PUT | `/api/v1/firewall/rules/order` | body：`{"order":["id1","id2",...]}` 调整规则顺序 |
-| GET/POST/DELETE | `/api/v1/firewall/aliases` | nft 别名对象组（ipv4 / asn） |
+| GET | `/api/v1/firewall/rules` | 规则列表（含 `auto-*` 自动规则）、`nft_lines`、`rendered` 完整 ruleset 预览 |
+| POST | `/api/v1/firewall/rules` | 添加自定义规则；**nft 预检**通过后写 state，加载失败回滚 |
+| PUT | `/api/v1/firewall/rules?id=` | 更新自定义规则（`auto-*` / `sys-*` 返回 403） |
+| DELETE | `/api/v1/firewall/rules?id=` | 删除自定义规则 |
+| PUT | `/api/v1/firewall/rules/order` | body：`{"order":["id1",...]}` 调整**用户规则**顺序；可不含 auto 规则 id |
+| GET/POST/DELETE | `/api/v1/firewall/aliases` | nft 别名对象组（**仅 `ipv4_addr`**；`asn` 暂不支持） |
+| GET/POST/DELETE | `/api/v1/nat/wan-forwards` | 端口转发 DNAT；与防火墙联动见下 |
+
+GET `/api/v1/firewall/rules` 响应要点：
+
+- `rules`：forward/input 链 filter 规则（含 `auto-input-*` 管理口/VPN、`auto-fwd-*` 端口转发放行）
+- `nft_lines`：`{ "规则id": "单行 nft 语法" }`；**disabled** 规则无条目
+- `rendered`：当前将加载的完整 `inet qosnat` ruleset 文本
+- `alias_names`：可供规则引用的别名名列表
+
+POST/PUT 规则时：`src_port`/`dst_port` 为 0 表示任意，否则 1–65535；引用别名须已存在且为 `ipv4_addr` 类型。
+
+DELETE 别名：若仍有规则引用 → **409** `alias is referenced by firewall rules`。
+
+### 端口转发 ↔ 防火墙联动
+
+每条 `POST /api/v1/nat/wan-forwards` 会同步：
+
+1. **prerouting DNAT** — WAN 口匹配并重写到 `redirect_ip:redirect_port`
+2. **forward 自动规则** — id 形如 `auto-fwd-{转发id}-tcp`（`tcp_udp` 时还有 `-udp`）；放行 WAN→LAN 转发
+3. **hairpin** — 内网访问公网 IP:端口 时的回流 DNAT + masquerade
+
+删除端口转发会一并移除上述 DNAT 与 `auto-fwd-*` 规则。**请勿**在防火墙页单独删改 `auto-fwd-*`（API 403）。
+
+input 链顺序（自动规则与用户规则）：`auto-input-admin/VPN 放行` → **用户规则** → `auto-input-wan-drop` → 内置 LAN 放行。
+
+### Web UI 深链（防火墙规则页）
+
+Hash 路由 query 参数（可收藏/分享）：
+
+| 参数 | 示例 | 说明 |
+|------|------|------|
+| `chain` | `forward` / `input` | 链 Tab（默认 forward 可省略） |
+| `iface` | `eth0` / `__floating__` | 网卡 Tab（默认「全部」可省略） |
+| `rule` | `auto-fwd-abc-tcp` | 定位规则并打开详情（含 `nft_lines` 对应行） |
+
+示例：`#/firewall/rules?chain=forward&rule=auto-fwd-abc-tcp`  
+端口转发页点击 `auto-fwd-*` 即此格式。切换 Tab 或关闭详情时 URL 会同步更新。
 
 ## 自动化冒烟
 

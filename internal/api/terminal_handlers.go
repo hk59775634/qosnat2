@@ -35,7 +35,7 @@ var terminalUpgrader = websocket.Upgrader{
 func terminalCheckOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		return true
+		return false
 	}
 	host := r.Host
 	if host == "" {
@@ -62,6 +62,10 @@ func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if !srv.requestAuthorized(r) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if !srv.store.Get().System.DiagnosticsTerminalEnabled {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "web terminal disabled; enable in System → General"})
 		return
 	}
 	select {

@@ -9,6 +9,9 @@ import (
 
 func writeAliasSets(b *strings.Builder, aliases []store.AliasSet) {
 	for _, a := range aliases {
+		if strings.ToLower(strings.TrimSpace(a.Type)) == "asn" {
+			continue
+		}
 		if len(a.Members) == 0 {
 			continue
 		}

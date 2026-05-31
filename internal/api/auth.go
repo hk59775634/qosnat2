@@ -12,6 +12,10 @@ import (
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
+func writeSessionFile(path string, data []byte) error {
+	return store.WriteFileAtomic(path, data, 0600)
+}
+
 const (
 	sessionCookie = "qosnat_sess"
 	sessionTTL    = 30 * 24 * time.Hour
@@ -43,7 +47,7 @@ func (s *sessionStore) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.file, b, 0600)
+	return writeSessionFile(s.file, b)
 }
 
 func (s *sessionStore) pruneLocked() {
@@ -99,6 +103,12 @@ func (srv *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		if !srv.requestAuthorized(r) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
+		}
+		if isWriteMethod(r.Method) {
+			if code, msg := srv.apiKeyWriteScopeError(r); code != "" {
+				writeAPIError(w, http.StatusForbidden, code, msg)
+				return
+			}
 		}
 		next(w, r)
 	}

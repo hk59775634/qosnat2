@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 import {
@@ -40,6 +40,9 @@ import {
 } from '@/lib/firewallRuleForm'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+let syncingFromRoute = false
 
 const rules = ref([])
 const devLan = ref('')
@@ -60,8 +63,13 @@ const formPanel = ref(null)
 const searchQuery = ref('')
 const acmeTempAllow = ref(false)
 const selectedRule = ref(null)
+const nftLines = ref({})
 const ifaceList = ref([])
 const activeIface = ref(IFACE_ALL)
+const formHint = ref('')
+const pendingRuleId = ref('')
+const previewLine = ref('')
+const previewLoading = ref(false)
 
 const chains = [
   { id: 'forward', labelKey: 'security.firewall.tabForward' },
@@ -129,20 +137,67 @@ function ruleCountOnIface(iface, chainId = activeChain.value) {
 const customCount = computed(() => userRulesInChainRaw.value.length)
 const autoCount = computed(() => autoRulesInChain.value.length)
 
+const hasAutoForwardRules = computed(() =>
+  (rules.value || []).some((r) => String(r.id || '').startsWith('auto-fwd-')),
+)
+
 const isInputChain = computed(() => form.value.chain === 'input')
+
+const formChainTabMismatch = computed(() => showForm.value && form.value.chain !== activeChain.value)
+
+const formResolvedIif = computed(() => {
+  if (!showForm.value) return ''
+  return formToPayload(form.value, devLan.value, devWan.value).iif || ''
+})
+
+const formWanDropWarning = computed(() => {
+  const f = form.value
+  if (!showForm.value || f.chain !== 'input' || f.action !== 'drop') return false
+  const iif = formResolvedIif.value
+  if (!iif) return false
+  if (iif === devWan.value) return true
+  return wanDeviceNames(ifaceList.value, devWan.value).includes(iif)
+})
+
+const ifaceReorderHint = computed(
+  () =>
+    activeIface.value &&
+    activeIface.value !== IFACE_ALL &&
+    activeIface.value !== IFACE_FLOATING,
+)
 
 const detailLines = computed(() => {
   if (!selectedRule.value) return []
   return ruleDetailLines(selectedRule.value, devLan.value, devWan.value, t)
 })
 
+const selectedNftLine = computed(() => {
+  const id = selectedRule.value?.id
+  if (!id) return ''
+  return nftLines.value[id] || ''
+})
+
+const selectedNftHint = computed(() => {
+  const r = selectedRule.value
+  if (!r || selectedNftLine.value) return ''
+  if (r.enabled === false) return t('security.firewall.detailNftDisabled')
+  if (r.system && !r.iif && !r.oif && !r.proto) return t('security.firewall.detailNftBuiltin')
+  return ''
+})
+
 watch(activeChain, () => {
   selectedRule.value = null
+  syncFirewallRoute()
 })
 
 watch(activeIface, () => {
   selectedRule.value = null
   dragIdx.value = null
+  syncFirewallRoute()
+})
+
+watch(selectedRule, () => {
+  syncFirewallRoute()
 })
 
 function applyIfaceToForm(f) {
@@ -159,6 +214,67 @@ function applyIfaceToForm(f) {
   }
 }
 
+function applyRouteQuery() {
+  const q = route.query
+  if (q.chain === 'forward' || q.chain === 'input') {
+    activeChain.value = q.chain
+  } else if (!q.chain && !syncingFromRoute) {
+    activeChain.value = 'forward'
+  }
+  const iface = typeof q.iface === 'string' ? q.iface.trim() : ''
+  if (iface) {
+    activeIface.value = iface
+  } else if (!q.iface && !syncingFromRoute) {
+    activeIface.value = IFACE_ALL
+  }
+  const ruleId = typeof q.rule === 'string' ? q.rule.trim() : ''
+  if (ruleId) {
+    pendingRuleId.value = ruleId
+  } else if (!q.rule && !syncingFromRoute) {
+    selectedRule.value = null
+  }
+}
+
+function firewallQueryEqual(a, b) {
+  const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})])
+  for (const k of keys) {
+    if (String(a?.[k] ?? '') !== String(b?.[k] ?? '')) return false
+  }
+  return true
+}
+
+function buildFirewallQuery() {
+  const q = {}
+  if (activeChain.value === 'input') q.chain = 'input'
+  if (activeIface.value && activeIface.value !== IFACE_ALL) q.iface = activeIface.value
+  if (selectedRule.value?.id) q.rule = selectedRule.value.id
+  return q
+}
+
+function syncFirewallRoute() {
+  if (syncingFromRoute) return
+  const next = buildFirewallQuery()
+  if (firewallQueryEqual(route.query, next)) return
+  syncingFromRoute = true
+  router
+    .replace({ name: 'firewall-rules', query: next })
+    .catch(() => {})
+    .finally(() => {
+      syncingFromRoute = false
+    })
+}
+
+function focusPendingRule() {
+  const id = pendingRuleId.value
+  if (!id) return
+  const hit = (rules.value || []).find((r) => r.id === id)
+  pendingRuleId.value = ''
+  if (!hit) return
+  if (hit.chain) activeChain.value = hit.chain
+  activeIface.value = IFACE_ALL
+  openView(hit)
+}
+
 async function load() {
   const d = await api.firewall.rules.list()
   rules.value = d.rules || []
@@ -170,10 +286,13 @@ async function load() {
   acmeTempAllow.value = !!d.acme_temp_allow_http01
   rendered.value = d.rendered || ''
   ifaceList.value = d.interfaces || []
+  nftLines.value = d.nft_lines || {}
+  focusPendingRule()
 }
 
 function openAdd() {
   editing.value = null
+  previewLine.value = ''
   const f = emptyRuleForm(activeChain.value)
   applyIfaceToForm(f)
   form.value = f
@@ -190,6 +309,7 @@ function startEdit(r) {
     return
   }
   editing.value = r.id
+  previewLine.value = ''
   form.value = ruleToForm(r, devLan.value, devWan.value)
   showForm.value = true
   requestAnimationFrame(() => {
@@ -200,6 +320,8 @@ function startEdit(r) {
 function cancelEdit() {
   editing.value = null
   form.value = emptyRuleForm(activeChain.value)
+  formHint.value = ''
+  previewLine.value = ''
   showForm.value = false
 }
 
@@ -207,8 +329,28 @@ function buildPayload() {
   return formToPayload(form.value, devLan.value, devWan.value)
 }
 
+async function previewNft() {
+  if (!runFormValidation()) return
+  err.value = ''
+  ok.value = ''
+  previewLine.value = ''
+  previewLoading.value = true
+  try {
+    const payload = buildPayload()
+    const res = editing.value
+      ? await api.firewall.rules.put(editing.value, { ...payload, id: editing.value }, { dryRun: true })
+      : await api.firewall.rules.add(payload, { dryRun: true })
+    previewLine.value = res.nft_line || ''
+    ok.value = t('security.firewall.previewNftOk')
+  } catch (e) {
+    err.value = apiError(e)
+  } finally {
+    previewLoading.value = false
+  }
+}
+
 function runFormValidation() {
-  const problems = validateRuleForm(form.value, t)
+  const problems = validateRuleForm(form.value, t, aliasNames.value)
   if (problems.length) {
     err.value = `${t('security.firewall.formErrors')} ${problems.join('；')}`
     return false
@@ -223,12 +365,14 @@ function openView(r) {
 function duplicateRule(r) {
   if (!isRuleMutable(r)) return
   editing.value = null
+  if (r.chain) activeChain.value = r.chain
   form.value = ruleToForm(r, devLan.value, devWan.value)
   showForm.value = true
 }
 
 function applyPreset(kind) {
   editing.value = null
+  formHint.value = ''
   const f = emptyRuleForm(activeChain.value)
   const wanDev =
     activeIface.value && activeIface.value !== IFACE_ALL && activeIface.value !== IFACE_FLOATING
@@ -236,12 +380,14 @@ function applyPreset(kind) {
       : devWan.value
   if (kind === 'lan-in' && (devLan.value || activeIface.value === devLan.value)) {
     f.chain = 'input'
+    activeChain.value = 'input'
     f.action = 'accept'
     f.iif_mode = devLan.value ? 'lan' : 'custom'
     if (f.iif_mode === 'custom') f.iif_custom = activeIface.value || devLan.value
     f.comment = t('security.firewall.presetAllowLan')
   } else if (kind === 'wan-block' && wanDev) {
     f.chain = 'input'
+    activeChain.value = 'input'
     f.action = 'drop'
     if (wanDev === devWan.value) f.iif_mode = 'wan'
     else {
@@ -249,6 +395,9 @@ function applyPreset(kind) {
       f.iif_custom = wanDev
     }
     f.comment = t('security.firewall.presetBlockWan')
+    formHint.value = t('security.firewall.presetBlockWanHint', {
+      port: adminPort.value || '8080',
+    })
   } else if (kind === 'tcp-allow') {
     f.action = 'accept'
     f.proto = 'tcp'
@@ -291,6 +440,7 @@ async function saveEdit() {
 
 async function toggleEnabled(r) {
   if (!isRuleMutable(r)) return
+  if (r.enabled && !confirm(t('security.firewall.confirmDisable'))) return
   err.value = ''
   ok.value = ''
   try {
@@ -387,7 +537,19 @@ function rowActionLabel(action) {
   return t(`security.firewall.${key}`)
 }
 
-onMounted(load)
+watch(
+  () => route.query,
+  () => {
+    if (syncingFromRoute) return
+    applyRouteQuery()
+    focusPendingRule()
+  },
+)
+
+onMounted(() => {
+  applyRouteQuery()
+  load().then(() => syncFirewallRoute())
+})
 </script>
 
 <template>
@@ -562,6 +724,14 @@ onMounted(load)
                 <span class="font-normal text-amber-800">({{ autoCount }})</span>
               </td>
             </tr>
+            <tr v-if="hasAutoForwardRules && activeChain === 'forward'" class="fw-row-hint">
+              <td :colspan="tableColspan" class="!py-2 !bg-amber-50/80 !text-xs !text-amber-950 leading-relaxed">
+                {{ t('security.firewall.portForwardSyncHint') }}
+                <RouterLink to="/nat/forwards" class="text-blue-700 hover:underline font-medium ml-1">
+                  {{ t('security.firewall.portForwardLink') }} →
+                </RouterLink>
+              </td>
+            </tr>
             <tr v-if="autoCount === 0" class="fw-row-empty">
               <td :colspan="tableColspan" class="text-center text-slate-400 py-4 text-sm">
                 {{ t('security.firewall.noAuto') }}
@@ -647,7 +817,9 @@ onMounted(load)
                 :title="
                   searchQuery.trim()
                     ? t('security.firewall.searchPh')
-                    : t('security.firewall.dragHint')
+                    : ifaceReorderHint
+                      ? t('security.firewall.dragHintIface')
+                      : t('security.firewall.dragHint')
                 "
                 @dragstart="onDragStart(idx)"
               >
@@ -761,6 +933,9 @@ onMounted(load)
         </table>
       </div>
 
+      <p v-if="ifaceReorderHint" class="text-xs text-amber-800 bg-amber-50 border-t border-amber-100 px-3 py-2">
+        {{ t('security.firewall.ifaceReorderHint', { iface: activeIfaceLabel }) }}
+      </p>
       <p class="text-xs text-slate-500 px-3 py-2 border-t bg-slate-50">
         {{ t('security.firewall.orderHint') }}
       </p>
@@ -784,6 +959,13 @@ onMounted(load)
           <dd class="font-mono text-slate-800 break-all">{{ line.v }}</dd>
         </template>
       </dl>
+      <div v-if="selectedNftLine" class="mt-3 pt-3 border-t border-slate-200">
+        <p class="text-xs text-slate-500 mb-1">{{ t('security.firewall.detailNftLine') }}</p>
+        <pre class="text-xs font-mono bg-slate-900 text-slate-100 p-2 rounded overflow-x-auto whitespace-pre-wrap">{{ selectedNftLine }}</pre>
+      </div>
+      <p v-else-if="selectedNftHint" class="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-500">
+        {{ selectedNftHint }}
+      </p>
       <p v-if="isRuleAutoManaged(selectedRule)" class="mt-2 text-xs text-amber-800">
         {{ t('security.firewall.ruleLocked') }}
       </p>
@@ -797,8 +979,30 @@ onMounted(load)
     >
       <h3 class="font-medium text-pfsense-nav">
         {{ editing ? t('security.firewall.editRule') : t('security.firewall.addRule') }}
-        <span class="text-slate-400 font-normal">({{ activeChain }} · {{ activeIfaceLabel }})</span>
+        <span class="text-slate-400 font-normal">({{ form.chain }} · {{ activeIfaceLabel }})</span>
       </h3>
+      <p v-if="formChainTabMismatch" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+        {{
+          t('security.firewall.formChainTabMismatch', {
+            formChain: form.chain,
+            tabChain: activeChain,
+          })
+        }}
+      </p>
+      <p v-if="formHint" class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+        {{ formHint }}
+      </p>
+      <p
+        v-else-if="formWanDropWarning"
+        class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
+      >
+        {{
+          t('security.firewall.formWanDropHint', {
+            iface: formResolvedIif,
+            port: adminPort || '8080',
+          })
+        }}
+      </p>
       <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
         <div>
           <label class="text-xs text-slate-500">{{ t('security.firewall.chain') }}</label>
@@ -957,7 +1161,19 @@ onMounted(load)
           <button type="button" class="btn-primary" @click="saveEdit">{{ t('security.firewall.saveEdit') }}</button>
           <button type="button" class="btn-secondary" @click="cancelEdit">{{ t('common.cancel') }}</button>
         </template>
+        <button
+          type="button"
+          class="btn-secondary"
+          :disabled="previewLoading"
+          @click="previewNft"
+        >
+          {{ previewLoading ? t('security.firewall.previewLoading') : t('security.firewall.previewNft') }}
+        </button>
       </div>
+      <pre
+        v-if="previewLine"
+        class="text-xs bg-slate-900 text-emerald-200 p-3 rounded-lg overflow-auto"
+      >{{ previewLine }}</pre>
     </div>
 
     <button type="button" class="text-sm text-slate-600 hover:text-slate-900" @click="showRendered = !showRendered">

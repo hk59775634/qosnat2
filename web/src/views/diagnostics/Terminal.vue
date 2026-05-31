@@ -5,6 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
+import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
@@ -12,6 +13,8 @@ const { t } = useI18n()
 const containerRef = ref(null)
 const status = ref('connecting')
 const errMsg = ref('')
+const enabled = ref(false)
+const checked = ref(false)
 
 const termRef = shallowRef(null)
 const fitRef = shallowRef(null)
@@ -30,6 +33,7 @@ function sendResize() {
 }
 
 function connect() {
+  if (!enabled.value) return
   disconnect()
   status.value = 'connecting'
   errMsg.value = ''
@@ -80,10 +84,17 @@ function connect() {
 
   ws.onclose = (ev) => {
     if (status.value === 'connecting') {
-      errMsg.value =
-        ev.code === 1006
-          ? t('diagnostics.terminal.connectFailed')
-          : t('diagnostics.terminal.closed', { code: ev.code })
+      if (ev.code === 1006) {
+        errMsg.value = t('diagnostics.terminal.connectFailed')
+      } else if (ev.code === 1000) {
+        errMsg.value = t('diagnostics.terminal.closed', { code: ev.code })
+      } else {
+        errMsg.value =
+          ev.reason ||
+          (ev.code === 403
+            ? t('diagnostics.terminal.disabled')
+            : t('diagnostics.terminal.closed', { code: ev.code }))
+      }
       status.value = 'error'
     } else if (status.value === 'connected') {
       term.writeln('')
@@ -120,7 +131,21 @@ function reconnect() {
   connect()
 }
 
-onMounted(connect)
+onMounted(async () => {
+  try {
+    const h = await api.health()
+    enabled.value = !!h.diagnostics_terminal_enabled
+  } catch {
+    enabled.value = false
+  }
+  checked.value = true
+  if (enabled.value) {
+    connect()
+  } else {
+    status.value = 'error'
+    errMsg.value = t('diagnostics.terminal.disabled')
+  }
+})
 onBeforeUnmount(disconnect)
 </script>
 
@@ -131,7 +156,23 @@ onBeforeUnmount(disconnect)
       :description="t('diagnostics.terminal.description')"
     />
 
-    <div class="card card-body mb-3 flex flex-wrap items-center gap-3 text-sm">
+    <div
+      v-if="enabled"
+      class="rounded-lg border border-red-300 bg-red-50 text-red-900 text-sm p-3 mb-3"
+      role="alert"
+    >
+      <p class="font-semibold">{{ t('diagnostics.terminal.dangerTitle') }}</p>
+      <p class="text-xs mt-1 text-red-800">{{ t('diagnostics.terminal.dangerBody') }}</p>
+    </div>
+
+    <div
+      v-else-if="checked"
+      class="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm p-3 mb-3"
+    >
+      {{ t('diagnostics.terminal.disabled') }}
+    </div>
+
+    <div v-if="enabled" class="card card-body mb-3 flex flex-wrap items-center gap-3 text-sm">
       <span
         class="inline-flex items-center gap-2"
         :class="{
@@ -167,7 +208,7 @@ onBeforeUnmount(disconnect)
 
     <p v-if="errMsg" class="text-red-600 text-sm mb-2">{{ errMsg }}</p>
 
-    <div class="card terminal-card overflow-hidden">
+    <div v-if="enabled" class="card terminal-card overflow-hidden">
       <div ref="containerRef" class="terminal-host" tabindex="0" />
     </div>
   </div>

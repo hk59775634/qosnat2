@@ -362,7 +362,7 @@ cmd_stop() {
   require_root
   systemctl stop qosnatd.service 2>/dev/null || true
   systemctl stop qos-nat.service 2>/dev/null || true
-  nft flush ruleset 2>/dev/null || true
+  nft delete table inet qosnat 2>/dev/null || true
   log "已停止 qosnatd / qos-nat"
 }
 

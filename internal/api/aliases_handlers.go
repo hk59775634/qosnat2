@@ -25,18 +25,34 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = srv.store.Update(func(st *store.State) {
-			for i, a := range st.Firewall.Aliases {
-				if a.Name == body.Name {
-					st.Firewall.Aliases[i] = body
-					return
-				}
+		st := srv.store.Get()
+		var newAliases []store.AliasSet
+		replaced := false
+		for _, a := range st.Firewall.Aliases {
+			if a.Name == body.Name {
+				newAliases = append(newAliases, body)
+				replaced = true
+				continue
 			}
-			st.Firewall.Aliases = append(st.Firewall.Aliases, body)
-		})
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			newAliases = append(newAliases, a)
+		}
+		if !replaced {
+			newAliases = append(newAliases, body)
+		}
+		proposed := st
+		proposed.Firewall.Aliases = newAliases
+		if err := srv.checkNftForState(proposed); err != nil {
+			writeNftApplyError(w, err)
+			return
+		}
+		backup := cloneAliases(st.Firewall.Aliases)
+		srv.setAliases(newAliases)
+		if !srv.saveState(w) {
+			srv.setAliases(backup)
+			return
+		}
+		if err := srv.reloadNftWithAliasRevert(backup); err != nil {
+			writeApplyError(w, err)
 			return
 		}
 		srv.auditLog(r, "firewall.alias.add", body.Name)
@@ -47,18 +63,38 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
 			return
 		}
-		_ = srv.store.Update(func(st *store.State) {
-			var out []store.AliasSet
-			for _, a := range st.Firewall.Aliases {
-				if a.Name != name {
-					out = append(out, a)
-				}
+		st := srv.store.Get()
+		var newAliases []store.AliasSet
+		found := false
+		for _, a := range st.Firewall.Aliases {
+			if a.Name == name {
+				found = true
+				continue
 			}
-			st.Firewall.Aliases = out
-		})
-		_ = srv.store.Save()
-		if err := srv.reloadNft(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			newAliases = append(newAliases, a)
+		}
+		if !found {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "alias not found"})
+			return
+		}
+		if store.AliasReferencedByRules(st.Firewall.FilterRules, name) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "alias is referenced by firewall rules"})
+			return
+		}
+		proposed := st
+		proposed.Firewall.Aliases = newAliases
+		if err := srv.checkNftForState(proposed); err != nil {
+			writeNftApplyError(w, err)
+			return
+		}
+		backup := cloneAliases(st.Firewall.Aliases)
+		srv.setAliases(newAliases)
+		if !srv.saveState(w) {
+			srv.setAliases(backup)
+			return
+		}
+		if err := srv.reloadNftWithAliasRevert(backup); err != nil {
+			writeApplyError(w, err)
 			return
 		}
 		srv.auditLog(r, "firewall.alias.delete", name)

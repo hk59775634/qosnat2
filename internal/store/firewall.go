@@ -91,15 +91,32 @@ func NormalizeFilterRule(r *FilterRule) error {
 			return fmt.Errorf("unsupported proto %q", r.Proto)
 		}
 	}
+	if err := validateFilterPort(r.SrcPort, "src_port"); err != nil {
+		return err
+	}
+	if err := validateFilterPort(r.DstPort, "dst_port"); err != nil {
+		return err
+	}
+	ver := strings.ToLower(strings.TrimSpace(r.IPVersion))
+	addrValidate := ValidateIPv4OrCIDR
+	switch ver {
+	case "", "ipv4":
+		r.IPVersion = ""
+	case "ipv6":
+		r.IPVersion = "ipv6"
+		addrValidate = ValidateIPv6OrCIDR
+	default:
+		return fmt.Errorf("ip_version must be ipv4 or ipv6")
+	}
 	r.SrcAddr = strings.TrimSpace(r.SrcAddr)
 	r.DstAddr = strings.TrimSpace(r.DstAddr)
 	if r.SrcAddr != "" {
-		if err := ValidateIPv4OrCIDR(r.SrcAddr); err != nil {
+		if err := addrValidate(r.SrcAddr); err != nil {
 			return fmt.Errorf("src_addr: %w", err)
 		}
 	}
 	if r.DstAddr != "" {
-		if err := ValidateIPv4OrCIDR(r.DstAddr); err != nil {
+		if err := addrValidate(r.DstAddr); err != nil {
 			return fmt.Errorf("dst_addr: %w", err)
 		}
 	}
@@ -119,6 +136,16 @@ func NormalizeFilterRule(r *FilterRule) error {
 		return fmt.Errorf("comment must not contain newlines")
 	}
 	r.Comment = strings.TrimSpace(r.Comment)
+	return nil
+}
+
+func validateFilterPort(port int, field string) error {
+	if port == 0 {
+		return nil
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("%s must be 1-65535 or 0 for any", field)
+	}
 	return nil
 }
 
@@ -181,5 +208,44 @@ func (r FilterRule) NftRuleLine() string {
 		parts = append(parts, fmt.Sprintf("dport %d", r.DstPort))
 	}
 	parts = append(parts, r.Action)
-	return strings.Join(parts, " ")
+	line := strings.Join(parts, " ")
+	if c := filterRuleComment(r); c != "" {
+		line += c
+	}
+	return line
+}
+
+func filterRuleComment(r FilterRule) string {
+	if r.System || strings.HasPrefix(r.ID, "sys-") || strings.HasPrefix(r.ID, "auto-") {
+		user := strings.TrimSpace(r.Comment)
+		if user == "" {
+			return ""
+		}
+		return nftCommentClause(user)
+	}
+	marker := ""
+	if id := strings.TrimSpace(r.ID); id != "" {
+		marker = "qosnat2:rid:" + id
+	}
+	user := strings.TrimSpace(r.Comment)
+	switch {
+	case user != "" && marker != "":
+		return nftCommentClause(user + " " + marker)
+	case user != "":
+		return nftCommentClause(user)
+	case marker != "":
+		return nftCommentClause(marker)
+	default:
+		return ""
+	}
+}
+
+func nftCommentClause(comment string) string {
+	c := strings.TrimSpace(comment)
+	if c == "" {
+		return ""
+	}
+	c = strings.ReplaceAll(c, `\`, `\\`)
+	c = strings.ReplaceAll(c, `"`, `\"`)
+	return ` comment "` + c + `"`
 }

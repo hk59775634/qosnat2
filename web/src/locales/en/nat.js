@@ -59,10 +59,24 @@ export default {
     jool: 'Jool',
     unbound: 'Unbound',
     notInstalled: 'not installed',
+    stackApplyFailed: 'NAT stack apply incomplete: {err}',
   },
   forwards: {
     title: 'Port forwards',
     description: 'DNAT on selected interface to internal targets; auto-syncs forward allow rules and hairpin NAT',
+    linkageTitle: 'How this links to the firewall',
+    linkageIntro:
+      'Each port forward applies three coordinated nft changes. Manage forwards here only — matching firewall rows are auto-synced and locked.',
+    linkageStep1: 'prerouting: DNAT on the WAN interface matches src/dst/port and rewrites to the internal target.',
+    linkageStep2:
+      'forward (auto-fwd-*): accept {wan} → {lan} for the redirect IP/port so traffic is not dropped by the default forward deny.',
+    linkageStep3:
+      'prerouting/postrouting (hairpin): clients on {lan} using the public IP:port are DNAT’d and masqueraded back to the same internal host.',
+    linkageNote:
+      'Custom forward drop rules are evaluated before auto-fwd-*; a broad block can still stop a forward. Delete the forward here to remove DNAT and its auto rules together.',
+    linkageFirewallLink: 'View synced rules in Firewall (forward chain)',
+    linkageDeepLinkHint: 'Click an auto-fwd-* id to jump to that rule in the firewall page.',
+    colFirewall: 'Firewall (auto)',
     addRule: 'Add forward rule',
     iface: 'Interface',
     ipVersion: 'IP version',

@@ -9,6 +9,24 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	APIKeyRoleAdmin    = "admin"
+	APIKeyRoleReadOnly = "readonly"
+	APIKeyRoleFirewall = "firewall"
+)
+
+// NormalizeAPIKeyRole 返回 admin、readonly 或 firewall。
+func NormalizeAPIKeyRole(role string) string {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case APIKeyRoleReadOnly, "read_only", "read-only":
+		return APIKeyRoleReadOnly
+	case APIKeyRoleFirewall, "firewall-only", "firewall_only":
+		return APIKeyRoleFirewall
+	default:
+		return APIKeyRoleAdmin
+	}
+}
+
 // HashAPIKey 使用 bcrypt 存储 API Key（新密钥）。
 func HashAPIKey(plain string) (string, error) {
 	h, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)

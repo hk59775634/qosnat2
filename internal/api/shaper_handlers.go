@@ -54,7 +54,12 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 	if err != nil {
 		return false, err
 	}
-	// 必须先写入 state，再装 TC：reattach 依赖 shaperMirredCIDRs(st) 含新网段
+	// 必须先更新内存 state 再装 TC/BPF；BPF 失败则不持久化。
+	stBefore := srv.store.Get()
+	backupProfiles := append([]store.ProfileEntry(nil), stBefore.Shaper.Profiles...)
+	backupPolicyCIDR := stBefore.Shaper.PolicyCIDR
+	backupDefault := stBefore.Shaper.DefaultProfile
+	backupRoutes := append([]string(nil), stBefore.Nat.IPv4.PolicyRoutes...)
 	_ = srv.store.Update(func(st *store.State) {
 		existed := false
 		for _, p := range st.Shaper.Profiles {
@@ -82,8 +87,18 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 			}
 		}
 	})
-	_ = srv.store.Save()
 	if err := srv.syncProfileBPFMaps(cidr, rv); err != nil {
+		_ = srv.store.Update(func(st *store.State) {
+			st.Shaper.Profiles = backupProfiles
+			st.Shaper.PolicyCIDR = backupPolicyCIDR
+			st.Shaper.DefaultProfile = backupDefault
+			if wizard {
+				st.Nat.IPv4.PolicyRoutes = backupRoutes
+			}
+		})
+		return false, err
+	}
+	if err := srv.store.Save(); err != nil {
 		return false, err
 	}
 	if refresh {

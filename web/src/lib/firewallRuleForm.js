@@ -25,27 +25,59 @@ export const PROTO_OPTIONS = [
   { value: 'udplite', labelKey: 'protoUdplite' },
 ]
 
-export function validateRuleForm(form, t) {
+export function validateRuleForm(form, t, aliasNames = []) {
   const errors = []
+  const knownAliases = new Set((aliasNames || []).map((n) => String(n).trim()).filter(Boolean))
   if (form.iif_mode === 'custom' && !String(form.iif_custom || '').trim()) {
     errors.push(t('security.firewall.errInIface'))
   }
   if (form.chain === 'forward' && form.oif_mode === 'custom' && !String(form.oif_custom || '').trim()) {
     errors.push(t('security.firewall.errOutIface'))
   }
-  if (form.src_mode === 'cidr' && !String(form.src_cidr || '').trim()) {
-    errors.push(t('security.firewall.errSrcCidr'))
+  if (form.src_mode === 'cidr') {
+    const s = String(form.src_cidr || '').trim()
+    if (!s) errors.push(t('security.firewall.errSrcCidr'))
+    else if (!looksLikeIPv4OrCIDR(s)) errors.push(t('security.firewall.errBadSrcCidr'))
   }
   if (form.src_mode === 'alias' && !String(form.src_alias || '').trim()) {
     errors.push(t('security.firewall.errSrcAlias'))
+  } else if (form.src_mode === 'alias' && knownAliases.size && !knownAliases.has(String(form.src_alias).trim())) {
+    errors.push(t('security.firewall.errSrcAliasMissing'))
   }
-  if (form.dst_mode === 'cidr' && !String(form.dst_cidr || '').trim()) {
-    errors.push(t('security.firewall.errDstCidr'))
+  if (form.dst_mode === 'cidr') {
+    const s = String(form.dst_cidr || '').trim()
+    if (!s) errors.push(t('security.firewall.errDstCidr'))
+    else if (!looksLikeIPv4OrCIDR(s)) errors.push(t('security.firewall.errBadDstCidr'))
   }
   if (form.dst_mode === 'alias' && !String(form.dst_alias || '').trim()) {
     errors.push(t('security.firewall.errDstAlias'))
+  } else if (form.dst_mode === 'alias' && knownAliases.size && !knownAliases.has(String(form.dst_alias).trim())) {
+    errors.push(t('security.firewall.errDstAliasMissing'))
+  }
+  if (form.src_port_mode === 'custom' && !validPort(form.src_port_custom)) {
+    errors.push(t('security.firewall.errBadSrcPort'))
+  }
+  if (form.dst_port_mode === 'custom' && !validPort(form.dst_port_custom)) {
+    errors.push(t('security.firewall.errBadDstPort'))
   }
   return errors
+}
+
+function validPort(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return false
+  const n = parseInt(s, 10)
+  return Number.isFinite(n) && n >= 1 && n <= 65535
+}
+
+function looksLikeIPv4OrCIDR(s) {
+  const m = String(s || '').trim().match(/^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/)
+  if (!m) return false
+  const parts = s.split('/')[0].split('.')
+  return parts.every((p) => {
+    const n = Number(p)
+    return n >= 0 && n <= 255
+  })
 }
 
 export function emptyRuleForm(chain = 'forward') {

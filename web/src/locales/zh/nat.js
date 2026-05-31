@@ -59,10 +59,24 @@ export default {
     jool: 'Jool',
     unbound: 'Unbound',
     notInstalled: '未安装',
+    stackApplyFailed: 'NAT 协议栈未完全应用：{err}',
   },
   forwards: {
     title: '端口转发',
     description: '在指定接口匹配入站并重定向到内网；自动同步 forward 放行规则与回流 NAT',
+    linkageTitle: '与防火墙的联动关系',
+    linkageIntro:
+      '每条端口转发会同步生成三组 nft 规则。请仅在本页增删改；防火墙中对应的 auto-fwd-* 行只读且随转发生命周期更新。',
+    linkageStep1: 'prerouting：在 WAN 接口按源/目的/端口匹配，DNAT 重写到内网目标。',
+    linkageStep2:
+      'forward（auto-fwd-*）：放行 {wan} → {lan} 的转发流量（匹配 redirect IP/端口），避免被 forward 默认丢弃拦截。',
+    linkageStep3:
+      'prerouting/postrouting（hairpin/回流）：{lan} 内网访问公网 IP:端口 时再次 DNAT，并经 LAN 口 masquerade 回到同一内网主机。',
+    linkageNote:
+      '自定义 forward 丢弃规则排在 auto-fwd-* 之前；过宽的 drop 仍可能阻断转发。在此删除转发会同时移除 DNAT 与关联的自动防火墙规则。',
+    linkageFirewallLink: '在防火墙中查看同步规则（forward 链）',
+    linkageDeepLinkHint: '点击 auto-fwd-* 可跳转到防火墙页并定位该规则。',
+    colFirewall: '防火墙（自动）',
     addRule: '添加规则',
     iface: '接口',
     ipVersion: '协议版本',

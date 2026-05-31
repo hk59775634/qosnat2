@@ -81,4 +81,5 @@ export default {
   githubRepoTitle: 'Open {repo} on GitHub',
   appVersion: 'Version',
   appVersionTitle: 'Running version {v}',
+  dismiss: 'Dismiss',
 }

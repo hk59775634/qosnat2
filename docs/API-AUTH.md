@@ -26,12 +26,23 @@ curl -s -H "X-API-Key: $QOSNAT_API_KEY" http://<host>:8080/api/v1/shaper/profile
 
 与 Cookie **二选一**；未鉴权返回 `401`。
 
+## API Key 角色
+
+| role | 写权限 |
+|------|--------|
+| `admin`（默认） | 全部 API |
+| `firewall` | 仅写 `/api/v1/firewall/*`；可读全部 GET |
+| `readonly` | 禁止写操作（403 `AUTH_READ_ONLY`） |
+
+Prometheus 采集与告警示例见 [PROMETHEUS-METRICS.md](./PROMETHEUS-METRICS.md)。
+
 ## 环境变量（自动验收 / 冒烟）
 
 | 变量 | 用途 |
 |------|------|
 | `ADMIN_USER` / `ADMIN_PASS` | 初始登录（默认 `admin` / `password`）；引导后写入 state 的账号 |
 | `QOSNAT_API_KEY` | 跳过登录，所有请求带 `X-API-Key` |
+| `QOSNAT_NFT_INCREMENTAL` | `1` 时防火墙单条增删尝试 nft 增量 apply（失败回退全表 reload） |
 
 ```bash
 set -a; source /etc/qosnat2/env; set +a

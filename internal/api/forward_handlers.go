@@ -71,13 +71,26 @@ func (srv *Server) handleWanForwardsPost(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface not found: " + f.Interface})
 		return
 	}
+	st := srv.store.Get()
+	proposed := st
+	proposed.Firewall.WanPortForwards = append(cloneWanForwards(st.Firewall.WanPortForwards), f)
+	if err := srv.checkNftForState(proposed); err != nil {
+		writeNftApplyError(w, err)
+		return
+	}
+	backupFwd := cloneWanForwards(st.Firewall.WanPortForwards)
+	backupRules := cloneFilterRules(st.Firewall.FilterRules)
 	_ = srv.store.Update(func(st *store.State) {
 		st.Firewall.WanPortForwards = append(st.Firewall.WanPortForwards, f)
 	})
 	srv.syncAutoFirewallRules()
-	_ = srv.store.Save()
-	if err := srv.reloadNft(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	if !srv.saveState(w) {
+		srv.setWanForwards(backupFwd)
+		srv.setFilterRules(backupRules)
+		return
+	}
+	if err := srv.reloadNftWithForwardRevert(backupFwd, backupRules); err != nil {
+		writeApplyError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, f)
@@ -90,25 +103,36 @@ func (srv *Server) handleWanForwardsDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	found := false
-	_ = srv.store.Update(func(st *store.State) {
-		var out []store.WanPortForward
-		for _, f := range st.Firewall.WanPortForwards {
-			if f.ID == id {
-				found = true
-				continue
-			}
-			out = append(out, f)
+	st := srv.store.Get()
+	var newFwd []store.WanPortForward
+	for _, fwd := range st.Firewall.WanPortForwards {
+		if fwd.ID == id {
+			found = true
+			continue
 		}
-		st.Firewall.WanPortForwards = out
-	})
+		newFwd = append(newFwd, fwd)
+	}
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return
 	}
+	proposed := st
+	proposed.Firewall.WanPortForwards = newFwd
+	if err := srv.checkNftForState(proposed); err != nil {
+		writeNftApplyError(w, err)
+		return
+	}
+	backupFwd := cloneWanForwards(st.Firewall.WanPortForwards)
+	backupRules := cloneFilterRules(st.Firewall.FilterRules)
+	srv.setWanForwards(newFwd)
 	srv.syncAutoFirewallRules()
-	_ = srv.store.Save()
-	if err := srv.reloadNft(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	if !srv.saveState(w) {
+		srv.setWanForwards(backupFwd)
+		srv.setFilterRules(backupRules)
+		return
+	}
+	if err := srv.reloadNftWithForwardRevert(backupFwd, backupRules); err != nil {
+		writeApplyError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
