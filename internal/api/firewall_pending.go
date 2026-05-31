@@ -132,7 +132,7 @@ func (srv *Server) stageFilterRulesResponse(w http.ResponseWriter, r *http.Reque
 		"changes": changes,
 	}
 	if !changes.CanApply && len(changes.Issues) > 0 {
-		resp["warning"] = "pending changes have compliance or nft issues; fix before Apply"
+		resp["warning_code"] = "PENDING_HAS_ISSUES"
 	}
 	srv.auditLog(r, auditAction, auditDetail)
 	writeJSON(w, http.StatusOK, resp)
@@ -184,7 +184,7 @@ func (srv *Server) handleFirewallApply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
 		"applied": true,
-		"changes": changes,
+		"changes": srv.buildFirewallChangesPayload(srv.store.Get()),
 		"rules":   srv.store.Get().Firewall.FilterRules,
 	})
 }

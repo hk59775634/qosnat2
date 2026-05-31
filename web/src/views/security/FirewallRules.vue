@@ -40,7 +40,7 @@ import {
   validateRuleForm,
 } from '@/lib/firewallRuleForm'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const route = useRoute()
 const router = useRouter()
 let syncingFromRoute = false
@@ -337,7 +337,57 @@ function syncChangesFromPayload(changes) {
 function applyStageResponse(res) {
   if (res?.rules) rules.value = res.rules
   syncChangesFromPayload(res?.changes)
-  if (res?.warning) warn.value = res.warning
+  if (res?.warning_code && te(`security.firewall.warnings.${res.warning_code}`)) {
+    warn.value = t(`security.firewall.warnings.${res.warning_code}`)
+  } else if (res?.warning) {
+    warn.value = res.warning
+  } else if (hasPendingChanges.value && !canApplyChanges.value) {
+    warn.value = te('security.firewall.warnings.PENDING_HAS_ISSUES')
+      ? t('security.firewall.warnings.PENDING_HAS_ISSUES')
+      : ''
+  } else {
+    warn.value = ''
+  }
+}
+
+function issueParams(iss) {
+  const msg = iss?.message || ''
+  if (iss?.code === 'ALIAS_UNKNOWN') {
+    const m = msg.match(/alias "([^"]+)"/)
+    return { alias: m?.[1] || '—' }
+  }
+  if (iss?.code === 'ADMIN_PORT_EXPOSED') {
+    const m = msg.match(/port (\S+)/)
+    return { port: m?.[1] || adminPort.value || '8080' }
+  }
+  return {}
+}
+
+function issueMessage(iss) {
+  if (!iss?.code) return iss?.message || ''
+  const key = `security.firewall.issueCodes.${iss.code}`
+  return te(key) ? t(key, issueParams(iss)) : iss.message || iss.code
+}
+
+function issueHint(iss) {
+  if (!iss?.code) return iss?.hint || ''
+  const key = `security.firewall.issueHints.${iss.code}`
+  return te(key) ? t(key, issueParams(iss)) : iss.hint || ''
+}
+
+function friendlyApiError(e) {
+  const code = e?.data?.code
+  if (code && te(`security.firewall.apiErrors.${code}`)) {
+    const detail = (e?.data?.error || '').replace(/^nft ruleset invalid:\s*/i, '').trim()
+    return t(`security.firewall.apiErrors.${code}`, { detail })
+  }
+  const raw = e?.data?.error || e?.message || String(e)
+  if (/nft|syntax error|unknown identifier/i.test(raw)) {
+    return te('security.firewall.apiErrors.FIREWALL_NFT_INVALID')
+      ? t('security.firewall.apiErrors.FIREWALL_NFT_INVALID')
+      : raw
+  }
+  return raw
 }
 
 async function applyPendingChanges() {
@@ -346,17 +396,17 @@ async function applyPendingChanges() {
     err.value = t('security.firewall.cannotApply')
     return
   }
-  if (!confirm(t('security.firewall.applyBarHint'))) return
   applyBusy.value = true
   err.value = ''
   ok.value = ''
+  warn.value = ''
   try {
     const res = await api.firewall.apply()
     if (res?.rules) rules.value = res.rules
     syncChangesFromPayload(res?.changes)
     ok.value = t('security.firewall.appliedOk')
   } catch (e) {
-    err.value = apiError(e)
+    err.value = friendlyApiError(e)
     if (e?.data?.changes) syncChangesFromPayload(e.data.changes)
   } finally {
     applyBusy.value = false
@@ -375,17 +425,13 @@ async function discardPendingChanges() {
     syncChangesFromPayload(res?.changes)
     ok.value = t('security.firewall.discardedOk')
   } catch (e) {
-    err.value = apiError(e)
+    err.value = friendlyApiError(e)
   } finally {
     applyBusy.value = false
   }
 }
 
 const warn = ref('')
-
-function apiError(e) {
-  return e?.data?.error || e?.message || String(e)
-}
 
 function startEdit(r) {
   if (!isRuleMutable(r)) {
@@ -427,7 +473,7 @@ async function previewNft() {
     previewLine.value = res.nft_line || ''
     ok.value = t('security.firewall.previewNftOk')
   } catch (e) {
-    err.value = apiError(e)
+    err.value = friendlyApiError(e)
   } finally {
     previewLoading.value = false
   }
@@ -497,14 +543,14 @@ function applyPreset(kind) {
 async function add() {
   if (!runFormValidation()) return
   err.value = ''
+  ok.value = ''
   warn.value = ''
   try {
     const res = await api.firewall.rules.add(buildPayload())
     applyStageResponse(res)
-    ok.value = t('security.firewall.stagedOk')
     cancelEdit()
   } catch (e) {
-    err.value = apiError(e)
+    err.value = friendlyApiError(e)
   }
 }
 
@@ -517,10 +563,9 @@ async function saveEdit() {
   try {
     const res = await api.firewall.rules.put(editing.value, { ...buildPayload(), id: editing.value })
     applyStageResponse(res)
-    ok.value = t('security.firewall.stagedOk')
     cancelEdit()
   } catch (e) {
-    err.value = apiError(e)
+    err.value = friendlyApiError(e)
   }
 }
 
@@ -533,9 +578,8 @@ async function toggleEnabled(r) {
   try {
     const res = await api.firewall.rules.put(r.id, { ...r, enabled: !r.enabled })
     applyStageResponse(res)
-    ok.value = t('security.firewall.stagedOk')
   } catch (e) {
-    err.value = apiError(e)
+    err.value = friendlyApiError(e)
   }
 }
 
@@ -552,9 +596,8 @@ async function remove(r) {
     const res = await api.firewall.rules.del(r.id)
     applyStageResponse(res)
     if (editing.value === r.id) cancelEdit()
-    ok.value = t('security.firewall.stagedOk')
   } catch (e) {
-    err.value = apiError(e)
+    err.value = friendlyApiError(e)
   }
 }
 
@@ -582,9 +625,8 @@ async function persistOrder(reorderedSubset) {
     }
     const res = await api.firewall.rules.reorder(orderIds)
     applyStageResponse(res)
-    ok.value = t('security.firewall.stagedOk')
   } catch (e) {
-    err.value = apiError(e)
+    err.value = friendlyApiError(e)
   } finally {
     savingOrder.value = false
   }
@@ -686,8 +728,8 @@ onMounted(() => {
             <span class="font-semibold">{{
               iss.severity === 'error' ? t('security.firewall.issueSeverityError') : t('security.firewall.issueSeverityWarn')
             }}</span>
-            : {{ iss.message }}
-            <p v-if="iss.hint" class="text-xs mt-1 text-slate-600">{{ iss.hint }}</p>
+            : {{ issueMessage(iss) }}
+            <p v-if="issueHint(iss)" class="text-xs mt-1 text-slate-600">{{ issueHint(iss) }}</p>
           </li>
         </ul>
       </div>
