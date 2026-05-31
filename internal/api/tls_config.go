@@ -122,7 +122,7 @@ func removeTLSFiles() {
 	_ = os.Remove(defaultTLSKeyPath)
 }
 
-// applyTLS 写入证书、更新 env，并热切换 HTTP/HTTPS 监听（不重启 qosnatd）。
+// applyTLS 写入证书、更新 env，并在响应返回后异步切换 HTTP/HTTPS 监听（不重启 qosnatd）。
 // 仅更新证书文件且模式不变时，tlsCertReloader 按 mtime 加载，可跳过监听重建。
 func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart bool, err error) {
 	wasActive := srv.tlsActive()
@@ -160,9 +160,7 @@ func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart 
 	if enabled && wasActive && nowActive {
 		return false, nil
 	}
-	if err := srv.reloadHTTPListener(); err != nil {
-		return false, err
-	}
+	srv.scheduleHTTPListenerReload()
 	return false, nil
 }
 

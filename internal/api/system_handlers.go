@@ -136,7 +136,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 					srv.auditLog(r, "system.tls", "managed_cert:"+certID)
 					writeJSON(w, http.StatusOK, map[string]any{
 						"ok":      true,
-						"warning": "已启用 HTTPS（证书库），监听已热切换。请使用 https:// 访问。",
+						"warning": "已启用 HTTPS（证书库），监听将在数秒内切换。请使用 https:// 访问。",
 						"tls":     srv.tlsStatusWithAcme(),
 					})
 					return
@@ -191,7 +191,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				srv.auditLog(r, "system.tls", "enabled")
 				writeJSON(w, http.StatusOK, map[string]any{
 					"ok":      true,
-					"warning": "已启用 HTTPS，监听已热切换（未重启 qosnatd）。请使用 https:// 访问。",
+					"warning": "已启用 HTTPS，监听将在数秒内切换（未重启 qosnatd）。请使用 https:// 访问。",
 					"tls":     srv.tlsStatusWithAcme(),
 				})
 				return
@@ -223,17 +223,14 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				writeInternalError(w, err.Error())
 				return
 			}
-			if err := srv.reloadHTTPListener(); err != nil {
-				writeInternalError(w, err.Error())
-				return
-			}
 			if srv.setupComplete() {
 				if err := srv.reloadNft(); err != nil {
 					writeInternalError(w, err.Error())
 					return
 				}
 			}
-			portWarn = "管理端口已更新，请使用新端口访问 Web UI。"
+			srv.scheduleHTTPListenerReload()
+			portWarn = "管理端口已更新，请使用新端口访问 Web UI（监听将在数秒内切换）。"
 			srv.auditLog(r, "system.admin_port", validPort)
 		}
 		if body.NewPassword != "" {

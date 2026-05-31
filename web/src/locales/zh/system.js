@@ -13,6 +13,7 @@ export default {
     displayNameDefault: '留空则显示默认名称 qosnat2',
     adminPort: 'Web 管理端口',
     adminPortHint: '修改后需使用新端口访问；将同步更新防火墙 WAN 入站放行规则。',
+    adminPortSwitching: '管理端口已保存，正在等待新端口生效…',
     newPassword: '新密码（留空不修改）',
     currentPassword: '当前密码',
     tlsRunning: 'HTTPS 已生效',

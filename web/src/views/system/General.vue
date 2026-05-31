@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { setDisplayName } from '@/composables/useBranding'
+import { redirectAfterAdminPortChange } from '@/lib/adminPortRedirect'
 import PageTabs from '@/components/PageTabs.vue'
 import CertSelect from '@/components/CertSelect.vue'
 
@@ -45,6 +46,8 @@ let versionSwitchClearTimer = null
 const releaseNotesText = ref('')
 const releaseNotesLoading = ref(false)
 const releaseNotesErr = ref('')
+const saving = ref(false)
+const portSwitching = ref(false)
 
 const selectedRelease = computed(() => {
   const tag = switchTag.value
@@ -272,6 +275,11 @@ async function save() {
   err.value = ''
   ok.value = ''
   warn.value = ''
+  const previousPort = String(cfg.value?.admin_port || location.port || '').trim()
+  const requestedPort = String(form.value.admin_port ?? '').trim()
+  const portWillChange =
+    activeTab.value === 'basic' && requestedPort !== '' && requestedPort !== previousPort
+  saving.value = true
   try {
     const needPw =
       activeTab.value === 'tls'
@@ -283,17 +291,37 @@ async function save() {
       return
     }
     const res = await api.system.general.put(activeTab.value === 'tls' ? buildTlsPutBody() : buildBasicPutBody())
-    ok.value = t('system.general.saved')
-    if (res.warning) warn.value = res.warning
-    if (res.admin_port) form.value.admin_port = res.admin_port
     form.value.new_password = ''
     form.value.current_password = ''
     form.value.tls_cert = ''
     form.value.tls_key = ''
     setDisplayName(form.value.display_name)
+    if (portWillChange && res.admin_port) {
+      const newPort = String(res.admin_port).trim()
+      if (newPort && newPort !== previousPort) {
+        portSwitching.value = true
+        ok.value = t('system.general.adminPortSwitching')
+        if (res.warning) warn.value = res.warning
+        form.value.admin_port = newPort
+        const host = location.hostname || 'localhost'
+        const tlsActive = !!(res.tls?.tls_active ?? cfg.value?.tls?.tls_active)
+        await redirectAfterAdminPortChange({
+          host,
+          port: newPort,
+          tlsActive,
+        })
+        return
+      }
+    }
+    ok.value = t('system.general.saved')
+    if (res.warning) warn.value = res.warning
+    if (res.admin_port) form.value.admin_port = res.admin_port
     await load()
   } catch (e) {
     err.value = e.data?.error || e.message
+  } finally {
+    saving.value = false
+    portSwitching.value = false
   }
 }
 
@@ -760,9 +788,10 @@ onUnmounted(() => {
         v-if="activeTab === 'basic' || activeTab === 'tls'"
         type="button"
         class="btn-primary"
+        :disabled="saving || portSwitching"
         @click="save"
       >
-        {{ t('common.save') }}
+        {{ saving || portSwitching ? t('common.processing') : t('common.save') }}
       </button>
     </div>
 

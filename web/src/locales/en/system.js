@@ -13,6 +13,7 @@ export default {
     displayNameDefault: 'Leave empty to use the default name qosnat2',
     adminPort: 'Web admin port',
     adminPortHint: 'Use the new port after saving; WAN firewall input is updated automatically.',
+    adminPortSwitching: 'Admin port saved — waiting for the new listener…',
     newPassword: 'New password (leave empty to keep)',
     currentPassword: 'Current password',
     tlsRunning: 'HTTPS active',

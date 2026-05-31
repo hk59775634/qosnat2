@@ -129,6 +129,21 @@ func (hl *httpListener) runOnce() error {
 	}
 }
 
+// scheduleHTTPListenerReload 在 HTTP 响应返回后再切换监听。
+// 不可在请求 handler 内同步 reload：Shutdown 会等待当前 handler 结束，形成死锁直至超时。
+func (srv *Server) scheduleHTTPListenerReload() {
+	srv.initHTTPListener()
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		if err := srv.reloadHTTPListener(); err != nil {
+			log.Printf("http listener reload: %v; trying systemctl restart", err)
+			if rerr := restartQoSnatd(); rerr != nil {
+				log.Printf("restart qosnatd after listener reload failure: %v", rerr)
+			}
+		}
+	}()
+}
+
 // reloadHTTPListener 请求切换 HTTP/HTTPS 监听（等待当前连接优雅结束）
 func (srv *Server) reloadHTTPListener() error {
 	srv.initHTTPListener()
