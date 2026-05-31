@@ -2722,8 +2722,21 @@ paths:
     post:
       tags: [network]
       summary: 连接 WARP
+      description: 使用已持久化的 License Key（如有）；不在此接口提交新 Key。
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/network/warp/license:
+    put:
+      tags: [network]
+      summary: 保存 WARP+ License Key
+      description: 仅持久化配置，不立即对 warp-cli 生效；需断开后重新连接才会应用。
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
@@ -2731,13 +2744,16 @@ paths:
               properties:
                 license_key:
                   type: string
-                  description: 可选 WARP+ License Key，保存后用于 registration license
+                  description: WARP+ License Key；传空字符串可清除
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Ok'
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  warp_license_key_set: { type: boolean }
 
   /api/v1/network/warp/disconnect:
     post:

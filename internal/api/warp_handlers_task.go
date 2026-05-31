@@ -144,26 +144,6 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 		writeBadRequest(w, "warp not installed")
 		return
 	}
-	var body struct {
-		LicenseKey string `json:"license_key"`
-	}
-	if r.Body != nil {
-		dec := json.NewDecoder(r.Body)
-		dec.DisallowUnknownFields()
-		_ = dec.Decode(&body)
-	}
-	if strings.TrimSpace(body.LicenseKey) != "" {
-		if err := srv.store.Update(func(st *store.State) {
-			store.SetWarpLicenseKey(st, body.LicenseKey)
-		}); err != nil {
-			writeInternalError(w, err.Error())
-			return
-		}
-		if err := srv.store.Save(); err != nil {
-			writeInternalError(w, err.Error())
-			return
-		}
-	}
 	if err := srv.startWarpConnectAsync(r); err != nil {
 		writeConflictWithExtra(w, err.Error(), map[string]any{"job": getWarpTaskStatus()})
 		return

@@ -92,6 +92,37 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (srv *Server) handleNetworkWarpLicense(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var body struct {
+		LicenseKey string `json:"license_key"`
+	}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	if err := srv.store.Update(func(st *store.State) {
+		store.SetWarpLicenseKey(st, body.LicenseKey)
+	}); err != nil {
+		writeInternalError(w, err.Error())
+		return
+	}
+	if err := srv.store.Save(); err != nil {
+		writeInternalError(w, err.Error())
+		return
+	}
+	srv.auditLog(r, "network.warp.license", "")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                   true,
+		"warp_license_key_set": store.WarpLicenseKeyConfigured(srv.store.Get()),
+	})
+}
+
 func (srv *Server) handleNetworkWarpInstallStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w)
