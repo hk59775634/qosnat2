@@ -1,6 +1,10 @@
 # qosnat2 前端 UI 审计报告
 
-**审计日期**: 2026-05-30  
+**首轮日期**: 2026-05-30  
+**第二轮复验**: 2026-05-31 · `3f67d44` / `v2026053101`
+
+**复验摘要**: Terminal 红色警示 + 密码 grant 弹窗 **已做**；版本切换弹窗 **已做**；Apply 全局 sticky 告警 **已做**；防火墙 user-rule 搜索 **已做**。仍缺：风险 checkbox、state 备份向导 UI、全表搜索、nft diff。
+
 **技术栈**: Vue 3 + Vite + Tailwind  
 **参考产品**: pfSense / OPNsense / RouterOS / FortiGate
 
@@ -11,7 +15,7 @@
 | 视角 | 权重 | 摘要 |
 |------|------|------|
 | **用户体验** | 高 | 防火墙/NAT 表单较完整；深链与 nft 预览改善可运维性 |
-| **运维体验** | 高 | Dashboard、诊断、版本切换可用；Terminal 风险需 UI 警示 |
+| **运维体验** | 高 | Dashboard、诊断、版本切换可用；Terminal grant + 警示已加 |
 | **VPN 运营商** | 中 | 多租户 shaper、ocserv/WG 管理具备；缺批量用户/计费联动 |
 
 ---
@@ -95,9 +99,9 @@
 
 | 优先级 | 功能 | 说明 |
 |--------|------|------|
-| P1 | Terminal 危险操作门禁 | 红色警告 + 默认关闭 + 审计展示 |
-| P1 | Apply 失败全局提示 | 「配置未完全应用」sticky alert |
-| P2 | 防火墙规则搜索/过滤 | 规则多时必需 |
+| P1 | Terminal 危险操作门禁 | **PARTIAL** — 红色 Alert + grant 弹窗；无「我了解风险」checkbox |
+| P1 | Apply 失败全局提示 | **FIXED** — `useApplyAlert` + layout banner（后端 silent save 仍可能漏报） |
+| P2 | 防火墙规则搜索/过滤 | **PARTIAL** — user 规则可搜；auto/builtin 未纳入 |
 | P2 | 变更 diff 预览 | 保存前展示 nft diff |
 | P2 | 配置备份/还原 UI | state.json 导出导入向导 |
 | P3 | 暗色主题一致性 | 部分组件硬编码色 |

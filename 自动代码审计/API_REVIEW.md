@@ -1,15 +1,9 @@
 # qosnat2 API 设计审计报告
 
-**审计日期**: 2026-05-30  
-**基准**: `internal/api/server.go` 路由表、`api/openapi.yaml`、`docs/API-ZH.md`
+**首轮日期**: 2026-05-30  
+**第二轮复验**: 2026-05-31 · `3f67d44` / `v2026053101`
 
----
-
-## 一、总体评价
-
-API 采用 **REST-ish + JSON**，统一前缀 `/api/v1`，认证为 **Session Cookie** 或 **X-API-Key**。适合单节点网关管理面，**无分页**（状态全量返回），**无细粒度 RBAC**（单管理员模型）。
-
-**评分**: 7/10 — 功能覆盖完整，OpenAPI 近期有补充；一致性与错误体系仍有改进空间。
+**评分**: **8/10**（首轮 7/10）— grant/scope/ETag/CI 已补；error envelope 与 OpenAPI 细节仍待统一。
 
 ---
 
@@ -19,26 +13,17 @@ API 采用 **REST-ish + JSON**，统一前缀 `/api/v1`，认证为 **Session Co
 
 | ID | 问题 | 位置 | 建议 |
 |----|------|------|------|
-| API-1 | **写操作缺乏统一事务语义** | NAT/egress/shaper handlers | 定义标准 `ApplyResult`：preview → validate → commit → rollback |
-| API-2 | **破坏性操作无二次确认 token** | 版本切换、reset、terminal | 敏感 POST 要求 `Confirm-Token` 或 re-auth |
+| API-1 | **写操作缺乏统一事务语义** | NAT/egress/shaper | **FIXED**（firewall/NAT/egress）；import **OPEN** |
+| API-2 | **破坏性操作无二次确认** | version/terminal | **FIXED**（grant 模式） |
 
 ### P2 — 中危
 
 | ID | 问题 | 位置 | 建议 |
 |----|------|------|------|
 | API-3 | **HTTP 状态码不一致** | 部分校验失败用 400，部分用 500；别名占用 409（良好） | 文档化状态码矩阵并统一 handler |
-| API-4 | **错误体格式不统一** | 多数 `{"error":"..."}`，部分 `{"message":...}` 或嵌套对象 | 统一 envelope（见第五节） |
-| API-5 | **无 API 版本弃用策略** | 仅 `/api/v1` | 响应头 `Sunset` / OpenAPI `deprecated` |
-| API-6 | **列表接口无分页** | `/firewall/rules`、`/nat/...` 全量 | 单网关可接受；规则 >500 时加 `?limit` |
-| API-7 | **GET 与副作用** | 少数 diagnostic 可能触发 shell/exec | 严格 GET 幂等；副作用仅 POST |
-
-### P3 — 优化
-
-| ID | 问题 | 建议 |
-|----|------|------|
-| API-8 | URL 命名混用 kebab/camel | 新路由统一 kebab：`/wan-links` 风格 |
-| API-9 | OpenAPI 与实现漂移风险 | CI 对比路由注册与 openapi.yaml |
-| API-10 | 缺少 `ETag` / `If-Match` | 并发编辑防火墙时可乐观锁 |
+| API-4 | **错误体格式不统一** | 多数 handler | **PARTIAL** — `writeAPIError` ~10 处 |
+| API-9 | OpenAPI 与实现漂移 | openapi.yaml | **PARTIAL** — CI 路由 OK；spec 细节漂移 |
+| API-10 | 缺少 `ETag` | state export | **FIXED** — `If-None-Match` → 304 |
 
 ---
 

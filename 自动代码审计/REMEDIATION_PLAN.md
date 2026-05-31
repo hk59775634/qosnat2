@@ -1,8 +1,10 @@
 # qosnat2 修复与优化建议
 
-**依据**: [FINAL_AUDIT_REPORT.md](./FINAL_AUDIT_REPORT.md) 及分阶段审计报告  
-**日期**: 2026-05-30  
-**原则**: 保守修复 — 优先复用已有模式（如 `nft_apply_helpers.go`），每项变更附带回归测试；**避免「修一个 bug 引入两个 bug」**
+**首轮日期**: 2026-05-30  
+**第二轮复验**: 2026-05-31 — 阶段 1–2 **大部分已完成**，见 [AUDIT_STATUS.md](./AUDIT_STATUS.md) 与 [FINAL_AUDIT_REPORT.md](./FINAL_AUDIT_REPORT.md)。
+
+**依据**: 分阶段审计报告  
+**原则**: 保守修复 — 优先复用已有模式（如 `nft_apply_helpers.go`），每项变更附带回归测试
 
 ---
 

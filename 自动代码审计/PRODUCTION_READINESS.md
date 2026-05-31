@@ -48,7 +48,7 @@ qosnat2 设计为 **单机 Linux 路由器/NAT 网关**：
 
 | 问题 | 说明 |
 |------|------|
-| 全量 reload | 每次 `flush ruleset` + 重载整表，延迟随规则线性增长 |
+| 全量 reload | 每次 `delete table inet qosnat` + 重载整表（**已非全局 flush ruleset**），延迟仍随规则线性增长 |
 | 无增量 update | 改一条规则仍重建全 ruleset |
 | 10 万用户相关规则 | 若每用户一条 filter，不可行；应使用 ipset/聚合 alias |
 

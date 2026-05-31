@@ -1,8 +1,20 @@
 # qosnat2 Bug 专项报告
 
-**审计日期**: 2026-05-30  
+**首轮日期**: 2026-05-30  
+**第二轮复验**: 2026-05-31 · `3f67d44` / `v2026053101`
+
+| Bug | 首轮 | 复验 |
+|-----|------|------|
+| BUG-001 flush | P0 OPEN | **FIXED** |
+| BUG-002 Terminal | P0 OPEN | **PARTIAL** |
+| BUG-003 NAT revert | P1 OPEN | **FIXED** |
+| BUG-004 NatStack | P1 OPEN | **PARTIAL** |
+| BUG-005 nft race | P1 OPEN | **FIXED** |
+| BUG-006 atomic write | P2 OPEN | **FIXED** |
+| BUG-007+ | 见下文 | 部分 OPEN |
+
 **方法**: 静态代码审计 + 边界/并发/失败路径推演  
-**说明**: 未修改代码；Redis/MySQL 非运行时组件，相关场景标注 N/A
+**说明**: Redis/MySQL 非运行时组件，N/A
 
 ---
 
@@ -15,22 +27,21 @@
 | MySQL 断开 | **N/A** — 核心路径无 MySQL |
 | 网卡重启 | `applyWanLinkDataPlane` / WARP reconcile 可能部分失败，需人工 reload |
 | 系统重启 | 依赖 systemd + `deploy-qos-nat.sh` 恢复；state.json 损坏则 P2-1 |
-| nftables 重载 | 全局 flush 窗口内全表清空（BUG-001） |
-| API 高并发 | 并行 nft.Apply 竞态（BUG-005） |
+| nftables 重载 | scoped `delete table inet qosnat` 后重建本表（BUG-001 已修复）；仍有全表 O(n) 延迟 |
+| API 高并发 | nftApplyMu 串行化（BUG-005 已修复） |
 
 ---
 
 ## Bug 列表
 
-### BUG-001
+### BUG-001 — **状态: FIXED**
 
 | 字段 | 内容 |
 |------|------|
 | **严重级别** | P0 |
-| **位置** | `internal/nft/nft.go:79` |
-| **复现条件** | 任意触发 `nft.Apply`（改防火墙、NAT、重启服务）；主机上存在其他 nft 表或 iptables-nft 规则 |
-| **影响** | 非 qosnat 规则被清空；NAT/过滤短暂失效；依赖 WARP 回补可能仍遗漏第三方规则 |
-| **修复方案** | 将 `flush ruleset` 改为 scoped flush/delete table；Apply 前备份他表或文档禁止共存 |
+| **位置** | `internal/nft/nft.go:77-78` |
+| **复验** | Render 输出 `delete table inet qosnat`；`nft_test.go` 断言无 `flush ruleset` |
+| **修复方案** | ✅ 已实施 |
 
 ---
 
@@ -106,27 +117,48 @@
 
 ---
 
-### BUG-008
+### BUG-008 — **状态: OPEN（新 · 2026-05-31）**
 
 | 字段 | 内容 |
 |------|------|
-| **严重级别** | P2 |
-| **位置** | `internal/api/shaper_handlers.go`（Save 先于 dataplane） |
-| **复现条件** | BPF 加载失败或 tc 命令报错 |
-| **影响** | UI 显示新带宽档位，实际 tc 仍为旧配置 |
-| **修复方案** | apply 成功后再 persist；失败返回详细错误 |
+| **严重级别** | P1 |
+| **位置** | `system_state_handlers.go` import 路径 |
+| **复现条件** | 导入 state 后 `reloadNft` 或 `applyNatStack` 失败 |
+| **影响** | 磁盘 state 已替换，内核仍为旧配置或半配置 |
+| **修复方案** | import 前 backup；apply 失败 revert + 再 apply |
 
 ---
 
-### BUG-009
+### BUG-009 — **状态: OPEN（新 · 2026-05-31）**
 
 | 字段 | 内容 |
 |------|------|
 | **严重级别** | P2 |
-| **位置** | `internal/api/nat_handlers.go` — `_ = srv.store.Save()` |
-| **复现条件** | `/var/lib/qosnat2` 权限错误或磁盘只读 |
-| **影响** | 静默忽略 Save 错误仍 reloadNft，加剧不一致 |
-| **修复方案** | 检查 Save 返回值，失败则 500 且不 apply |
+| **位置** | ocserv/WG/routes 等 ~14 handler 文件 |
+| **复现条件** | 磁盘满或权限导致 `Save()` 失败 |
+| **影响** | API 返回 200，内存 state 与磁盘不一致 |
+| **修复方案** | 统一 `persistState(w)` 返回 500 |
+
+---
+
+### BUG-010（首轮）— Shaper Save 先于 dataplane
+
+| 字段 | 内容 |
+|------|------|
+| **严重级别** | P2 |
+| **位置** | `internal/api/shaper_handlers.go` |
+| **复验** | **PARTIAL** — wizard 路径 reload 失败仍仅 log（F-030） |
+| **修复方案** | apply 成功后再 persist；revert 对齐 firewall 模式 |
+
+---
+
+### BUG-011（首轮 Save 静默）— **大部分 FIXED**
+
+| 字段 | 内容 |
+|------|------|
+| **严重级别** | P2 |
+| **位置** | 原 `nat_handlers.go` 等 `_ = srv.store.Save()` |
+| **复验** | 显式 discard **0 处**；~62 处 log-only 仍 OPEN（见 BUG-009） |
 
 ---
 

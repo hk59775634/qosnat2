@@ -1,7 +1,11 @@
 # qosnat2 架构审计报告
 
-**审计日期**: 2026-05-30  
-**审计范围**: 全项目源码、配置、脚本、文档（只读，未修改代码）  
+**首轮日期**: 2026-05-30  
+**第二轮复验**: 2026-05-31 · 基准 `3f67d44` / `v2026053101`
+
+> **复验摘要**: P0-1（全局 flush）**已修复**；P1-1 NAT/egress revert **已修复**；P1-2 applyNatStack **部分修复**（首 snapshot 空）；P0-2 Terminal **部分缓解**（默认关 + grant + CIDR）。详见 [FINAL_AUDIT_REPORT.md](./FINAL_AUDIT_REPORT.md)。
+
+**审计范围**: 全项目源码、配置、脚本、文档（只读）  
 **项目**: qosnat2 — Linux 网关 NAT/QoS/VPN 控制面
 
 ---
@@ -43,54 +47,49 @@
 
 ### P0 — 致命
 
-#### P0-1: 全局 `flush ruleset` 清空主机全部 nftables
+#### P0-1: 全局 `flush ruleset` 清空主机全部 nftables — **✅ 已修复（2026-05-31 复验）**
 
 | 项 | 内容 |
 |----|------|
-| **位置** | `internal/nft/nft.go:78-79`；`deploy-qos-nat.sh:365`；`scripts/uninstall.sh:189-191` |
-| **描述** | 每次 `nft.Apply` 在加载 `table inet qosnat` 前执行 `flush ruleset`，会删除本机**所有** nft 表/链，包括第三方或 iptables-nft 管理的规则。 |
-| **影响** | 与其他共存防火墙/容器 CNI/手工规则冲突；短暂或持久流量中断；WARP 等需依赖 `warpnetns.ReconcileHostNAT` 回补。 |
-| **修复建议** | 改为 `delete table inet qosnat` 或 `flush table inet qosnat`（若存在），避免全局 flush；卸载脚本同理；文档明确「独占 nft 管理」前提。 |
+| **位置** | `internal/nft/nft.go:77-78`；`deploy-qos-nat.sh:365`；`scripts/uninstall.sh:186-188` |
+| **描述** | ~~每次 `nft.Apply` 执行 `flush ruleset`~~ 现为 `delete table inet qosnat`；卸载/stop 脚本已同步。 |
+| **残留** | `deploy-qos-nat.sh` usage 文案仍写 “flush”（文档）；`warpnetns.go` 注释过时。 |
+| **修复建议** | 更新 help 注释；压测 scoped delete 窗口。 |
 
-#### P0-2: Web Terminal 授予完整 Shell
+#### P0-2: Web Terminal 授予完整 Shell — **△ 部分缓解**
 
 | 项 | 内容 |
 |----|------|
-| **位置** | `internal/api/terminal_handlers.go:58-170`；路由 `internal/api/server.go:194` |
-| **描述** | 经 session/API Key 认证后即可通过 WebSocket 启动 `$SHELL`（默认 `/bin/bash`）PTY，等价于 root 级系统访问（qosnatd 通常以 root 运行）。 |
-| **影响** | 凭据泄露、XSS 窃取 cookie、CSRF（若 cookie 无 SameSite 保护）可导致整机沦陷；远超「网关配置」最小权限原则。 |
-| **修复建议** | 生产默认禁用；或限制只读诊断命令白名单；独立低权限用户 + `rbash`；二次确认/MFA；IP 白名单；审计与速率限制。 |
+| **位置** | `terminal_handlers.go`；`terminal_grant_handlers.go`；`server.go:209-210` |
+| **描述** | 默认关闭；连接前须 `POST /diagnostics/terminal/grant` 验证密码；可选 `QOSNAT_TERMINAL_ALLOW_CIDRS`。启用后仍为 PTY 全 shell。 |
+| **影响** | 启用 + 凭据泄露时整机风险仍在。 |
+| **修复建议** | 生产保持关闭；启用时强制 CIDR；F-002-C 降权 shell。 |
 
 ---
 
 ### P1 — 高危
 
-#### P1-1: NAT/出口策略 handler 缺少 nft 预检与回滚
+#### P1-1: NAT/出口策略 handler 缺少 nft 预检与回滚 — **✅ 已修复**
 
 | 项 | 内容 |
 |----|------|
-| **位置** | `internal/api/nat_handlers.go`（多处 Save → reloadNft）；`internal/api/egress_handlers.go`；`internal/api/nat_v6_handlers.go` |
-| **描述** | 防火墙/转发/别名已使用 `checkNftForState` + `reloadNftWith*Revert`，但 NAT 映射、egress、IPv6 NAT 仍「先 Save 再 reloadNft」，失败时 state 与内核不一致。 |
-| **影响** | UI 显示已保存但 nft 未生效（或相反）；运维误判；部分 NAT 规则缺失导致业务中断。 |
-| **修复建议** | 统一采用 `nft_apply_helpers.go` 模式：proposed state → CheckRuleset → Save → Apply → 失败 revert state + 再 Apply。 |
+| **位置** | `nat_apply_helpers.go`、`egress_handlers.go`、`nat_v6_handlers.go` |
+| **描述** | `commitNatIPv4Change`、`commitNatStackChange`、`commitEgressChange` 已统一 check → save → apply → revert。 |
 
-#### P1-2: `applyNatStack` 部分失败无整体回滚
+#### P1-2: `applyNatStack` 部分失败无整体回滚 — **△ 部分修复**
 
 | 项 | 内容 |
 |----|------|
-| **位置** | `internal/api/nat_translation.go:36-67` |
-| **描述** | 顺序：nft 成功 → jool/unbound/dnsmasq 任一步失败即返回 error，但 nft 与 auto firewall 已写入内核，前序 sysctl 可能已改。 |
-| **影响** | NAT64/NPTv6 半配置状态：有 SNAT/DNAT 无 DNS64，或 Jool 与 nft 不同步。 |
-| **修复建议** | 事务式编排：记录每步 backup；失败时逆序恢复；或先 dry-run 全部组件再一次性 apply。 |
+| **位置** | `nat_translation.go`；`nat_stack_snapshot.go` |
+| **描述** | 分步 progress + `rollbackNatStackDataplane`；`commitNatStackChange` 失败 revert state。首次成功前 snapshot 为空。 |
+| **修复建议** | 启动 seed snapshot；import 路径增加 backup/revert（F-029）。 |
 
-#### P1-3: 并发 `nft.Apply` 无全局互斥
+#### P1-3: 并发 `nft.Apply` 无全局互斥 — **✅ 已修复**
 
 | 项 | 内容 |
 |----|------|
-| **位置** | `internal/api/server.go:354-361`；各 handler 并行调用 `reloadNft` |
-| **描述** | `Store` 有 `mu`，但多个 HTTP 请求可同时进入 `nft.Apply`，后者 flush 可能覆盖前者中间态。 |
-| **影响** | 高并发或自动化脚本同时改防火墙/NAT 时规则集不确定。 |
-| **修复建议** | `Server` 级 `nftApplyMu sync.Mutex` 或单 worker 队列串行化所有 dataplane apply。 |
+| **位置** | `server.go` `nftApplyMu`；`withNftApply` |
+| **描述** | 所有 reload/applyNatStack 路径已串行化。 |
 
 #### P1-4: `Server` 职责过重（上帝对象）
 

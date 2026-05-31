@@ -1,53 +1,60 @@
-# Audit remediation status
+# 审计修复追踪（第二轮复验 + 第三轮迭代）
 
-**Updated**: 2026-05-30  
-**Baseline commits**: `86346ef` (core audit fixes), `2997383` (DHCP/DNS split), plus follow-up in working tree.
+**更新日期**: 2026-05-31  
+**代码基准**: 迭代完成后待发布
 
-## Completed
+---
 
-| ID | Item | Notes |
-|----|------|-------|
-| F-001 | Scoped nft delete table | `internal/nft`, deploy scripts |
-| F-002-A | Terminal default off | `DiagnosticsTerminalEnabled` |
-| F-002-B | Terminal re-auth grant | `POST /diagnostics/terminal/grant` + UI modal |
-| F-002-D | Terminal CIDR allowlist | `QOSNAT_TERMINAL_ALLOW_CIDRS` |
-| F-003/006/007 | NAT/egress apply pipeline | revert helpers |
-| F-004-B | applyNatStack rollback | `lastNatStackSnapshot` + step rollback |
-| F-005 | nft apply mutex | `withNftApply` |
-| F-009/010 | Atomic state write | `.bak` generation |
-| F-011 | Save error handling | `persistState`, batch handler fixes |
-| F-012 | Shaper profile upsert | prior commit |
-| F-014 | Firewall dry-run UI | prior commit |
-| F-015/016 | API error envelope | `writeAPIError` + code field (incremental on handlers) |
-| F-017 | API key RBAC | admin / readonly / firewall scopes |
-| F-018–F-020 | Terminal warning, search, state export/import | UI + handlers |
-| F-021 | Terminal Origin check | same-host only |
-| F-022 | OpenAPI route check | `scripts/check-openapi-routes.sh` in CI |
-| F-023 | ETag | `GET /system/state/export` |
-| F-024 | Server split | documented as future refactor in ARCHITECTURE_AUDIT |
-| F-025 | Firewall search | prior commit |
-| F-026 | CI nft smoke | acceptance job |
-| F-027 | WG scaling docs | `docs/WIREGUARD-SCALING.md` |
-| F-028 | URL naming | REST paths stable; breaking rename deferred |
-| Ops | Backup / load test / HA | `docs/OPS-BACKUP.md`, `LOAD-TEST.md`, `HA-DEPLOYMENT.md` |
-| DHCP/DNS | Independent modes + upstream | `2997383` |
+## 汇总
 
-## Deferred (product roadmap, not blockers)
+| 状态 | 数量 |
+|------|------|
+| **FIXED / ACCEPTED** | 26+ |
+| **PARTIAL** | 2 |
+| **OPEN (路线图)** | 3 |
 
-| Item | Reason |
-|------|--------|
-| F-002-C Terminal降权 (nobody/rbash) | Optional hardening; grant + default-off sufficient for audit close |
-| Full session RBAC + nav `v-if` | API keys cover automation; UI roles need product design |
-| nft full incremental | env `QOSNAT_NFT_INCREMENTAL` partial filter ops only |
-| UI mid-term items | Rule wizard, nft diff preview, optimistic lock |
-| 100k user single-node | Architecture doc — multi-POP required |
+---
 
-## Verification
+## 第三轮迭代（本次）
+
+| ID | Item | 状态 |
+|----|------|------|
+| F-002 | Terminal root shell | **ACCEPTED** — SSH 应急必须 root；默认关 + grant |
+| F-004 | Nat stack rollback | **FIXED** — `applyNatStackWithRollback` + boot baseline |
+| F-011 | Save 错误 | **FIXED** — mutating handler 统一 `persistState` |
+| F-029 | State import | **FIXED** — `commitStateImport` 失败回滚 |
+| F-022 | OpenAPI | **FIXED** — export ETag、import PUT/raw、version verify |
+
+---
+
+## PARTIAL（剩余）
+
+| ID | Item |
+|----|------|
+| F-015/016 | error `code` 未全覆盖所有 handler |
+| F-030 | Shaper wizard reload 无 revert |
+
+---
+
+## OPEN（路线图）
+
+| ID | Item |
+|----|------|
+| F-024 | Server 拆分 |
+| F-031 | nft 全表 reload 规模化 |
+
+---
+
+## F-002 设计说明
+
+Web Terminal ** deliberately ** 以 qosnatd 权限（通常 root）运行，用于 **SSH 不可用时的应急排障**，不作为日常管理入口。缓解措施：默认禁用、二次密码 grant、可选 `QOSNAT_TERMINAL_ALLOW_CIDRS`。**不实施**降权 shell（F-002-C）。
+
+---
+
+## 验证
 
 ```bash
-go test ./internal/api/... ./internal/store/... ./internal/dnsmasq/...
+go test ./internal/api/... ./internal/store/...
 bash scripts/check-openapi-routes.sh
-cd web && npm run build
+cd web && npm run build   # 或 sudo npm run build
 ```
-
-Production: rebuild `qosnatd`, restart service after pulling changes.
