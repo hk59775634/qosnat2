@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复 ocserv 1.4.2 源码安装后缺少 systemd 单元导致无法启动的问题
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -13,11 +13,11 @@
 
 ## 优化
 
-- `install-ocserv.sh` 适配 ocserv 1.4.2 的 standalone systemd 模板路径，找不到上游模板时写入内置 unit
+- （无）
 
 ## 修复
 
-- 修复源码安装后 `ocserv.service does not exist`：`Apply()` / 服务启停前自动补全 systemd 单元
+- （无）
 
 ## 删除
 
