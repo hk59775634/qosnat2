@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { setDisplayName } from '@/composables/useBranding'
@@ -42,6 +42,14 @@ const importFile = ref(null)
 const importConfirm = ref(false)
 const backupBusy = ref(false)
 let versionSwitchClearTimer = null
+const releaseNotesText = ref('')
+const releaseNotesLoading = ref(false)
+const releaseNotesErr = ref('')
+
+const selectedRelease = computed(() => {
+  const tag = switchTag.value
+  return (versionInfo.value?.releases || []).find((r) => r.tag === tag) || null
+})
 
 const activeTab = ref('basic')
 const generalTabs = computed(() => [
@@ -136,7 +144,29 @@ async function load() {
   if (!switchTag.value) {
     switchTag.value = v?.current_tag || v?.releases?.[0]?.tag || ''
   }
+  await loadReleaseNotes()
 }
+
+async function loadReleaseNotes() {
+  const rel = selectedRelease.value
+  releaseNotesText.value = ''
+  releaseNotesErr.value = ''
+  if (!rel?.notes_url) return
+  releaseNotesLoading.value = true
+  try {
+    const res = await fetch(rel.notes_url)
+    if (!res.ok) throw new Error(String(res.status))
+    releaseNotesText.value = await res.text()
+  } catch {
+    releaseNotesErr.value = t('system.general.versionNotesLoadFailed')
+  } finally {
+    releaseNotesLoading.value = false
+  }
+}
+
+watch(switchTag, () => {
+  loadReleaseNotes()
+})
 
 function stopVersionSwitchPoll() {
   if (versionSwitchPoll.value) {
@@ -557,7 +587,7 @@ onUnmounted(() => {
             <span class="text-xs text-slate-500">{{ t('system.general.switchToVersion') }}</span>
             <select v-model="switchTag" class="input-field mt-1 font-mono" :disabled="versionSwitchRunning || !versionInfo?.root_required">
               <option v-for="r in (versionInfo?.releases || [])" :key="r.tag" :value="r.tag">
-                {{ r.tag }}{{ r.prerelease ? ' (pre)' : '' }}
+                {{ r.tag }}{{ r.summary ? ` — ${r.summary}` : '' }}{{ r.prerelease ? ' (pre)' : '' }}
               </option>
             </select>
           </label>
@@ -577,6 +607,16 @@ onUnmounted(() => {
           >
             {{ t('common.refresh') }}
           </button>
+        </div>
+        <div
+          v-if="selectedRelease && (selectedRelease.summary || releaseNotesText || releaseNotesLoading || releaseNotesErr)"
+          class="text-xs text-slate-600 bg-slate-50 rounded p-3 space-y-2 border border-slate-100"
+        >
+          <p class="font-semibold text-slate-700">{{ t('system.general.versionNotesTitle') }}</p>
+          <p v-if="selectedRelease.summary" class="text-slate-700">{{ selectedRelease.summary }}</p>
+          <p v-if="releaseNotesLoading" class="text-slate-500">{{ t('common.loading') }}</p>
+          <p v-else-if="releaseNotesErr" class="text-amber-700">{{ releaseNotesErr }}</p>
+          <pre v-else-if="releaseNotesText" class="whitespace-pre-wrap text-slate-600 max-h-64 overflow-y-auto font-sans">{{ releaseNotesText }}</pre>
         </div>
         <div
           v-if="versionSwitchPanelVisible"

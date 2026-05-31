@@ -59,6 +59,8 @@ export default {
     versionNeedTag: 'Please choose a target version',
     versionAlreadyCurrent: 'Already on this version',
     versionRootHint: 'qosnatd is not running as root; version switching is disabled',
+    versionNotesTitle: 'Release notes',
+    versionNotesLoadFailed: 'Could not load release notes for this version',
     versionSwitchModalTitle: 'Confirm version switch',
     versionSwitchModalBody: 'Version {tag} will be downloaded and installed, then qosnatd will restart. Enter your current admin password to continue.',
     versionSwitchPasswordLabel: 'Current password',

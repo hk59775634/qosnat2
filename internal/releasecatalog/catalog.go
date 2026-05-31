@@ -29,6 +29,7 @@ type VersionEntry struct {
 	ID          string `json:"id"`
 	Tag         string `json:"tag"`
 	PublishedAt string `json:"published_at,omitempty"`
+	Summary     string `json:"summary,omitempty"`
 }
 
 // ManifestURL 返回 raw.githubusercontent.com 上的 manifest 地址。
@@ -114,6 +115,16 @@ func QosnatDownloadURLs(versionID string) []string {
 	return MirrorURLs(QosnatDownloadURL(versionID))
 }
 
+// NotesURL 返回 raw.githubusercontent.com 上的版本更新说明地址。
+func NotesURL(versionID string) string {
+	id := NormalizeID(versionID)
+	if id == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/releases/notes/%s.md",
+		GitHubRepo, DefaultBranch, id)
+}
+
 // ToReleaseMaps 转为 API/Web 使用的 releases 列表（tag 字段为 10 位版本号）。
 func ToReleaseMaps(entries []VersionEntry) []map[string]any {
 	out := make([]map[string]any, 0, len(entries))
@@ -125,13 +136,18 @@ func ToReleaseMaps(entries []VersionEntry) []map[string]any {
 		if id == "" {
 			continue
 		}
-		out = append(out, map[string]any{
+		m := map[string]any{
 			"tag":          id,
 			"id":           id,
 			"github_tag":   strings.TrimSpace(e.Tag),
 			"name":         id,
 			"published_at": strings.TrimSpace(e.PublishedAt),
-		})
+			"notes_url":    NotesURL(id),
+		}
+		if s := strings.TrimSpace(e.Summary); s != "" {
+			m["summary"] = s
+		}
+		out = append(out, m)
 	}
 	return out
 }

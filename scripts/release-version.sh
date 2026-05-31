@@ -55,14 +55,23 @@ cmd_bump() {
   need_jq
   mkdir -p "$(dirname "${MANIFEST}")"
   [[ -f "${MANIFEST}" ]] || echo '{"schema":1,"max_keep":5,"versions":[]}' > "${MANIFEST}"
-  local now tmp
+  local now tmp summary
   now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  summary="${RELEASE_SUMMARY:-}"
   tmp="$(mktemp)"
-  jq --arg id "${id}" --arg tag "v${id}" --arg now "${now}" --argjson keep "${MAX_KEEP}" '
-    .schema = 1 | .max_keep = $keep |
-    .versions = ([{id: $id, tag: $tag, published_at: $now}]
-      + ([.versions[]? | select(.id != $id)]) | .[0:$keep])
-  ' "${MANIFEST}" > "${tmp}"
+  if [[ -n "${summary}" ]]; then
+    jq --arg id "${id}" --arg tag "v${id}" --arg now "${now}" --arg summary "${summary}" --argjson keep "${MAX_KEEP}" '
+      .schema = 1 | .max_keep = $keep |
+      .versions = ([{id: $id, tag: $tag, published_at: $now, summary: $summary}]
+        + ([.versions[]? | select(.id != $id)]) | .[0:$keep])
+    ' "${MANIFEST}" > "${tmp}"
+  else
+    jq --arg id "${id}" --arg tag "v${id}" --arg now "${now}" --argjson keep "${MAX_KEEP}" '
+      .schema = 1 | .max_keep = $keep |
+      .versions = ([{id: $id, tag: $tag, published_at: $now}]
+        + ([.versions[]? | select(.id != $id)]) | .[0:$keep])
+    ' "${MANIFEST}" > "${tmp}"
+  fi
   mv "${tmp}" "${MANIFEST}"
   log "manifest 已更新: ${MANIFEST} (+${id})"
   echo "v${id}"

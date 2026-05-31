@@ -362,8 +362,11 @@ components:
     ReleaseVersionItem:
       type: object
       properties:
-        tag: { type: string, example: v1.0.0 }
+        tag: { type: string, example: '2026052801', description: 10 位版本号 }
         name: { type: string }
+        summary: { type: string, description: 一句话更新概要 }
+        notes_url: { type: string, description: 完整更新说明 raw URL }
+        github_tag: { type: string, example: v2026052801 }
         prerelease: { type: boolean }
         published_at: { type: string, format: date-time }
     SystemVersionStatus:

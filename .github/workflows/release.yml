@@ -27,6 +27,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Validate release notes
+        run: |
+          chmod +x ./scripts/release-notes.sh
+          ./scripts/release-notes.sh validate
+
       - name: Allocate release version
         id: ver
         run: |
@@ -57,23 +62,44 @@ jobs:
           chmod +x ./scripts/build-release.sh
           ./scripts/build-release.sh
 
+      - name: Prepare release body
+        id: notes
+        run: |
+          BODY_FILE="$(mktemp)"
+          {
+            echo "# qosnat2 ${{ steps.ver.outputs.version_id }}"
+            echo ""
+            sed '/^## 待分类/,$d' release/pending-release-notes.md \
+              | sed '/^# 待发版更新说明$/d' \
+              | sed '/^> /d' \
+              | sed '/^$/N;/^\n$/D'
+          } > "${BODY_FILE}"
+          echo "body_path=${BODY_FILE}" >> "$GITHUB_OUTPUT"
+          SUMMARY="$(./scripts/release-notes.sh finalize "${{ steps.ver.outputs.version_id }}")"
+          echo "summary=${SUMMARY}" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.version_tag }}
           name: qosnat2 ${{ steps.ver.outputs.version_id }}
+          body_path: ${{ steps.notes.outputs.body_path }}
           files: |
             dist/qosnatd-linux-amd64
             dist/qosnat2-linux-amd64.tar.gz
-          generate_release_notes: true
 
       - name: Update version manifest
+        env:
+          RELEASE_SUMMARY: ${{ steps.notes.outputs.summary }}
         run: |
           ./scripts/release-version.sh qosnat2 bump "${{ steps.ver.outputs.version_id }}"
 
-      - name: Commit manifest
+      - name: Commit manifest and release notes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore(release): qosnat2 ${{ steps.ver.outputs.version_id }}"
-          file_pattern: releases/qosnat2-versions.json
+          file_pattern: |
+            releases/qosnat2-versions.json
+            releases/notes/*
+            release/pending-release-notes.md
           branch: main

@@ -28,8 +28,25 @@ func TestQosnatDownloadURLs(t *testing.T) {
 	}
 }
 
-func TestMirrorURLsEmpty(t *testing.T) {
-	if got := MirrorURLs(""); got != nil {
-		t.Fatalf("expected nil, got %v", got)
+func TestNotesURL(t *testing.T) {
+	got := NotesURL("2026053111")
+	want := "https://raw.githubusercontent.com/hk59775634/qosnat2/main/releases/notes/2026053111.md"
+	if got != want {
+		t.Fatalf("NotesURL: got %q want %q", got, want)
+	}
+}
+
+func TestToReleaseMapsSummary(t *testing.T) {
+	maps := ToReleaseMaps([]VersionEntry{{
+		ID: "2026053111", Tag: "v2026053111", Summary: "test summary",
+	}})
+	if len(maps) != 1 {
+		t.Fatalf("want 1 map")
+	}
+	if maps[0]["summary"] != "test summary" {
+		t.Fatalf("summary: %v", maps[0]["summary"])
+	}
+	if maps[0]["notes_url"] == "" {
+		t.Fatalf("notes_url empty")
 	}
 }

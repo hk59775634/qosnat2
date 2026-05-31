@@ -5,27 +5,32 @@
     {
       "id": "2026053111",
       "tag": "v2026053111",
-      "published_at": "2026-05-31T12:24:44Z"
+      "published_at": "2026-05-31T12:24:44Z",
+      "summary": "WARP 持久化与看门狗自动重连；版本切换成功提示 5 秒后自动清除"
     },
     {
       "id": "2026053110",
       "tag": "v2026053110",
-      "published_at": "2026-05-31T11:56:46Z"
+      "published_at": "2026-05-31T11:56:46Z",
+      "summary": "Web Terminal 移至高级设置导航；修复常规保存误触发 TLS 重载导致 qosnatd 退出"
     },
     {
       "id": "2026053109",
       "tag": "v2026053109",
-      "published_at": "2026-05-31T11:49:09Z"
+      "published_at": "2026-05-31T11:49:09Z",
+      "summary": "Web Terminal 登录后免密直连"
     },
     {
       "id": "2026053108",
       "tag": "v2026053108",
-      "published_at": "2026-05-31T11:39:26Z"
+      "published_at": "2026-05-31T11:39:26Z",
+      "summary": "修复版本切换任务卡在 running 无法完成"
     },
     {
       "id": "2026053107",
       "tag": "v2026053107",
-      "published_at": "2026-05-31T11:35:31Z"
+      "published_at": "2026-05-31T11:35:31Z",
+      "summary": "修复版本切换密码确认后 modal 无法关闭"
     }
   ]
 }
