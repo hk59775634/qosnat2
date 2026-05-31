@@ -186,6 +186,8 @@ export const api = {
         request('/api/v1/firewall/rules/order', { method: 'PUT', body: JSON.stringify({ order }) }),
       del: (id) => request(`/api/v1/firewall/rules?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
+    apply: () => request('/api/v1/firewall/apply', { method: 'POST', body: '{}' }),
+    discard: () => request('/api/v1/firewall/discard', { method: 'POST', body: '{}' }),
     aliases: {
       list: () => request('/api/v1/firewall/aliases'),
       add: (body) => request('/api/v1/firewall/aliases', { method: 'POST', body: JSON.stringify(body) }),

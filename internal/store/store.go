@@ -51,9 +51,11 @@ type ProfileEntry struct {
 
 // FirewallState 防火墙/NAT 扩展
 type FirewallState struct {
-	WanPortForwards []WanPortForward `json:"wan_port_forwards"`
-	FilterRules     []FilterRule     `json:"filter_rules"`
-	Aliases         []AliasSet `json:"aliases"`
+	WanPortForwards    []WanPortForward `json:"wan_port_forwards"`
+	FilterRules        []FilterRule     `json:"filter_rules"`
+	PendingFilterDraft bool             `json:"pending_filter_draft,omitempty"`
+	PendingFilterRules []FilterRule     `json:"pending_filter_rules,omitempty"`
+	Aliases            []AliasSet       `json:"aliases"`
 }
 
 // DefaultDisplayName 控制台 UI 默认产品名（非功能标识）

@@ -71,6 +71,11 @@ const formHint = ref('')
 const pendingRuleId = ref('')
 const previewLine = ref('')
 const previewLoading = ref(false)
+const hasPendingChanges = ref(false)
+const canApplyChanges = ref(false)
+const changeIssues = ref([])
+const changeDiff = ref({ added: [], modified: [], removed: [] })
+const applyBusy = ref(false)
 
 const chains = [
   { id: 'forward', labelKey: 'security.firewall.tabForward' },
@@ -293,6 +298,7 @@ function focusPendingRule() {
 async function load() {
   const d = await api.firewall.rules.list()
   rules.value = d.rules || []
+  syncChangesFromPayload(d.changes)
   devLan.value = d.dev_lan || ''
   devWan.value = d.dev_wan || ''
   adminPort.value = d.admin_port || ''
@@ -313,6 +319,69 @@ function openAdd() {
   form.value = f
   showForm.value = true
 }
+
+function syncChangesFromPayload(changes) {
+  if (!changes) {
+    hasPendingChanges.value = false
+    canApplyChanges.value = false
+    changeIssues.value = []
+    changeDiff.value = { added: [], modified: [], removed: [] }
+    return
+  }
+  hasPendingChanges.value = !!changes.has_pending_changes
+  canApplyChanges.value = !!changes.can_apply
+  changeIssues.value = changes.issues || []
+  changeDiff.value = changes.diff || { added: [], modified: [], removed: [] }
+}
+
+function applyStageResponse(res) {
+  if (res?.rules) rules.value = res.rules
+  syncChangesFromPayload(res?.changes)
+  if (res?.warning) warn.value = res.warning
+}
+
+async function applyPendingChanges() {
+  if (!hasPendingChanges.value) return
+  if (!canApplyChanges.value) {
+    err.value = t('security.firewall.cannotApply')
+    return
+  }
+  if (!confirm(t('security.firewall.applyBarHint'))) return
+  applyBusy.value = true
+  err.value = ''
+  ok.value = ''
+  try {
+    const res = await api.firewall.apply()
+    if (res?.rules) rules.value = res.rules
+    syncChangesFromPayload(res?.changes)
+    ok.value = t('security.firewall.appliedOk')
+  } catch (e) {
+    err.value = apiError(e)
+    if (e?.data?.changes) syncChangesFromPayload(e.data.changes)
+  } finally {
+    applyBusy.value = false
+  }
+}
+
+async function discardPendingChanges() {
+  if (!hasPendingChanges.value) return
+  if (!confirm(t('security.firewall.discardChanges') + '?')) return
+  applyBusy.value = true
+  err.value = ''
+  ok.value = ''
+  try {
+    const res = await api.firewall.discard()
+    if (res?.rules) rules.value = res.rules
+    syncChangesFromPayload(res?.changes)
+    ok.value = t('security.firewall.discardedOk')
+  } catch (e) {
+    err.value = apiError(e)
+  } finally {
+    applyBusy.value = false
+  }
+}
+
+const warn = ref('')
 
 function apiError(e) {
   return e?.data?.error || e?.message || String(e)
@@ -428,11 +497,12 @@ function applyPreset(kind) {
 async function add() {
   if (!runFormValidation()) return
   err.value = ''
+  warn.value = ''
   try {
-    await api.firewall.rules.add(buildPayload())
-    ok.value = t('security.firewall.addedOk')
+    const res = await api.firewall.rules.add(buildPayload())
+    applyStageResponse(res)
+    ok.value = t('security.firewall.stagedOk')
     cancelEdit()
-    await load()
   } catch (e) {
     err.value = apiError(e)
   }
@@ -443,11 +513,12 @@ async function saveEdit() {
   if (!runFormValidation()) return
   err.value = ''
   ok.value = ''
+  warn.value = ''
   try {
-    await api.firewall.rules.put(editing.value, { ...buildPayload(), id: editing.value })
-    ok.value = t('security.firewall.updatedOk')
+    const res = await api.firewall.rules.put(editing.value, { ...buildPayload(), id: editing.value })
+    applyStageResponse(res)
+    ok.value = t('security.firewall.stagedOk')
     cancelEdit()
-    await load()
   } catch (e) {
     err.value = apiError(e)
   }
@@ -458,10 +529,11 @@ async function toggleEnabled(r) {
   if (r.enabled && !confirm(t('security.firewall.confirmDisable'))) return
   err.value = ''
   ok.value = ''
+  warn.value = ''
   try {
-    await api.firewall.rules.put(r.id, { ...r, enabled: !r.enabled })
-    ok.value = t('security.firewall.updatedOk')
-    await load()
+    const res = await api.firewall.rules.put(r.id, { ...r, enabled: !r.enabled })
+    applyStageResponse(res)
+    ok.value = t('security.firewall.stagedOk')
   } catch (e) {
     err.value = apiError(e)
   }
@@ -475,11 +547,12 @@ async function remove(r) {
   if (!confirm(t('security.firewall.confirmDelete'))) return
   err.value = ''
   ok.value = ''
+  warn.value = ''
   try {
-    await api.firewall.rules.del(r.id)
+    const res = await api.firewall.rules.del(r.id)
+    applyStageResponse(res)
     if (editing.value === r.id) cancelEdit()
-    ok.value = t('security.firewall.deletedOk')
-    await load()
+    ok.value = t('security.firewall.stagedOk')
   } catch (e) {
     err.value = apiError(e)
   }
@@ -508,11 +581,10 @@ async function persistOrder(reorderedSubset) {
       return
     }
     const res = await api.firewall.rules.reorder(orderIds)
-    rules.value = res.rules || merged
-    ok.value = t('security.firewall.orderSaved')
+    applyStageResponse(res)
+    ok.value = t('security.firewall.stagedOk')
   } catch (e) {
-    err.value = e.message
-    await load()
+    err.value = apiError(e)
   } finally {
     savingOrder.value = false
   }
@@ -571,6 +643,55 @@ onMounted(() => {
   <div class="page-stack fw-page">
     <PageHeader :title="t('security.firewall.title')" :description="t('security.firewall.description')" :ok="ok" :err="err" />
 
+    <div
+      v-if="hasPendingChanges"
+      class="rounded-lg border border-amber-300 bg-amber-50 text-amber-950 p-4 mb-3 space-y-3"
+      role="status"
+    >
+      <div class="flex flex-wrap items-start gap-3 justify-between">
+        <div>
+          <p class="font-semibold">{{ t('security.firewall.applyBarTitle') }}</p>
+          <p class="text-sm mt-1 text-amber-900">{{ t('security.firewall.applyBarHint') }}</p>
+          <p v-if="warn" class="text-sm mt-2 text-red-700">{{ warn }}</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="btn-primary text-sm"
+            :disabled="applyBusy || !canApplyChanges"
+            @click="applyPendingChanges"
+          >
+            {{ applyBusy ? t('common.processing') : t('security.firewall.applyChanges') }}
+          </button>
+          <button type="button" class="btn-secondary text-sm" :disabled="applyBusy" @click="discardPendingChanges">
+            {{ t('security.firewall.discardChanges') }}
+          </button>
+        </div>
+      </div>
+      <div v-if="changeDiff.added?.length || changeDiff.modified?.length || changeDiff.removed?.length" class="text-xs">
+        <span v-if="changeDiff.added?.length" class="mr-3">{{ t('security.firewall.diffAdded') }}: {{ changeDiff.added.join(', ') }}</span>
+        <span v-if="changeDiff.modified?.length" class="mr-3">{{ t('security.firewall.diffModified') }}: {{ changeDiff.modified.join(', ') }}</span>
+        <span v-if="changeDiff.removed?.length">{{ t('security.firewall.diffRemoved') }}: {{ changeDiff.removed.join(', ') }}</span>
+      </div>
+      <div v-if="changeIssues.length" class="border-t border-amber-200 pt-3 space-y-2">
+        <p class="text-sm font-medium">{{ t('security.firewall.changesReview') }}</p>
+        <ul class="text-sm space-y-2">
+          <li
+            v-for="(iss, idx) in changeIssues"
+            :key="idx"
+            class="rounded border p-2"
+            :class="iss.severity === 'error' ? 'border-red-300 bg-red-50' : 'border-amber-200 bg-white'"
+          >
+            <span class="font-mono text-xs mr-2">{{ iss.rule_id || '—' }}</span>
+            <span class="font-semibold">{{
+              iss.severity === 'error' ? t('security.firewall.issueSeverityError') : t('security.firewall.issueSeverityWarn')
+            }}</span>
+            : {{ iss.message }}
+            <p v-if="iss.hint" class="text-xs mt-1 text-slate-600">{{ iss.hint }}</p>
+          </li>
+        </ul>
+      </div>
+    </div>
 
     <!-- 网卡切换（pfSense 风格） -->
     <div class="card overflow-hidden">

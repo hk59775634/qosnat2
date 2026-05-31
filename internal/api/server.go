@@ -158,6 +158,8 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/certificates/renew", srv.requireAuth(srv.handleCertificateRenew))
 	m.HandleFunc("/api/v1/system/certificates", srv.requireAuth(srv.handleCertificates))
 	m.HandleFunc("/api/v1/system/audit", srv.requireAuth(srv.handleSystemAudit))
+	m.HandleFunc("/api/v1/firewall/apply", srv.requireAuth(srv.handleFirewallApply))
+	m.HandleFunc("/api/v1/firewall/discard", srv.requireAuth(srv.handleFirewallDiscard))
 	m.HandleFunc("/api/v1/firewall/rules/order", srv.requireAuth(srv.handleFirewallRulesOrder))
 	m.HandleFunc("/api/v1/firewall/rules", srv.requireAuth(srv.handleFirewallRules))
 	m.HandleFunc("/api/v1/interfaces/queues", srv.requireAuth(srv.handleIfaceQueues))

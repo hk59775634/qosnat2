@@ -2017,6 +2017,27 @@ paths:
       tags: [system]
       summary: 审计日志最近条目
 
+  /api/v1/firewall/apply:
+    post:
+      tags: [nat]
+      summary: 应用待定的防火墙规则变更
+      description: 将 pending 草稿写入 state 并 reload nft；存在 compliance/nft 错误时返回 422。
+      responses:
+        '200':
+          description: 已应用或无待应用变更
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/firewall/discard:
+    post:
+      tags: [nat]
+      summary: 放弃待定的防火墙规则变更
+      responses:
+        '200':
+          description: 已恢复为当前已应用规则集
+
   /api/v1/firewall/rules:
     get:
       tags: [nat]
@@ -2030,8 +2051,8 @@ paths:
                 $ref: '#/components/schemas/FirewallRulesListResponse'
     post:
       tags: [nat]
-      summary: 添加自定义规则并 reload nft
-      description: nft 预检通过后才写入 state；加载失败会回滚。`dry_run=1` 时仅预检不写盘。
+      summary: 添加自定义规则（暂存，需 Apply 生效）
+      description: 写入 pending 草稿，不 reload nft。`dry_run=1` 时仅 nft 预检。
       parameters:
         - name: dry_run
           in: query
