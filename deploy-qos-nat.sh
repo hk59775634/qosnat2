@@ -232,7 +232,7 @@ init_state() {
   "prefix_mappings": {},
   "shaper": {
     "policy_cidr": "10.0.0.0/8",
-    "default_profile": { "down": "8mbit", "up": "8mbit", "host_mask": 32 },
+    "default_profile": { "host_mask": 32 },
     "profiles": [],
     "leaf": "fq_codel",
     "idle_timeout_sec": 300

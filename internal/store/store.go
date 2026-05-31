@@ -146,7 +146,7 @@ func DefaultState() State {
 		Shaper: ShaperState{
 			PolicyCIDR: "10.0.0.0/8",
 			DefaultProfile: RateProfile{
-				Down: "8mbit", Up: "8mbit", HostMask: 32,
+				HostMask: 32,
 			},
 			Profiles:       []ProfileEntry{},
 			Hosts:          map[string]HostRate{},
@@ -287,8 +287,8 @@ func (s *Store) ensureDefaultsLocked() {
 	if s.State.Shaper.PolicyCIDR == "" {
 		s.State.Shaper.PolicyCIDR = "10.0.0.0/8"
 	}
-	if s.State.Shaper.DefaultProfile.Down == "" {
-		s.State.Shaper.DefaultProfile = RateProfile{Down: "8mbit", Up: "8mbit", HostMask: 32}
+	if s.State.Shaper.DefaultProfile.HostMask == 0 && RateProfileUnlimited(s.State.Shaper.DefaultProfile) {
+		s.State.Shaper.DefaultProfile.HostMask = 32
 	}
 	def := DefaultDHCP()
 	if s.State.DHCP.StaticLeases == nil {

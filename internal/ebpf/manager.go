@@ -252,8 +252,8 @@ func (m *Manager) ReplayState(st store.State) error {
 	if err := m.flushProfileLpm(); err != nil {
 		return err
 	}
-	// 默认 profile
-	if st.Shaper.PolicyCIDR != "" {
+	// 默认 profile：未配置速率时不写入 LPM（内网不限速）
+	if st.Shaper.PolicyCIDR != "" && !store.RateProfileUnlimited(st.Shaper.DefaultProfile) {
 		rv, err := rateFromProfile(st.Shaper.DefaultProfile.Down, st.Shaper.DefaultProfile.Up)
 		if err != nil {
 			return err

@@ -2,6 +2,18 @@ package store
 
 import "testing"
 
+func TestRateProfileUnlimited(t *testing.T) {
+	if !RateProfileUnlimited(RateProfile{}) {
+		t.Fatal("empty profile should be unlimited")
+	}
+	if !RateProfileUnlimited(DefaultState().Shaper.DefaultProfile) {
+		t.Fatal("default install profile should be unlimited")
+	}
+	if RateProfileUnlimited(RateProfile{Down: "8mbit", Up: "8mbit"}) {
+		t.Fatal("8mbit profile should not be unlimited")
+	}
+}
+
 func TestReorderProfiles(t *testing.T) {
 	in := []ProfileEntry{
 		{CIDR: "10.0.0.0/8", Down: "8mbit", Up: "8mbit", ID: 1},

@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 )
 
-// ProfileHostIP 若 CIDR 为 /32 返回主机 IP
+// RateProfileUnlimited 默认 profile 未配置速率时表示内网不限速。
+func RateProfileUnlimited(r RateProfile) bool {
+	return strings.TrimSpace(r.Down) == "" && strings.TrimSpace(r.Up) == ""
+}
 func ProfileHostIP(cidr string) (string, bool) {
 	ip, n, err := net.ParseCIDR(cidr)
 	if err != nil || n == nil {
