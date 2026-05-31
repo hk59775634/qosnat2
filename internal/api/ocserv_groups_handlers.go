@@ -10,7 +10,7 @@ import (
 
 func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 	if store.OCServUsesRadius(srv.store.Get().VPN.OCServ) && r.Method != http.MethodGet {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "RADIUS 模式下组由外部目录管理"})
+		writeBadRequest(w, "RADIUS 模式下组由外部目录管理")
 		return
 	}
 	switch r.Method {
@@ -26,11 +26,11 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost, http.MethodPut:
 		var body store.OCServGroup
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if err := store.NormalizeOCServGroups(&[]store.OCServGroup{body}); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		body = ([]store.OCServGroup{body})[0]
@@ -46,7 +46,7 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 			s.VPN.OCServ.Groups = append(s.VPN.OCServ.Groups, body)
 		})
 		if r.Method == http.MethodPut && !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "group not found"})
+			writeNotFound(w, "group not found")
 			return
 		}
 		if !srv.persistState(w) {
@@ -54,11 +54,11 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 		}
 		st := srv.store.Get().VPN.OCServ
 		if err := store.NormalizeOCServ(&st); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if err := ocserv.WriteGroupConfigs(st); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "vpn.ocserv.group.save", body.Name)
@@ -66,7 +66,7 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		name := strings.TrimSpace(r.URL.Query().Get("name"))
 		if name == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+			writeBadRequest(w, "name required")
 			return
 		}
 		found := false
@@ -90,20 +90,20 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 			s.VPN.OCServ.Users = users
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "group not found"})
+			writeNotFound(w, "group not found")
 			return
 		}
 		if err := srv.store.Save(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		st := srv.store.Get().VPN.OCServ
 		if err := ocserv.WriteGroupConfigs(st); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		if err := ocserv.SyncPlainUsers(st); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "vpn.ocserv.group.delete", name)
@@ -123,7 +123,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost, http.MethodPut:
 		var body store.OCServVhost
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		prevFull := deepCopyOCServState(srv.store.Get().VPN.OCServ)
@@ -141,13 +141,13 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		if body.Radius != nil {
 			tmp := store.OCServState{AuthMethod: store.OCServAuthRadius, Radius: *body.Radius}
 			if err := ocserv.NormalizeRadiusConfig(&tmp); err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				writeBadRequest(w, err.Error())
 				return
 			}
 			body.Radius = &tmp.Radius
 		}
 		if err := store.NormalizeOCServVhosts(&[]store.OCServVhost{body}, st.AuthMethod); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		body = ([]store.OCServVhost{body})[0]
@@ -165,7 +165,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			}
 		})
 		if r.Method == http.MethodPut && !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})
+			writeNotFound(w, "vhost not found")
 			return
 		}
 		if !srv.persistState(w) {
@@ -173,22 +173,22 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		}
 		st = srv.store.Get().VPN.OCServ
 		if err := store.NormalizeOCServ(&st); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if err := ocserv.WriteVhostRadcliConfig(body); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		if ocserv.VhostCanManagePlainUsers(body, st.AuthMethod) {
 			if err := ocserv.SyncUsersToPath(strings.TrimSpace(body.PlainPasswdPath), body.Users); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				writeInternalError(w, err.Error())
 				return
 			}
 		}
 		full := srv.store.Get()
 		if err := ocserv.WriteConf(st, full.Certificates); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.updateOcservRestartHints(prevFull, srv.store.Get().VPN.OCServ)
@@ -197,7 +197,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		domain := strings.TrimSpace(r.URL.Query().Get("domain"))
 		if domain == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain required"})
+			writeBadRequest(w, "domain required")
 			return
 		}
 		prevFull := deepCopyOCServState(srv.store.Get().VPN.OCServ)
@@ -214,7 +214,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			s.VPN.OCServ.Vhosts = out
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})
+			writeNotFound(w, "vhost not found")
 			return
 		}
 		if !srv.persistState(w) {
@@ -222,7 +222,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		}
 		full := srv.store.Get()
 		if err := ocserv.WriteConf(full.VPN.OCServ, full.Certificates); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.updateOcservRestartHints(prevFull, srv.store.Get().VPN.OCServ)
@@ -304,17 +304,17 @@ func mergeOCServVhostUserPasswords(body *store.OCServVhost, prev store.OCServVho
 func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request) {
 	domain := strings.TrimSpace(r.URL.Query().Get("domain"))
 	if domain == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain required"})
+		writeBadRequest(w, "domain required")
 		return
 	}
 	st := srv.store.Get().VPN.OCServ
 	v, ok := findOCServVhostPtr(&st, domain)
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})
+		writeNotFound(w, "vhost not found")
 		return
 	}
 	if !ocserv.VhostCanManagePlainUsers(*v, st.AuthMethod) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vhost plain passwd file required for local user management"})
+		writeBadRequest(w, "vhost plain passwd file required for local user management")
 		return
 	}
 	passwdPath := strings.TrimSpace(v.PlainPasswdPath)
@@ -341,12 +341,12 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 			Group    string `json:"group"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.Username = strings.TrimSpace(body.Username)
 		if body.Username == "" || len(body.Password) < 4 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username and password (min 4) required"})
+			writeBadRequest(w, "username and password (min 4) required")
 			return
 		}
 		_ = srv.store.Update(func(s *store.State) {
@@ -375,7 +375,7 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "vpn.ocserv.vhost.user.add", domain+"/"+body.Username)
@@ -388,16 +388,16 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 			Group    string `json:"group"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.Username = strings.TrimSpace(body.Username)
 		if body.Username == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username required"})
+			writeBadRequest(w, "username required")
 			return
 		}
 		if body.Password != "" && len(body.Password) < 4 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password min 4 chars when changing"})
+			writeBadRequest(w, "password min 4 chars when changing")
 			return
 		}
 		found := false
@@ -420,7 +420,7 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 			}
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+			writeNotFound(w, "user not found")
 			return
 		}
 		if !srv.persistState(w) {
@@ -429,7 +429,7 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "vpn.ocserv.vhost.user.update", domain+"/"+body.Username)
@@ -437,7 +437,7 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 	case http.MethodDelete:
 		name := strings.TrimSpace(r.URL.Query().Get("username"))
 		if name == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username required"})
+			writeBadRequest(w, "username required")
 			return
 		}
 		found := false
@@ -457,7 +457,7 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 			s.VPN.OCServ.Vhosts[i].Users = out
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+			writeNotFound(w, "user not found")
 			return
 		}
 		if !srv.persistState(w) {
@@ -466,7 +466,7 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "vpn.ocserv.vhost.user.delete", domain+"/"+name)

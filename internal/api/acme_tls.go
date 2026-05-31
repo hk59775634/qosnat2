@@ -173,7 +173,7 @@ func (srv *Server) handleTLSAcme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "ACME 需要 root 运行 qosnatd"})
+		writeForbidden(w, "", "ACME 需要 root 运行 qosnatd")
 		return
 	}
 	var body struct {
@@ -181,12 +181,12 @@ func (srv *Server) handleTLSAcme(w http.ResponseWriter, r *http.Request) {
 		Action          string `json:"action"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	st := srv.store.Get()
 	if !srv.verifyAdmin(st.AdminUser, body.CurrentPassword) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password required"})
+		writeForbidden(w, "", "current password required")
 		return
 	}
 	action := strings.TrimSpace(body.Action)
@@ -203,14 +203,13 @@ func (srv *Server) handleTLSAcme(w http.ResponseWriter, r *http.Request) {
 	case "renew":
 		runErr = srv.withAcmeHTTP01Port80Open(func() error { return srv.runACMERenew() })
 	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be obtain or renew"})
+		writeBadRequest(w, "action must be obtain or renew")
 		return
 	}
 	if runErr != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error": runErr.Error(),
-			"tls":   srv.tlsStatusWithAcme(),
-		})
+		out := renewErrorResponse(runErr)
+		out["tls"] = srv.tlsStatusWithAcme()
+		writeAPIErrorWithExtra(w, http.StatusBadRequest, "APPLY_FAILED", runErr.Error(), out)
 		return
 	}
 	srv.auditLog(r, "system.tls.acme", action)

@@ -142,6 +142,8 @@ func (srv *Server) runCertificateAutoRenewTick() {
 func renewErrorResponse(err error) map[string]any {
 	info := certs.ClassifyACMEError(err)
 	return map[string]any{
+		"ok":                  false,
+		"code":                "CERT_ACME_FAILED",
 		"error":               err.Error(),
 		"pause_auto_renew":    info.PauseAutoRenew,
 		"auto_renew_paused":   info.PauseAutoRenew,
@@ -160,22 +162,22 @@ func (srv *Server) handleCertificateAutoRenew(w http.ResponseWriter, r *http.Req
 		Resume  bool   `json:"resume"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	id := strings.TrimSpace(body.ID)
 	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+		writeBadRequest(w, "id required")
 		return
 	}
 	st := srv.store.Get()
 	mc, ok := store.FindManagedCert(st.Certificates, id)
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "certificate not found"})
+		writeNotFound(w, "certificate not found")
 		return
 	}
 	if mc.Type != store.CertTypeACME {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "only ACME certificates support auto-renew"})
+		writeBadRequest(w, "only ACME certificates support auto-renew")
 		return
 	}
 	enable := true

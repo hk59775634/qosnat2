@@ -55,7 +55,7 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"certificates": certificatePublicList(st)})
 	case http.MethodPost:
 		if os.Getuid() != 0 {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "证书操作需要 root 运行 qosnatd"})
+			writeForbidden(w, "", "证书操作需要 root 运行 qosnatd")
 			return
 		}
 		var body struct {
@@ -69,7 +69,7 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 			CaPEM   string `json:"ca_pem"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		typ := strings.ToLower(strings.TrimSpace(body.Type))
@@ -81,12 +81,12 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 				Type: store.CertTypeManual,
 			}
 			if err := store.NormalizeManagedCertificate(&mc); err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				writeBadRequest(w, err.Error())
 				return
 			}
 			certPath, keyPath, caPath, err := certs.SavePEM(mc.ID, body.CertPEM, body.KeyPEM, body.CaPEM)
 			if err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				writeBadRequest(w, err.Error())
 				return
 			}
 			mc.CertPath, mc.KeyPath, mc.CaPath = certPath, keyPath, caPath
@@ -114,12 +114,12 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := store.NormalizeManagedCertificate(&mc); err != nil {
 				_ = certs.RemoveDir(mc.ID)
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				writeBadRequest(w, err.Error())
 				return
 			}
 			mc.AutoRenewEnabled = true
 		default:
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "type must be manual or acme"})
+			writeBadRequest(w, "type must be manual or acme")
 			return
 		}
 		_ = srv.store.Update(func(s *store.State) {
@@ -137,15 +137,12 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		id := strings.TrimSpace(r.URL.Query().Get("id"))
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		st := srv.store.Get()
 		if u := store.ManagedCertUsages(id, st); len(u) > 0 {
-			writeJSON(w, http.StatusConflict, map[string]any{
-				"error":  "certificate in use",
-				"in_use": u,
-			})
+			writeConflictWithExtra(w, "certificate in use", map[string]any{"in_use": u})
 			return
 		}
 		found := false
@@ -161,7 +158,7 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 			s.Certificates = out
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "certificate not found"})
+			writeNotFound(w, "certificate not found")
 			return
 		}
 		if !srv.persistState(w) {
@@ -181,14 +178,14 @@ func (srv *Server) handleCertificateRenew(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "ACME 续签需要 root 运行 qosnatd"})
+		writeForbidden(w, "", "ACME 续签需要 root 运行 qosnatd")
 		return
 	}
 	var body struct {
 		ID string `json:"id"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	id := strings.TrimSpace(body.ID)
@@ -196,7 +193,7 @@ func (srv *Server) handleCertificateRenew(w http.ResponseWriter, r *http.Request
 		id = strings.TrimSpace(r.URL.Query().Get("id"))
 	}
 	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+		writeBadRequest(w, "id required")
 		return
 	}
 	if err := srv.executeManagedCertRenew(id, renewApplyNone); err != nil {

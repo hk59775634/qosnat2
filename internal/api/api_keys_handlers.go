@@ -42,18 +42,18 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			Role string `json:"role"`
 		}
 		if err := readJSON(r, &body); err != nil || body.Name == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+			writeBadRequest(w, "name required")
 			return
 		}
 		raw := make([]byte, 24)
 		if _, err := rand.Read(raw); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
+			writeInternalError(w, "session error")
 			return
 		}
 		key := "qk_" + hex.EncodeToString(raw)
 		keyHash, err := store.HashAPIKey(key)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "hash error"})
+			writeInternalError(w, "hash error")
 			return
 		}
 		ak := store.APIKey{
@@ -77,7 +77,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		found := false
@@ -93,7 +93,7 @@ func (srv *Server) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 			st.APIKeys = out
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			writeNotFound(w, "not found")
 			return
 		}
 		if !srv.persistState(w) {

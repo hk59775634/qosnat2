@@ -16,7 +16,7 @@ func (srv *Server) handleNetworkNetplan(w http.ResponseWriter, r *http.Request) 
 	st := srv.store.Get()
 	body, _, err := netif.RenderNetplan(st.Network)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -34,7 +34,7 @@ func (srv *Server) handleNetworkNetplanApply(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := srv.applyNetplanWithRollback(nil); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	srv.auditLog(r, "network.netplan.apply", "ok")

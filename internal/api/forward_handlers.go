@@ -60,15 +60,15 @@ func (srv *Server) handleWanForwardsGet(w http.ResponseWriter, r *http.Request) 
 func (srv *Server) handleWanForwardsPost(w http.ResponseWriter, r *http.Request) {
 	var f store.WanPortForward
 	if err := readJSON(r, &f); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	if err := store.NormalizeWanForward(&f, srv.env.DevWAN); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	if !route.LinkExists(f.Interface) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface not found: " + f.Interface})
+		writeBadRequest(w, "interface not found: "+f.Interface)
 		return
 	}
 	st := srv.store.Get()
@@ -99,7 +99,7 @@ func (srv *Server) handleWanForwardsPost(w http.ResponseWriter, r *http.Request)
 func (srv *Server) handleWanForwardsDelete(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id query required"})
+		writeBadRequest(w, "id query required")
 		return
 	}
 	found := false
@@ -113,7 +113,7 @@ func (srv *Server) handleWanForwardsDelete(w http.ResponseWriter, r *http.Reques
 		newFwd = append(newFwd, fwd)
 	}
 	if !found {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		writeNotFound(w, "not found")
 		return
 	}
 	proposed := st

@@ -3,9 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,14 +14,11 @@ import (
 	"github.com/hk59775634/qosnat2/internal/acme"
 	"github.com/hk59775634/qosnat2/internal/capture"
 	"github.com/hk59775634/qosnat2/internal/ebpf"
-	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/ocserv/usertraffic"
-	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/releasecatalog"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/stats"
 	"github.com/hk59775634/qosnat2/internal/store"
-	"github.com/hk59775634/qosnat2/internal/warpnetns"
 	"github.com/hk59775634/qosnat2/internal/webassets"
 	wgusertraffic "github.com/hk59775634/qosnat2/internal/wg/usertraffic"
 )
@@ -217,198 +212,6 @@ func (srv *Server) Handler() http.Handler {
 	return srv.withSecurityHeaders(srv.mux)
 }
 
-// ApplyAll 启动/回放：sysctl → tc → nft（未完成引导时跳过）
-func (srv *Server) ApplyAll() error {
-	if !srv.setupComplete() {
-		log.Printf("apply skipped: initial setup not complete")
-		return nil
-	}
-	if srv.env.DevWAN == "" {
-		return fmt.Errorf("DEV_WAN must be set")
-	}
-	st := srv.store.Get()
-	if err := srv.applySystemTuning(st); err != nil {
-		log.Printf("system tuning: %v", err)
-	}
-	if srv.env.DevLAN != "" {
-		if err := shaper.SetupP0(shaper.Config{
-			DevLAN:    srv.env.DevLAN,
-			Leaf:      st.Shaper.Leaf,
-			FQFlows:   st.Shaper.FQFlows,
-			FQQuantum: st.Shaper.FQQuantum,
-		}); err != nil {
-			return fmt.Errorf("shaper: %w", err)
-		}
-	}
-	cfg := srv.nftCfg()
-	if ips, auto := nft.ResolveSharedIPs(cfg, st); len(ips) == 0 {
-		log.Printf("warn: shared_ips empty and no IPv4 on WAN %s, nft SNAT uses masquerade only", srv.env.DevWAN)
-	} else if auto {
-		log.Printf("shared_ips: using WAN %s address %s", srv.env.DevWAN, ips[0])
-	}
-	if err := srv.applyNatStack(); err != nil {
-		return err
-	}
-	srv.replayWanLinksOnBoot()
-	srv.replayEgressOnBoot()
-	srv.applyNetworkVLANs()
-	srv.applyManagedRoutes()
-	srv.applyEgressPolicyRoutes()
-	srv.applyEBPF(st)
-	return nil
-}
-
-// applyEBPF 在 TC 拓扑就绪后加载/附加 eBPF（引导完成或 apply-state 时调用）
-func (srv *Server) applyEBPF(st store.State) {
-	if srv.bpf == nil {
-		return
-	}
-	if !srv.bpf.Ready() {
-		if err := srv.bpf.Load(); err != nil {
-			log.Printf("ebpf load: %v", err)
-			return
-		}
-		log.Printf("ebpf loaded after TC/ifb0 ready")
-	}
-	if err := srv.bpf.ReplayState(st); err != nil {
-		log.Printf("ebpf replay: %v", err)
-	}
-	srv.purgeLegacyHostExact(st)
-	srv.syncShaperDevices()
-	srv.replayProfileHosts()
-	srv.reattachShaperDataPath()
-	srv.replayProfileSubnets()
-	srv.syncActiveHostHTB()
-	srv.StartBackground()
-	srv.setupWGShaper()
-}
-
-func (srv *Server) shaperMirredCIDRs(st store.State) []string {
-	return store.CollectMirredCIDRs(st.Shaper)
-}
-
-// StartBackground ringbuf + 空闲 GC
-func (srv *Server) StartBackground() {
-	if srv.bpf == nil || !srv.bpf.Ready() || srv.ringCancel != nil {
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	srv.ringCancel = cancel
-	if err := srv.bpf.StartRingbuf(ctx, srv.hosts); err != nil {
-		log.Printf("ringbuf: %v", err)
-		cancel()
-		srv.ringCancel = nil
-		return
-	}
-	gc := &shaper.GCRunner{
-		Hosts:   srv.hosts,
-		BPF:     srv.bpf,
-		Timeout: srv.idleTimeout(),
-		KeepVIP: srv.gcKeepProfiles,
-	}
-	interval := srv.idleTimeout() / 2
-	if interval < time.Minute {
-		interval = time.Minute
-	}
-	go shaper.StartLoop(ctx.Done(), interval, gc)
-	srv.startACMEBackground()
-	srv.startManagedCertsBackground()
-	go func() {
-		t := time.NewTicker(30 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				srv.syncActiveHostHTB()
-			}
-		}
-	}()
-}
-
-func (srv *Server) persistAutoFirewallRules() {
-	srv.syncAutoFirewallRules()
-	if err := srv.store.Save(); err != nil {
-		log.Printf("save state: %v", err)
-	}
-}
-
-// syncAutoFirewallRules 同步 WAN 入站与端口转发关联的受管防火墙规则（写入 state，不单独 Save）。
-func (srv *Server) syncAutoFirewallRules() {
-	st := srv.store.Get()
-	vp := nft.VPNFirewallFromState(st)
-	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
-	_ = srv.store.Update(func(s *store.State) {
-		synced, _ := store.SyncAutoFilterRules(s.Firewall.FilterRules, wanDevs, srv.env.AdminPort, store.AutoInputVPN{
-			OCServEnabled: vp.OCServEnabled,
-			OCServTCP:     vp.OCServTCP,
-			OCServUDP:     vp.OCServUDP,
-			WGPorts:       vp.WGPorts,
-		}, s.Firewall.WanPortForwards, srv.env.DevLAN)
-		s.Firewall.FilterRules = synced
-	})
-}
-
-// tryReloadNft 在 setup 完成后重载 nft；失败时记录日志并返回警告文案（不中断已完成的 VPN 等操作）。
-func (srv *Server) tryReloadNft() string {
-	if !srv.setupComplete() {
-		return ""
-	}
-	if err := srv.reloadNft(); err != nil {
-		log.Printf("reload nft: %v", err)
-		return err.Error()
-	}
-	return ""
-}
-
-func (srv *Server) reconcileWarpAfterNft() {
-	warpnetns.ReconcileHostNAT()
-	if warpnetns.IsConnected() {
-		_ = warpnetns.ReconcileAfterWanLink()
-	}
-}
-
-func (srv *Server) withNftApply(fn func() error) error {
-	srv.nftApplyMu.Lock()
-	defer srv.nftApplyMu.Unlock()
-	return fn()
-}
-
-func (srv *Server) reloadNft() error {
-	return srv.withNftApply(srv.reloadNftLocked)
-}
-
-func (srv *Server) reloadNftLocked() error {
-	start := time.Now()
-	st := srv.store.Get()
-	err := nft.Apply(srv.nftCfg(), st)
-	srv.dataplaneMetrics.recordNftReload(time.Since(start), err)
-	if err != nil {
-		return err
-	}
-	srv.persistAutoFirewallRules()
-	srv.reconcileWarpAfterNft()
-	return nil
-}
-
-// applyWanLinkDataPlane 多 WAN 变更后同步策略路由与 nft。
-func (srv *Server) applyWanLinkDataPlane() error {
-	if err := policyroute.Apply(srv.store.Get()); err != nil {
-		return err
-	}
-	return srv.reloadNft()
-}
-
-func (srv *Server) nftCfg() nft.Config {
-	return nft.Config{
-		DevLAN:    srv.env.DevLAN,
-		DevWAN:    srv.env.DevWAN,
-		AdminPort: srv.env.AdminPort,
-		VPN:       nft.VPNFirewallFromState(srv.store.Get()),
-	}
-}
-
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
@@ -478,36 +281,34 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Pass string `json:"pass"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	ip := clientIP(r)
 	if !srv.loginLim.allow(ip) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many login attempts"})
+		writeRateLimited(w, "too many login attempts")
 		return
 	}
 	if !srv.setupComplete() {
 		st := srv.store.Get()
 		if st.AdminPassHash != "" {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "initial setup already in progress; use configured admin account"})
+			writeForbidden(w, "", "initial setup already in progress; use configured admin account")
 			return
 		}
 		if srv.env.AdminPass == "" {
-			writeJSON(w, http.StatusForbidden, map[string]string{
-				"error": "no initial admin password; reinstall or read /etc/qosnat2/initial-admin.txt",
-			})
+			writeForbidden(w, "", "no initial admin password; reinstall or read /etc/qosnat2/initial-admin.txt")
 			return
 		}
 	}
 	if !srv.verifyAdmin(body.User, body.Pass) {
 		srv.loginLim.recordFail(ip)
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+		writeUnauthorized(w, "invalid credentials")
 		return
 	}
 	srv.loginLim.clear(ip)
 	tok, err := srv.sessions.create()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
+		writeInternalError(w, "session error")
 		return
 	}
 	srv.setSessionCookie(w, r, tok)
@@ -538,7 +339,7 @@ func (srv *Server) serveOpenAPI(w http.ResponseWriter, r *http.Request) {
 	if srv.setupComplete() {
 		if !srv.checkAPIKey(r) {
 			if c, err := r.Cookie(sessionCookie); err != nil || !srv.sessions.valid(c.Value) {
-				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				writeUnauthorized(w, "unauthorized")
 				return
 			}
 		}

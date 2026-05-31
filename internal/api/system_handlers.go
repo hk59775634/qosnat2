@@ -48,7 +48,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			DiagnosticsTerminalEnabled *bool   `json:"diagnostics_terminal_enabled"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		st := srv.store.Get()
@@ -60,14 +60,14 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			strings.TrimSpace(body.TLSKey) != "" || managedCertTouched
 		if acmeTouched || tlsModeTouched {
 			if !srv.verifyAdmin(st.AdminUser, body.CurrentPassword) {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password required to change HTTPS settings"})
+				writeForbidden(w, "", "current password required to change HTTPS settings")
 				return
 			}
 		}
 		if acmeTouched {
 			if d := strings.TrimSpace(body.TLSDomain); d != "" {
 				if _, err := acme.NormalizeDomain(d); err != nil {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+					writeBadRequest(w, err.Error())
 					return
 				}
 			}
@@ -105,7 +105,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				certID := strings.TrimSpace(*body.TLSManagedCertID)
 				if !enabled {
 					if _, applyErr := srv.applyTLS(false, "", ""); applyErr != nil {
-						writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
+						writeBadRequest(w, applyErr.Error())
 						return
 					}
 					_ = srv.store.Update(func(s *store.State) {
@@ -124,7 +124,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				}
 				if certID != "" {
 					if _, applyErr := srv.applyTLSFromManagedCertID(certID); applyErr != nil {
-						writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
+						writeBadRequest(w, applyErr.Error())
 						return
 					}
 					srv.auditLog(r, "system.tls", "managed_cert:"+certID)
@@ -146,11 +146,11 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			}
 			if enabled && useAcme {
 				if _, err := acme.NormalizeDomain(srv.store.Get().System.TLSDomain); err != nil {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "启用 ACME 需填写有效域名"})
+					writeBadRequest(w, "启用 ACME 需填写有效域名")
 					return
 				}
 				if strings.TrimSpace(srv.store.Get().System.TLSAcmeEmail) == "" {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": "启用 ACME 需填写邮箱"})
+					writeBadRequest(w, "启用 ACME 需填写邮箱")
 					return
 				}
 				// ACME 模式：不在此粘贴证书，由「申请证书」触发
@@ -173,12 +173,12 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				if _, applyErr := srv.applyTLS(true, cert, key); applyErr != nil {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
+					writeBadRequest(w, applyErr.Error())
 					return
 				}
 				if cert != "" && key != "" {
 					if _, err := srv.upsertSystemTLSManagedCert(cert, key, false, "", "", false); err != nil {
-						writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+						writeBadRequest(w, err.Error())
 						return
 					}
 				}
@@ -191,7 +191,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if _, applyErr := srv.applyTLS(false, "", ""); applyErr != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
+				writeBadRequest(w, applyErr.Error())
 				return
 			}
 			srv.auditLog(r, "system.tls", "disabled")
@@ -204,26 +204,26 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 		}
 		if p := strings.TrimSpace(body.AdminPort); p != "" && p != srv.env.AdminPort {
 			if !srv.verifyAdmin(st.AdminUser, body.CurrentPassword) {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password required to change admin port"})
+				writeForbidden(w, "", "current password required to change admin port")
 				return
 			}
 			validPort, err := netutil.ValidateListenPort(p)
 			if err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				writeBadRequest(w, err.Error())
 				return
 			}
 			srv.env.AdminPort = validPort
 			if err := writeRuntimeEnvMerged(srv.env); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				writeInternalError(w, err.Error())
 				return
 			}
 			if err := srv.reloadHTTPListener(); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				writeInternalError(w, err.Error())
 				return
 			}
 			if srv.setupComplete() {
 				if err := srv.reloadNft(); err != nil {
-					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+					writeInternalError(w, err.Error())
 					return
 				}
 			}
@@ -232,16 +232,16 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.NewPassword != "" {
 			if len(body.NewPassword) < 8 {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "new_password must be at least 8 characters"})
+				writeBadRequest(w, "new_password must be at least 8 characters")
 				return
 			}
 			if !srv.verifyAdmin(st.AdminUser, body.CurrentPassword) {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password incorrect"})
+				writeForbidden(w, "", "current password incorrect")
 				return
 			}
 			hash, err := hashPassword(body.NewPassword)
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				writeInternalError(w, err.Error())
 				return
 			}
 			_ = srv.store.Update(func(st *store.State) {
@@ -261,7 +261,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 		if body.DisplayName != nil {
 			dn := strings.TrimSpace(*body.DisplayName)
 			if strings.ContainsAny(dn, "\n\r\x00") {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "display_name invalid"})
+				writeBadRequest(w, "display_name invalid")
 				return
 			}
 			_ = srv.store.Update(func(st *store.State) {
@@ -297,7 +297,7 @@ func (srv *Server) handleSystemAudit(w http.ResponseWriter, r *http.Request) {
 	limit := 100
 	list, err := audit.Tail(limit)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	if list == nil {

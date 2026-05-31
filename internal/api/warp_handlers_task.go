@@ -134,15 +134,15 @@ func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "connect requires root"})
+		writeForbidden(w, "", "connect requires root")
 		return
 	}
 	if !commandExists("warp-cli") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "warp not installed"})
+		writeBadRequest(w, "warp not installed")
 		return
 	}
 	if err := srv.startWarpConnectAsync(r); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "job": getWarpTaskStatus()})
+		writeConflictWithExtra(w, err.Error(), map[string]any{"job": getWarpTaskStatus()})
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{
@@ -234,15 +234,15 @@ func (srv *Server) handleNetworkWarpDisconnect(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "disconnect requires root"})
+		writeForbidden(w, "", "disconnect requires root")
 		return
 	}
 	if !commandExists("warp-cli") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "warp not installed"})
+		writeBadRequest(w, "warp not installed")
 		return
 	}
 	if err := srv.startWarpDisconnectAsync(r); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "job": getWarpTaskStatus()})
+		writeConflictWithExtra(w, err.Error(), map[string]any{"job": getWarpTaskStatus()})
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{

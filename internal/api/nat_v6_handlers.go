@@ -38,13 +38,13 @@ func (srv *Server) handleNptv6(w http.ResponseWriter, r *http.Request) {
 			Nptv6Rules   []store.Nptv6Rule `json:"nptv6_rules"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if body.Nptv6Enabled {
 			for _, rule := range body.Nptv6Rules {
 				if err := store.ValidateNptv6Rule(rule); err != nil {
-					writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+					writeBadRequest(w, err.Error())
 					return
 				}
 			}
@@ -81,7 +81,7 @@ func (srv *Server) handleNat64(w http.ResponseWriter, r *http.Request) {
 			DNS64        store.DNS64Config `json:"dns64"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.Nat64Prefix = strings.TrimSpace(body.Nat64Prefix)
@@ -100,15 +100,15 @@ func (srv *Server) handleNat64(w http.ResponseWriter, r *http.Request) {
 			DNS64:        body.DNS64,
 		}
 		if err := store.ValidateNat64Config(candidate); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if body.Nat64Enabled && body.DNS64.Mode == store.DNS64ModeLocal && !unboundInstalled() {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unbound not installed (apt install unbound)"})
+			writeBadRequest(w, "unbound not installed (apt install unbound)")
 			return
 		}
 		if body.Nat64Enabled && !joolInstalled() {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "jool not installed (apt install jool-tools jool-dkms)"})
+			writeBadRequest(w, "jool not installed (apt install jool-tools jool-dkms)")
 			return
 		}
 		if !srv.commitNatStackChange(w, func(st *store.State) {
@@ -133,7 +133,7 @@ func (srv *Server) handleDNS64(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var body store.DNS64Config
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		st := srv.store.Get()
@@ -141,7 +141,7 @@ func (srv *Server) handleDNS64(w http.ResponseWriter, r *http.Request) {
 		candidate.DNS64 = body
 		store.EnsureDNS64Defaults(&candidate.DNS64)
 		if err := store.ValidateNat64Config(candidate); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if !srv.commitNatStackChange(w, func(st *store.State) {

@@ -37,7 +37,7 @@ func (srv *Server) handleCaptures(w http.ResponseWriter, r *http.Request) {
 			DurationSec int    `json:"duration_sec"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		dev := body.Device
@@ -45,23 +45,23 @@ func (srv *Server) handleCaptures(w http.ResponseWriter, r *http.Request) {
 			dev = srv.env.DevLAN
 		}
 		if err := validateCaptureDevice(dev); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if err := sanitizeTcpdumpFilter(body.Filter); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		s, err := srv.captures().Start(dev, body.Filter, body.DurationSec)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, s)
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		_ = srv.captures().Stop(id)
@@ -104,7 +104,7 @@ func (srv *Server) handleConntrack(w http.ResponseWriter, r *http.Request) {
 	filter := r.URL.Query().Get("filter")
 	res, err := conntrack.List(limit, filter)
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		writeUnavailable(w, "", err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, res)

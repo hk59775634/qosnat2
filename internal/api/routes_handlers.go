@@ -24,7 +24,7 @@ func (srv *Server) handleRoutesGet(w http.ResponseWriter, r *http.Request) {
 	st := srv.store.Get()
 	live, err := route.ListLive(254)
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		writeUnavailable(w, "", err.Error())
 		return
 	}
 	live = route.MarkManaged(live, st.Routes)
@@ -41,16 +41,16 @@ func (srv *Server) handleRoutesGet(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) handleRoutesPost(w http.ResponseWriter, r *http.Request) {
 	var body store.RouteEntry
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	entry, err := srv.normalizeRouteInput(body)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	if err := route.Apply(entry); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	_ = srv.store.Update(func(st *store.State) {
@@ -66,19 +66,19 @@ func (srv *Server) handleRoutesPost(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/v1/routes/")
 	if id == "" || strings.Contains(id, "/") {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+		writeBadRequest(w, "id required")
 		return
 	}
 	switch r.Method {
 	case http.MethodPut:
 		var body store.RouteEntry
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		entry, err := srv.normalizeRouteInput(body)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		entry.ID = id
@@ -92,23 +92,21 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			writeNotFound(w, "not found")
 			return
 		}
 		if store.IsAutoManagedRoute(old) {
-			writeJSON(w, http.StatusForbidden, map[string]string{
-				"error": "此路由由多 WAN 或策略出站自动同步，请在「多 WAN」页面修改；本页不可编辑",
-			})
+			writeForbidden(w, "ROUTE_AUTO_MANAGED", "此路由由多 WAN 或策略出站自动同步，请在「多 WAN」页面修改；本页不可编辑")
 			return
 		}
 		prev, err := store.CloneState(srv.store.Get())
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		if old.Enabled {
 			if err := route.Delete(old); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				writeInternalError(w, err.Error())
 				return
 			}
 		}
@@ -117,7 +115,7 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 				if old.Enabled {
 					_ = route.Apply(old)
 				}
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				writeInternalError(w, err.Error())
 				return
 			}
 		}
@@ -138,7 +136,7 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			if entry.Enabled {
 				_ = route.Delete(entry)
 			}
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			writeNotFound(w, "not found")
 			return
 		}
 		if err := srv.store.Save(); err != nil {
@@ -149,7 +147,7 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			if entry.Enabled {
 				_ = route.Delete(entry)
 			}
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		st := srv.store.Get()
@@ -170,13 +168,11 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			st.Routes = out
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			writeNotFound(w, "not found")
 			return
 		}
 		if store.IsAutoManagedRoute(old) {
-			writeJSON(w, http.StatusForbidden, map[string]string{
-				"error": "此路由由多 WAN 或策略出站自动同步，请在「多 WAN」页面删除对应链路或出站策略；本页不可删除",
-			})
+			writeForbidden(w, "ROUTE_AUTO_MANAGED", "此路由由多 WAN 或策略出站自动同步，请在「多 WAN」页面删除对应链路或出站策略；本页不可删除")
 			return
 		}
 		_ = route.Delete(old)
@@ -196,7 +192,7 @@ func (srv *Server) handleRoutesApply(w http.ResponseWriter, r *http.Request) {
 	}
 	st := srv.store.Get()
 	if err := route.ApplyAll(st.Routes); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

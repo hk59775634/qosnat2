@@ -14,21 +14,19 @@ func (srv *Server) handleOCServService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{
-			"error": "控制 ocserv 服务需要 root 运行 qosnatd（systemd 未降权或使用 sudo 启动服务）",
-		})
+		writeForbidden(w, "ROOT_REQUIRED", "控制 ocserv 服务需要 root 运行 qosnatd（systemd 未降权或使用 sudo 启动服务）")
 		return
 	}
 	var body struct {
 		Action string `json:"action"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	act := strings.TrimSpace(strings.ToLower(body.Action))
 	if err := ocserv.ServiceControl(act); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	srv.clearOcservRestartHints()

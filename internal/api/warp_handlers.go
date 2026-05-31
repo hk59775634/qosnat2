@@ -103,7 +103,7 @@ func (srv *Server) handleNetworkWarpInstall(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "install requires root"})
+		writeForbidden(w, "", "install requires root")
 		return
 	}
 	if warpInstallComplete() {
@@ -118,7 +118,7 @@ func (srv *Server) handleNetworkWarpInstall(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := startWarpInstallAsync(r, srv); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "job": getWarpInstallStatus()})
+		writeConflictWithExtra(w, err.Error(), map[string]any{"job": getWarpInstallStatus()})
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{

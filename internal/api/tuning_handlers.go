@@ -58,7 +58,7 @@ func (srv *Server) handleSystemTuning(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		srv.putSystemTuning(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -110,7 +110,7 @@ func (srv *Server) getSystemTuning(w http.ResponseWriter, _ *http.Request) {
 func (srv *Server) putSystemTuning(w http.ResponseWriter, r *http.Request) {
 	var body tuningPutBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+		writeBadJSON(w)
 		return
 	}
 	var appliedRec *tuning.Result
@@ -157,7 +157,10 @@ func (srv *Server) putSystemTuning(w http.ResponseWriter, r *http.Request) {
 		}
 		st.System = sys
 	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeInternalError(w, err.Error())
+		return
+	}
+	if !srv.persistState(w) {
 		return
 	}
 	resp := map[string]any{"ok": true, "applied": false}
@@ -168,7 +171,7 @@ func (srv *Server) putSystemTuning(w http.ResponseWriter, r *http.Request) {
 	if body.Apply {
 		st := srv.store.Get()
 		if err := srv.applySystemTuning(st); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeInternalError(w, err.Error())
 			return
 		}
 		resp["applied"] = true

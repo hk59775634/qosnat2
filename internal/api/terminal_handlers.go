@@ -64,26 +64,26 @@ func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !srv.requestAuthorized(r) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		writeUnauthorized(w, "unauthorized")
 		return
 	}
 	if !terminalClientAllowed(r) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "client IP not allowed for web terminal (QOSNAT_TERMINAL_ALLOW_CIDRS)"})
+		writeForbidden(w, "", "client IP not allowed for web terminal (QOSNAT_TERMINAL_ALLOW_CIDRS)")
 		return
 	}
 	if !srv.store.Get().System.DiagnosticsTerminalEnabled {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "web terminal disabled; enable in System → General"})
+		writeForbidden(w, "", "web terminal disabled; enable in System → General")
 		return
 	}
 	tok := sessionTokenFromRequest(r)
 	if tok == "" || !srv.terminalGrants.consume(tok) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password verification required; confirm in terminal dialog"})
+		writeForbidden(w, "", "password verification required; confirm in terminal dialog")
 		return
 	}
 	select {
 	case terminalSlots <- struct{}{}:
 	default:
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "terminal sessions full"})
+		writeUnavailable(w, "", "terminal sessions full")
 		return
 	}
 	defer func() { <-terminalSlots }()

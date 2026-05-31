@@ -102,7 +102,7 @@ func (srv *Server) requestAuthorized(r *http.Request) bool {
 func (srv *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !srv.requestAuthorized(r) {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			writeUnauthorized(w, "unauthorized")
 			return
 		}
 		if isWriteMethod(r.Method) {

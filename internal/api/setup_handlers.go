@@ -41,12 +41,12 @@ func (srv *Server) handleSetupInterfaces(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if srv.setupComplete() {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "setup already complete"})
+		writeForbidden(w, "", "setup already complete")
 		return
 	}
 	ifaces, err := dnsmasq.ListInterfaces()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"interfaces": ifaces})
@@ -58,7 +58,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if srv.setupComplete() {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "setup already complete"})
+		writeConflict(w, "setup already complete")
 		return
 	}
 	var body struct {
@@ -73,7 +73,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		ApplyDataplane bool     `json:"apply_dataplane"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	body.AdminUser = strings.TrimSpace(body.AdminUser)
@@ -90,29 +90,29 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		if p := srv.env.AdminPass; len(p) >= 8 {
 			passToHash = p
 		} else {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "admin_pass must be at least 8 characters (or set a new password in wizard)"})
+			writeBadRequest(w, "admin_pass must be at least 8 characters (or set a new password in wizard)")
 			return
 		}
 	}
 	if body.DevWAN == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_wan required"})
+		writeBadRequest(w, "dev_wan required")
 		return
 	}
 	if body.DevLAN != "" && body.DevLAN == body.DevWAN {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_lan and dev_wan must differ"})
+		writeBadRequest(w, "dev_lan and dev_wan must differ")
 		return
 	}
 	if body.DevLAN != "" && !route.LinkExists(body.DevLAN) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_lan: interface %q not found", body.DevLAN)})
+		writeBadRequest(w, fmt.Sprintf("dev_lan: interface %q not found", body.DevLAN))
 		return
 	}
 	if !route.LinkExists(body.DevWAN) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_wan: interface %q not found", body.DevWAN)})
+		writeBadRequest(w, fmt.Sprintf("dev_wan: interface %q not found", body.DevWAN))
 		return
 	}
 	hash, err := hashPassword(passToHash)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "session error"})
+		writeInternalError(w, "session error")
 		return
 	}
 	if len(body.PolicyRoutes) == 0 {
@@ -120,7 +120,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	for i, cidr := range body.PolicyRoutes {
 		if err := store.ValidateCIDR(cidr); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "policy_routes: " + err.Error()})
+			writeBadRequest(w, "policy_routes: "+err.Error())
 			return
 		}
 		body.PolicyRoutes[i] = strings.TrimSpace(cidr)
@@ -132,7 +132,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		}
 		tmp := store.DefaultState()
 		if err := nft.AddSharedIP(&tmp, ip); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "shared_ips: " + err.Error()})
+			writeBadRequest(w, "shared_ips: "+err.Error())
 			return
 		}
 	}
@@ -158,7 +158,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		}
 	})
 	if err := srv.store.Save(); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 

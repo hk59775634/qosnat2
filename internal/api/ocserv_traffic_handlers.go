@@ -15,7 +15,7 @@ func (srv *Server) handleOCServUserTraffic(w http.ResponseWriter, r *http.Reques
 	}
 	username := strings.TrimSpace(r.URL.Query().Get("username"))
 	if username == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username required"})
+		writeBadRequest(w, "username required")
 		return
 	}
 	period := strings.TrimSpace(r.URL.Query().Get("period"))

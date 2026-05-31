@@ -19,7 +19,7 @@ func (srv *Server) handleIfaceQueues(w http.ResponseWriter, r *http.Request) {
 		dev = srv.env.DevLAN
 	}
 	if err := netif.ValidateIfaceName(dev); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -32,7 +32,7 @@ func (srv *Server) handleIfaceQueues(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleEbpfPrograms(w http.ResponseWriter, r *http.Request) {
 	if srv.bpf == nil || !srv.bpf.Ready() {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "ebpf not loaded"})
+		writeUnavailable(w, "", "ebpf not loaded")
 		return
 	}
 	writeJSON(w, http.StatusOK, srv.bpf.ListPrograms(srv.env.DevLAN))
@@ -44,11 +44,11 @@ func (srv *Server) handleEbpfReload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if srv.bpf == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "no bpf"})
+		writeUnavailable(w, "", "no bpf")
 		return
 	}
 	if err := srv.bpf.Reload(srv.env.DevLAN); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	st := srv.store.Get()

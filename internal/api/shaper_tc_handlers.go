@@ -24,11 +24,11 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 			Apply     bool   `json:"apply"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if !shaper.AllowedLeafInput(body.Leaf) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid leaf (fq_codel or cake)"})
+			writeBadRequest(w, "invalid leaf (fq_codel or cake)")
 			return
 		}
 		leaf := shaper.NormalizeLeaf(body.Leaf)
@@ -52,7 +52,7 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 				FQFlows:   st.Shaper.FQFlows,
 				FQQuantum: st.Shaper.FQQuantum,
 			}); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				writeInternalError(w, err.Error())
 				return
 			}
 			srv.syncShaperDevices()

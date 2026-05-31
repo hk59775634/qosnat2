@@ -33,21 +33,21 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 	case http.MethodPost:
 		var body store.EgressPolicy
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if err := store.NormalizeEgressPolicy(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		st := srv.store.Get()
 		if _, ok := store.FindWanLink(st.Network.WanLinks, body.WanLinkID); !ok {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wan_link_id not found"})
+			writeBadRequest(w, "wan_link_id not found")
 			return
 		}
 		for _, p := range st.Network.EgressPolicies {
 			if p.CIDR == body.CIDR && p.ID != body.ID {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr already used by another egress policy"})
+				writeBadRequest(w, "cidr already used by another egress policy")
 				return
 			}
 		}
@@ -62,27 +62,27 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 	case http.MethodPut:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		var body store.EgressPolicy
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.ID = id
 		if err := store.NormalizeEgressPolicy(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		stBefore := srv.store.Get()
 		if _, ok := store.FindWanLink(stBefore.Network.WanLinks, body.WanLinkID); !ok {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wan_link_id not found"})
+			writeBadRequest(w, "wan_link_id not found")
 			return
 		}
 		for _, p := range stBefore.Network.EgressPolicies {
 			if p.ID != id && p.CIDR == body.CIDR {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr already used"})
+				writeBadRequest(w, "cidr already used")
 				return
 			}
 		}
@@ -103,7 +103,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			}
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "egress policy not found"})
+			writeNotFound(w, "egress policy not found")
 			return
 		}
 		proposed := srv.store.Get()
@@ -128,7 +128,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		var removed store.EgressPolicy
@@ -152,7 +152,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			}
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "egress policy not found"})
+			writeNotFound(w, "egress policy not found")
 			return
 		}
 		proposed := srv.store.Get()
@@ -232,23 +232,23 @@ func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *htt
 		SkipExisting bool                 `json:"skip_existing"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	if len(body.Policies) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "policies[] required"})
+		writeBadRequest(w, "policies[] required")
 		return
 	}
 	normalized := make([]store.EgressPolicy, 0, len(body.Policies))
 	for i := range body.Policies {
 		p := body.Policies[i]
 		if err := store.NormalizeEgressPolicy(&p); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		st := srv.store.Get()
 		if _, ok := store.FindWanLink(st.Network.WanLinks, p.WanLinkID); !ok {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wan_link_id not found: " + p.WanLinkID})
+			writeBadRequest(w, "wan_link_id not found: "+p.WanLinkID)
 			return
 		}
 		normalized = append(normalized, p)
@@ -282,7 +282,7 @@ func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *htt
 		if skipped > 0 {
 			msg = "all policies already exist"
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		writeBadRequest(w, msg)
 		return
 	}
 	srv.auditLog(r, "network.egress.bulk", fmt.Sprintf("added=%d skipped=%d", added, skipped))

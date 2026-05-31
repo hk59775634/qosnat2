@@ -18,11 +18,11 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 	case http.MethodPost:
 		var body store.AliasSet
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if err := store.NormalizeAlias(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		st := srv.store.Get()
@@ -60,7 +60,7 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 	case http.MethodDelete:
 		name := r.URL.Query().Get("name")
 		if name == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+			writeBadRequest(w, "name required")
 			return
 		}
 		st := srv.store.Get()
@@ -74,11 +74,11 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 			newAliases = append(newAliases, a)
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "alias not found"})
+			writeNotFound(w, "alias not found")
 			return
 		}
 		if store.AliasReferencedByRules(st.Firewall.FilterRules, name) {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": "alias is referenced by firewall rules"})
+			writeConflict(w, "alias is referenced by firewall rules")
 			return
 		}
 		proposed := st

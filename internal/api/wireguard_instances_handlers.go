@@ -44,7 +44,7 @@ func (srv *Server) handleWireGuardInstancesRoot(w http.ResponseWriter, r *http.R
 			Mode store.WireGuardMode `json:"mode"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		id := strings.TrimSpace(body.ID)
@@ -82,7 +82,7 @@ func (srv *Server) handleWireGuardInstancesRoot(w http.ResponseWriter, r *http.R
 			}
 		})
 		if errStr != "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": errStr})
+			writeBadRequest(w, errStr)
 			return
 		}
 		if !srv.persistState(w) {
@@ -141,7 +141,7 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 		st := srv.store.Get()
 		idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id)
 		if !ok {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "instance not found"})
+			writeNotFound(w, "instance not found")
 			return
 		}
 		inst := st.VPN.WireGuards[idx]
@@ -156,7 +156,7 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 	case http.MethodPut:
 		var body store.WireGuardInstance
 		if err := readJSONRelaxed(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.ID = id
@@ -185,10 +185,10 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 		})
 		if errStr != "" {
 			if errStr == "instance not found" {
-				writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
+				writeNotFound(w, errStr)
 				return
 			}
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": errStr})
+			writeBadRequest(w, errStr)
 			return
 		}
 		if !srv.persistState(w) {
@@ -218,11 +218,11 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 			_ = removed
 		})
 		if errStr != "" {
-			code := http.StatusBadRequest
 			if errStr == "instance not found" {
-				code = http.StatusNotFound
+				writeNotFound(w, errStr)
+			} else {
+				writeBadRequest(w, errStr)
 			}
-			writeJSON(w, code, map[string]string{"error": errStr})
 			return
 		}
 		if !srv.persistState(w) {
@@ -247,7 +247,7 @@ func (srv *Server) handleWireGuardInstanceKeys(w http.ResponseWriter, r *http.Re
 	}
 	kp, err := wg.GenKeyPair()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	var errStr string
@@ -261,7 +261,7 @@ func (srv *Server) handleWireGuardInstanceKeys(w http.ResponseWriter, r *http.Re
 		s.VPN.WireGuards[idx].PublicKey = kp.Public
 	})
 	if errStr != "" {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
+		writeNotFound(w, errStr)
 		return
 	}
 	if !srv.persistState(w) {
@@ -277,12 +277,12 @@ func (srv *Server) handleWireGuardInstancePeerGenkey(w http.ResponseWriter, r *h
 	}
 	st := srv.store.Get()
 	if _, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id); !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "instance not found"})
+		writeNotFound(w, "instance not found")
 		return
 	}
 	kp, err := wg.GenKeyPair()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, kp)
@@ -296,13 +296,13 @@ func (srv *Server) handleWireGuardInstanceApply(w http.ResponseWriter, r *http.R
 	st := srv.store.Get()
 	idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id)
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "instance not found"})
+		writeNotFound(w, "instance not found")
 		return
 	}
 	inst := st.VPN.WireGuards[idx]
 	up := inst.Enabled
 	if err := wg.Apply(inst.WireGuardState, up); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	srv.setupWGShaper()
@@ -320,14 +320,14 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 		st := srv.store.Get()
 		idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id)
 		if !ok {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "instance not found"})
+			writeNotFound(w, "instance not found")
 			return
 		}
 		writeJSON(w, http.StatusOK, st.VPN.WireGuards[idx].Peers)
 	case http.MethodPost:
 		var p store.WGPeer
 		if err := readJSONRelaxed(r, &p); err != nil || p.Name == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+			writeBadRequest(w, "name required")
 			return
 		}
 		p.PrivateKey = strings.TrimSpace(p.PrivateKey)
@@ -335,7 +335,7 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 		if p.PublicKey == "" && p.PrivateKey != "" {
 			pub, err := wg.PublicKeyFromPrivate(p.PrivateKey)
 			if err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid private key: " + err.Error()})
+				writeBadRequest(w, "invalid private key: "+err.Error())
 				return
 			}
 			p.PublicKey = pub
@@ -343,14 +343,14 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 		if p.PrivateKey == "" && p.PublicKey == "" {
 			kp, err := wg.GenKeyPair()
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				writeInternalError(w, err.Error())
 				return
 			}
 			p.PrivateKey = kp.Private
 			p.PublicKey = kp.Public
 		}
 		if p.PublicKey == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "public_key required (or provide private_key)"})
+			writeBadRequest(w, "public_key required (or provide private_key)")
 			return
 		}
 		if len(p.AllowedIPs) == 0 {
@@ -380,7 +380,7 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			s.VPN.WireGuards[idx].Peers = out
 		})
 		if errStr != "" {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
+			writeNotFound(w, errStr)
 			return
 		}
 		if !srv.persistState(w) {
@@ -391,7 +391,7 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 	case http.MethodDelete:
 		name := r.URL.Query().Get("name")
 		if name == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+			writeBadRequest(w, "name required")
 			return
 		}
 		var removed *store.WGPeer
@@ -416,7 +416,7 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			s.VPN.WireGuards[idx].Peers = out
 		})
 		if errStr != "" {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
+			writeNotFound(w, errStr)
 			return
 		}
 		if !srv.persistState(w) {
@@ -439,7 +439,7 @@ func (srv *Server) handleWireGuardInstancePeerConf(w http.ResponseWriter, r *htt
 	st := srv.store.Get()
 	idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id)
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "instance not found"})
+		writeNotFound(w, "instance not found")
 		return
 	}
 	inst := st.VPN.WireGuards[idx]
@@ -451,7 +451,7 @@ func (srv *Server) handleWireGuardInstancePeerConf(w http.ResponseWriter, r *htt
 		}
 	}
 	if peer == nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "peer not found"})
+		writeNotFound(w, "peer not found")
 		return
 	}
 	ep := inst.ServerEndpoint
@@ -461,7 +461,7 @@ func (srv *Server) handleWireGuardInstancePeerConf(w http.ResponseWriter, r *htt
 	conf := wg.ClientConf(inst.WireGuardState, *peer, ep)
 	fn, err := safeAttachmentFilename(name)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -476,7 +476,7 @@ func (srv *Server) handleWireGuardInstancePeerTraffic(w http.ResponseWriter, r *
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+		writeBadRequest(w, "name required")
 		return
 	}
 	period := strings.TrimSpace(r.URL.Query().Get("period"))
@@ -495,7 +495,7 @@ func (srv *Server) handleWireGuardInstancePeerTraffic(w http.ResponseWriter, r *
 	st := srv.store.Get()
 	idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id)
 	if !ok {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "instance not found"})
+		writeNotFound(w, "instance not found")
 		return
 	}
 	inst := st.VPN.WireGuards[idx]
@@ -507,7 +507,7 @@ func (srv *Server) handleWireGuardInstancePeerTraffic(w http.ResponseWriter, r *
 		}
 	}
 	if pub == "" {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "peer not found"})
+		writeNotFound(w, "peer not found")
 		return
 	}
 

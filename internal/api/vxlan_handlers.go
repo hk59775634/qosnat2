@@ -24,22 +24,22 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var body store.VXLANTunnel
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if err := store.NormalizeVXLANTunnel(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if body.Underlay != "" && !route.LinkExists(body.Underlay) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "underlay interface not found"})
+			writeBadRequest(w, "underlay interface not found")
 			return
 		}
 		if err := srv.applyNetplanWithRollback(func(st *store.State) error {
 			st.Network.VXLANTunnels = append(st.Network.VXLANTunnels, body)
 			return nil
 		}); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "network.vxlan.add", body.Name)
@@ -47,17 +47,17 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		var body store.VXLANTunnel
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.ID = id
 		if err := store.NormalizeVXLANTunnel(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		found := false
@@ -68,7 +68,7 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vxlan not found"})
+			writeNotFound(w, "vxlan not found")
 			return
 		}
 		if err := srv.applyNetplanWithRollback(func(st *store.State) error {
@@ -80,7 +80,7 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 			}
 			return fmt.Errorf("vxlan not found")
 		}); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "network.vxlan.put", body.Name)
@@ -88,7 +88,7 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		st := srv.store.Get()
@@ -100,7 +100,7 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vxlan not found"})
+			writeNotFound(w, "vxlan not found")
 			return
 		}
 		if err := srv.applyNetplanWithRollback(func(st *store.State) error {
@@ -113,7 +113,7 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 			st.Network.VXLANTunnels = out
 			return nil
 		}); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "network.vxlan.delete", id)

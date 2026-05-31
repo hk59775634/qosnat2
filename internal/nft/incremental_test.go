@@ -24,3 +24,12 @@ func TestIncrementalEnabled(t *testing.T) {
 		t.Fatal("expected disabled")
 	}
 }
+
+func TestReplaceFilterRuleByIDValidation(t *testing.T) {
+	if err := ReplaceFilterRuleByID("", "id", "accept"); err == nil {
+		t.Fatal("expected error for empty chain")
+	}
+	if err := ReplaceFilterRuleByID("forward", "", "accept"); err == nil {
+		t.Fatal("expected error for empty id")
+	}
+}

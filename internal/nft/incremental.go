@@ -22,6 +22,28 @@ func WriteRulesFile(body string) error {
 	return os.WriteFile(RulesPath, []byte(body), 0644)
 }
 
+// ReplaceFilterRuleByID 在同一 nft 脚本内 delete+add，缩短 PATCH 窗口。
+func ReplaceFilterRuleByID(chain, id, newLine string) error {
+	chain = strings.ToLower(strings.TrimSpace(chain))
+	id = strings.TrimSpace(id)
+	newLine = strings.TrimSpace(newLine)
+	if chain == "" || id == "" || newLine == "" {
+		return fmt.Errorf("empty chain, id or rule line")
+	}
+	marker := "qosnat2:rid:" + id
+	out, err := exec.Command("nft", "-a", "list", "chain", "inet", TableName, chain).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("nft list chain: %s %w", strings.TrimSpace(string(out)), err)
+	}
+	handle := findRuleHandle(string(out), marker)
+	if handle == "" {
+		return fmt.Errorf("rule handle not found for %s", marker)
+	}
+	script := fmt.Sprintf("delete rule inet %s %s handle %s\nadd rule inet %s %s %s\n",
+		TableName, chain, handle, TableName, chain, newLine)
+	return runNftScript(script)
+}
+
 // AddFilterRuleLine 向链末尾追加一条 filter 规则（须已通过 CheckRuleset 全表校验）。
 func AddFilterRuleLine(chain, line string) error {
 	chain = strings.ToLower(strings.TrimSpace(chain))

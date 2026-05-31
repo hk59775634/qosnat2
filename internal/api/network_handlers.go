@@ -27,11 +27,11 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var body store.VLANIface
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if err := srv.validateVLANBody(&body, true); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if err := srv.applyNetplanWithRollback(func(st *store.State) error {
@@ -41,7 +41,7 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 			st.Network.VLANs = append(st.Network.VLANs, body)
 			return nil
 		}); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "network.vlan.add", body.Name)
@@ -49,17 +49,17 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id query required"})
+			writeBadRequest(w, "id query required")
 			return
 		}
 		var body store.VLANIface
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.ID = id
 		if err := srv.validateVLANBody(&body, false); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		found := false
@@ -73,11 +73,11 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 			}
 			return nil
 		}); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vlan not found"})
+			writeNotFound(w, "vlan not found")
 			return
 		}
 		srv.auditLog(r, "network.vlan.put", body.Name)
@@ -85,7 +85,7 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		st := srv.store.Get()
@@ -97,7 +97,7 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vlan not found"})
+			writeNotFound(w, "vlan not found")
 			return
 		}
 		if err := srv.applyNetplanWithRollback(func(st *store.State) error {
@@ -110,7 +110,7 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 			st.Network.VLANs = out
 			return nil
 		}); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "network.vlan.delete", id)
@@ -149,25 +149,25 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 	case http.MethodPost:
 		var body store.WanLink
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if err := store.NormalizeWanLink(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if body.ID == store.WanLinkIDWarp || body.WarpManaged {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "use WARP connect to create the WARP WAN link"})
+			writeBadRequest(w, "use WARP connect to create the WARP WAN link")
 			return
 		}
 		if !route.LinkExists(body.Device) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface not found"})
+			writeBadRequest(w, "interface not found")
 			return
 		}
 		stCheck := srv.store.Get()
 		for _, wl := range stCheck.Network.WanLinks {
 			if wl.ID == body.ID {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wan link id already exists"})
+				writeBadRequest(w, "wan link id already exists")
 				return
 			}
 		}
@@ -181,7 +181,7 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "network.wan.add", body.ID)
@@ -189,21 +189,21 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 	case http.MethodPut:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		var body store.WanLink
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.ID = id
 		if err := validateWanLinkMutable(srv.store.Get(), id); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if err := store.NormalizeWanLink(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		found := false
@@ -221,7 +221,7 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			}
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "wan link not found"})
+			writeNotFound(w, "wan link not found")
 			return
 		}
 		if !srv.persistState(w) {
@@ -229,7 +229,7 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "network.wan.put", id)
@@ -237,11 +237,11 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		if err := validateWanLinkDeletable(srv.store.Get(), id); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
@@ -260,7 +260,7 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			writeInternalError(w, err.Error())
 			return
 		}
 		srv.auditLog(r, "network.wan.delete", id)

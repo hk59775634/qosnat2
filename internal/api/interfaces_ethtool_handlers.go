@@ -10,18 +10,18 @@ import (
 func (srv *Server) handleInterfacesEthtool(w http.ResponseWriter, r *http.Request) {
 	dev := strings.TrimSpace(r.URL.Query().Get("device"))
 	if dev == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "device query required"})
+		writeBadRequest(w, "device query required")
 		return
 	}
 	if err := netif.ValidateIfaceName(dev); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
 		info, err := netif.GetEthtool(dev)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, info)
@@ -32,26 +32,26 @@ func (srv *Server) handleInterfacesEthtool(w http.ResponseWriter, r *http.Reques
 			Offloads netif.OffloadSetRequest `json:"offloads"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		hasRing := body.RxRing > 0 || body.TxRing > 0
 		hasOff := body.Offloads.GRO != "" || body.Offloads.GSO != "" ||
 			body.Offloads.TXCSUM != "" || body.Offloads.RXCSUM != ""
 		if !hasRing && !hasOff {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "rx_ring, tx_ring or offloads required"})
+			writeBadRequest(w, "rx_ring, tx_ring or offloads required")
 			return
 		}
 		if hasRing {
 			if err := netif.SetRing(dev, body.RxRing, body.TxRing); err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				writeBadRequest(w, err.Error())
 				return
 			}
 			srv.auditLog(r, "iface.ring", dev)
 		}
 		if hasOff {
 			if err := netif.SetOffloads(dev, body.Offloads); err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				writeBadRequest(w, err.Error())
 				return
 			}
 			srv.auditLog(r, "iface.offload", dev)

@@ -87,17 +87,17 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var body store.FilterRule
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.System = false
 		if err := store.NormalizeFilterRule(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		st := srv.store.Get()
 		if err := store.ValidateFilterRuleAliases(body, st.Firewall.Aliases); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		proposed := st
@@ -127,12 +127,12 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id query required"})
+			writeBadRequest(w, "id query required")
 			return
 		}
 		var body store.FilterRule
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.ID = id
@@ -148,21 +148,21 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			}
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
+			writeNotFound(w, "rule not found")
 			return
 		}
 		if !store.FilterRuleMutable(prev) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "system rule cannot be modified"})
+			writeForbidden(w, "", "system rule cannot be modified")
 			return
 		}
 		body.System = prev.System
 		if err := store.NormalizeFilterRule(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		st := srv.store.Get()
 		if err := store.ValidateFilterRuleAliases(body, st.Firewall.Aliases); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		newRules := cloneFilterRules(st.Firewall.FilterRules)
@@ -195,7 +195,7 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			srv.setFilterRules(backup)
 			return
 		}
-		if err := srv.reloadNftWithFilterRevert(backup); err != nil {
+		if err := srv.reloadFilterWithOptionalIncremental(backup, filterOpReplace, body); err != nil {
 			writeApplyError(w, err)
 			return
 		}
@@ -204,7 +204,7 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id query required"})
+			writeBadRequest(w, "id query required")
 			return
 		}
 		var target *store.FilterRule
@@ -216,11 +216,11 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if target == nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "rule not found"})
+			writeNotFound(w, "rule not found")
 			return
 		}
 		if !store.FilterRuleMutable(*target) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "system rule cannot be deleted"})
+			writeForbidden(w, "", "system rule cannot be deleted")
 			return
 		}
 		var newRules []store.FilterRule
@@ -261,14 +261,14 @@ func (srv *Server) handleFirewallRulesOrder(w http.ResponseWriter, r *http.Reque
 		Order []string `json:"order"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	if len(body.Order) == 0 {
 		st := srv.store.Get()
 		for _, rule := range st.Firewall.FilterRules {
 			if store.FilterRuleMutable(rule) {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "order[] required"})
+				writeBadRequest(w, "order[] required")
 				return
 			}
 		}
@@ -280,7 +280,7 @@ func (srv *Server) handleFirewallRulesOrder(w http.ResponseWriter, r *http.Reque
 	st := srv.store.Get()
 	reordered, err = store.ReorderFirewallRules(st.Firewall.FilterRules, body.Order)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	vp := nft.VPNFirewallFromState(st)

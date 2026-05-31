@@ -48,7 +48,7 @@ func (srv *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 			MarkRead   bool     `json:"mark_read"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		_ = srv.store.Update(func(s *store.State) {

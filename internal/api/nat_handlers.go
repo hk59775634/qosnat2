@@ -32,12 +32,12 @@ func (srv *Server) handleSharedIPs(w http.ResponseWriter, r *http.Request) {
 			IP string `json:"ip"`
 		}
 		if err := readJSON(r, &body); err != nil || body.IP == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ip required"})
+			writeBadRequest(w, "ip required")
 			return
 		}
 		trial := srv.store.Get()
 		if err := nft.AddSharedIP(&trial, body.IP); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if !srv.commitNatIPv4Change(w, func(st *store.State) {
@@ -49,7 +49,7 @@ func (srv *Server) handleSharedIPs(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		ip := r.URL.Query().Get("ip")
 		if ip == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ip query required"})
+			writeBadRequest(w, "ip query required")
 			return
 		}
 		found := false
@@ -59,7 +59,7 @@ func (srv *Server) handleSharedIPs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			writeNotFound(w, "not found")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -82,17 +82,17 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 			Outer string `json:"outer"`
 		}
 		if err := readJSON(r, &body); err != nil || body.Inner == "" || body.Outer == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner/outer required"})
+			writeBadRequest(w, "inner/outer required")
 			return
 		}
 		body.Inner = strings.TrimSpace(body.Inner)
 		body.Outer = strings.TrimSpace(body.Outer)
 		if err := store.ValidateIPv4OrCIDR(body.Inner); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner: " + err.Error()})
+			writeBadRequest(w, "inner: "+err.Error())
 			return
 		}
 		if err := store.ValidateIPv4OrCIDR(body.Outer); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "outer: " + err.Error()})
+			writeBadRequest(w, "outer: "+err.Error())
 			return
 		}
 		if !srv.commitNatIPv4Change(w, func(st *store.State) {
@@ -104,7 +104,7 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 	case http.MethodDelete:
 		inner := r.URL.Query().Get("inner")
 		if inner == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner query required"})
+			writeBadRequest(w, "inner query required")
 			return
 		}
 		found := false
@@ -117,7 +117,7 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			writeNotFound(w, "not found")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -140,17 +140,17 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 			Outer string `json:"outer"`
 		}
 		if err := readJSON(r, &body); err != nil || body.Inner == "" || body.Outer == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner/outer required"})
+			writeBadRequest(w, "inner/outer required")
 			return
 		}
 		body.Inner = strings.TrimSpace(body.Inner)
 		body.Outer = strings.TrimSpace(body.Outer)
 		if err := store.ValidateCIDR(body.Inner); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner: " + err.Error()})
+			writeBadRequest(w, "inner: "+err.Error())
 			return
 		}
 		if err := store.ValidateCIDR(body.Outer); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "outer: " + err.Error()})
+			writeBadRequest(w, "outer: "+err.Error())
 			return
 		}
 		if !srv.commitNatIPv4Change(w, func(st *store.State) {
@@ -162,7 +162,7 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 	case http.MethodDelete:
 		inner := r.URL.Query().Get("inner")
 		if inner == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "inner query required"})
+			writeBadRequest(w, "inner query required")
 			return
 		}
 		found := false
@@ -175,7 +175,7 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			writeNotFound(w, "not found")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -193,12 +193,12 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 			CIDR string `json:"cidr"`
 		}
 		if err := readJSON(r, &body); err != nil || body.CIDR == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr required"})
+			writeBadRequest(w, "cidr required")
 			return
 		}
 		body.CIDR = strings.TrimSpace(body.CIDR)
 		if err := store.ValidateCIDR(body.CIDR); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		dup := false
@@ -221,7 +221,7 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		cidr := r.URL.Query().Get("cidr")
 		if cidr == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr query required"})
+			writeBadRequest(w, "cidr query required")
 			return
 		}
 		if !srv.commitNatIPv4Change(w, func(st *store.State) {

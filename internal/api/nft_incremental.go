@@ -14,6 +14,7 @@ const (
 	filterOpNone filterIncrementalOp = iota
 	filterOpAdd
 	filterOpDelete
+	filterOpReplace
 )
 
 func (srv *Server) reloadFilterWithOptionalIncremental(backup []store.FilterRule, op filterIncrementalOp, rule store.FilterRule) error {
@@ -24,7 +25,7 @@ func (srv *Server) reloadFilterWithOptionalIncremental(backup []store.FilterRule
 	if chain != "forward" && chain != "input" {
 		return srv.reloadNftWithFilterRevert(backup)
 	}
-	if op == filterOpAdd && rule.NftRuleLine() == "" {
+	if (op == filterOpAdd || op == filterOpReplace) && rule.NftRuleLine() == "" {
 		return srv.reloadNftWithFilterRevert(backup)
 	}
 
@@ -37,6 +38,8 @@ func (srv *Server) reloadFilterWithOptionalIncremental(backup []store.FilterRule
 			incErr = nft.AddFilterRuleLine(chain, rule.NftRuleLine())
 		case filterOpDelete:
 			incErr = nft.DeleteFilterRuleByID(chain, rule.ID)
+		case filterOpReplace:
+			incErr = nft.ReplaceFilterRuleByID(chain, rule.ID, rule.NftRuleLine())
 		}
 		if incErr != nil {
 			usedFullReload = true

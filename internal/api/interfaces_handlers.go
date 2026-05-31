@@ -25,7 +25,7 @@ func (srv *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 	list, err := netif.ListDetails()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	c := srv.collector()
@@ -67,27 +67,27 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		Up     *bool    `json:"up"`
 	}
 	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.Device) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "device required"})
+		writeBadRequest(w, "device required")
 		return
 	}
 	dev := strings.TrimSpace(body.Device)
 	if err := netif.ValidateIfaceName(dev); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	if body.IPv4 == nil && body.Up == nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ipv4 or up required"})
+		writeBadRequest(w, "ipv4 or up required")
 		return
 	}
 	if !netif.IsNetplanManagedDevice(dev) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "interface cannot be managed via netplan"})
+		writeBadRequest(w, "interface cannot be managed via netplan")
 		return
 	}
 	if err := srv.applyNetplanWithRollback(func(st *store.State) error {
 		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, nil)
 		return nil
 	}); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	srv.auditLog(r, "iface.netplan", dev)
@@ -117,29 +117,29 @@ func (srv *Server) handleInterfacesRoles(w http.ResponseWriter, r *http.Request)
 		Apply  *bool  `json:"apply"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	body.DevLAN = strings.TrimSpace(body.DevLAN)
 	body.DevWAN = strings.TrimSpace(body.DevWAN)
 	if body.DevWAN == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_wan required"})
+		writeBadRequest(w, "dev_wan required")
 		return
 	}
 	if body.DevLAN != "" && body.DevLAN == body.DevWAN {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dev_lan and dev_wan must differ"})
+		writeBadRequest(w, "dev_lan and dev_wan must differ")
 		return
 	}
 	if body.DevLAN != "" && !route.LinkExists(body.DevLAN) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_lan: interface %q not found", body.DevLAN)})
+		writeBadRequest(w, fmt.Sprintf("dev_lan: interface %q not found", body.DevLAN))
 		return
 	}
 	if !route.LinkExists(body.DevWAN) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("dev_wan: interface %q not found", body.DevWAN)})
+		writeBadRequest(w, fmt.Sprintf("dev_wan: interface %q not found", body.DevWAN))
 		return
 	}
 	if err := WriteDevRoles(body.DevLAN, body.DevWAN); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	srv.reloadEnv()

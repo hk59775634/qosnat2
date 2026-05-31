@@ -64,7 +64,7 @@ func (srv *Server) handleShaperProfilesOrder(w http.ResponseWriter, r *http.Requ
 		Order []string `json:"order"`
 	}
 	if err := readJSON(r, &body); err != nil || len(body.Order) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "order[] required"})
+		writeBadRequest(w, "order[] required")
 		return
 	}
 	var reordered []store.ProfileEntry
@@ -77,7 +77,7 @@ func (srv *Server) handleShaperProfilesOrder(w http.ResponseWriter, r *http.Requ
 		st.Shaper.Profiles = reordered
 	})
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	if srv.bpf != nil && srv.bpf.Ready() {

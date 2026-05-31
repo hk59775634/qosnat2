@@ -50,12 +50,12 @@ func (srv *Server) handleSystemVersionSwitchVerify(w http.ResponseWriter, r *htt
 		CurrentPasswd string `json:"current_password"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	st := srv.store.Get()
 	if !srv.verifyAdmin(st.AdminUser, body.CurrentPasswd) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password incorrect"})
+		writeForbidden(w, "", "current password incorrect")
 		return
 	}
 	if tok := sessionTokenFromRequest(r); tok != "" {
@@ -87,7 +87,7 @@ func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if os.Getuid() != 0 {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "版本切换需要 root 运行 qosnatd"})
+		writeForbidden(w, "", "版本切换需要 root 运行 qosnatd")
 		return
 	}
 	var body struct {
@@ -95,31 +95,28 @@ func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Requ
 		CurrentPasswd string `json:"current_password"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	versionID := releasecatalog.NormalizeID(body.Tag)
 	if versionID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tag required"})
+		writeBadRequest(w, "tag required")
 		return
 	}
 	if !releasecatalog.ValidID(versionID) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid version id (expected YYYYMMDDNN)"})
+		writeBadRequest(w, "invalid version id (expected YYYYMMDDNN)")
 		return
 	}
 	authorized, viaGrant := srv.versionSwitchAuthorized(r, body.CurrentPasswd)
 	if !authorized {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password verification required; confirm in version switch dialog"})
+		writeForbidden(w, "", "password verification required; confirm in version switch dialog")
 		return
 	}
 	if err := srv.startVersionSwitchAsync(r, versionID); err != nil {
 		if viaGrant {
 			srv.versionSwitchRegrant(r)
 		}
-		writeJSON(w, http.StatusConflict, map[string]any{
-			"error": err.Error(),
-			"job":   getVersionSwitchStatus(),
-		})
+		writeConflictWithExtra(w, err.Error(), map[string]any{"job": getVersionSwitchStatus()})
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{

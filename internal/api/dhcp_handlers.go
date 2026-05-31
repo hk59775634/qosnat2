@@ -54,11 +54,11 @@ func (srv *Server) handleDHCPGet(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) handleDHCPPut(w http.ResponseWriter, r *http.Request) {
 	var body store.DHCPState
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	if err := srv.normalizeDHCP(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	_ = srv.store.Update(func(st *store.State) {
@@ -81,11 +81,11 @@ func (srv *Server) handleDHCPApply(w http.ResponseWriter, r *http.Request) {
 		cfg.Interface = srv.env.DevLAN
 	}
 	if err := srv.normalizeDHCP(&cfg); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	if err := dnsmasq.Apply(cfg, srv.dnsmasqOpts(st)); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeInternalError(w, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

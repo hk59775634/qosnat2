@@ -133,7 +133,7 @@ func writeNftApplyError(w http.ResponseWriter, err error) {
 }
 
 func writeSaveError(w http.ResponseWriter, err error) {
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "save failed: " + err.Error()})
+	writeAPIError(w, http.StatusInternalServerError, "SAVE_FAILED", "save failed: "+err.Error())
 }
 
 func (srv *Server) saveState(w http.ResponseWriter) bool {

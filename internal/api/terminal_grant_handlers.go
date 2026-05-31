@@ -16,12 +16,12 @@ func (srv *Server) handleTerminalGrant(w http.ResponseWriter, r *http.Request) {
 		CurrentPasswd string `json:"current_password"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	st := srv.store.Get()
 	if !srv.verifyAdmin(st.AdminUser, body.CurrentPasswd) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "current password incorrect"})
+		writeForbidden(w, "", "current password incorrect")
 		return
 	}
 	if tok := sessionTokenFromRequest(r); tok != "" {

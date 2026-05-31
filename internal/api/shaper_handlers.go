@@ -112,7 +112,7 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 	case http.MethodGet:
 		list, err := srv.listProfileItems()
 		if err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			writeUnavailable(w, "", err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, srv.shaperProfilesPayload(list))
@@ -125,11 +125,11 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			Device string `json:"device"`
 		}
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if strings.TrimSpace(body.CIDR) == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr required"})
+			writeBadRequest(w, "cidr required")
 			return
 		}
 		if body.Down == "" {
@@ -142,16 +142,16 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			body.Mask = 32
 		}
 		if !srv.bpfReady() {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errEbpfNotLoaded.Error()})
+			writeUnavailable(w, "", errEbpfNotLoaded.Error())
 			return
 		}
 		added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, false, true)
 		if err != nil {
 			if err == errEbpfNotLoaded {
-				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+				writeUnavailable(w, "", err.Error())
 				return
 			}
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		st := srv.store.Get()
@@ -164,11 +164,11 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 	case http.MethodDelete:
 		cidr := r.URL.Query().Get("cidr")
 		if cidr == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cidr query required"})
+			writeBadRequest(w, "cidr query required")
 			return
 		}
 		if !srv.bpfReady() {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errEbpfNotLoaded.Error()})
+			writeUnavailable(w, "", errEbpfNotLoaded.Error())
 			return
 		}
 		srv.teardownProfileShaper(cidr)
@@ -210,7 +210,7 @@ func (srv *Server) handleShaperWizard(w http.ResponseWriter, r *http.Request) {
 		Device string `json:"device"`
 	}
 	if err := readJSON(r, &body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+		writeBadJSON(w)
 		return
 	}
 	if body.CIDR == "" {
@@ -225,18 +225,29 @@ func (srv *Server) handleShaperWizard(w http.ResponseWriter, r *http.Request) {
 	if body.Mask == 0 {
 		body.Mask = 32
 	}
-	added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, true, true)
+	backup := captureShaperWizardBackup(srv.store.Get())
+	added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, true, false)
 	if err != nil {
 		if err == errEbpfNotLoaded {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			writeUnavailable(w, "EBPF_NOT_LOADED", err.Error())
 			return
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeBadRequest(w, err.Error())
 		return
 	}
 	if err := srv.reloadNft(); err != nil {
-		log.Printf("wizard nft: %v", err)
+		cidrToDrop := ""
+		if added {
+			cidrToDrop = body.CIDR
+		}
+		if revErr := srv.revertShaperWizard(backup, cidrToDrop); revErr != nil {
+			writeApplyError(w, revErr)
+			return
+		}
+		writeApplyError(w, err)
+		return
 	}
+	srv.refreshShaperAfterChange()
 	st := srv.store.Get()
 	cidrs := srv.shaperMirredCIDRs(st)
 	resp := map[string]any{"ok": true, "added": added, "cidr": body.CIDR, "mirred_cidrs": cidrs}
@@ -253,7 +264,7 @@ func (srv *Server) handleShaperActive(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := srv.bpf.ListActive()
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		writeUnavailable(w, "", err.Error())
 		return
 	}
 	if list == nil {

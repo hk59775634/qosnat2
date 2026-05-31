@@ -21,19 +21,19 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		var body store.TenantEntry
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		if err := store.NormalizeTenant(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		if !srv.bpfReady() {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": errEbpfNotLoaded.Error()})
+			writeUnavailable(w, "", errEbpfNotLoaded.Error())
 			return
 		}
 		if err := srv.applyTenantProfiles(body, false); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
@@ -48,17 +48,17 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		var body store.TenantEntry
 		if err := readJSON(r, &body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad json"})
+			writeBadJSON(w)
 			return
 		}
 		body.ID = id
 		if err := store.NormalizeTenant(&body); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		var prev store.TenantEntry
@@ -72,13 +72,13 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "tenant not found"})
+			writeNotFound(w, "tenant not found")
 			return
 		}
 		if err := srv.applyTenantProfiles(body, false); err != nil {
 			_ = srv.applyTenantProfiles(prev, false)
 			srv.refreshShaperAfterChange()
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeBadRequest(w, err.Error())
 			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
@@ -98,7 +98,7 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+			writeBadRequest(w, "id required")
 			return
 		}
 		found := false
@@ -114,7 +114,7 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 			st.Shaper.Tenants = out
 		})
 		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "tenant not found"})
+			writeNotFound(w, "tenant not found")
 			return
 		}
 		if !srv.persistState(w) {
