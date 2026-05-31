@@ -130,13 +130,18 @@ components:
       type: object
       properties:
         enabled: { type: boolean }
+        dns_enabled: { type: boolean, description: 启用 dnsmasq LAN DNS（port 53）；可与 enabled 独立组合 }
         interface: { type: string, description: 绑定网卡，默认 DEV_LAN }
         range_start: { type: string }
         range_end: { type: string }
         router: { type: string }
         netmask: { type: string }
         domain: { type: string }
-        dns_servers: { type: array, items: { type: string } }
+        dns_servers: { type: array, items: { type: string }, description: DHCP option 6 下发给客户端 }
+        upstream_dns:
+          type: array
+          items: { type: string }
+          description: dnsmasq server= 转发上游；空则使用系统 resolv.conf
         lease_time_sec: { type: integer }
         authoritative: { type: boolean }
         static_leases:

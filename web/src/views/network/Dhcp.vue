@@ -16,6 +16,7 @@ const leases = ref([])
 const err = ref('')
 const ok = ref('')
 const dnsText = ref('')
+const upstreamDnsText = ref('')
 const staticForm = ref({ mac: '', ip: '', hostname: '', comment: '' })
 
 const bindIface = computed({
@@ -30,6 +31,8 @@ const dnsmasqStatusLabel = computed(() => {
   return status.value.active ? t('network.dhcp.statusRunning') : t('network.dhcp.statusStopped')
 })
 
+const serviceActive = computed(() => !!(cfg.value?.enabled || cfg.value?.dns_enabled))
+
 async function load() {
   const d = await api.get('/api/v1/dhcp')
   cfg.value = d.config || {}
@@ -40,6 +43,7 @@ async function load() {
   rendered.value = d.rendered || ''
   leases.value = d.leases || []
   dnsText.value = (cfg.value.dns_servers || []).join('\n')
+  upstreamDnsText.value = (cfg.value.upstream_dns || []).join('\n')
   if (!cfg.value.interface && devLan.value) {
     cfg.value.interface = devLan.value
   }
@@ -53,11 +57,15 @@ async function save(applyAfter) {
       .split(/[\n,]+/)
       .map((s) => s.trim())
       .filter(Boolean)
+    cfg.value.upstream_dns = upstreamDnsText.value
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
     await api.put('/api/v1/dhcp', cfg.value)
     ok.value = t('network.dhcp.saved')
     if (applyAfter) {
       await api.post('/api/v1/dhcp/apply', {})
-      ok.value = cfg.value.enabled ? t('network.dhcp.savedStarted') : t('network.dhcp.savedStopped')
+      ok.value = serviceActive.value ? t('network.dhcp.savedStarted') : t('network.dhcp.savedStopped')
     }
     await load()
   } catch (e) {
@@ -88,12 +96,18 @@ onMounted(load)
     <PageHeader :title="t('network.dhcp.title')" :description="t('network.dhcp.description')" :ok="ok" :err="err" />
 
     <div v-if="cfg" class="card card-body mb-0 space-y-3">
-      <label class="flex items-center gap-2 text-sm font-medium">
-        <input v-model="cfg.enabled" type="checkbox" /> {{ t('network.dhcp.enable') }}
-      </label>
+      <div class="flex flex-wrap gap-x-6 gap-y-2">
+        <label class="flex items-center gap-2 text-sm font-medium">
+          <input v-model="cfg.enabled" type="checkbox" /> {{ t('network.dhcp.enable') }}
+        </label>
+        <label class="flex items-center gap-2 text-sm font-medium">
+          <input v-model="cfg.dns_enabled" type="checkbox" /> {{ t('network.dhcp.enableDns') }}
+        </label>
+      </div>
+      <p class="text-xs text-slate-500">{{ t('network.dhcp.serviceModeHint') }}</p>
 
-      <div class="grid sm:grid-cols-2 gap-3 text-sm">
-        <div>
+      <div v-if="serviceActive" class="grid sm:grid-cols-2 gap-3 text-sm">
+        <div class="sm:col-span-2">
           <label class="text-xs text-slate-500">{{ t('network.dhcp.bindIface') }}</label>
           <select v-model="bindIface" class="input-field font-mono">
             <option v-for="iface in interfaces" :key="iface.name" :value="iface.name">
@@ -104,6 +118,10 @@ onMounted(load)
           </select>
           <p class="text-xs text-slate-400 mt-1">{{ t('network.dhcp.bindIfaceDefault', { lan: devLan }) }}</p>
         </div>
+      </div>
+
+      <div v-if="cfg.enabled" class="grid sm:grid-cols-2 gap-3 text-sm border-t border-slate-100 pt-3">
+        <h3 class="sm:col-span-2 font-medium text-sm">{{ t('network.dhcp.dhcpSection') }}</h3>
         <div>
           <label class="text-xs text-slate-500">{{ t('network.dhcp.gateway') }}</label>
           <input v-model="cfg.router" class="input-field font-mono" placeholder="192.168.1.1" />
@@ -124,10 +142,6 @@ onMounted(load)
           <label class="text-xs text-slate-500">{{ t('network.dhcp.leaseTimeSec') }}</label>
           <input v-model.number="cfg.lease_time_sec" type="number" class="input-field" />
         </div>
-        <div class="sm:col-span-2">
-          <label class="text-xs text-slate-500">{{ t('network.dhcp.dnsServersMultiline') }}</label>
-          <textarea v-model="dnsText" class="input-field font-mono h-16" rows="2" />
-        </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('network.dhcp.domainOptional') }}</label>
           <input v-model="cfg.domain" class="input-field" />
@@ -137,7 +151,29 @@ onMounted(load)
         </label>
       </div>
 
-      <div class="border-t border-slate-200 pt-4 space-y-3">
+      <div v-if="cfg.dns_enabled" class="grid sm:grid-cols-2 gap-3 text-sm border-t border-slate-100 pt-3">
+        <div class="sm:col-span-2">
+          <h3 class="font-medium text-sm mb-2">{{ t('network.dhcp.dnsSection') }}</h3>
+          <p class="text-xs text-slate-500 mb-3">{{ t('network.dhcp.dnsSectionHint') }}</p>
+        </div>
+        <div v-if="cfg.enabled" class="sm:col-span-2">
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.dnsServersMultiline') }}</label>
+          <textarea v-model="dnsText" class="input-field font-mono h-16" rows="2" />
+          <p class="text-xs text-slate-400 mt-1">{{ t('network.dhcp.dnsServersHint') }}</p>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="text-xs text-slate-500">{{ t('network.dhcp.upstreamDnsMultiline') }}</label>
+          <textarea
+            v-model="upstreamDnsText"
+            class="input-field font-mono h-16"
+            rows="2"
+            :placeholder="t('network.dhcp.upstreamDnsPh')"
+          />
+          <p class="text-xs text-slate-400 mt-1">{{ t('network.dhcp.upstreamDnsHint') }}</p>
+        </div>
+      </div>
+
+      <div v-if="cfg.enabled" class="border-t border-slate-200 pt-4 space-y-3">
         <h3 class="font-medium text-sm">{{ t('network.dhcp.ipv6Section') }}</h3>
         <label class="flex items-center gap-2 text-sm">
           <input v-model="cfg.ipv6_enabled" type="checkbox" /> {{ t('network.dhcp.ipv6Enable') }}

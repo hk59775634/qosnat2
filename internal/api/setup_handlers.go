@@ -153,6 +153,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 			st.DHCP.Interface = body.DevLAN
 			if body.EnableDHCP {
 				st.DHCP.Enabled = true
+				st.DHCP.DNSEnabled = true
 			}
 		}
 	})

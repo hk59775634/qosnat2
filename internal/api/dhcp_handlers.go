@@ -26,6 +26,7 @@ func (srv *Server) handleDHCPGet(w http.ResponseWriter, r *http.Request) {
 	if cfg.Interface == "" {
 		cfg.Interface = srv.env.DevLAN
 	}
+	_ = store.NormalizeDHCP(&cfg, srv.env.DevLAN)
 	ifaces, err := dnsmasq.ListInterfaces()
 	if err != nil {
 		ifaces = []dnsmasq.Iface{}
@@ -95,7 +96,7 @@ func (srv *Server) normalizeDHCP(d *store.DHCPState) error {
 	if d.Interface == "" {
 		d.Interface = srv.env.DevLAN
 	}
-	if d.Enabled && !route.LinkExists(d.Interface) {
+	if (d.Enabled || d.DNSEnabled) && !route.LinkExists(d.Interface) {
 		return errDeviceNotFound(d.Interface)
 	}
 	return store.NormalizeDHCP(d, srv.env.DevLAN)

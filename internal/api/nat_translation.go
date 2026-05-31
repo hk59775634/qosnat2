@@ -155,15 +155,12 @@ func (srv *Server) unboundOpts(st store.State) unbound.RenderOpts {
 }
 
 func (srv *Server) applyDNSMasqNAT(st store.State) error {
-	if !st.DHCP.Enabled && !st.Nat.DNS64UsesDnsmasqRelay() {
+	if !st.DHCP.ServiceActive() && !st.Nat.DNS64UsesDnsmasqRelay() {
 		return nil
 	}
 	cfg := st.DHCP
 	if cfg.Interface == "" {
 		cfg.Interface = srv.env.DevLAN
-	}
-	if !cfg.Enabled && !st.Nat.DNS64UsesDnsmasqRelay() {
-		return nil
 	}
 	if err := store.NormalizeDHCP(&cfg, srv.env.DevLAN); err != nil {
 		log.Printf("dhcp normalize: %v", err)
