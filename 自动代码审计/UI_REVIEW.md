@@ -99,9 +99,9 @@
 
 | 优先级 | 功能 | 说明 |
 |--------|------|------|
-| P1 | Terminal 危险操作门禁 | **PARTIAL** — 红色 Alert + grant 弹窗；无「我了解风险」checkbox |
-| P1 | Apply 失败全局提示 | **FIXED** — `useApplyAlert` + layout banner（后端 silent save 仍可能漏报） |
-| P2 | 防火墙规则搜索/过滤 | **PARTIAL** — user 规则可搜；auto/builtin 未纳入 |
+| P1 | Terminal 危险操作门禁 | **FIXED** — Alert + grant + 风险 checkbox |
+| P1 | Apply 失败全局提示 | **FIXED** — `useApplyAlert` + layout banner |
+| P2 | 防火墙规则搜索/过滤 | **FIXED** — user/auto/builtin 均可搜 |
 | P2 | 变更 diff 预览 | 保存前展示 nft diff |
 | P2 | 配置备份/还原 UI | state.json 导出导入向导 |
 | P3 | 暗色主题一致性 | 部分组件硬编码色 |
