@@ -64,7 +64,6 @@ function renewFailMessage(e) {
 }
 
 async function renew(id) {
-  if (!confirm(t('certificates.renewConfirm'))) return
   busy.value = true
   err.value = ''
   ok.value = ''

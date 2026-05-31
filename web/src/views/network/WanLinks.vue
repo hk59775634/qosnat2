@@ -33,6 +33,7 @@ const warpTaskPollErrs = ref(0)
 const warpConnecting = ref(false)
 const warpDisconnecting = ref(false)
 const warpConnectResult = ref(null)
+const warpLicenseKey = ref('')
 const WARP_ACTION_LOCK_MS = 4000
 const warpActionLocked = ref(false)
 let warpActionLockTimer = null
@@ -121,6 +122,28 @@ const warpExitLine = computed(() => {
   if (e.error) return e.error
   return ''
 })
+
+function warpTierLabel(tier, rawWarp) {
+  const key = String(tier || rawWarp || '').toLowerCase()
+  if (key === 'off') return t('network.wanLinks.warpTierOff')
+  if (key === 'standard' || key === 'on') return t('network.wanLinks.warpTierStandard')
+  if (key === 'plus') return t('network.wanLinks.warpTierPlus')
+  if (key === '2xc' || key === '2x') return t('network.wanLinks.warpTier2xc')
+  if (key) return t('network.wanLinks.warpTierUnknown', { tier: rawWarp || tier })
+  return ''
+}
+
+const warpServiceLine = computed(() => {
+  const e = warpExitInfo.value
+  if (!e) return ''
+  const tier = warpTierLabel(e.warp_tier, e.warp)
+  const parts = []
+  if (tier) parts.push(tier)
+  if (e.account_type) parts.push(`${t('network.wanLinks.warpAccountType')}: ${e.account_type}`)
+  return parts.join(' · ')
+})
+
+const warpLicenseKeySet = computed(() => !!warpStatus.value?.warp_license_key_set)
 
 function formatWarpExitCheckedAt(iso) {
   if (!iso) return ''
@@ -395,7 +418,9 @@ async function connectWarp() {
   warpConnecting.value = true
   warpStatus.value = { ...warpStatus.value, enabled: true }
   try {
-    const r = await api.network.warp.connect()
+    const body = {}
+    if (warpLicenseKey.value.trim()) body.license_key = warpLicenseKey.value.trim()
+    const r = await api.network.warp.connect(body)
     const job = r?.job || {}
     if (job.state === 'ok' && r?.result?.health) {
       applyConnectTaskResult(r.result)
@@ -705,13 +730,34 @@ onUnmounted(() => {
         <h3 class="font-medium text-slate-800">{{ t('network.wanLinks.warpTitle') }}</h3>
         <p class="text-xs text-slate-500 mt-1">{{ t('network.wanLinks.warpHint') }}</p>
       </div>
-      <div class="text-xs text-slate-600 rounded bg-slate-50 p-2">
-        {{ t('network.wanLinks.warpState') }}:
-        {{ warpStatus.installed ? t('network.wanLinks.warpInstalledLabel') : t('network.wanLinks.warpNotInstalledLabel') }}
-        · {{ warpEnabled ? t('network.wanLinks.warpEnabledLabel') : t('network.wanLinks.warpDisabledLabel') }}
-        · {{ warpUiConnected ? t('network.wanLinks.warpTunnelUp') : t('network.wanLinks.warpTunnelDown') }}
-        <span v-if="warpStatus.netns_healthy" class="text-slate-500"> · netns OK</span>
-        <span v-if="warpStatus.interface" class="font-mono"> · {{ warpStatus.interface }}</span>
+      <div class="text-xs text-slate-600 rounded bg-slate-50 p-2 space-y-1">
+        <div>
+          {{ t('network.wanLinks.warpState') }}:
+          {{ warpStatus.installed ? t('network.wanLinks.warpInstalledLabel') : t('network.wanLinks.warpNotInstalledLabel') }}
+          · {{ warpEnabled ? t('network.wanLinks.warpEnabledLabel') : t('network.wanLinks.warpDisabledLabel') }}
+          · {{ warpUiConnected ? t('network.wanLinks.warpTunnelUp') : t('network.wanLinks.warpTunnelDown') }}
+          <span v-if="warpStatus.netns_healthy" class="text-slate-500"> · netns OK</span>
+          <span v-if="warpStatus.interface" class="font-mono"> · {{ warpStatus.interface }}</span>
+        </div>
+        <div v-if="warpEnabled && warpUiConnected && warpServiceLine">
+          {{ t('network.wanLinks.warpTierLabel') }}: {{ warpServiceLine }}
+        </div>
+      </div>
+      <div v-if="!warpEnabled" class="grid sm:grid-cols-2 gap-3">
+        <div class="sm:col-span-2">
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.warpLicenseKey') }}</label>
+          <input
+            v-model="warpLicenseKey"
+            type="password"
+            autocomplete="off"
+            class="input-field mt-1 font-mono"
+            :placeholder="warpLicenseKeySet ? t('network.wanLinks.warpLicenseKeyConfigured') : ''"
+          />
+          <p class="text-[11px] text-slate-500 mt-1">{{ t('network.wanLinks.warpLicenseKeyHint') }}</p>
+          <p v-if="warpLicenseKeySet && !warpLicenseKey.trim()" class="text-[11px] text-emerald-700 mt-1">
+            {{ t('network.wanLinks.warpLicenseKeyConfigured') }}
+          </p>
+        </div>
       </div>
       <div class="flex flex-wrap gap-2 items-center">
         <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || warpStatus.installed || warpInstallRunning" @click="installWarp">
@@ -726,7 +772,7 @@ onUnmounted(() => {
         <span
           v-if="warpEnabled && warpUiConnected"
           class="text-xs text-slate-600 font-mono pl-1 border-l border-slate-200"
-          :title="warpExitInfo?.org || ''"
+          :title="warpExitInfo?.org || warpServiceLine || ''"
         >
           <span v-if="warpExitLine">
             {{ t('network.wanLinks.warpExitLabel') }}: {{ warpExitLine }}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hk59775634/qosnat2/internal/certs"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -27,8 +28,10 @@ type TLSStatus struct {
 	KeyPath       string `json:"key_path"`
 	HasCertFile   bool   `json:"has_cert_file"`
 	HasKeyFile    bool   `json:"has_key_file"`
-	CertSubject   string `json:"cert_subject,omitempty"`
-	CertNotAfter  string `json:"cert_not_after,omitempty"`
+	CertSubject   string   `json:"cert_subject,omitempty"`
+	CertHostnames []string `json:"cert_hostnames,omitempty"`
+	AccessHost    string   `json:"access_host,omitempty"`
+	CertNotAfter  string   `json:"cert_not_after,omitempty"`
 	AcmeEnabled   bool   `json:"acme_enabled,omitempty"`
 	Domain        string `json:"domain,omitempty"`
 	AcmeEmail     string `json:"acme_email,omitempty"`
@@ -61,6 +64,10 @@ func (srv *Server) tlsStatus() TLSStatus {
 		if subj, na := parseCertMeta(certPath); subj != "" {
 			s.CertSubject = subj
 			s.CertNotAfter = na
+		}
+		if hosts, err := certs.HostnamesFromCertFile(certPath); err == nil && len(hosts) > 0 {
+			s.CertHostnames = hosts
+			s.AccessHost = certs.PrimaryConnectHostname(hosts)
 		}
 	}
 	return s

@@ -860,8 +860,25 @@ func warpIfaceInNetns() string {
 	return ""
 }
 
+func applyWarpLicense(licenseKey string) error {
+	licenseKey = strings.TrimSpace(licenseKey)
+	if licenseKey == "" {
+		return nil
+	}
+	out, err := netnsExec(warpCLI, "--accept-tos", "registration", "license", licenseKey)
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("warp license: %s", msg)
+	}
+	return nil
+}
+
 // Connect 在 netns 内启用 WARP，并将宿主机 qwp0 作为策略路由出口（经 netns 转发到 WARP）。
-func Connect() (string, error) {
+// licenseKey 非空时通过 warp-cli registration license 激活 WARP+。
+func Connect(licenseKey string) (string, error) {
 	if err := PrepareForConnect(); err != nil {
 		return "", err
 	}
@@ -879,6 +896,9 @@ func Connect() (string, error) {
 	_, _ = netnsExec(warpCLI, "--accept-tos", "debug", "connectivity-check", "disable")
 	if _, err := netnsExec("bash", "-lc", "test -s /var/lib/cloudflare-warp/reg.json"); err != nil {
 		_, _ = netnsExec(warpCLI, "--accept-tos", "registration", "new")
+	}
+	if err := applyWarpLicense(licenseKey); err != nil {
+		return "", err
 	}
 	// 在 netns 隔离运行时，mode=warp 在稳定性上明显优于 tunnel_only。
 	// 宿主机默认路由不会被接管（策略路由只指向 qwp0）。

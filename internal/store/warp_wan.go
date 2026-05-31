@@ -61,3 +61,13 @@ func RemoveWarpWanLink(st *State) {
 func SetWarpEnabled(st *State, enabled bool) {
 	st.Network.WarpEnabled = enabled
 }
+
+// SetWarpLicenseKey 持久化 WARP+ License Key（空字符串表示清除）。
+func SetWarpLicenseKey(st *State, key string) {
+	st.Network.WarpLicenseKey = strings.TrimSpace(key)
+}
+
+// WarpLicenseKeyConfigured 是否已保存 License Key。
+func WarpLicenseKeyConfigured(st State) bool {
+	return strings.TrimSpace(st.Network.WarpLicenseKey) != ""
+}

@@ -1,11 +1,12 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import { setDisplayName } from '@/composables/useBranding'
-import { redirectAfterAdminPortChange } from '@/lib/adminPortRedirect'
+import { maybeRedirectAfterSystemSave } from '@/lib/adminPortRedirect'
 import PageTabs from '@/components/PageTabs.vue'
 import CertSelect from '@/components/CertSelect.vue'
+import SecurityConfirmModal from '@/components/SecurityConfirmModal.vue'
 
 const { t } = useI18n()
 const cfg = ref(null)
@@ -14,7 +15,6 @@ const form = ref({
   display_name: '',
   admin_port: '',
   new_password: '',
-  current_password: '',
   tls_enabled: false,
   tls_cert: '',
   tls_key: '',
@@ -34,11 +34,12 @@ const switchTag = ref('')
 const versionSwitchJob = ref(null)
 const versionSwitchPoll = ref(null)
 const versionSwitchPollErrs = ref(0)
-const versionSwitchModalOpen = ref(false)
-const versionSwitchPassword = ref('')
-const versionSwitchModalErr = ref('')
-const versionSwitchSubmitting = ref(false)
-const versionSwitchPasswordRef = ref(null)
+const confirmOpen = ref(false)
+const confirmAction = ref('')
+const confirmError = ref('')
+const confirmSubmitting = ref(false)
+const pendingAcmeAction = ref('obtain')
+const importPassword = ref('')
 const importFile = ref(null)
 const importConfirm = ref(false)
 const backupBusy = ref(false)
@@ -62,6 +63,51 @@ const generalTabs = computed(() => [
 ])
 
 const versionSwitchRunning = computed(() => versionSwitchJob.value?.state === 'running')
+
+const confirmTitle = computed(() => {
+  switch (confirmAction.value) {
+    case 'version':
+      return t('system.general.versionSwitchModalTitle')
+    case 'basic-save':
+      return adminPortTouched()
+        ? t('system.general.portConfirmTitle')
+        : t('system.general.passwordConfirmTitle')
+    case 'tls-save':
+      return t('system.general.tlsConfirmTitle')
+    case 'acme-obtain':
+      return t('system.general.acmeObtainConfirmTitle')
+    case 'acme-renew':
+      return t('system.general.acmeRenewConfirmTitle')
+    default:
+      return t('common.confirm')
+  }
+})
+
+const confirmBody = computed(() => {
+  switch (confirmAction.value) {
+    case 'version':
+      return t('system.general.versionSwitchModalBody', { tag: switchTag.value })
+    case 'basic-save':
+      return adminPortTouched()
+        ? t('system.general.portConfirmBody', { port: form.value.admin_port })
+        : t('system.general.passwordConfirmBody')
+    case 'tls-save':
+      return form.value.tls_enabled
+        ? t('system.general.tlsEnableConfirmBody')
+        : t('system.general.tlsDisableConfirmBody')
+    case 'acme-obtain':
+      return t('system.general.acmeObtainConfirmBody', { domain: form.value.tls_domain })
+    case 'acme-renew':
+      return t('system.general.acmeRenewConfirmBody')
+    default:
+      return ''
+  }
+})
+
+const confirmLabel = computed(() => {
+  if (confirmAction.value === 'version') return t('system.general.versionSwitchConfirm')
+  return t('common.confirm')
+})
 
 const versionSwitchPanelVisible = computed(() => {
   const j = versionSwitchJob.value
@@ -224,20 +270,20 @@ function readFile(e, field) {
   e.target.value = ''
 }
 
-function buildBasicPutBody() {
+function buildBasicPutBody(currentPassword) {
   const adminPort = String(form.value.admin_port ?? '').trim()
   return {
     hostname: form.value.hostname,
     display_name: form.value.display_name,
     admin_port: adminPort || undefined,
     new_password: form.value.new_password || undefined,
-    current_password: form.value.current_password || undefined,
+    current_password: currentPassword || undefined,
   }
 }
 
-function buildTlsPutBody() {
+function buildTlsPutBody(currentPassword) {
   return {
-    current_password: form.value.current_password || undefined,
+    current_password: currentPassword || undefined,
     tls_enabled: form.value.tls_enabled,
     tls_domain: form.value.tls_domain,
     tls_acme_enabled: form.value.tls_acme_enabled,
@@ -271,57 +317,144 @@ function tlsSettingsTouched() {
   )
 }
 
+function basicSaveNeedsConfirm() {
+  return adminPortTouched() || !!form.value.new_password
+}
+
+function tlsSaveNeedsConfirm() {
+  return (
+    tlsSettingsTouched() &&
+    (form.value.tls_enabled || form.value.tls_acme_enabled || form.value.tls_cert.trim())
+  )
+}
+
+function openConfirm(action) {
+  if (confirmSubmitting.value) return
+  confirmAction.value = action
+  confirmError.value = ''
+  confirmOpen.value = true
+}
+
+function closeConfirm() {
+  if (confirmSubmitting.value) return
+  confirmOpen.value = false
+  confirmAction.value = ''
+  confirmError.value = ''
+}
+
+async function finishSystemSave(res, previousPort, wasTlsActive) {
+  form.value.new_password = ''
+  form.value.tls_cert = ''
+  form.value.tls_key = ''
+  setDisplayName(form.value.display_name)
+  const redirected = await maybeRedirectAfterSystemSave({
+    res,
+    previousPort,
+    wasTlsActive,
+    onSwitching: ({ httpsEnabled, portChanged }) => {
+      portSwitching.value = true
+      if (httpsEnabled) {
+        ok.value = t('system.general.httpsSwitching')
+      } else if (portChanged) {
+        ok.value = t('system.general.adminPortSwitching')
+      } else {
+        ok.value = t('system.general.adminPortSwitching')
+      }
+      if (res.warning) warn.value = res.warning
+    },
+  })
+  if (redirected) return true
+  ok.value = t('system.general.saved')
+  if (res.warning) warn.value = res.warning
+  if (res.admin_port) form.value.admin_port = res.admin_port
+  await load()
+  return false
+}
+
+async function executeBasicSave(password) {
+  const previousPort = String(cfg.value?.admin_port || location.port || '').trim()
+  const wasTlsActive = !!cfg.value?.tls?.tls_active
+  saving.value = true
+  try {
+    const res = await api.system.general.put(buildBasicPutBody(password))
+    await finishSystemSave(res, previousPort, wasTlsActive)
+  } finally {
+    saving.value = false
+    portSwitching.value = false
+  }
+}
+
+async function executeTlsSave(password) {
+  const previousPort = String(cfg.value?.admin_port || location.port || '').trim()
+  const wasTlsActive = !!cfg.value?.tls?.tls_active
+  saving.value = true
+  try {
+    const res = await api.system.general.put(buildTlsPutBody(password))
+    await finishSystemSave(res, previousPort, wasTlsActive)
+  } finally {
+    saving.value = false
+    portSwitching.value = false
+  }
+}
+
 async function save() {
   err.value = ''
   ok.value = ''
   warn.value = ''
-  const previousPort = String(cfg.value?.admin_port || location.port || '').trim()
-  const requestedPort = String(form.value.admin_port ?? '').trim()
-  const portWillChange =
-    activeTab.value === 'basic' && requestedPort !== '' && requestedPort !== previousPort
-  saving.value = true
-  try {
-    const needPw =
-      activeTab.value === 'tls'
-        ? tlsSettingsTouched() &&
-          (form.value.tls_enabled || form.value.tls_acme_enabled || form.value.tls_cert)
-        : form.value.new_password || adminPortTouched()
-    if (needPw && !form.value.current_password) {
-      err.value = t('system.general.needPasswordForTls')
+  if (activeTab.value === 'basic') {
+    if (basicSaveNeedsConfirm()) {
+      openConfirm('basic-save')
       return
     }
-    const res = await api.system.general.put(activeTab.value === 'tls' ? buildTlsPutBody() : buildBasicPutBody())
-    form.value.new_password = ''
-    form.value.current_password = ''
-    form.value.tls_cert = ''
-    form.value.tls_key = ''
-    setDisplayName(form.value.display_name)
-    if (portWillChange && res.admin_port) {
-      const newPort = String(res.admin_port).trim()
-      if (newPort && newPort !== previousPort) {
-        portSwitching.value = true
-        ok.value = t('system.general.adminPortSwitching')
-        if (res.warning) warn.value = res.warning
-        form.value.admin_port = newPort
-        const host = location.hostname || 'localhost'
-        const tlsActive = !!(res.tls?.tls_active ?? cfg.value?.tls?.tls_active)
-        await redirectAfterAdminPortChange({
-          host,
-          port: newPort,
-          tlsActive,
-        })
-        return
-      }
+    await executeBasicSave(null)
+    return
+  }
+  if (activeTab.value === 'tls') {
+    if (tlsSaveNeedsConfirm()) {
+      openConfirm('tls-save')
+      return
     }
-    ok.value = t('system.general.saved')
-    if (res.warning) warn.value = res.warning
-    if (res.admin_port) form.value.admin_port = res.admin_port
-    await load()
+    await executeTlsSave(null)
+  }
+}
+
+async function handleConfirm(password) {
+  confirmError.value = ''
+  if (!password) {
+    confirmError.value = t('system.general.needPasswordForConfirm')
+    return
+  }
+  if (confirmSubmitting.value) return
+  confirmSubmitting.value = true
+  try {
+    switch (confirmAction.value) {
+      case 'version':
+        await executeVersionSwitch(password)
+        break
+      case 'basic-save':
+        await executeBasicSave(password)
+        break
+      case 'tls-save':
+        await executeTlsSave(password)
+        break
+      case 'acme-obtain':
+      case 'acme-renew':
+        await executeAcme(pendingAcmeAction.value, password)
+        break
+      default:
+        break
+    }
+    if (!portSwitching.value) {
+      closeConfirm()
+    }
   } catch (e) {
-    err.value = e.data?.error || e.message
+    confirmError.value = e.data?.error || e.message
+    if (confirmAction.value === 'version' && e.data?.job) {
+      closeConfirm()
+      applyVersionSwitchJob(e.data.job)
+    }
   } finally {
-    saving.value = false
-    portSwitching.value = false
+    confirmSubmitting.value = false
   }
 }
 
@@ -366,7 +499,7 @@ async function importState() {
     err.value = t('system.general.importNeedConfirm')
     return
   }
-  if (!form.value.current_password) {
+  if (!importPassword.value) {
     err.value = t('system.general.importNeedPassword')
     return
   }
@@ -380,12 +513,12 @@ async function importState() {
     const text = await file.text()
     const state = JSON.parse(text)
     const res = await api.system.state.import({
-      current_password: form.value.current_password,
+      current_password: importPassword.value,
       state,
     })
     ok.value = t('system.general.stateImported')
     if (res.warning) warn.value = res.warning
-    form.value.current_password = ''
+    importPassword.value = ''
     importConfirm.value = false
     if (importFile.value) importFile.value.value = ''
     await load()
@@ -398,10 +531,6 @@ async function importState() {
 
 async function renewLibraryCert() {
   if (!form.value.tls_managed_cert_id) return
-  if (!form.value.current_password) {
-    err.value = t('system.general.needPasswordForTls')
-    return
-  }
   acmeBusy.value = true
   err.value = ''
   ok.value = ''
@@ -417,32 +546,42 @@ async function renewLibraryCert() {
   }
 }
 
-async function runAcme(action) {
+async function executeAcme(action, password) {
   err.value = ''
   ok.value = ''
   warn.value = ''
-  if (!form.value.current_password) {
-    err.value = t('system.general.needPasswordForTls')
-    return
-  }
   acmeBusy.value = true
+  const previousPort = String(cfg.value?.admin_port || location.port || '').trim()
+  const wasTlsActive = !!cfg.value?.tls?.tls_active
   try {
-    await api.system.general.put(buildTlsPutBody())
+    await api.system.general.put(buildTlsPutBody(password))
     const res = await api.post('/api/v1/system/tls/acme', {
       action,
-      current_password: form.value.current_password,
+      current_password: password,
     })
     ok.value =
       res.message ||
       (action === 'obtain' ? t('system.general.certRequested') : t('system.general.certRenewed'))
     if (res.warning) warn.value = res.warning
-    await load()
-  } catch (e) {
-    err.value = e.data?.error || e.message
-    await load()
+    const redirected = await maybeRedirectAfterSystemSave({
+      res: { admin_port: previousPort, tls: res.tls },
+      previousPort,
+      wasTlsActive,
+      onSwitching: () => {
+        portSwitching.value = true
+        ok.value = t('system.general.httpsSwitching')
+      },
+    })
+    if (!redirected) await load()
   } finally {
     acmeBusy.value = false
+    if (!portSwitching.value) portSwitching.value = false
   }
+}
+
+function runAcme(action) {
+  pendingAcmeAction.value = action
+  openConfirm(action === 'obtain' ? 'acme-obtain' : 'acme-renew')
 }
 
 function openVersionSwitchModal() {
@@ -455,64 +594,32 @@ function openVersionSwitchModal() {
     err.value = t('system.general.versionAlreadyCurrent')
     return
   }
-  versionSwitchModalErr.value = ''
-  versionSwitchPassword.value = ''
-  versionSwitchModalOpen.value = true
-  nextTick(() => versionSwitchPasswordRef.value?.focus())
+  openConfirm('version')
 }
 
-function resetVersionSwitchModal() {
-  versionSwitchModalOpen.value = false
-  versionSwitchPassword.value = ''
-  versionSwitchModalErr.value = ''
-}
-
-function closeVersionSwitchModal() {
-  if (versionSwitchSubmitting.value) return
-  resetVersionSwitchModal()
-}
-
-async function confirmVersionSwitch() {
-  versionSwitchModalErr.value = ''
+async function executeVersionSwitch(password) {
   err.value = ''
   ok.value = ''
   warn.value = ''
-  if (versionSwitchSubmitting.value || versionSwitchRunning.value) return
+  if (versionSwitchRunning.value) return
   if (!switchTag.value) {
-    versionSwitchModalErr.value = t('system.general.versionNeedTag')
+    confirmError.value = t('system.general.versionNeedTag')
     return
   }
-  if (!versionSwitchPassword.value) {
-    versionSwitchModalErr.value = t('system.general.needPasswordForVersionSwitch')
+  await api.system.version.switchVerify({ current_password: password })
+  const r = await api.system.version.switch({ tag: switchTag.value })
+  const job = r?.job
+  if (job?.state === 'ok') {
+    applyVersionSwitchJob(job)
+    await loadVersionInfo()
     return
   }
-  const passwd = versionSwitchPassword.value
-  versionSwitchSubmitting.value = true
-  try {
-    await api.system.version.switchVerify({ current_password: passwd })
-    const r = await api.system.version.switch({ tag: switchTag.value })
-    resetVersionSwitchModal()
-    const job = r?.job
-    if (job?.state === 'ok') {
-      applyVersionSwitchJob(job)
-      await loadVersionInfo()
-      return
-    }
-    ok.value = r.message || t('system.general.versionSwitchQueued')
-    applyVersionSwitchJob(job?.state ? job : { state: 'running', target_tag: switchTag.value })
-  } catch (e) {
-    versionSwitchModalErr.value = e.data?.error || e.message
-    if (e.data?.job) {
-      resetVersionSwitchModal()
-      applyVersionSwitchJob(e.data.job)
-    }
-  } finally {
-    versionSwitchSubmitting.value = false
-  }
+  ok.value = r.message || t('system.general.versionSwitchQueued')
+  applyVersionSwitchJob(job?.state ? job : { state: 'running', target_tag: switchTag.value })
 }
 
 async function dismissVersionSwitchTask() {
-  if (versionSwitchSubmitting.value) return
+  if (confirmSubmitting.value) return
   stopVersionSwitchClearTimer()
   err.value = ''
   ok.value = ''
@@ -579,10 +686,6 @@ onUnmounted(() => {
           <label class="text-xs text-slate-500">{{ t('system.general.newPassword') }}</label>
           <input v-model="form.new_password" type="password" class="input-field mt-1" autocomplete="new-password" />
         </div>
-        <div>
-          <label class="text-xs text-slate-500">{{ t('system.general.currentPassword') }}</label>
-          <input v-model="form.current_password" type="password" class="input-field mt-1" autocomplete="current-password" />
-        </div>
         <div class="border-t border-slate-200 pt-4 space-y-3">
           <h4 class="text-sm font-semibold text-slate-800">{{ t('system.general.backupSection') }}</h4>
           <p class="text-xs text-slate-500">{{ t('system.general.backupHint') }}</p>
@@ -593,6 +696,8 @@ onUnmounted(() => {
           </div>
           <div class="space-y-2">
             <input ref="importFile" type="file" accept="application/json,.json" class="text-sm" />
+            <label class="text-xs text-slate-500">{{ t('system.general.currentPassword') }}</label>
+            <input v-model="importPassword" type="password" class="input-field mt-1" autocomplete="current-password" />
             <label class="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
               <input v-model="importConfirm" type="checkbox" class="mt-1" />
               <span>{{ t('system.general.importConfirm') }}</span>
@@ -668,7 +773,7 @@ onUnmounted(() => {
             {{ t('system.general.versionSwitchFailed') }}: {{ versionSwitchJob.message }}
           </p>
           <button
-            v-if="!versionSwitchSubmitting"
+            v-if="!confirmSubmitting"
             type="button"
             class="btn-secondary text-xs"
             @click="dismissVersionSwitchTask"
@@ -795,72 +900,15 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <Teleport to="body">
-      <div
-        v-if="versionSwitchModalOpen"
-        class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
-        role="presentation"
-        @click.self="!versionSwitchSubmitting && closeVersionSwitchModal()"
-      >
-        <div
-          class="bg-white rounded-xl shadow-xl w-full max-w-md border border-slate-200"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="version-switch-modal-title"
-          @click.stop
-        >
-          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-            <h3 id="version-switch-modal-title" class="font-medium text-slate-900">
-              {{ t('system.general.versionSwitchModalTitle') }}
-            </h3>
-            <button
-              type="button"
-              class="text-slate-500 hover:text-slate-800 text-xl leading-none px-2"
-              :aria-label="t('common.cancel')"
-              :disabled="versionSwitchSubmitting"
-              @click="closeVersionSwitchModal"
-            >
-              ×
-            </button>
-          </div>
-          <div class="p-4 space-y-3">
-            <p class="text-sm text-slate-600">
-              {{ t('system.general.versionSwitchModalBody', { tag: switchTag }) }}
-            </p>
-            <label class="block text-sm text-slate-700">
-              {{ t('system.general.versionSwitchPasswordLabel') }}
-              <input
-                ref="versionSwitchPasswordRef"
-                v-model="versionSwitchPassword"
-                type="password"
-                autocomplete="current-password"
-                class="input-field mt-1 w-full"
-                :disabled="versionSwitchSubmitting"
-                @keydown.enter.prevent="confirmVersionSwitch"
-              >
-            </label>
-            <p v-if="versionSwitchModalErr" class="text-sm text-red-600">{{ versionSwitchModalErr }}</p>
-            <div class="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                class="btn-secondary"
-                :disabled="versionSwitchSubmitting"
-                @click="closeVersionSwitchModal"
-              >
-                {{ t('common.cancel') }}
-              </button>
-              <button
-                type="button"
-                class="btn-primary"
-                :disabled="versionSwitchSubmitting"
-                @click="confirmVersionSwitch"
-              >
-                {{ versionSwitchSubmitting ? t('common.processing') : t('system.general.versionSwitchConfirm') }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <SecurityConfirmModal
+      :open="confirmOpen"
+      :title="confirmTitle"
+      :body="confirmBody"
+      :confirm-label="confirmLabel"
+      :submitting="confirmSubmitting || portSwitching"
+      :error="confirmError"
+      @close="closeConfirm"
+      @confirm="handleConfirm"
+    />
   </div>
 </template>

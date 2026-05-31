@@ -11,9 +11,29 @@ export function buildAdminPortUrl({ host, port, scheme = location.protocol, path
   return `${scheme}//${h}:${p}${path}${frag}`
 }
 
+/** Prefer API access_host, then cert SAN/CN, then ACME domain, then current hostname. */
+export function resolveTlsAccessHost(tlsStatus, fallbackHost = location.hostname) {
+  const access = String(tlsStatus?.access_host || '').trim()
+  if (access) return access
+  const names = tlsStatus?.cert_hostnames
+  if (Array.isArray(names)) {
+    for (const raw of names) {
+      const h = String(raw || '').trim()
+      if (!h) continue
+      if (h.startsWith('*.')) return h.slice(2)
+      return h
+    }
+  }
+  const subj = String(tlsStatus?.cert_subject || '')
+  const cn = subj.match(/CN=([^,/]+)/i)
+  if (cn?.[1]) return cn[1].trim()
+  const domain = String(tlsStatus?.domain || '').trim()
+  if (domain) return domain
+  return fallbackHost || 'localhost'
+}
+
 /**
- * Poll health on the new admin port (cross-origin no-cors) until reachable or timeout.
- * @param {{ host: string, port: string|number, scheme?: string, timeoutMs?: number, intervalMs?: number, minWaitMs?: number }} opts
+ * Poll health on the target admin port (cross-origin no-cors) until reachable or timeout.
  */
 export async function waitForAdminPort({
   host,
@@ -39,9 +59,9 @@ export async function waitForAdminPort({
 }
 
 /**
- * Wait for new port then replace location (preserves hash route).
+ * Wait for listener then replace location (preserves hash route).
  */
-export async function redirectAfterAdminPortChange({
+export async function redirectAfterListenerChange({
   host,
   port,
   tlsActive = false,
@@ -51,4 +71,44 @@ export async function redirectAfterAdminPortChange({
   const scheme = tlsActive ? 'https:' : 'http:'
   await waitForAdminPort({ host, port, scheme })
   window.location.replace(buildAdminPortUrl({ host, port, scheme, pathname, hash }))
+}
+
+/** @deprecated use redirectAfterListenerChange */
+export async function redirectAfterAdminPortChange(opts) {
+  return redirectAfterListenerChange(opts)
+}
+
+/**
+ * @returns {Promise<boolean>} true if redirect started
+ */
+export async function maybeRedirectAfterSystemSave({
+  res,
+  previousPort,
+  wasTlsActive,
+  onSwitching,
+}) {
+  const newPort = String(res?.admin_port || previousPort || location.port || '').trim()
+  if (!newPort) return false
+
+  const nowTlsActive = !!res?.tls?.tls_active
+  const portChanged = newPort !== String(previousPort || location.port || '').trim()
+  const httpsEnabled = !wasTlsActive && nowTlsActive
+  const httpsDisabled = wasTlsActive && !nowTlsActive
+
+  if (!portChanged && !httpsEnabled && !httpsDisabled) return false
+
+  if (onSwitching) {
+    onSwitching({ portChanged, httpsEnabled, httpsDisabled, newPort, nowTlsActive })
+  }
+
+  const host = nowTlsActive
+    ? resolveTlsAccessHost(res?.tls, location.hostname)
+    : (location.hostname || 'localhost')
+
+  await redirectAfterListenerChange({
+    host,
+    port: newPort,
+    tlsActive: nowTlsActive,
+  })
+  return true
 }

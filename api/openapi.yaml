@@ -2679,15 +2679,22 @@ paths:
                     type: boolean
                   exit_info:
                     type: object
-                    description: 隧道出口 IP/地区（Cloudflare trace）
+                    description: 隧道出口 IP/地区与服务类型（Cloudflare cdn-cgi/trace）
                     properties:
                       ip: { type: string }
                       country: { type: string }
                       region: { type: string }
                       city: { type: string }
-                      org: { type: string }
+                      warp: { type: string, description: 'trace warp= 原始值 (off/on/plus/…)' }
+                      gateway: { type: string, description: 'trace gateway= 原始值' }
+                      warp_tier: { type: string, description: 'off | standard | plus | 2xc' }
+                      account_type: { type: string, description: 'warp-cli registration show 账户类型' }
+                      org: { type: string, description: 'trace 摘要（兼容）' }
                       fetched_at: { type: string, format: date-time, description: 最后一次检测时间 }
                       error: { type: string }
+                  warp_license_key_set:
+                    type: boolean
+                    description: 是否已保存 WARP+ License Key
 
   /api/v1/network/warp/install:
     post:
@@ -2715,6 +2722,16 @@ paths:
     post:
       tags: [network]
       summary: 连接 WARP
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                license_key:
+                  type: string
+                  description: 可选 WARP+ License Key，保存后用于 registration license
       responses:
         '200':
           content:

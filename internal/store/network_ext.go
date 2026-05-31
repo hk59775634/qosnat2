@@ -46,7 +46,8 @@ type NetworkState struct {
 	VXLANTunnels    []VXLANTunnel   `json:"vxlan_tunnels"`
 	WanLinks        []WanLink       `json:"wan_links"`
 	EgressPolicies  []EgressPolicy  `json:"egress_policies,omitempty"`
-	WarpEnabled     bool            `json:"warp_enabled,omitempty"`
+	WarpEnabled     bool   `json:"warp_enabled,omitempty"`
+	WarpLicenseKey  string `json:"warp_license_key,omitempty"` // 持久化；API GET 不返回明文
 }
 
 // UpsertIfaceConfig 按设备名更新或追加托管网卡配置

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/warpnetns"
 )
 
@@ -73,9 +74,10 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 		iface = detectWarpInterface()
 	}
 	resp := map[string]any{
-		"installed":     installed,
-		"enabled":       srv.store.Get().Network.WarpEnabled,
-		"service_up":    service,
+		"installed":            installed,
+		"enabled":              srv.store.Get().Network.WarpEnabled,
+		"warp_license_key_set": store.WarpLicenseKeyConfigured(srv.store.Get()),
+		"service_up":           service,
 		"connected":     connected,
 		"netns_healthy": netnsHealthy,
 		"interface":     iface,

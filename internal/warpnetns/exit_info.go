@@ -14,13 +14,17 @@ const (
 
 // ExitInfo is the WARP tunnel egress as seen from the isolated netns (Cloudflare trace).
 type ExitInfo struct {
-	IP        string `json:"ip,omitempty"`
-	Country   string `json:"country,omitempty"`
-	City      string `json:"city,omitempty"`
-	Region    string `json:"region,omitempty"`
-	Org       string `json:"org,omitempty"`
-	FetchedAt string `json:"fetched_at,omitempty"`
-	Error     string `json:"error,omitempty"`
+	IP          string `json:"ip,omitempty"`
+	Country     string `json:"country,omitempty"`
+	City        string `json:"city,omitempty"`
+	Region      string `json:"region,omitempty"`
+	Warp        string `json:"warp,omitempty"`         // trace warp= (off, on, plus, …)
+	Gateway     string `json:"gateway,omitempty"`      // trace gateway= (off, on)
+	WarpTier    string `json:"warp_tier,omitempty"`    // normalized: off, standard, plus, 2xc
+	AccountType string `json:"account_type,omitempty"` // warp-cli registration show
+	Org         string `json:"org,omitempty"`          // legacy summary for tooltips
+	FetchedAt   string `json:"fetched_at,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 var (
@@ -68,6 +72,52 @@ func withFetchedAt(st ExitInfo, at time.Time) ExitInfo {
 	return st
 }
 
+// NormalizeWarpTier maps cdn-cgi/trace warp= to a stable tier id for UI/API.
+func NormalizeWarpTier(warp string) string {
+	switch strings.ToLower(strings.TrimSpace(warp)) {
+	case "", "off":
+		return "off"
+	case "on":
+		return "standard"
+	case "plus":
+		return "plus"
+	case "2xc", "2x":
+		return "2xc"
+	default:
+		return strings.ToLower(strings.TrimSpace(warp))
+	}
+}
+
+func warpTraceSummary(warp, gateway string) string {
+	w := strings.TrimSpace(warp)
+	g := strings.TrimSpace(gateway)
+	if w == "" && g == "" {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if w != "" {
+		parts = append(parts, "warp="+w)
+	}
+	if g != "" {
+		parts = append(parts, "gateway="+g)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func parseRegistrationAccountType(raw []byte) string {
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		lower := strings.ToLower(line)
+		if !strings.HasPrefix(lower, "account type:") && !strings.HasPrefix(lower, "account:") {
+			continue
+		}
+		if i := strings.IndexByte(line, ':'); i >= 0 {
+			return strings.TrimSpace(line[i+1:])
+		}
+	}
+	return ""
+}
+
 func parseCloudflareTrace(raw []byte) ExitInfo {
 	vars := map[string]string{}
 	for _, line := range strings.Split(string(raw), "\n") {
@@ -85,20 +135,16 @@ func parseCloudflareTrace(raw []byte) ExitInfo {
 	if ip == "" {
 		return ExitInfo{Error: "cloudflare trace missing ip"}
 	}
-	country := strings.TrimSpace(vars["loc"])
-	region := strings.TrimSpace(vars["colo"])
-	org := ""
-	if w := strings.TrimSpace(vars["warp"]); w != "" {
-		org = "warp=" + w
-		if g := strings.TrimSpace(vars["gateway"]); g != "" {
-			org += ", gateway=" + g
-		}
-	}
+	warp := strings.TrimSpace(vars["warp"])
+	gateway := strings.TrimSpace(vars["gateway"])
 	return ExitInfo{
 		IP:        ip,
-		Country:   country,
-		Region:    region,
-		Org:       org,
+		Country:   strings.TrimSpace(vars["loc"]),
+		Region:    strings.TrimSpace(vars["colo"]),
+		Warp:      warp,
+		Gateway:   gateway,
+		WarpTier:  NormalizeWarpTier(warp),
+		Org:       warpTraceSummary(warp, gateway),
 		FetchedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 }
@@ -121,5 +167,11 @@ func fetchExitInfoFromNetns() ExitInfo {
 	if len(strings.TrimSpace(string(out))) == 0 {
 		return ExitInfo{Error: "empty response from cloudflare trace"}
 	}
-	return parseCloudflareTrace(out)
+	info := parseCloudflareTrace(out)
+	if regOut, err := netnsExec(warpCLI, "--accept-tos", "registration", "show"); err == nil {
+		if acct := parseRegistrationAccountType(regOut); acct != "" {
+			info.AccountType = acct
+		}
+	}
+	return info
 }

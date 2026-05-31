@@ -252,7 +252,8 @@ export const api = {
       status: () => request('/api/v1/network/warp/status'),
       install: () => request('/api/v1/network/warp/install', { method: 'POST', body: '{}' }),
       installStatus: () => request('/api/v1/network/warp/install/status'),
-      connect: () => request('/api/v1/network/warp/connect', { method: 'POST', body: '{}' }),
+      connect: (body = {}) =>
+        request('/api/v1/network/warp/connect', { method: 'POST', body: JSON.stringify(body) }),
       disconnect: () => request('/api/v1/network/warp/disconnect', { method: 'POST', body: '{}' }),
       taskStatus: () => request('/api/v1/network/warp/task/status'),
     },
