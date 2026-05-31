@@ -369,11 +369,15 @@ function openVersionSwitchModal() {
   nextTick(() => versionSwitchPasswordRef.value?.focus())
 }
 
-function closeVersionSwitchModal() {
-  if (versionSwitchSubmitting.value) return
+function resetVersionSwitchModal() {
   versionSwitchModalOpen.value = false
   versionSwitchPassword.value = ''
   versionSwitchModalErr.value = ''
+}
+
+function closeVersionSwitchModal() {
+  if (versionSwitchSubmitting.value) return
+  resetVersionSwitchModal()
 }
 
 async function confirmVersionSwitch() {
@@ -381,7 +385,7 @@ async function confirmVersionSwitch() {
   err.value = ''
   ok.value = ''
   warn.value = ''
-  if (versionSwitchRunning.value) return
+  if (versionSwitchSubmitting.value || versionSwitchRunning.value) return
   if (!switchTag.value) {
     versionSwitchModalErr.value = t('system.general.versionNeedTag')
     return
@@ -395,20 +399,19 @@ async function confirmVersionSwitch() {
   try {
     await api.system.version.switchVerify({ current_password: passwd })
     const r = await api.system.version.switch({ tag: switchTag.value })
-    closeVersionSwitchModal()
-    const job = r?.job || {}
-    if (job.state === 'ok') {
-      ok.value = r.result?.message || r.message || t('system.general.versionSwitchSuccess')
+    resetVersionSwitchModal()
+    const job = r?.job
+    if (job?.state === 'ok') {
+      applyVersionSwitchJob(job)
       await loadVersionInfo()
       return
     }
     ok.value = r.message || t('system.general.versionSwitchQueued')
-    versionSwitchJob.value = job.state ? job : { state: 'running', target_tag: switchTag.value }
-    startVersionSwitchPoll()
+    applyVersionSwitchJob(job?.state ? job : { state: 'running', target_tag: switchTag.value })
   } catch (e) {
     versionSwitchModalErr.value = e.data?.error || e.message
     if (e.data?.job) {
-      closeVersionSwitchModal()
+      resetVersionSwitchModal()
       applyVersionSwitchJob(e.data.job)
     }
   } finally {
@@ -675,7 +678,7 @@ onUnmounted(stopVersionSwitchPoll)
         v-if="versionSwitchModalOpen"
         class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
         role="presentation"
-        @click.self="closeVersionSwitchModal"
+        @click.self="!versionSwitchSubmitting && closeVersionSwitchModal()"
       >
         <div
           class="bg-white rounded-xl shadow-xl w-full max-w-md border border-slate-200"
