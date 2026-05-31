@@ -33,7 +33,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Hostname                   string  `json:"hostname"`
 			DisplayName                *string `json:"display_name"`
-			AdminPort                  string  `json:"admin_port"`
+			AdminPort                  JSONString `json:"admin_port"`
 			NewPassword                string  `json:"new_password"`
 			CurrentPassword            string  `json:"current_password"`
 			TLSEnabled                 *bool   `json:"tls_enabled"`
@@ -208,7 +208,7 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if p := strings.TrimSpace(body.AdminPort); p != "" && p != srv.env.AdminPort {
+		if p := strings.TrimSpace(body.AdminPort.String()); p != "" && p != srv.env.AdminPort {
 			if !srv.verifyAdmin(st.AdminUser, body.CurrentPassword) {
 				writeForbidden(w, "", "current password required to change admin port")
 				return

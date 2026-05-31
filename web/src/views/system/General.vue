@@ -222,10 +222,11 @@ function readFile(e, field) {
 }
 
 function buildBasicPutBody() {
+  const adminPort = String(form.value.admin_port ?? '').trim()
   return {
     hostname: form.value.hostname,
     display_name: form.value.display_name,
-    admin_port: form.value.admin_port || undefined,
+    admin_port: adminPort || undefined,
     new_password: form.value.new_password || undefined,
     current_password: form.value.current_password || undefined,
   }
@@ -247,8 +248,9 @@ function buildTlsPutBody() {
 }
 
 function adminPortTouched() {
-  const cur = String(cfg.value?.admin_port || '')
-  return String(form.value.admin_port || '') !== cur && String(form.value.admin_port || '') !== ''
+  const cur = String(cfg.value?.admin_port || '').trim()
+  const next = String(form.value.admin_port ?? '').trim()
+  return next !== '' && next !== cur
 }
 
 function tlsSettingsTouched() {
@@ -537,9 +539,10 @@ onUnmounted(() => {
           <label class="text-xs text-slate-500">{{ t('system.general.adminPort') }}</label>
           <input
             v-model="form.admin_port"
-            type="number"
-            min="1"
-            max="65535"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="5"
             class="input-field mt-1 font-mono w-32"
           />
           <p class="text-xs text-slate-500 mt-1">{{ t('system.general.adminPortHint') }}</p>
