@@ -34,7 +34,9 @@ const warpConnecting = ref(false)
 const warpDisconnecting = ref(false)
 const warpConnectResult = ref(null)
 const warpLicenseKey = ref('')
+const warpLicenseSaved = ref('')
 const warpLicenseSaving = ref(false)
+const warpLicenseDeleting = ref(false)
 const WARP_ACTION_LOCK_MS = 4000
 const warpActionLocked = ref(false)
 let warpActionLockTimer = null
@@ -146,7 +148,7 @@ const warpServiceLine = computed(() => {
 
 const warpLicenseKeySet = computed(() => !!warpStatus.value?.warp_license_key_set)
 
-const warpLicenseDirty = computed(() => warpLicenseKey.value.trim() !== '')
+const warpLicenseDirty = computed(() => warpLicenseKey.value !== warpLicenseSaved.value)
 
 function formatWarpExitCheckedAt(iso) {
   if (!iso) return ''
@@ -221,6 +223,14 @@ function applyConnectTaskResult(result) {
   }
 }
 
+function syncWarpLicenseFromStatus(ws) {
+  const saved = String(ws?.warp_license_key || '')
+  warpLicenseSaved.value = saved
+  if (!warpLicenseDirty.value) {
+    warpLicenseKey.value = saved
+  }
+}
+
 function applyWarpStatus(ws) {
   if (!ws) return
   const merged = { ...warpStatusDefaults, ...ws }
@@ -228,6 +238,7 @@ function applyWarpStatus(ws) {
     merged.enabled = false
   }
   warpStatus.value = merged
+  syncWarpLicenseFromStatus(merged)
   warpInstallJob.value = normalizeWarpJob(ws.install_job)
   installingWarp.value = ws.install_job?.state === 'running'
   if (installingWarp.value && !warpInstallPoll.value) {
@@ -417,15 +428,44 @@ async function installWarp() {
   }
 }
 
+async function deleteWarpLicenseKey() {
+  if (!warpLicenseKeySet.value && !warpLicenseKey.value.trim()) return
+  if (!window.confirm(t('network.wanLinks.warpLicenseKeyDeleteConfirm'))) return
+  err.value = ''
+  ok.value = ''
+  warpLicenseDeleting.value = true
+  try {
+    const r = await api.network.warp.deleteLicense()
+    warpLicenseKey.value = ''
+    warpLicenseSaved.value = ''
+    warpStatus.value = {
+      ...warpStatus.value,
+      enabled: false,
+      connected: false,
+      warp_license_key: '',
+      warp_license_key_set: false,
+    }
+    ok.value = r.message || t('network.wanLinks.warpLicenseKeyDeleted')
+    await refreshWarpStatus()
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    warpLicenseDeleting.value = false
+  }
+}
+
 async function saveWarpLicenseKey() {
   err.value = ''
   ok.value = ''
   warpLicenseSaving.value = true
   try {
     const r = await api.network.warp.saveLicense({ license_key: warpLicenseKey.value.trim() })
-    warpLicenseKey.value = ''
+    const saved = String(r.warp_license_key || warpLicenseKey.value.trim())
+    warpLicenseKey.value = saved
+    warpLicenseSaved.value = saved
     warpStatus.value = {
       ...warpStatus.value,
+      warp_license_key: saved,
       warp_license_key_set: !!r.warp_license_key_set,
     }
     ok.value = t('network.wanLinks.warpLicenseKeySaved')
@@ -776,10 +816,11 @@ onUnmounted(() => {
           <label class="text-xs text-slate-500">{{ t('network.wanLinks.warpLicenseKey') }}</label>
           <input
             v-model="warpLicenseKey"
-            type="password"
+            type="text"
             autocomplete="off"
-            class="input-field mt-1 font-mono"
-            :placeholder="warpLicenseKeySet ? t('network.wanLinks.warpLicenseKeyConfigured') : ''"
+            spellcheck="false"
+            class="input-field mt-1 font-mono text-xs"
+            :placeholder="t('network.wanLinks.warpLicenseKeyPlaceholder')"
           />
           <p class="text-[11px] text-slate-500 mt-1">{{ t('network.wanLinks.warpLicenseKeyHint') }}</p>
           <p v-if="warpEnabled && warpUiConnected" class="text-[11px] text-amber-700 mt-1">
@@ -788,14 +829,25 @@ onUnmounted(() => {
           <p v-else-if="warpLicenseKeySet && !warpLicenseDirty" class="text-[11px] text-emerald-700 mt-1">
             {{ t('network.wanLinks.warpLicenseKeyConfigured') }}
           </p>
-          <div class="mt-2">
+          <p v-else-if="warpLicenseDirty" class="text-[11px] text-amber-700 mt-1">
+            {{ t('network.wanLinks.warpLicenseKeyUnsavedHint') }}
+          </p>
+          <div class="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
               class="btn-secondary"
-              :disabled="warpLicenseSaving || warpTaskRunning"
+              :disabled="warpLicenseSaving || warpLicenseDeleting || warpTaskRunning"
               @click="saveWarpLicenseKey"
             >
               {{ warpLicenseSaving ? t('network.wanLinks.warpLicenseKeySaving') : t('network.wanLinks.warpLicenseKeySave') }}
+            </button>
+            <button
+              type="button"
+              class="btn-secondary text-red-700 border-red-200"
+              :disabled="warpLicenseSaving || warpLicenseDeleting || warpTaskRunning || (!warpLicenseKeySet && !warpLicenseKey.trim())"
+              @click="deleteWarpLicenseKey"
+            >
+              {{ warpLicenseDeleting ? t('network.wanLinks.warpLicenseKeyDeleting') : t('network.wanLinks.warpLicenseKeyDelete') }}
             </button>
           </div>
         </div>

@@ -876,6 +876,14 @@ func applyWarpLicense(licenseKey string) error {
 	return nil
 }
 
+// DeleteRegistration 清除 netns 内 warp-cli 注册（无 License 时便于重新 registration new）。
+func DeleteRegistration() {
+	if !NetnsHealthy() {
+		return
+	}
+	_, _ = netnsExec(warpCLI, "--accept-tos", "registration", "delete")
+}
+
 // Connect 在 netns 内启用 WARP，并将宿主机 qwp0 作为策略路由出口（经 netns 转发到 WARP）。
 // licenseKey 非空时通过 warp-cli registration license 激活 WARP+。
 func Connect(licenseKey string) (string, error) {

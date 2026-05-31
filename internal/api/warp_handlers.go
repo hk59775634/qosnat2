@@ -76,6 +76,7 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 	resp := map[string]any{
 		"installed":            installed,
 		"enabled":              srv.store.Get().Network.WarpEnabled,
+		"warp_license_key":     strings.TrimSpace(srv.store.Get().Network.WarpLicenseKey),
 		"warp_license_key_set": store.WarpLicenseKeyConfigured(srv.store.Get()),
 		"service_up":           service,
 		"connected":     connected,
@@ -93,10 +94,17 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 }
 
 func (srv *Server) handleNetworkWarpLicense(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
+	switch r.Method {
+	case http.MethodPut:
+		srv.handleNetworkWarpLicensePut(w, r)
+	case http.MethodDelete:
+		srv.handleNetworkWarpLicenseDelete(w, r)
+	default:
 		writeMethodNotAllowed(w)
-		return
 	}
+}
+
+func (srv *Server) handleNetworkWarpLicensePut(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		LicenseKey string `json:"license_key"`
 	}
@@ -117,9 +125,50 @@ func (srv *Server) handleNetworkWarpLicense(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	srv.auditLog(r, "network.warp.license", "")
+	key := strings.TrimSpace(srv.store.Get().Network.WarpLicenseKey)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                   true,
-		"warp_license_key_set": store.WarpLicenseKeyConfigured(srv.store.Get()),
+		"warp_license_key":     key,
+		"warp_license_key_set": key != "",
+	})
+}
+
+func (srv *Server) handleNetworkWarpLicenseDelete(w http.ResponseWriter, r *http.Request) {
+	wasEnabled := srv.store.Get().Network.WarpEnabled
+	hadKey := store.WarpLicenseKeyConfigured(srv.store.Get())
+	if !hadKey && !wasEnabled && !warpnetns.IsConnected() && !warpnetns.NetnsExists() {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":                   true,
+			"warp_license_key":     "",
+			"warp_license_key_set": false,
+		})
+		return
+	}
+	if err := srv.store.Update(func(st *store.State) {
+		store.SetWarpLicenseKey(st, "")
+		store.SetWarpEnabled(st, false)
+	}); err != nil {
+		writeInternalError(w, err.Error())
+		return
+	}
+	if err := srv.store.Save(); err != nil {
+		writeInternalError(w, err.Error())
+		return
+	}
+	srv.auditLog(r, "network.warp.license.delete", "")
+	if wasEnabled || warpnetns.IsConnected() || warpnetns.NetnsExists() || warpnetns.ServiceRunning() {
+		if err := srv.startWarpDisconnectAsync(r); err != nil {
+			warpnetns.BeginOp()
+			defer warpnetns.EndOp()
+			warpnetns.DeleteRegistration()
+			warpnetns.ScrubAfterFailedConnect()
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":                   true,
+		"message":              "WARP license key removed; auto-reconnect disabled",
+		"warp_license_key":     "",
+		"warp_license_key_set": false,
 	})
 }
 

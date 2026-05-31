@@ -2692,6 +2692,9 @@ paths:
                       org: { type: string, description: 'trace 摘要（兼容）' }
                       fetched_at: { type: string, format: date-time, description: 最后一次检测时间 }
                       error: { type: string }
+                  warp_license_key:
+                    type: string
+                    description: 已保存的 WARP+ License Key（明文，便于管理页核对）
                   warp_license_key_set:
                     type: boolean
                     description: 是否已保存 WARP+ License Key
@@ -2753,6 +2756,24 @@ paths:
                 type: object
                 properties:
                   ok: { type: boolean }
+                  warp_license_key:
+                    type: string
+                    description: 保存后的 License Key（明文）
+                  warp_license_key_set: { type: boolean }
+    delete:
+      tags: [network]
+      summary: 删除 WARP+ License Key
+      description: 清除已保存 Key、关闭 WARP 启用意图并断开隧道，防止错误 Key 被看门狗反复重连。
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+                  warp_license_key: { type: string }
                   warp_license_key_set: { type: boolean }
 
   /api/v1/network/warp/disconnect:

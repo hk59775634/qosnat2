@@ -161,6 +161,10 @@ func (srv *Server) startWarpConnectAsync(r *http.Request) error {
 	})
 }
 
+func isWarpLicenseError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "warp license:")
+}
+
 func (srv *Server) runWarpConnect() (map[string]any, error) {
 	warpnetns.BeginOp()
 	defer warpnetns.EndOp()
@@ -178,6 +182,12 @@ func (srv *Server) runWarpConnect() (map[string]any, error) {
 	licenseKey := strings.TrimSpace(srv.store.Get().Network.WarpLicenseKey)
 	iface, err := warpnetns.Connect(licenseKey)
 	if err != nil {
+		if isWarpLicenseError(err) {
+			_ = srv.store.Update(func(st *store.State) {
+				store.SetWarpEnabled(st, false)
+			})
+			_ = srv.store.Save()
+		}
 		if !warpnetns.RecoverQuick() {
 			warpnetns.ScrubAfterFailedConnect()
 			return nil, fmt.Errorf("%s", err.Error())
@@ -289,6 +299,9 @@ func (srv *Server) runWarpDisconnect() (map[string]any, error) {
 	})
 	if err := srv.store.Save(); err != nil {
 		return nil, err
+	}
+	if !store.WarpLicenseKeyConfigured(srv.store.Get()) {
+		warpnetns.DeleteRegistration()
 	}
 	warpnetns.Disconnect()
 	_ = restoreRoutesAfterWarpConnect(srv)

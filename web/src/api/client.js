@@ -252,6 +252,7 @@ export const api = {
       status: () => request('/api/v1/network/warp/status'),
       saveLicense: (body) =>
         request('/api/v1/network/warp/license', { method: 'PUT', body: JSON.stringify(body) }),
+      deleteLicense: () => request('/api/v1/network/warp/license', { method: 'DELETE' }),
       install: () => request('/api/v1/network/warp/install', { method: 'POST', body: '{}' }),
       installStatus: () => request('/api/v1/network/warp/install/status'),
       connect: () => request('/api/v1/network/warp/connect', { method: 'POST', body: '{}' }),
