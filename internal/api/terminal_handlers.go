@@ -6,9 +6,11 @@ package api
 import (
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,11 +75,6 @@ func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if !srv.store.Get().System.DiagnosticsTerminalEnabled {
 		writeForbidden(w, "", "web terminal disabled; enable in System → General")
-		return
-	}
-	tok := sessionTokenFromRequest(r)
-	if tok == "" || !srv.terminalGrants.consume(tok) {
-		writeForbidden(w, "", "password verification required; confirm in terminal dialog")
 		return
 	}
 	select {
@@ -183,4 +180,33 @@ func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 	wg.Wait()
 	srv.auditLog(r, "diagnostics.terminal.close", r.RemoteAddr)
+}
+
+func terminalClientAllowed(r *http.Request) bool {
+	raw := strings.TrimSpace(os.Getenv("QOSNAT_TERMINAL_ALLOW_CIDRS"))
+	if raw == "" {
+		return true
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		_, network, err := net.ParseCIDR(part)
+		if err != nil {
+			continue
+		}
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }

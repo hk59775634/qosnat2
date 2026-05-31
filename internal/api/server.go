@@ -65,7 +65,6 @@ type Server struct {
 	lastNatStackOK       bool
 	lastNatStackNat      store.NatState
 	lastNatStackDHCP     store.DHCPState
-	terminalGrants       *versionSwitchGrants
 	dataplaneMetrics     dataplaneMetrics
 }
 
@@ -87,7 +86,6 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 		hosts:               shaper.NewHostShaper(shaperDevLAN(env.DevLAN), st.Get().Shaper.Leaf),
 		loginLim:            newLoginLimiter(),
 		versionSwitchGrants: newVersionSwitchGrants(),
-		terminalGrants:      newVersionSwitchGrants(),
 	}
 	s.mux = http.NewServeMux()
 	s.routes()
@@ -204,7 +202,6 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/diagnostics/captures/", srv.requireAuth(srv.handleCaptures))
 	m.HandleFunc("/api/v1/diagnostics/captures", srv.requireAuth(srv.handleCaptures))
 	m.HandleFunc("/api/v1/diagnostics/conntrack", srv.requireAuth(srv.handleConntrack))
-	m.HandleFunc("/api/v1/diagnostics/terminal/grant", srv.requireAuth(srv.handleTerminalGrant))
 	m.HandleFunc("/api/v1/diagnostics/terminal", srv.handleTerminalWS)
 
 	m.HandleFunc("/openapi.yaml", srv.serveOpenAPI)
