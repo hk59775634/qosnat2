@@ -163,7 +163,9 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	autoRec := srv.applyAutoTuningOnSetup(false)
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 
 	srv.env.AdminUser = body.AdminUser
 	srv.env.DevLAN = body.DevLAN
@@ -195,7 +197,9 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Update(func(st *store.State) {
 			st.SetupComplete = true
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		_ = enableDataplaneOneshot()
 	}
 

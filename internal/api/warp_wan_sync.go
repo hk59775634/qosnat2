@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"fmt"
 
 	"github.com/hk59775634/qosnat2/internal/policyroute"
@@ -90,7 +91,9 @@ func (srv *Server) reconcileWarpStoreState() {
 			store.SyncWanRoutes(st)
 			store.SyncEgressRoutes(st)
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		return
 	}
 	if !hasWarp {
@@ -108,7 +111,9 @@ func (srv *Server) reconcileWarpStoreState() {
 			store.SyncWanRoutes(st)
 			store.SyncEgressRoutes(st)
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		return
 	}
 	_ = srv.removeWarpWanLink()

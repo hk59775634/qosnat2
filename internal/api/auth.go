@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -138,7 +139,9 @@ func (srv *Server) checkAPIKey(r *http.Request) bool {
 						}
 					}
 				})
-				_ = srv.store.Save()
+				if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 			}
 		}
 		return true

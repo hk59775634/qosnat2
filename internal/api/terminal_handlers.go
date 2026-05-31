@@ -64,8 +64,17 @@ func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	if !terminalClientAllowed(r) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "client IP not allowed for web terminal (QOSNAT_TERMINAL_ALLOW_CIDRS)"})
+		return
+	}
 	if !srv.store.Get().System.DiagnosticsTerminalEnabled {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "web terminal disabled; enable in System → General"})
+		return
+	}
+	tok := sessionTokenFromRequest(r)
+	if tok == "" || !srv.terminalGrants.consume(tok) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password verification required; confirm in terminal dialog"})
 		return
 	}
 	select {

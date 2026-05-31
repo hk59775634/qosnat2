@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -24,7 +25,9 @@ func (srv *Server) pushUINotification(level, title, message, link string) {
 	_ = srv.store.Update(func(s *store.State) {
 		s.Notifications = store.PrependNotification(s.Notifications, n)
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 }
 
 func (srv *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +79,9 @@ func (srv *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
 			}
 			s.Notifications = out
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -149,7 +149,9 @@ func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart 
 	_ = srv.store.Update(func(st *store.State) {
 		st.System.TLSEnabled = enabled
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	srv.reloadEnv()
 	nowActive := srv.tlsActive()
 	if enabled && wasActive && nowActive {

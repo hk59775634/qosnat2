@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -49,7 +50,9 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "group not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		st := srv.store.Get().VPN.OCServ
 		if err := store.NormalizeOCServ(&st); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -166,7 +169,9 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		st = srv.store.Get().VPN.OCServ
 		if err := store.NormalizeOCServ(&st); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -213,7 +218,9 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "vhost not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		full := srv.store.Get()
 		if err := ocserv.WriteConf(full.VPN.OCServ, full.Certificates); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -363,7 +370,9 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 				Group:    body.Group,
 			})
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
@@ -415,7 +424,9 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {
@@ -450,7 +461,9 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		stAfter := srv.store.Get().VPN.OCServ
 		vp, _ := findOCServVhostPtr(&stAfter, domain)
 		if err := ocserv.SyncUsersToPath(passwdPath, vp.Users); err != nil {

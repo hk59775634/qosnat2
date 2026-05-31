@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"strings"
 	"time"
 
@@ -59,7 +60,9 @@ func (srv *Server) reloadFilterWithOptionalIncremental(backup []store.FilterRule
 	}
 	if err != nil {
 		srv.setFilterRules(backup)
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		return srv.reloadNftWithFilterRevert(backup)
 	}
 	return nil

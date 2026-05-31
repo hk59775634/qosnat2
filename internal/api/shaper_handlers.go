@@ -181,7 +181,9 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			}
 			st.Shaper.Profiles = out
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		if err := srv.bpf.DeleteProfile(cidr); err != nil {
 			log.Printf("delete profile bpf %s: %v", cidr, err)
 		}

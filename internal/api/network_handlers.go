@@ -176,7 +176,9 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			store.SyncWanRoutes(st)
 			store.SyncEgressRoutes(st)
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -222,7 +224,9 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "wan link not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -251,7 +255,9 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			store.SyncWanRoutes(st)
 			store.SyncEgressRoutes(st)
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		srv.applyManagedRoutes()
 		if err := srv.applyWanLinkDataPlane(); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -288,5 +294,7 @@ func (srv *Server) replayWanLinksOnBoot() {
 		store.SyncWanRoutes(st)
 		store.SyncEgressRoutes(st)
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 }

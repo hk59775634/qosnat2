@@ -60,7 +60,9 @@ func (srv *Server) recordAcmeResult(err error) {
 			s.System.TLSAcmeLastOK = now
 		}
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 }
 
 func (srv *Server) runACMEObtain() error {

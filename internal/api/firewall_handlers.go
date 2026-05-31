@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -38,7 +39,9 @@ func (srv *Server) handleFirewallRules(w http.ResponseWriter, r *http.Request) {
 			_ = srv.store.Update(func(s *store.State) {
 				s.Firewall.FilterRules = rules
 			})
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		}
 		aliases := st.Firewall.Aliases
 		if aliases == nil {

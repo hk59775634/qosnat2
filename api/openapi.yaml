@@ -3632,12 +3632,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
+  /api/v1/diagnostics/terminal/grant:
+    post:
+      tags: [diagnostics]
+      summary: 验证管理员密码以短时授权 Web 终端连接
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password]
+              properties:
+                current_password:
+                  type: string
+      responses:
+        '200':
+          description: 授权成功（同一会话 2 分钟内可建立一次 WebSocket）
+        '403':
+          description: 密码错误
+
   /api/v1/diagnostics/terminal:
     get:
       tags: [diagnostics]
       summary: Web 终端 WebSocket 升级端点（需 diagnostics_terminal_enabled）
       description: |
         使用 WebSocket 连接；仅在系统设置中启用「诊断终端」后可用。
+        连接前须 POST `/api/v1/diagnostics/terminal/grant` 验证管理员密码（一次性 grant）。
+        可选环境变量 `QOSNAT_TERMINAL_ALLOW_CIDRS` 限制客户端来源 IP。
         非 WebSocket GET 返回 400。
       responses:
         '101':

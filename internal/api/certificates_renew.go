@@ -19,7 +19,9 @@ func (srv *Server) updateCertificateByID(id string, fn func(*store.ManagedCertif
 			}
 		}
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 }
 
 func (srv *Server) recordCertRenewFailure(id string, err error) {

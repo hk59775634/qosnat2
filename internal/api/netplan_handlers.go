@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
@@ -25,7 +26,9 @@ func (srv *Server) applyNetplan() error {
 			}
 		}
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	return nil
 }
 

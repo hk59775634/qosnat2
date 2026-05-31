@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -56,7 +57,9 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Update(func(s *store.State) {
 			s.VPN.OCServ = body
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		st := srv.store.Get().VPN.OCServ
 		if err := ocserv.SyncPlainUsers(st); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -90,7 +93,9 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 			s.VPN.OCServ.Radius.Server = o.Radius.Server
 			s.VPN.OCServ.Radius.AuthPort = o.Radius.AuthPort
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	}
 	if err := ocserv.ValidateState(o); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -251,7 +256,9 @@ func (srv *Server) handleOCServUsers(w http.ResponseWriter, r *http.Request) {
 				Group:    body.Group,
 			})
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		st := srv.store.Get().VPN.OCServ
 		if err := ocserv.SyncPlainUsers(st); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -302,7 +309,9 @@ func (srv *Server) handleOCServUsers(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		if err := ocserv.SyncPlainUsers(srv.store.Get().VPN.OCServ); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
@@ -331,7 +340,9 @@ func (srv *Server) handleOCServUsers(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		if err := ocserv.SyncPlainUsers(srv.store.Get().VPN.OCServ); err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return

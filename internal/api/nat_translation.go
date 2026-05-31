@@ -22,6 +22,13 @@ func (srv *Server) applyNatStack() error {
 
 func (srv *Server) applyNatStackLocked() (err error) {
 	start := time.Now()
+	rollback := srv.lastNatStackSnapshot()
+	var prog natStackProgress
+	defer func() {
+		if err != nil && (prog.nft || prog.jool || prog.unbound || prog.dnsmasq) {
+			srv.rollbackNatStackDataplane(rollback, prog)
+		}
+	}()
 	defer func() {
 		srv.dataplaneMetrics.recordNatStack(time.Since(start), err)
 	}()
@@ -54,12 +61,14 @@ func (srv *Server) applyNatStackLocked() (err error) {
 		status["last_error"] = err.Error()
 		return fmt.Errorf("nft: %w", err)
 	}
+	prog.nft = true
 	status["nft"] = true
 
 	if err := jool.Apply(st.Nat); err != nil {
 		status["last_error"] = err.Error()
 		return fmt.Errorf("jool: %w", err)
 	}
+	prog.jool = true
 	status["jool"] = true
 
 	opts := srv.unboundOpts(st)
@@ -67,14 +76,17 @@ func (srv *Server) applyNatStackLocked() (err error) {
 		status["last_error"] = err.Error()
 		return fmt.Errorf("unbound: %w", err)
 	}
+	prog.unbound = true
 	status["unbound"] = true
 
 	if err := srv.applyDNSMasqNAT(st); err != nil {
 		status["last_error"] = err.Error()
 		return fmt.Errorf("dnsmasq: %w", err)
 	}
+	prog.dnsmasq = true
 	status["dnsmasq"] = true
 	status["last_error"] = ""
+	srv.recordNatStackSuccess(st)
 	return nil
 }
 

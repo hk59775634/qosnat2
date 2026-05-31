@@ -56,7 +56,9 @@ func (srv *Server) handleRoutesPost(w http.ResponseWriter, r *http.Request) {
 	_ = srv.store.Update(func(st *store.State) {
 		st.Routes = append(st.Routes, entry)
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	st := srv.store.Get()
 	writeJSON(w, http.StatusOK, store.EnrichRouteEntry(entry, st))
 }
@@ -178,7 +180,9 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_ = route.Delete(old)
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

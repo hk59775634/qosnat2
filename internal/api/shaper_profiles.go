@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"strings"
 
@@ -90,7 +91,9 @@ func (srv *Server) handleShaperProfilesOrder(w http.ResponseWriter, r *http.Requ
 		}
 		srv.rebuildShaperDataPlane()
 	}
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	list, _ := srv.listProfileItems()
 	writeJSON(w, http.StatusOK, srv.shaperProfilesPayload(list))
 }

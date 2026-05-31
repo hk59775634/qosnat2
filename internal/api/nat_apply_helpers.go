@@ -46,7 +46,9 @@ func (srv *Server) commitNatStackChange(w http.ResponseWriter, mutate func(*stor
 	}
 	if err := srv.applyNatStack(); err != nil {
 		srv.setNatState(backup)
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		if revErr := srv.applyNatStack(); revErr != nil {
 			log.Printf("revert nat stack after apply failure: %v", revErr)
 		}

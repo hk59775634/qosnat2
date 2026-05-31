@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"fmt"
 	"os"
 	"strings"
@@ -80,7 +81,9 @@ func (srv *Server) upsertSystemTLSManagedCert(certPEM, keyPEM string, acme bool,
 			s.System.TLSAcmeStaging = staging
 		}
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	return mc.ID, nil
 }
 
@@ -117,7 +120,9 @@ func (srv *Server) applyTLSFromManagedCertID(certID string) (needsRestart bool, 
 			}
 		}
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	return needsRestart, nil
 }
 

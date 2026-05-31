@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
@@ -58,11 +59,15 @@ func (srv *Server) applyNetplanWithRollback(beforeSave func(*store.State) error)
 		if saveErr != nil {
 			return saveErr
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	}
 	if err := srv.applyNetplan(); err != nil {
 		srv.store.ReplaceState(prev)
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		_ = netif.RestoreNetplanConfig(npBackup)
 		return err
 	}

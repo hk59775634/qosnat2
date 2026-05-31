@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"fmt"
 	"net/http"
 	"strings"
@@ -88,7 +89,9 @@ func (srv *Server) reloadNftWithFilterRevert(backup []store.FilterRule) error {
 	return srv.withNftApply(func() error {
 		if err := srv.reloadNftLocked(); err != nil {
 			srv.setFilterRules(backup)
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -102,7 +105,9 @@ func (srv *Server) reloadNftWithForwardRevert(backupFwd []store.WanPortForward, 
 			srv.setWanForwards(backupFwd)
 			srv.setFilterRules(backupRules)
 			srv.syncAutoFirewallRules()
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -114,7 +119,9 @@ func (srv *Server) reloadNftWithAliasRevert(backup []store.AliasSet) error {
 	return srv.withNftApply(func() error {
 		if err := srv.reloadNftLocked(); err != nil {
 			srv.setAliases(backup)
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -149,7 +156,9 @@ func (srv *Server) reloadNftWithNatRevert(backup store.NatState) error {
 	return srv.withNftApply(func() error {
 		if err := srv.reloadNftLocked(); err != nil {
 			srv.setNatState(backup)
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -161,7 +170,9 @@ func (srv *Server) reloadNftWithNatIPv4Revert(backup store.NatIPv4State) error {
 	return srv.withNftApply(func() error {
 		if err := srv.reloadNftLocked(); err != nil {
 			srv.setNatIPv4(backup)
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 			_ = srv.reloadNftLocked()
 			return err
 		}
@@ -186,7 +197,9 @@ func (srv *Server) reloadNftAfterEgressRevert(backupPolicies []store.EgressPolic
 	return srv.withNftApply(func() error {
 		if err := srv.applyEgressDataPlaneLocked(); err != nil {
 			srv.setEgressPolicies(backupPolicies)
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 			_ = srv.applyEgressDataPlaneLocked()
 			return err
 		}

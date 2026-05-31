@@ -69,7 +69,9 @@ func (srv *Server) getSystemTuning(w http.ResponseWriter, _ *http.Request) {
 			_ = srv.store.Update(func(st *store.State) {
 				tuning.AutoApplyOnSetup(st)
 			})
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		}
 	}
 	st := srv.store.Get()

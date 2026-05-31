@@ -66,6 +66,11 @@ type Server struct {
 	nftApplyMu           sync.Mutex
 	natStackStatusMu     sync.RWMutex
 	natStackStatus       map[string]any
+	lastNatStackMu       sync.Mutex
+	lastNatStackOK       bool
+	lastNatStackNat      store.NatState
+	lastNatStackDHCP     store.DHCPState
+	terminalGrants       *versionSwitchGrants
 	dataplaneMetrics     dataplaneMetrics
 }
 
@@ -87,6 +92,7 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 		hosts:    shaper.NewHostShaper(shaperDevLAN(env.DevLAN), st.Get().Shaper.Leaf),
 		loginLim:            newLoginLimiter(),
 		versionSwitchGrants: newVersionSwitchGrants(),
+		terminalGrants:      newVersionSwitchGrants(),
 	}
 	s.mux = http.NewServeMux()
 	s.routes()
@@ -200,6 +206,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/diagnostics/captures/", srv.requireAuth(srv.handleCaptures))
 	m.HandleFunc("/api/v1/diagnostics/captures", srv.requireAuth(srv.handleCaptures))
 	m.HandleFunc("/api/v1/diagnostics/conntrack", srv.requireAuth(srv.handleConntrack))
+	m.HandleFunc("/api/v1/diagnostics/terminal/grant", srv.requireAuth(srv.handleTerminalGrant))
 	m.HandleFunc("/api/v1/diagnostics/terminal", srv.handleTerminalWS)
 
 	m.HandleFunc("/openapi.yaml", srv.serveOpenAPI)
@@ -322,7 +329,9 @@ func (srv *Server) StartBackground() {
 
 func (srv *Server) persistAutoFirewallRules() {
 	srv.syncAutoFirewallRules()
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 }
 
 // syncAutoFirewallRules 同步 WAN 入站与端口转发关联的受管防火墙规则（写入 state，不单独 Save）。

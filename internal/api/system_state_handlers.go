@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -20,8 +22,15 @@ func (srv *Server) handleSystemStateExport(w http.ResponseWriter, r *http.Reques
 		writeApplyError(w, err)
 		return
 	}
+	sum := sha256.Sum256(b)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	if inm := strings.TrimSpace(r.Header.Get("If-None-Match")); inm == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="qosnat2-state.json"`)
+	w.Header().Set("ETag", etag)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(b)
 	srv.auditLog(r, "system.state.export", srv.store.Path())

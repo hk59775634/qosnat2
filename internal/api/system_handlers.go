@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"fmt"
 	"net/http"
 	"os"
@@ -88,7 +89,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 					s.System.TLSAcmeRenewDays = *body.TLSAcmeRenewDays
 				}
 			})
-			_ = srv.store.Save()
+			if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		}
 		if acmeTouched && !tlsModeTouched {
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tls": srv.tlsStatusWithAcme()})
@@ -110,7 +113,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 						s.System.TLSManagedCertID = ""
 						s.System.TLSEnabled = false
 					})
-					_ = srv.store.Save()
+					if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 					writeJSON(w, http.StatusOK, map[string]any{
 						"ok":      true,
 						"warning": "已切换为 HTTP 监听（未重启 qosnatd）。请使用 http:// 访问。",
@@ -132,7 +137,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				_ = srv.store.Update(func(s *store.State) { s.System.TLSManagedCertID = "" })
-				_ = srv.store.Save()
+				if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 			}
 			useAcme := st.System.TLSAcmeEnabled
 			if body.TLSAcmeEnabled != nil {
@@ -149,7 +156,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				}
 				// ACME 模式：不在此粘贴证书，由「申请证书」触发
 				_ = srv.store.Update(func(s *store.State) { s.System.TLSEnabled = true })
-				_ = srv.store.Save()
+				if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 				writeJSON(w, http.StatusOK, map[string]any{
 					"ok":      true,
 					"warning": "已保存 ACME 设置，请点击「申请证书」获取 Let's Encrypt 证书（需 80 端口公网可达）",
@@ -161,7 +170,9 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 				cert := strings.TrimSpace(body.TLSCert)
 				key := strings.TrimSpace(body.TLSKey)
 				_ = srv.store.Update(func(s *store.State) { s.System.TLSAcmeEnabled = false })
-				_ = srv.store.Save()
+				if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 				if _, applyErr := srv.applyTLS(true, cert, key); applyErr != nil {
 					writeJSON(w, http.StatusBadRequest, map[string]string{"error": applyErr.Error()})
 					return

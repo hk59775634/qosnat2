@@ -64,7 +64,9 @@ func (srv *Server) handleDHCPPut(w http.ResponseWriter, r *http.Request) {
 	_ = srv.store.Update(func(st *store.State) {
 		st.DHCP = body
 	})
-	_ = srv.store.Save()
+	if !srv.persistState(w) {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

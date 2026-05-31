@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"fmt"
 	"net/http"
 	"strings"
@@ -85,7 +86,9 @@ func (srv *Server) handleWireGuardInstancesRoot(w http.ResponseWriter, r *http.R
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": errStr})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -189,7 +192,9 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": errStr})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		srv.setupWGShaper()
 		nftWarn := srv.tryReloadNft()
 		if nftWarn != "" {
@@ -221,7 +226,9 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 			writeJSON(w, code, map[string]string{"error": errStr})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		srv.setupWGShaper()
 		nftWarn := srv.tryReloadNft()
 		if nftWarn != "" {
@@ -258,7 +265,9 @@ func (srv *Server) handleWireGuardInstanceKeys(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
 		return
 	}
-	_ = srv.store.Save()
+	if !srv.persistState(w) {
+		return
+	}
 	writeJSON(w, http.StatusOK, kp)
 }
 
@@ -375,7 +384,9 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		srv.syncWGPeerRates()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
@@ -409,7 +420,9 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": errStr})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		if removed != nil {
 			srv.removeWGPeerShaper(instSnapshot, *removed)
 		}

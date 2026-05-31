@@ -127,7 +127,9 @@ func (srv *Server) syncWGPeerRates() {
 			})
 		}
 	}
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 }
 
 func peerRateEnabled(p store.WGPeer) bool {
@@ -160,7 +162,9 @@ func (srv *Server) clearPeerProfileShaper(cidr, ip string) {
 		}
 		s.Shaper.Profiles = out
 	})
-	_ = srv.store.Save()
+	if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	if srv.bpf != nil && srv.bpf.Ready() {
 		_ = srv.bpf.ReplayState(srv.store.Get())
 	}

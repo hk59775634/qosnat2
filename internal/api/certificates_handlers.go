@@ -125,7 +125,9 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 		_ = srv.store.Update(func(s *store.State) {
 			s.Certificates = append(s.Certificates, mc)
 		})
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		st := srv.store.Get()
 		srv.auditLog(r, "system.certificates.create", mc.ID)
 		pub := certificatePublic{ManagedCertificate: mc}
@@ -162,7 +164,9 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "certificate not found"})
 			return
 		}
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 		_ = certs.RemoveDir(id)
 		srv.auditLog(r, "system.certificates.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -232,7 +236,9 @@ func (srv *Server) migrateCertificateAutoRenew() {
 		}
 	})
 	if changed {
-		_ = srv.store.Save()
+		if err := srv.store.Save(); err != nil {
+		log.Printf("save state: %v", err)
+	}
 	}
 }
 
