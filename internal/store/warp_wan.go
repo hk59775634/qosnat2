@@ -46,7 +46,7 @@ func UpsertWarpWanLink(st *State, device string) {
 	st.Network.WanLinks = append(st.Network.WanLinks, link)
 }
 
-// RemoveWarpWanLink 移除 WARP WAN 链路及引用它的出站策略。
+// RemoveWarpWanLink 移除 WARP WAN 链路行（保留引用 wan-warp 的出站策略，便于再次启用）。
 func RemoveWarpWanLink(st *State) {
 	var links []WanLink
 	for _, w := range st.Network.WanLinks {
@@ -55,11 +55,9 @@ func RemoveWarpWanLink(st *State) {
 		}
 	}
 	st.Network.WanLinks = links
-	var eg []EgressPolicy
-	for _, p := range st.Network.EgressPolicies {
-		if p.WanLinkID != WanLinkIDWarp {
-			eg = append(eg, p)
-		}
-	}
-	st.Network.EgressPolicies = eg
+}
+
+// SetWarpEnabled 持久化 WARP 启用意图（与隧道瞬时状态解耦）。
+func SetWarpEnabled(st *State, enabled bool) {
+	st.Network.WarpEnabled = enabled
 }

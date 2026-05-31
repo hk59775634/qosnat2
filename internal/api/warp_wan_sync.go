@@ -68,61 +68,54 @@ func (srv *Server) removeWarpWanLink() error {
 	return srv.applyWanLinkDataPlane()
 }
 
-// reconcileWarpStoreState 清除 state 中残留的 WARP WAN 链路（netns 已损坏或未连接时）。
+// reconcileWarpStoreState 按持久化 warp_enabled 同步 store，不因瞬时隧道探测失败删除 WAN/出站策略。
 func (srv *Server) reconcileWarpStoreState() {
 	if warpnetns.OpActive() {
 		return
 	}
 	st := srv.store.Get()
-	hasWarp := false
-	for _, w := range st.Network.WanLinks {
-		if store.IsWarpWanLink(w) {
-			hasWarp = true
-			break
+	if !st.Network.WarpEnabled {
+		hasWarp := false
+		for _, w := range st.Network.WanLinks {
+			if store.IsWarpWanLink(w) {
+				hasWarp = true
+				break
+			}
 		}
-	}
-	if warpnetns.IsConnected() {
-		iface := warpnetns.HostInterface()
-		if iface == "" {
-			iface = "qwp0"
+		if !hasWarp {
+			return
 		}
 		_ = srv.store.Update(func(st *store.State) {
-			store.UpsertWarpWanLink(st, iface)
+			store.RemoveWarpWanLink(st)
 			store.SyncWanRoutes(st)
 			store.SyncEgressRoutes(st)
 		})
 		if err := srv.store.Save(); err != nil {
 			log.Printf("reconcile warp store: save: %v", err)
-			return
 		}
 		return
 	}
-	if !hasWarp {
-		return
-	}
-	// netns 与 warp-svc 仍在时勿因瞬时探测失败删除 WARP WAN（会触发 reloadNft 并加剧 netns 抖动）。
-	if warpnetns.NetnsExists() && warpnetns.ServiceRunning() {
-		iface := warpnetns.HostInterface()
-		if iface == "" {
-			iface = "qwp0"
+	iface := warpHostIface()
+	if warpnetns.IsConnected() || (warpnetns.NetnsExists() && warpnetns.ServiceRunning()) {
+		if !warpnetns.IsConnected() {
+			_ = warpnetns.TryRepairConnectedNetns()
 		}
-		_ = warpnetns.TryRepairConnectedNetns()
-		_ = srv.store.Update(func(st *store.State) {
-			store.UpsertWarpWanLink(st, iface)
-			store.SyncWanRoutes(st)
-			store.SyncEgressRoutes(st)
-		})
-		if err := srv.store.Save(); err != nil {
-			log.Printf("reconcile warp store: save: %v", err)
-			return
+		if i := warpnetns.HostInterface(); i != "" {
+			iface = i
 		}
-		return
 	}
-	_ = srv.removeWarpWanLink()
+	_ = srv.store.Update(func(st *store.State) {
+		store.UpsertWarpWanLink(st, iface)
+		store.SyncWanRoutes(st)
+		store.SyncEgressRoutes(st)
+	})
+	if err := srv.store.Save(); err != nil {
+		log.Printf("reconcile warp store: save: %v", err)
+	}
 }
 
-// rollbackFailedWarpConnect 策略应用失败或健康检查失败时回滚 WARP 数据面。
+// rollbackFailedWarpConnect 策略应用失败或健康检查失败时回滚隧道，保留 warp_enabled 与出站策略供看门狗重试。
 func (srv *Server) rollbackFailedWarpConnect() {
-	_ = srv.removeWarpWanLink()
 	warpnetns.ScrubAfterFailedConnect()
+	srv.syncWarpStoreWhenEnabled()
 }

@@ -41,6 +41,7 @@ const versionSwitchPasswordRef = ref(null)
 const importFile = ref(null)
 const importConfirm = ref(false)
 const backupBusy = ref(false)
+let versionSwitchClearTimer = null
 
 const activeTab = ref('basic')
 const generalTabs = computed(() => [
@@ -71,13 +72,37 @@ function applyVersionSwitchJob(job) {
     return
   }
   if (j.state === 'failed') {
+    stopVersionSwitchClearTimer()
     err.value = j.message || t('system.general.versionSwitchFailed')
     ok.value = ''
   } else if (j.state === 'ok') {
     const msg = j.result?.message || j.message || t('system.general.versionSwitchSuccess')
     ok.value = `${t('system.general.versionSwitchSuccess')} (${j.target_tag || j.result?.tag || ''}) — ${msg}`
     err.value = ''
+    scheduleVersionSwitchSuccessClear()
   }
+}
+
+function stopVersionSwitchClearTimer() {
+  if (versionSwitchClearTimer) {
+    clearTimeout(versionSwitchClearTimer)
+    versionSwitchClearTimer = null
+  }
+}
+
+function scheduleVersionSwitchSuccessClear() {
+  stopVersionSwitchClearTimer()
+  versionSwitchClearTimer = setTimeout(async () => {
+    versionSwitchClearTimer = null
+    versionSwitchJob.value = null
+    ok.value = ''
+    try {
+      await api.system.version.switchReset()
+    } catch {
+      /* ignore */
+    }
+    await loadVersionInfo()
+  }, 5000)
 }
 
 async function loadVersionInfo() {
@@ -136,10 +161,7 @@ function startVersionSwitchPoll() {
       }
       if (j.state === 'ok') {
         stopVersionSwitchPoll()
-        const msg = j.result?.message || j.message || t('system.general.versionSwitchSuccess')
-        ok.value = `${t('system.general.versionSwitchSuccess')} (${j.target_tag || j.result?.tag || ''}) — ${msg}`
-        err.value = ''
-        versionSwitchJob.value = null
+        applyVersionSwitchJob(j)
         await loadVersionInfo()
       } else if (j.state === 'failed') {
         stopVersionSwitchPoll()
@@ -431,6 +453,7 @@ async function confirmVersionSwitch() {
 
 async function dismissVersionSwitchTask() {
   if (versionSwitchSubmitting.value) return
+  stopVersionSwitchClearTimer()
   err.value = ''
   ok.value = ''
   try {
@@ -445,7 +468,10 @@ async function dismissVersionSwitchTask() {
 }
 
 onMounted(load)
-onUnmounted(stopVersionSwitchPoll)
+onUnmounted(() => {
+  stopVersionSwitchPoll()
+  stopVersionSwitchClearTimer()
+})
 </script>
 
 <template>

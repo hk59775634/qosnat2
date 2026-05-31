@@ -333,6 +333,14 @@ func (s *Store) ensureDefaultsLocked() {
 	if s.State.Network.EgressPolicies == nil {
 		s.State.Network.EgressPolicies = []EgressPolicy{}
 	}
+	if !s.State.Network.WarpEnabled {
+		for _, w := range s.State.Network.WanLinks {
+			if IsWarpWanLink(w) {
+				s.State.Network.WarpEnabled = true
+				break
+			}
+		}
+	}
 	MigrateWanForwards(&s.State.Firewall.WanPortForwards)
 	MigrateLegacyWireGuardToInstances(&s.State.VPN)
 	if s.State.VPN.WireGuards == nil {

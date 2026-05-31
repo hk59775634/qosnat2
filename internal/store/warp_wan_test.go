@@ -9,7 +9,7 @@ func TestWarpWanLinkPolicyOnly(t *testing.T) {
 	}
 }
 
-func TestRemoveWarpWanLinkClearsEgress(t *testing.T) {
+func TestRemoveWarpWanLinkKeepsEgress(t *testing.T) {
 	st := &State{
 		Network: NetworkState{
 			WanLinks: []WanLink{WarpWanLink("CloudflareWARP"), {ID: "wan-2", Device: "ens19", Enabled: true}},
@@ -23,7 +23,7 @@ func TestRemoveWarpWanLinkClearsEgress(t *testing.T) {
 	if len(st.Network.WanLinks) != 1 || st.Network.WanLinks[0].ID != "wan-2" {
 		t.Fatalf("wan links: %+v", st.Network.WanLinks)
 	}
-	if len(st.Network.EgressPolicies) != 1 || st.Network.EgressPolicies[0].ID != "eg-2" {
-		t.Fatalf("egress: %+v", st.Network.EgressPolicies)
+	if len(st.Network.EgressPolicies) != 2 {
+		t.Fatalf("egress should be kept: %+v", st.Network.EgressPolicies)
 	}
 }

@@ -66,6 +66,7 @@ type Server struct {
 	lastNatStackNat      store.NatState
 	lastNatStackDHCP     store.DHCPState
 	dataplaneMetrics     dataplaneMetrics
+	warpWatchCancel      context.CancelFunc
 }
 
 func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
@@ -419,6 +420,7 @@ func (srv *Server) Listen() error {
 	srv.startMetricsSampler()
 	srv.startOCServTrafficSampler()
 	srv.startWireGuardTrafficSampler()
+	srv.startWarpWatchdog()
 	srv.initHTTPListener()
 	srv.httpListen.started = true
 	go srv.listenerSupervisor()

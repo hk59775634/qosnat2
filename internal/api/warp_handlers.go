@@ -74,6 +74,7 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 	}
 	resp := map[string]any{
 		"installed":     installed,
+		"enabled":       srv.store.Get().Network.WarpEnabled,
 		"service_up":    service,
 		"connected":     connected,
 		"netns_healthy": netnsHealthy,

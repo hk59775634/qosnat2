@@ -112,8 +112,10 @@ func (srv *Server) startWarpTask(op string, r *http.Request, run func() (map[str
 		finishWarpTask(started, op, warpInstallStateOK, "completed", result)
 		if op == warpTaskOpConnect {
 			iface, _ := result["interface"].(string)
-			srv.auditLog(r, "network.warp.connect", iface)
-		} else {
+			if r != nil {
+				srv.auditLog(r, "network.warp.connect", iface)
+			}
+		} else if r != nil {
 			srv.auditLog(r, "network.warp.disconnect", "")
 		}
 	}()
@@ -161,6 +163,13 @@ func (srv *Server) startWarpConnectAsync(r *http.Request) error {
 func (srv *Server) runWarpConnect() (map[string]any, error) {
 	warpnetns.BeginOp()
 	defer warpnetns.EndOp()
+
+	_ = srv.store.Update(func(st *store.State) {
+		store.SetWarpEnabled(st, true)
+	})
+	if err := srv.store.Save(); err != nil {
+		return nil, err
+	}
 
 	if warpnetns.NeedsReset() {
 		warpnetns.ResetBroken()
@@ -262,6 +271,12 @@ func (srv *Server) runWarpDisconnect() (map[string]any, error) {
 	warpnetns.BeginOp()
 	defer warpnetns.EndOp()
 	warpnetns.ClearExitInfoCache()
+	_ = srv.store.Update(func(st *store.State) {
+		store.SetWarpEnabled(st, false)
+	})
+	if err := srv.store.Save(); err != nil {
+		return nil, err
+	}
 	warpnetns.Disconnect()
 	_ = restoreRoutesAfterWarpConnect(srv)
 	_ = srv.removeWarpWanLink()

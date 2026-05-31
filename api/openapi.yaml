@@ -2648,12 +2648,32 @@ paths:
     get:
       tags: [network]
       summary: Cloudflare WARP 连接状态
+      description: |
+        `enabled` 为持久化开关（用户意图）；`connected` 为当前隧道探测结果。
       responses:
         '200':
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  installed:
+                    type: boolean
+                  enabled:
+                    type: boolean
+                    description: 持久化 WARP 启用开关
+                  connected:
+                    type: boolean
+                  service_up:
+                    type: boolean
+                  netns_healthy:
+                    type: boolean
+                  interface:
+                    type: string
+                  status_raw:
+                    type: string
+                  root:
+                    type: boolean
 
   /api/v1/network/warp/install:
     post:

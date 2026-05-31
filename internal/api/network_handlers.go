@@ -279,6 +279,24 @@ func (srv *Server) applyNetworkVLANs() {
 func (srv *Server) replayWanLinksOnBoot() {
 	warpnetns.Reconcile()
 	st := srv.store.Get()
+	if st.Network.WarpEnabled {
+		_ = srv.store.Update(func(st *store.State) {
+			iface := warpHostIface()
+			if warpnetns.IsConnected() {
+				if i := warpnetns.HostInterface(); i != "" {
+					iface = i
+				}
+			}
+			store.UpsertWarpWanLink(st, iface)
+			store.SyncWanRoutes(st)
+			store.SyncEgressRoutes(st)
+		})
+		_ = srv.persistStateOrLog("replay wan links on boot")
+		if !warpnetns.IsConnected() {
+			srv.ensureWarpTunnelAsync("boot")
+		}
+		return
+	}
 	if len(st.Network.WanLinks) == 0 && !warpnetns.IsConnected() {
 		return
 	}

@@ -12,6 +12,7 @@ const resolved = ref([])
 const cloudflareCIDRs = ref([])
 const warpStatusDefaults = {
   installed: false,
+  enabled: false,
   service_up: false,
   connected: false,
   netns_healthy: false,
@@ -98,6 +99,8 @@ const warpUiConnected = computed(() => {
     !raw.includes('unable to connect')
   )
 })
+
+const warpEnabled = computed(() => !!warpStatus.value.enabled)
 
 const warpExitInfo = computed(() => warpStatus.value?.exit_info || null)
 
@@ -379,6 +382,7 @@ async function connectWarp() {
   ok.value = ''
   warpConnectResult.value = null
   warpConnecting.value = true
+  warpStatus.value = { ...warpStatus.value, enabled: true }
   try {
     const r = await api.network.warp.connect()
     const job = r?.job || {}
@@ -403,6 +407,7 @@ async function disconnectWarp() {
   err.value = ''
   ok.value = ''
   warpDisconnecting.value = true
+  warpStatus.value = { ...warpStatus.value, enabled: false }
   try {
     const r = await api.network.warp.disconnect()
     const job = r?.job || {}
@@ -692,7 +697,8 @@ onUnmounted(() => {
       <div class="text-xs text-slate-600 rounded bg-slate-50 p-2">
         {{ t('network.wanLinks.warpState') }}:
         {{ warpStatus.installed ? t('network.wanLinks.warpInstalledLabel') : t('network.wanLinks.warpNotInstalledLabel') }}
-        · {{ warpUiConnected ? t('network.wanLinks.warpConnectedLabel') : t('network.wanLinks.warpDisconnectedLabel') }}
+        · {{ warpEnabled ? t('network.wanLinks.warpEnabledLabel') : t('network.wanLinks.warpDisabledLabel') }}
+        · {{ warpUiConnected ? t('network.wanLinks.warpTunnelUp') : t('network.wanLinks.warpTunnelDown') }}
         <span v-if="warpStatus.netns_healthy" class="text-slate-500"> · netns OK</span>
         <span v-if="warpStatus.interface" class="font-mono"> · {{ warpStatus.interface }}</span>
       </div>
@@ -700,10 +706,10 @@ onUnmounted(() => {
         <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || warpStatus.installed || warpInstallRunning" @click="installWarp">
           {{ warpInstallRunning ? t('network.wanLinks.warpInstalling') : t('network.wanLinks.warpInstallBtn') }}
         </button>
-        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || warpUiConnected" @click="connectWarp">
+        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || warpEnabled" @click="connectWarp">
           {{ warpConnecting ? t('network.wanLinks.warpConnecting') : t('network.wanLinks.warpConnectBtn') }}
         </button>
-        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || !warpUiConnected" @click="disconnectWarp">
+        <button type="button" class="btn-secondary" :disabled="warpActionLocked || warpTaskRunning || !warpStatus.root || !warpStatus.installed || !warpEnabled" @click="disconnectWarp">
           {{ warpDisconnecting ? t('network.wanLinks.warpDisconnecting') : t('network.wanLinks.warpDisconnectBtn') }}
         </button>
         <span
