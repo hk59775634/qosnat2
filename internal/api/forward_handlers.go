@@ -18,7 +18,7 @@ func (srv *Server) handleWanForwards(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		srv.handleWanForwardsDelete(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 

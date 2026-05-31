@@ -40,7 +40,7 @@ func (srv *Server) handleEbpfPrograms(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleEbpfReload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if srv.bpf == nil {

@@ -90,7 +90,7 @@ func (srv *Server) handleWireGuardInstancesRoot(w http.ResponseWriter, r *http.R
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -236,13 +236,13 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
 func (srv *Server) handleWireGuardInstanceKeys(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	kp, err := wg.GenKeyPair()
@@ -272,7 +272,7 @@ func (srv *Server) handleWireGuardInstanceKeys(w http.ResponseWriter, r *http.Re
 
 func (srv *Server) handleWireGuardInstancePeerGenkey(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	st := srv.store.Get()
@@ -290,7 +290,7 @@ func (srv *Server) handleWireGuardInstancePeerGenkey(w http.ResponseWriter, r *h
 
 func (srv *Server) handleWireGuardInstanceApply(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	st := srv.store.Get()
@@ -427,13 +427,13 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
 func (srv *Server) handleWireGuardInstancePeerConf(w http.ResponseWriter, r *http.Request, id, name string) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	st := srv.store.Get()
@@ -471,7 +471,7 @@ func (srv *Server) handleWireGuardInstancePeerConf(w http.ResponseWriter, r *htt
 
 func (srv *Server) handleWireGuardInstancePeerTraffic(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))

@@ -109,7 +109,7 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 		srv.auditLog(r, "vpn.ocserv.group.delete", name)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -229,7 +229,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		srv.auditLog(r, "vpn.ocserv.vhost.delete", domain)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -472,7 +472,7 @@ func (srv *Server) handleOCServVhostUsers(w http.ResponseWriter, r *http.Request
 		srv.auditLog(r, "vpn.ocserv.vhost.user.delete", domain+"/"+name)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "synced": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 

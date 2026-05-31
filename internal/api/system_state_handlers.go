@@ -13,7 +13,7 @@ import (
 
 func (srv *Server) handleSystemStateExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	st := srv.store.Get()
@@ -38,7 +38,7 @@ func (srv *Server) handleSystemStateExport(w http.ResponseWriter, r *http.Reques
 
 func (srv *Server) handleSystemStateImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {
@@ -69,7 +69,7 @@ func (srv *Server) handleSystemStateImport(w http.ResponseWriter, r *http.Reques
 // handleSystemStateImportRaw accepts raw state.json upload with password query/header.
 func (srv *Server) handleSystemStateImportRaw(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	pass := r.URL.Query().Get("current_password")

@@ -169,7 +169,7 @@ func (srv *Server) startACMEBackground() {
 
 func (srv *Server) handleTLSAcme(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if os.Getuid() != 0 {

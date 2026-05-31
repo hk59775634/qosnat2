@@ -57,7 +57,7 @@ func (srv *Server) listProfileItems() ([]ProfileListItem, error) {
 
 func (srv *Server) handleShaperProfilesOrder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {

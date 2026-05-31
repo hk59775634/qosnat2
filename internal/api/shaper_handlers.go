@@ -193,13 +193,13 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 		srv.refreshShaperAfterChange()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
 func (srv *Server) handleShaperWizard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {

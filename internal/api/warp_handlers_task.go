@@ -122,7 +122,7 @@ func (srv *Server) startWarpTask(op string, r *http.Request, run func() (map[str
 
 func (srv *Server) handleNetworkWarpTaskStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	writeJSON(w, http.StatusOK, getWarpTaskStatus())
@@ -130,7 +130,7 @@ func (srv *Server) handleNetworkWarpTaskStatus(w http.ResponseWriter, r *http.Re
 
 func (srv *Server) handleNetworkWarpConnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if os.Getuid() != 0 {
@@ -230,7 +230,7 @@ func (srv *Server) runWarpConnect() (map[string]any, error) {
 
 func (srv *Server) handleNetworkWarpDisconnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if os.Getuid() != 0 {

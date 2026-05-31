@@ -72,13 +72,13 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		srv.auditLog(r, "vpn.ocserv.save", "")
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
 func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	st := srv.store.Get()
@@ -124,7 +124,7 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleOCServInstallStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	writeJSON(w, http.StatusOK, ocserv.GetInstallStatus())
@@ -132,7 +132,7 @@ func (srv *Server) handleOCServInstallStatus(w http.ResponseWriter, r *http.Requ
 
 func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if os.Getuid() != 0 {
@@ -181,7 +181,7 @@ func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleOCServUninstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if os.Getuid() != 0 {
@@ -343,7 +343,7 @@ func (srv *Server) handleOCServUsers(w http.ResponseWriter, r *http.Request) {
 		srv.auditLog(r, "vpn.ocserv.user.delete", name)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "synced": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -400,7 +400,7 @@ func mergeOCServCamouflageSecret(body *store.OCServState, prev store.OCServState
 
 func (srv *Server) handleOCServStatusDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	cfg := ocserv.OcctlFromState(srv.store.Get().VPN.OCServ)
@@ -419,7 +419,7 @@ func (srv *Server) handleOCServStatusDetail(w http.ResponseWriter, r *http.Reque
 
 func (srv *Server) handleOCServSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	cfg := ocserv.OcctlFromState(srv.store.Get().VPN.OCServ)
@@ -439,7 +439,7 @@ func (srv *Server) handleOCServSessions(w http.ResponseWriter, r *http.Request) 
 
 func (srv *Server) handleOCServSessionsDisconnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {

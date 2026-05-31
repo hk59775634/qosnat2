@@ -17,7 +17,7 @@ import (
 
 func (srv *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	complete := srv.setupComplete()
@@ -37,7 +37,7 @@ func (srv *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleSetupInterfaces(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if srv.setupComplete() {
@@ -54,7 +54,7 @@ func (srv *Server) handleSetupInterfaces(w http.ResponseWriter, r *http.Request)
 
 func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if srv.setupComplete() {

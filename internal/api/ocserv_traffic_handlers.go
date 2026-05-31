@@ -10,7 +10,7 @@ import (
 
 func (srv *Server) handleOCServUserTraffic(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	username := strings.TrimSpace(r.URL.Query().Get("username"))

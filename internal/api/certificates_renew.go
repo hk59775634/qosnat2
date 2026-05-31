@@ -153,7 +153,7 @@ func renewErrorResponse(err error) map[string]any {
 
 func (srv *Server) handleCertificateAutoRenew(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {

@@ -68,6 +68,6 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 			"fq_quantum": st.Shaper.FQQuantum,
 		})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }

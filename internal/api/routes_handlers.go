@@ -16,7 +16,7 @@ func (srv *Server) handleRoutes(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		srv.handleRoutesPost(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -181,13 +181,13 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
 func (srv *Server) handleRoutesApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	st := srv.store.Get()

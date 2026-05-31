@@ -16,7 +16,7 @@ func (srv *Server) handleDHCP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		srv.handleDHCPPut(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -72,7 +72,7 @@ func (srv *Server) handleDHCPPut(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleDHCPApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	st := srv.store.Get()

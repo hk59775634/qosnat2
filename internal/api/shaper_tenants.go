@@ -125,7 +125,7 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 		srv.auditLog(r, "shaper.tenant.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 

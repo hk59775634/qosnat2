@@ -119,6 +119,6 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 		srv.auditLog(r, "network.vxlan.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }

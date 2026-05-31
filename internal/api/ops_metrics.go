@@ -103,7 +103,7 @@ func conntrackMax() int {
 
 func (srv *Server) handleMetricsOps(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	sys := srv.collector().System()
@@ -112,7 +112,7 @@ func (srv *Server) handleMetricsOps(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleMetricsPrometheus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	sys := srv.collector().System()

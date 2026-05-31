@@ -17,6 +17,7 @@ import {
   mergeChainReorder,
   ruleDetailLines,
   ruleMatchesSearch,
+  builtinMatchesSearch,
   userRulesForChain,
 } from '@/lib/firewallRuleDisplay'
 import {
@@ -100,9 +101,17 @@ const userRulesInChain = computed(() => {
   )
 })
 
-const autoRulesInChain = computed(() =>
+const autoRulesInChainRaw = computed(() =>
   filterAutoByIface(autoRulesForChain(rules.value, activeChain.value)),
 )
+
+const autoRulesInChain = computed(() => {
+  const q = searchQuery.value.trim()
+  if (!q) return autoRulesInChainRaw.value
+  return autoRulesInChainRaw.value.filter((r) =>
+    ruleMatchesSearch(r, q, devLan.value, devWan.value),
+  )
+})
 
 const showOutCol = computed(() => activeChain.value === 'forward')
 
@@ -115,9 +124,15 @@ const builtinCtx = computed(() => ({
   ifaceList: ifaceList.value,
 }))
 
-const builtinRows = computed(() => {
+const builtinRowsRaw = computed(() => {
   const rows = builtinRulesForChain(activeChain.value, devLan.value, devWan.value, builtinCtx.value, t)
   return filterBuiltinByIface(rows, activeIface.value, devLan.value, devWan.value, extraWanDevices.value)
+})
+
+const builtinRows = computed(() => {
+  const q = searchQuery.value.trim()
+  if (!q) return builtinRowsRaw.value
+  return builtinRowsRaw.value.filter((br) => builtinMatchesSearch(br, q))
 })
 
 const activeIfaceLabel = computed(() => {

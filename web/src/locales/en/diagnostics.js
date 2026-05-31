@@ -47,6 +47,8 @@ export default {
     grantPasswordLabel: 'Current password',
     grantConfirm: 'Open terminal',
     grantRequired: 'Password verification required before connecting.',
+    riskAckLabel: 'I understand this terminal is equivalent to root shell access and is for SSH-outage emergency use only.',
+    riskAckRequired: 'Please acknowledge the risk before continuing.',
     status: {
       connecting: 'Connecting…',
       connected: 'Connected',

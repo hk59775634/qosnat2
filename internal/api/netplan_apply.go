@@ -10,7 +10,7 @@ import (
 
 func (srv *Server) handleNetworkNetplan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	st := srv.store.Get()
@@ -30,7 +30,7 @@ func (srv *Server) handleNetworkNetplan(w http.ResponseWriter, r *http.Request) 
 
 func (srv *Server) handleNetworkNetplanApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if err := srv.applyNetplanWithRollback(nil); err != nil {

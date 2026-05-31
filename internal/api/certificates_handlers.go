@@ -168,13 +168,13 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 		srv.auditLog(r, "system.certificates.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
 func (srv *Server) handleCertificateRenew(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if os.Getuid() != 0 {

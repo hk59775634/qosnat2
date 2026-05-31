@@ -47,6 +47,8 @@ export default {
     grantPasswordLabel: '当前密码',
     grantConfirm: '打开终端',
     grantRequired: '连接前需验证管理员密码。',
+    riskAckLabel: '我了解该终端等同于 root Shell，仅用于 SSH 不可用时的应急排障。',
+    riskAckRequired: '请先勾选风险确认。',
     status: {
       connecting: '连接中…',
       connected: '已连接',

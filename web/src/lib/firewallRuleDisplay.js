@@ -194,6 +194,14 @@ export function ruleMatchesSearch(r, q, devLan, devWan) {
   return parts.some((p) => String(p || '').toLowerCase().includes(needle))
 }
 
+export function builtinMatchesSearch(br, q) {
+  if (!q) return true
+  const needle = q.toLowerCase()
+  return [br.id, br.summary, br.detail, br.action].some((p) =>
+    String(p || '').toLowerCase().includes(needle),
+  )
+}
+
 /** 在同链内拖动排序后，写回完整 rules 数组（自动规则保持原位） */
 export function mergeChainReorder(allRules, chain, reorderedUserSubset) {
   const result = []

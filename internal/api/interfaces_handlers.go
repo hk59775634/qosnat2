@@ -18,7 +18,7 @@ func (srv *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		srv.handleInterfacesPut(w, r)
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -108,7 +108,7 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleInterfacesRoles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {

@@ -59,6 +59,6 @@ func (srv *Server) handleInterfacesEthtool(w http.ResponseWriter, r *http.Reques
 		info, _ := netif.GetEthtool(dev)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ethtool": info})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }

@@ -234,7 +234,7 @@ func readJSONRelaxed(r *http.Request, dst any) error {
 
 func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	phase := "P0"
@@ -273,7 +273,7 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {

@@ -173,7 +173,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 		srv.auditLog(r, "network.egress.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -224,7 +224,7 @@ func (srv *Server) applyEgressPolicyRoutes() {
 // handleNetworkEgressPoliciesBulk 原子批量添加出站策略（单次 state 保存 + 单次 dataplane apply）。
 func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {

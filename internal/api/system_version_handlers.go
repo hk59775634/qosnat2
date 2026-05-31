@@ -19,7 +19,7 @@ const (
 
 func (srv *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	currentTag := releasecatalog.NormalizeID(readTextFile(qosnatReleaseTag))
@@ -43,7 +43,7 @@ func (srv *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleSystemVersionSwitchVerify(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	var body struct {
@@ -83,7 +83,7 @@ func (srv *Server) versionSwitchRegrant(r *http.Request) {
 
 func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if os.Getuid() != 0 {

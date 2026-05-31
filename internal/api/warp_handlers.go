@@ -40,7 +40,7 @@ var (
 
 func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	// 轻量校准：勿在 status 轮询时调用 Reconcile()（会 StopHostWarpSvc / clearConnectedState）。
@@ -91,7 +91,7 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 
 func (srv *Server) handleNetworkWarpInstallStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	writeJSON(w, http.StatusOK, getWarpInstallStatus())
@@ -99,7 +99,7 @@ func (srv *Server) handleNetworkWarpInstallStatus(w http.ResponseWriter, r *http
 
 func (srv *Server) handleNetworkWarpInstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if os.Getuid() != 0 {

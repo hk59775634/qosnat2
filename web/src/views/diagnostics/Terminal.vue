@@ -21,6 +21,7 @@ const grantModalErr = ref('')
 const grantSubmitting = ref(false)
 const grantPasswordRef = ref(null)
 const granted = ref(false)
+const riskAcknowledged = ref(false)
 
 const termRef = shallowRef(null)
 const fitRef = shallowRef(null)
@@ -138,6 +139,7 @@ function disconnect() {
 function openGrantModal() {
   grantModalErr.value = ''
   grantPassword.value = ''
+  riskAcknowledged.value = false
   grantModalOpen.value = true
   nextTick(() => grantPasswordRef.value?.focus())
 }
@@ -151,6 +153,10 @@ function closeGrantModal() {
 
 async function confirmGrant() {
   grantModalErr.value = ''
+  if (!riskAcknowledged.value) {
+    grantModalErr.value = t('diagnostics.terminal.riskAckRequired')
+    return
+  }
   if (!grantPassword.value) {
     grantModalErr.value = t('diagnostics.terminal.grantRequired')
     return
@@ -269,6 +275,15 @@ onBeforeUnmount(disconnect)
       <div class="card w-full max-w-md p-6 shadow-xl">
         <h2 class="text-lg font-semibold text-red-700">{{ t('diagnostics.terminal.grantModalTitle') }}</h2>
         <p class="text-sm text-slate-600 mt-2">{{ t('diagnostics.terminal.grantModalBody') }}</p>
+        <label class="flex items-start gap-2 mt-4 text-sm">
+          <input
+            v-model="riskAcknowledged"
+            type="checkbox"
+            class="mt-0.5 rounded border-slate-300"
+            :disabled="grantSubmitting"
+          />
+          <span>{{ t('diagnostics.terminal.riskAckLabel') }}</span>
+        </label>
         <label class="block mt-4 text-sm font-medium">
           {{ t('diagnostics.terminal.grantPasswordLabel') }}
           <input
@@ -286,7 +301,7 @@ onBeforeUnmount(disconnect)
           <button type="button" class="btn-secondary" :disabled="grantSubmitting" @click="closeGrantModal">
             {{ t('common.cancel') }}
           </button>
-          <button type="button" class="btn-primary" :disabled="grantSubmitting" @click="confirmGrant">
+          <button type="button" class="btn-primary" :disabled="grantSubmitting || !riskAcknowledged" @click="confirmGrant">
             {{ grantSubmitting ? t('common.processing') : t('diagnostics.terminal.grantConfirm') }}
           </button>
         </div>

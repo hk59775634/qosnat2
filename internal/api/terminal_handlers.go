@@ -60,7 +60,7 @@ func terminalCheckOrigin(r *http.Request) bool {
 
 func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	if !srv.requestAuthorized(r) {

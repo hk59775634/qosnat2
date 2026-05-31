@@ -116,7 +116,7 @@ func (srv *Server) handleNetworkVLANs(w http.ResponseWriter, r *http.Request) {
 		srv.auditLog(r, "network.vlan.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
@@ -266,7 +266,7 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		srv.auditLog(r, "network.wan.delete", id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 

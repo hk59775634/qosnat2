@@ -67,13 +67,13 @@ func (srv *Server) handleCaptures(w http.ResponseWriter, r *http.Request) {
 		_ = srv.captures().Stop(id)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 	}
 }
 
 func (srv *Server) handleCaptureDownload(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	s, err := srv.captures().Get(id)
@@ -92,7 +92,7 @@ func (srv *Server) handleCaptureDownload(w http.ResponseWriter, r *http.Request,
 
 func (srv *Server) handleConntrack(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeMethodNotAllowed(w)
 		return
 	}
 	limit := 200
