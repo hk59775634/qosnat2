@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026053120",
+      "tag": "v2026053120",
+      "published_at": "2026-05-31T17:21:19Z",
+      "summary": "WARP 显示服务类型并支持 License Key 激活 WARP+；改端口、HTTPS 与版本切换统一密码确认"
+    },
+    {
       "id": "2026053119",
       "tag": "v2026053119",
       "published_at": "2026-05-31T16:49:52Z",
@@ -25,12 +31,6 @@
       "tag": "v2026053116",
       "published_at": "2026-05-31T16:22:53Z",
       "summary": "修复 ocserv 1.4.2 源码安装后缺少 systemd 单元导致无法启动的问题"
-    },
-    {
-      "id": "2026053115",
-      "tag": "v2026053115",
-      "published_at": "2026-05-31T16:03:34Z",
-      "summary": "ocserv 源码安装体验优化；自建 GitHub 镜像每日同步与 gh-proxy 加速下载"
     }
   ]
 }
