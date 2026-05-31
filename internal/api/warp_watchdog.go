@@ -94,6 +94,10 @@ func (srv *Server) ensureWarpTunnelAsync(reason string) {
 	if warpnetns.OpActive() {
 		return
 	}
+	st := getWarpTaskStatus()
+	if st.State == warpInstallStateRunning && st.Op == warpTaskOpDisconnect {
+		return
+	}
 	if err := srv.startWarpConnectAsync(nil); err != nil {
 		if reason != "" {
 			log.Printf("warp ensure (%s): %v", reason, err)

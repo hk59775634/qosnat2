@@ -272,6 +272,17 @@ func (srv *Server) handleNetworkWarpDisconnect(w http.ResponseWriter, r *http.Re
 		writeBadRequest(w, "warp not installed")
 		return
 	}
+	// 立即持久化关闭意图，避免看门狗/状态轮询在异步清理完成前自动重连。
+	if err := srv.store.Update(func(st *store.State) {
+		store.SetWarpEnabled(st, false)
+	}); err != nil {
+		writeInternalError(w, err.Error())
+		return
+	}
+	if err := srv.store.Save(); err != nil {
+		writeInternalError(w, err.Error())
+		return
+	}
 	if err := srv.startWarpDisconnectAsync(r); err != nil {
 		writeConflictWithExtra(w, err.Error(), map[string]any{"job": getWarpTaskStatus()})
 		return
