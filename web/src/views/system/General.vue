@@ -130,6 +130,12 @@ function startVersionSwitchPoll() {
       const j = await api.system.version.switchStatus()
       versionSwitchPollErrs.value = 0
       versionSwitchJob.value = normalizeVersionSwitchJob(j) || j
+      if (j.state === 'idle') {
+        stopVersionSwitchPoll()
+        versionSwitchJob.value = null
+        await loadVersionInfo()
+        return
+      }
       if (j.state === 'ok') {
         stopVersionSwitchPoll()
         const msg = j.result?.message || j.message || t('system.general.versionSwitchSuccess')
@@ -419,6 +425,21 @@ async function confirmVersionSwitch() {
   }
 }
 
+async function dismissVersionSwitchTask() {
+  if (versionSwitchSubmitting.value) return
+  err.value = ''
+  ok.value = ''
+  try {
+    const res = await api.system.version.switchReset()
+    stopVersionSwitchPoll()
+    versionSwitchJob.value = normalizeVersionSwitchJob(res?.job)
+    ok.value = t('system.general.versionSwitchDismissed')
+    await loadVersionInfo()
+  } catch (e) {
+    err.value = e.data?.error || e.message
+  }
+}
+
 onMounted(load)
 onUnmounted(stopVersionSwitchPoll)
 </script>
@@ -554,6 +575,14 @@ onUnmounted(stopVersionSwitchPoll)
           <p v-if="versionSwitchJob?.state === 'failed'" class="text-red-700">
             {{ t('system.general.versionSwitchFailed') }}: {{ versionSwitchJob.message }}
           </p>
+          <button
+            v-if="!versionSwitchSubmitting"
+            type="button"
+            class="btn-secondary text-xs"
+            @click="dismissVersionSwitchTask"
+          >
+            {{ t('system.general.versionSwitchDismiss') }}
+          </button>
         </div>
         <p v-if="versionInfo && !versionInfo.root_required" class="text-xs text-amber-700">
           {{ t('system.general.versionRootHint') }}

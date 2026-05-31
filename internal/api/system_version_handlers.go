@@ -12,7 +12,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/releasecatalog"
 )
 
-const (
+var (
 	qosnatBinPath    = "/usr/local/bin/qosnatd"
 	qosnatReleaseTag = "/etc/qosnat2/release-tag"
 )

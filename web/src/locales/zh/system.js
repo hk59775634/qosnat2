@@ -54,6 +54,8 @@ export default {
     versionSwitchSuccess: '版本升级成功',
     versionSwitchFailed: '版本升级失败',
     versionSwitchStatusLost: '无法获取切换进度（服务可能正在重启），请稍后刷新页面查看当前版本',
+    versionSwitchDismiss: '清除任务状态',
+    versionSwitchDismissed: '已清除版本切换任务状态，可重新切换',
     versionNeedTag: '请选择目标版本',
     versionAlreadyCurrent: '已是当前版本，无需切换',
     versionRootHint: '当前 qosnatd 非 root 运行，无法执行版本切换',

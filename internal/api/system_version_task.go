@@ -13,7 +13,13 @@ import (
 	"github.com/hk59775634/qosnat2/internal/releasecatalog"
 )
 
-const versionSwitchStatusFile = "/var/lib/qosnat2/version-switch-status.json"
+const (
+	versionSwitchStatusFileVar = "/var/lib/qosnat2/version-switch-status.json"
+)
+
+var versionSwitchStatusFile = versionSwitchStatusFileVar
+
+const versionSwitchStaleTimeout = 20 * time.Minute
 
 type versionSwitchStatus struct {
 	State      string         `json:"state"`
@@ -65,9 +71,38 @@ func finishVersionSwitch(started, state, msg, targetTag string, result map[strin
 	saveVersionSwitchStatus(st)
 }
 
+func reconcileVersionSwitchStatusLocked() {
+	st := loadVersionSwitchStatus()
+	if st.State != warpInstallStateRunning || versionSwitchRunning {
+		return
+	}
+	target := releasecatalog.NormalizeID(st.TargetTag)
+	current := releasecatalog.NormalizeID(readTextFile(qosnatReleaseTag))
+	if target != "" && target == current {
+		finishVersionSwitch(st.StartedAt, warpInstallStateOK, "upgrade completed", target, map[string]any{
+			"ok":      true,
+			"tag":     target,
+			"message": "版本切换完成",
+		})
+		return
+	}
+	msg := "version switch interrupted; please retry"
+	if st.StartedAt != "" {
+		if started, err := time.Parse(time.RFC3339, st.StartedAt); err == nil && time.Since(started) > versionSwitchStaleTimeout {
+			msg = "version switch timed out; please retry"
+		}
+	}
+	finishVersionSwitch(st.StartedAt, warpInstallStateFailed, msg, target, nil)
+}
+
+func clearVersionSwitchStatusLocked() {
+	saveVersionSwitchStatus(versionSwitchStatus{State: warpInstallStateIdle})
+}
+
 func getVersionSwitchStatus() versionSwitchStatus {
 	versionSwitchMu.Lock()
 	defer versionSwitchMu.Unlock()
+	reconcileVersionSwitchStatusLocked()
 	st := loadVersionSwitchStatus()
 	if versionSwitchRunning && st.State != warpInstallStateRunning {
 		st.State = warpInstallStateRunning
@@ -77,7 +112,12 @@ func getVersionSwitchStatus() versionSwitchStatus {
 
 func (srv *Server) startVersionSwitchAsync(r *http.Request, versionID string) error {
 	versionSwitchMu.Lock()
+	reconcileVersionSwitchStatusLocked()
 	if versionSwitchRunning {
+		versionSwitchMu.Unlock()
+		return fmt.Errorf("version switch already running")
+	}
+	if st := loadVersionSwitchStatus(); st.State == warpInstallStateRunning {
 		versionSwitchMu.Unlock()
 		return fmt.Errorf("version switch already running")
 	}
@@ -113,21 +153,31 @@ func (srv *Server) startVersionSwitchAsync(r *http.Request, versionID string) er
 		patchVersionSwitchStatus(func(st *versionSwitchStatus) {
 			st.Message = "restarting qosnatd"
 		})
-		cmd := exec.Command("bash", "-lc", "sleep 1; systemctl restart qosnatd.service")
-		if err := cmd.Start(); err != nil {
-			finishVersionSwitch(started, warpInstallStateFailed, "restart qosnatd: "+err.Error(), versionID, map[string]any{
-				"tag": versionID,
-			})
-			return
-		}
 		srv.auditLog(r, "system.version.switch", versionID)
 		finishVersionSwitch(started, warpInstallStateOK, "upgrade completed, service is restarting", versionID, map[string]any{
 			"ok":      true,
 			"tag":     versionID,
 			"message": "版本切换完成，服务即将重启",
 		})
+		cmd := exec.Command("bash", "-lc", "sleep 1; systemctl restart qosnatd.service")
+		_ = cmd.Start()
 	}()
 	return nil
+}
+
+func (srv *Server) handleSystemVersionSwitchReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	versionSwitchMu.Lock()
+	defer versionSwitchMu.Unlock()
+	if versionSwitchRunning {
+		writeConflictWithExtra(w, "version switch already running", map[string]any{"job": loadVersionSwitchStatus()})
+		return
+	}
+	clearVersionSwitchStatusLocked()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "job": loadVersionSwitchStatus()})
 }
 
 func (srv *Server) handleSystemVersionSwitchStatus(w http.ResponseWriter, r *http.Request) {

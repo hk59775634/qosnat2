@@ -127,6 +127,8 @@ export const api = {
       switch: (body) =>
         request('/api/v1/system/version/switch', { method: 'POST', body: JSON.stringify(body) }),
       switchStatus: () => request('/api/v1/system/version/switch/status'),
+      switchReset: () =>
+        request('/api/v1/system/version/switch/reset', { method: 'POST', body: '{}' }),
     },
     tuning: {
       get: () => request('/api/v1/system/tuning'),

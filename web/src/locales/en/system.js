@@ -54,6 +54,8 @@ export default {
     versionSwitchSuccess: 'Upgrade succeeded',
     versionSwitchFailed: 'Upgrade failed',
     versionSwitchStatusLost: 'Could not poll switch status (service may be restarting). Refresh to check the current version.',
+    versionSwitchDismiss: 'Clear task status',
+    versionSwitchDismissed: 'Version switch task cleared — you can switch again',
     versionNeedTag: 'Please choose a target version',
     versionAlreadyCurrent: 'Already on this version',
     versionRootHint: 'qosnatd is not running as root; version switching is disabled',

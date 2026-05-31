@@ -150,6 +150,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/state/import/raw", srv.requireAuth(srv.handleSystemStateImportRaw))
 	m.HandleFunc("/api/v1/system/version/switch/verify", srv.requireAuth(srv.handleSystemVersionSwitchVerify))
 	m.HandleFunc("/api/v1/system/version/switch/status", srv.requireAuth(srv.handleSystemVersionSwitchStatus))
+	m.HandleFunc("/api/v1/system/version/switch/reset", srv.requireAuth(srv.handleSystemVersionSwitchReset))
 	m.HandleFunc("/api/v1/system/version/switch", srv.requireAuth(srv.handleSystemVersionSwitch))
 	m.HandleFunc("/api/v1/system/version", srv.requireAuth(srv.handleSystemVersion))
 	m.HandleFunc("/api/v1/system/tls/acme", srv.requireAuth(srv.handleTLSAcme))
