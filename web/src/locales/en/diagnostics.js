@@ -42,6 +42,11 @@ export default {
     connectFailed: 'Could not connect (check login and service)',
     sessionEnded: 'session ended',
     closed: 'Connection closed (code {code})',
+    grantModalTitle: 'Confirm web terminal',
+    grantModalBody: 'Opening a shell grants the same privileges as qosnatd. Enter your current admin password to continue.',
+    grantPasswordLabel: 'Current password',
+    grantConfirm: 'Open terminal',
+    grantRequired: 'Password verification required before connecting.',
     status: {
       connecting: 'Connecting…',
       connected: 'Connected',

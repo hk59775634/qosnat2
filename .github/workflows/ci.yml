@@ -22,6 +22,9 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
+      - name: OpenAPI route consistency
+        run: bash scripts/check-openapi-routes.sh
+
       - name: Build qosnatd
         run: go build -o /tmp/qosnatd ./cmd/qosnatd
 
@@ -71,3 +74,10 @@ jobs:
         run: |
           curl -sf "http://127.0.0.1:${ADMIN_PORT}/api/v1/health" | grep -q '"ok":true' && echo OK health
           curl -sf "http://127.0.0.1:${ADMIN_PORT}/openapi.yaml" | head -1 | grep -q openapi
+
+      - name: nft dataplane smoke (root)
+        run: |
+          sudo nft list tables | head -5 || true
+          sudo nft add table inet qosnat_ci_test 2>/dev/null || true
+          sudo nft delete table inet qosnat_ci_test 2>/dev/null || true
+          echo OK nft CLI

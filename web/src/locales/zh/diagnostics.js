@@ -42,6 +42,11 @@ export default {
     connectFailed: '无法连接终端（请确认已登录且服务正常）',
     sessionEnded: '会话已结束',
     closed: '连接已关闭 (code {code})',
+    grantModalTitle: '确认打开 Web 终端',
+    grantModalBody: '终端与 qosnatd 同权限。请输入管理员当前密码以继续。',
+    grantPasswordLabel: '当前密码',
+    grantConfirm: '打开终端',
+    grantRequired: '连接前需验证管理员密码。',
     status: {
       connecting: '连接中…',
       connected: '已连接',

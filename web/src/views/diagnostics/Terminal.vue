@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -11,10 +11,16 @@ import PageHeader from '@/components/PageHeader.vue'
 const { t } = useI18n()
 
 const containerRef = ref(null)
-const status = ref('connecting')
+const status = ref('idle')
 const errMsg = ref('')
 const enabled = ref(false)
 const checked = ref(false)
+const grantModalOpen = ref(false)
+const grantPassword = ref('')
+const grantModalErr = ref('')
+const grantSubmitting = ref(false)
+const grantPasswordRef = ref(null)
+const granted = ref(false)
 
 const termRef = shallowRef(null)
 const fitRef = shallowRef(null)
@@ -33,7 +39,7 @@ function sendResize() {
 }
 
 function connect() {
-  if (!enabled.value) return
+  if (!enabled.value || !granted.value) return
   disconnect()
   status.value = 'connecting'
   errMsg.value = ''
@@ -92,14 +98,16 @@ function connect() {
         errMsg.value =
           ev.reason ||
           (ev.code === 403
-            ? t('diagnostics.terminal.disabled')
+            ? t('diagnostics.terminal.grantRequired')
             : t('diagnostics.terminal.closed', { code: ev.code }))
       }
       status.value = 'error'
+      granted.value = false
     } else if (status.value === 'connected') {
       term.writeln('')
       term.writeln(`\r\n\x1b[33m[${t('diagnostics.terminal.sessionEnded')}]\x1b[0m`)
       status.value = 'closed'
+      granted.value = false
     }
   }
 
@@ -127,8 +135,43 @@ function disconnect() {
   fitRef.value = null
 }
 
+function openGrantModal() {
+  grantModalErr.value = ''
+  grantPassword.value = ''
+  grantModalOpen.value = true
+  nextTick(() => grantPasswordRef.value?.focus())
+}
+
+function closeGrantModal() {
+  if (grantSubmitting.value) return
+  grantModalOpen.value = false
+  grantPassword.value = ''
+  grantModalErr.value = ''
+}
+
+async function confirmGrant() {
+  grantModalErr.value = ''
+  if (!grantPassword.value) {
+    grantModalErr.value = t('diagnostics.terminal.grantRequired')
+    return
+  }
+  grantSubmitting.value = true
+  try {
+    await api.diagnostics.terminalGrant({ current_password: grantPassword.value })
+    granted.value = true
+    grantModalOpen.value = false
+    grantPassword.value = ''
+    await nextTick()
+    connect()
+  } catch (e) {
+    grantModalErr.value = e.data?.error || e.message
+  } finally {
+    grantSubmitting.value = false
+  }
+}
+
 function reconnect() {
-  connect()
+  openGrantModal()
 }
 
 onMounted(async () => {
@@ -140,7 +183,8 @@ onMounted(async () => {
   }
   checked.value = true
   if (enabled.value) {
-    connect()
+    status.value = 'idle'
+    openGrantModal()
   } else {
     status.value = 'error'
     errMsg.value = t('diagnostics.terminal.disabled')
@@ -178,7 +222,7 @@ onBeforeUnmount(disconnect)
         :class="{
           'text-amber-600': status === 'connecting',
           'text-emerald-600': status === 'connected',
-          'text-slate-500': status === 'closed',
+          'text-slate-500': status === 'closed' || status === 'idle',
           'text-red-600': status === 'error',
         }"
       >
@@ -187,14 +231,18 @@ onBeforeUnmount(disconnect)
           :class="{
             'bg-amber-500 animate-pulse': status === 'connecting',
             'bg-emerald-500': status === 'connected',
-            'bg-slate-400': status === 'closed',
+            'bg-slate-400': status === 'closed' || status === 'idle',
             'bg-red-500': status === 'error',
           }"
         />
-        {{ t(`diagnostics.terminal.status.${status}`) }}
+        {{
+          status === 'idle'
+            ? t('diagnostics.terminal.status.closed')
+            : t(`diagnostics.terminal.status.${status}`)
+        }}
       </span>
       <button
-        v-if="status !== 'connecting'"
+        v-if="status !== 'connecting' && status !== 'connected'"
         type="button"
         class="btn-secondary text-xs"
         @click="reconnect"
@@ -208,8 +256,41 @@ onBeforeUnmount(disconnect)
 
     <p v-if="errMsg" class="text-red-600 text-sm mb-2">{{ errMsg }}</p>
 
-    <div v-if="enabled" class="card terminal-card overflow-hidden">
+    <div v-if="enabled && granted" class="card terminal-card overflow-hidden">
       <div ref="containerRef" class="terminal-host" tabindex="0" />
+    </div>
+
+    <div
+      v-if="grantModalOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="card w-full max-w-md p-6 shadow-xl">
+        <h2 class="text-lg font-semibold text-red-700">{{ t('diagnostics.terminal.grantModalTitle') }}</h2>
+        <p class="text-sm text-slate-600 mt-2">{{ t('diagnostics.terminal.grantModalBody') }}</p>
+        <label class="block mt-4 text-sm font-medium">
+          {{ t('diagnostics.terminal.grantPasswordLabel') }}
+          <input
+            ref="grantPasswordRef"
+            v-model="grantPassword"
+            type="password"
+            autocomplete="current-password"
+            class="input-field mt-1 w-full"
+            :disabled="grantSubmitting"
+            @keyup.enter="confirmGrant"
+          />
+        </label>
+        <p v-if="grantModalErr" class="text-sm text-red-600 mt-2">{{ grantModalErr }}</p>
+        <div class="flex justify-end gap-2 mt-6">
+          <button type="button" class="btn-secondary" :disabled="grantSubmitting" @click="closeGrantModal">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" class="btn-primary" :disabled="grantSubmitting" @click="confirmGrant">
+            {{ grantSubmitting ? t('common.processing') : t('diagnostics.terminal.grantConfirm') }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
