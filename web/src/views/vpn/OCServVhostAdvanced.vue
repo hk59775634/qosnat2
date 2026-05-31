@@ -62,6 +62,11 @@ function goBack() {
 
 function onConnectCopied() {
   ok.value = t('ocserv.connectUrlCopyOk')
+  err.value = ''
+}
+
+function onConnectCopyFailed() {
+  err.value = t('common.copyFailed')
 }
 
 async function save() {
@@ -126,6 +131,7 @@ onMounted(load)
         :camouflage-secret-set="vhostCamouflageSecretSet"
         @users-changed="load"
         @connect-copied="onConnectCopied"
+        @connect-copy-failed="onConnectCopyFailed"
       />
 
       <div class="flex gap-2 pt-2 border-t border-slate-100">

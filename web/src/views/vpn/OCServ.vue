@@ -7,6 +7,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import SnmpTrafficChart from '@/components/SnmpTrafficChart.vue'
 import { buildVhostPayload, emptyBasicVhost, vhostFormFromGlobal } from '@/lib/ocservVhostForm'
 import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
+import { copyText } from '@/lib/clipboard'
 import OCServRadiusHelpModal from '@/components/OCServRadiusHelpModal.vue'
 import OCServRadiusChallengeHelpModal from '@/components/OCServRadiusChallengeHelpModal.vue'
 import CertSelect from '@/components/CertSelect.vue'
@@ -386,10 +387,10 @@ const connectUrlIssueText = computed(() => {
 async function copyConnectUrl() {
   const url = connectionInfo.value?.url
   if (!url) return
-  try {
-    await navigator.clipboard.writeText(url)
+  if (await copyText(url)) {
     ok.value = t('ocserv.connectUrlCopyOk')
-  } catch {
+    opsErr.value = ''
+  } else {
     opsErr.value = t('common.copyFailed')
   }
 }

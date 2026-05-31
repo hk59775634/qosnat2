@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { emptyVhostRadius } from '@/lib/ocservVhostForm'
 import { clientMbpsFromOcserv, ocservBpsFromClientMbps } from '@/lib/ocservRate'
+import { copyText } from '@/lib/clipboard'
 import OCServRadiusHelpModal from '@/components/OCServRadiusHelpModal.vue'
 import OCServRadiusChallengeHelpModal from '@/components/OCServRadiusChallengeHelpModal.vue'
 import CertSelect from '@/components/CertSelect.vue'
@@ -27,6 +28,7 @@ const emit = defineEmits([
   'update:camouflageSecret',
   'users-changed',
   'connect-copied',
+  'connect-copy-failed',
 ])
 
 const { t } = useI18n()
@@ -44,11 +46,10 @@ const vhostConnectIssueText = computed(() => {
 async function copyVhostConnectUrl() {
   const url = props.connection?.url
   if (!url) return
-  try {
-    await navigator.clipboard.writeText(url)
+  if (await copyText(url)) {
     emit('connect-copied')
-  } catch {
-    /* parent may show copy error */
+  } else {
+    emit('connect-copy-failed')
   }
 }
 
