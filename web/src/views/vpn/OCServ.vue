@@ -164,9 +164,14 @@ const overviewCards = computed(() => {
   ]
 })
 
+/** 安装任务进行中（含刷新页面后从 install_job 恢复） */
+const installRunning = computed(
+  () => installing.value || installJob.value?.state === 'running',
+)
+
 /** 仅安装中或失败时展示进度区；成功后隐藏 */
 const showInstallProgress = computed(() => {
-  if (installing.value) return true
+  if (installRunning.value) return true
   const s = installJob.value?.state
   return s === 'running' || s === 'failed'
 })
@@ -318,6 +323,10 @@ async function load() {
   status.value = d.status || {}
   installScript.value = d.install_script || ''
   installJob.value = normalizeInstallJob(d.install_job)
+  installing.value = d.install_job?.state === 'running'
+  if (installing.value && !installPollTimer.value) {
+    startInstallPoll()
+  }
   users.value = (d.config?.users || []).map((u) => ({ ...u }))
   radiusSecret.value = ''
   radiusSecretSet.value = !!d.radius_secret_set
@@ -434,12 +443,13 @@ function startInstallPoll() {
 }
 
 async function runInstall() {
+  if (installRunning.value) return
   err.value = ''
   ok.value = ''
   installing.value = true
   try {
     const r = await api.post('/api/v1/vpn/ocserv/install', {})
-    ok.value = r.message || t('ocserv.installQueued')
+    ok.value = t('ocserv.installQueued')
     installJob.value = r.job || { state: 'running' }
     startInstallPoll()
   } catch (e) {
@@ -448,6 +458,10 @@ async function runInstall() {
     err.value = msg
     if (e.status === 403) {
       err.value = t('ocserv.installRootHint', { msg })
+    } else if (e.status === 409) {
+      installing.value = true
+      installJob.value = e.data?.job || { state: 'running' }
+      startInstallPoll()
     }
   }
 }
@@ -1129,7 +1143,6 @@ onMounted(async () => {
     activeTab.value = tab
   }
   await load()
-  if (installJob.value?.state === 'running') startInstallPoll()
 })
 onUnmounted(() => {
   stopInstallPoll()
@@ -1142,7 +1155,6 @@ onUnmounted(() => {
 <template>
   <div>
     <PageHeader :title="t('ocserv.title')" :description="t('ocserv.description')" :ok="ok" :err="err" />
-    <p v-if="ok" class="text-sm text-green-700 mb-2">{{ ok }}</p>
 
     <div class="card p-4 mb-4 space-y-3">
       <div class="flex flex-wrap gap-4 text-sm">
@@ -1158,16 +1170,16 @@ onUnmounted(() => {
           v-if="!status?.installed"
           type="button"
           class="btn-secondary text-sm"
-          :disabled="installing"
+          :disabled="installRunning"
           @click="runInstall"
         >
-          {{ installing ? t('ocserv.installing') : t('ocserv.installFromSource') }}
+          {{ installRunning ? t('ocserv.installing') : t('ocserv.installFromSource') }}
         </button>
         <button
           v-else
           type="button"
           class="btn-secondary text-sm border-red-200 text-red-700 hover:bg-red-50"
-          :disabled="installing || uninstallSubmitting || serviceSubmitting"
+          :disabled="installRunning || uninstallSubmitting || serviceSubmitting"
           @click="openUninstallModal"
         >
           {{ t('ocserv.uninstallFromSource') }}
@@ -1185,7 +1197,7 @@ onUnmounted(() => {
             v-if="!status?.active"
             type="button"
             class="btn-secondary text-sm"
-            :disabled="installing || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
+            :disabled="installRunning || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
             :title="!rootForServiceOps ? t('ocserv.serviceRootOnlyHint') : undefined"
             @click="controlOcservService('start')"
           >
@@ -1195,7 +1207,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="btn-secondary text-sm"
-              :disabled="installing || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
+              :disabled="installRunning || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
               :title="!rootForServiceOps ? t('ocserv.serviceRootOnlyHint') : undefined"
               @click="controlOcservService('stop')"
             >
@@ -1205,7 +1217,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="btn-secondary text-sm"
-                :disabled="installing || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
+                :disabled="installRunning || uninstallSubmitting || serviceSubmitting || !rootForServiceOps"
                 :title="!rootForServiceOps ? t('ocserv.serviceRootOnlyHint') : undefined"
                 @click="controlOcservService('restart')"
               >
@@ -1229,7 +1241,7 @@ onUnmounted(() => {
           <span v-if="installJob?.message" class="text-slate-600">{{ installJob.message }}</span>
         </div>
         <pre v-if="installJob?.log_tail" class="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700">{{ installJob.log_tail }}</pre>
-        <p v-if="installing" class="text-slate-500">{{ t('ocserv.installHint') }}</p>
+        <p v-if="installRunning" class="text-slate-500">{{ t('ocserv.installHint') }}</p>
       </div>
     </div>
 

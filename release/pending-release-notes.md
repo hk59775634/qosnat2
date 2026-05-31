@@ -5,19 +5,20 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+ocserv 源码安装体验优化；自建 GitHub 镜像每日同步与 gh-proxy 加速下载
 
 ## 新增
 
-- （无）
+- GitHub Actions `mirror-ocserv`：每 24 小时将 GitLab 官方 ocserv 同步至 `hk59775634/ocserv`
 
 ## 优化
 
-- （无）
+- `install-ocserv.sh` 优先从自建镜像经 v4.gh-proxy 下载，GitLab/infradead 直连作回退
+- ocserv 安装提示合并为一条；安装任务 running 时锁定「从源码安装」按钮
 
 ## 修复
 
-- （无）
+- ocserv 安装进行中重复点击返回 409 时恢复轮询而非报错
 
 ## 删除
 
@@ -25,4 +26,4 @@
 
 ## 其他
 
-- （无）
+- 首次同步需在 qosnat2 配置 Secret `OCSERV_MIRROR_TOKEN` 并手动运行 mirror-ocserv

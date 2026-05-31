@@ -7,10 +7,17 @@
 #
 # 环境变量:
 #   OCSERV_TAG / OCSERV_VERSION   官方 tag（默认 1.4.2）
+#   OCSERV_MIRROR_REPO            自建镜像（默认 github.com/hk59775634/ocserv，经 gh-proxy）
+#   OCSERV_GITLAB_REPO            官方 GitLab 回退
 #   OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
 set -euo pipefail
 
-OCSERV_REPO="${OCSERV_REPO:-https://gitlab.com/openconnect/ocserv.git}"
+OCSERV_MIRROR_REPO="${OCSERV_MIRROR_REPO:-https://github.com/hk59775634/ocserv.git}"
+OCSERV_MIRROR_SLUG="${OCSERV_MIRROR_SLUG:-hk59775634/ocserv}"
+OCSERV_GITHUB_REPO="${OCSERV_GITHUB_REPO:-https://github.com/openconnect/ocserv.git}"
+OCSERV_GITLAB_REPO="${OCSERV_GITLAB_REPO:-https://gitlab.com/openconnect/ocserv.git}"
+GH_PROXY_V4="${GH_PROXY_V4:-https://v4.gh-proxy.org/}"
+GH_PROXY_CDN="${GH_PROXY_CDN:-https://cdn.gh-proxy.org/}"
 OCSERV_TAG="${OCSERV_TAG:-1.4.2}"
 OCSERV_VERSION="${OCSERV_VERSION:-${OCSERV_TAG}}"
 OCSERV_PREFIX="${OCSERV_PREFIX:-/usr/local}"
@@ -64,7 +71,7 @@ install_build_deps() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y --no-install-recommends \
-    build-essential meson ninja-build pkg-config git curl \
+    build-essential meson ninja-build pkg-config git curl xz-utils \
     libgnutls28-dev libev-dev libreadline-dev libseccomp-dev \
     libnl-route-3-dev libnl-genl-3-dev libtalloc-dev libhttp-parser-dev \
     libprotobuf-c-dev libpam0g-dev libradcli-dev \
@@ -74,20 +81,78 @@ install_build_deps() {
     autoconf automake libtool
 }
 
+finalize_extracted_source() {
+  local extracted
+  extracted="$(find "${BUILD_DIR}" -maxdepth 1 -mindepth 1 -type d | head -1)"
+  [[ -n "${extracted}" ]] || die "解压后未找到源码目录"
+  mv "${extracted}" "${BUILD_DIR}/ocserv"
+}
+
+try_download_archive() {
+  local url="$1"
+  local out="$2"
+  log "下载源码包 ${url} ..."
+  curl -fsSL --connect-timeout 25 --max-time 600 -o "${out}" "${url}"
+}
+
 fetch_source() {
   local tag="${OCSERV_VERSION}"
   rm -rf "${BUILD_DIR}"
   mkdir -p "${BUILD_DIR}"
-  log "克隆 ${OCSERV_REPO} (tag=${tag})..."
-  if git clone --depth 1 --branch "${tag}" "${OCSERV_REPO}" "${BUILD_DIR}/ocserv" 2>/dev/null; then
-    return 0
-  fi
-  warn "浅克隆 tag 失败，完整克隆后检出..."
-  git clone "${OCSERV_REPO}" "${BUILD_DIR}/ocserv"
-  (
-    cd "${BUILD_DIR}/ocserv"
-    git checkout "${tag}" 2>/dev/null || die "无法检出 tag ${tag}"
+  local archive_out="${BUILD_DIR}/ocserv-src.tar"
+  local mirror_codeload="https://codeload.github.com/${OCSERV_MIRROR_SLUG}/tar.gz/refs/tags/${tag}"
+  local mirror_archive="https://github.com/${OCSERV_MIRROR_SLUG}/archive/refs/tags/${tag}.tar.gz"
+  local gitlab_archive="${OCSERV_GITLAB_REPO%/}/-/archive/${tag}/ocserv-${tag}.tar.gz"
+  local infradead_archive="https://www.infradead.org/ocserv/download/ocserv-${tag}.tar.xz"
+  local archive_urls=(
+    "${GH_PROXY_V4}${mirror_codeload}|${archive_out}.gz|gzip"
+    "${GH_PROXY_CDN}${mirror_codeload}|${archive_out}.gz|gzip"
+    "${GH_PROXY_V4}${mirror_archive}|${archive_out}.gz|gzip"
+    "${GH_PROXY_CDN}${mirror_archive}|${archive_out}.gz|gzip"
+    "${gitlab_archive}|${archive_out}.gz|gzip"
+    "${infradead_archive}|${archive_out}.xz|xz"
   )
+  local entry url out fmt
+  for entry in "${archive_urls[@]}"; do
+    IFS='|' read -r url out fmt <<< "${entry}"
+    if try_download_archive "${url}" "${out}" 2>/dev/null; then
+      case "${fmt}" in
+        gzip) tar -xzf "${out}" -C "${BUILD_DIR}" ;;
+        xz) tar -xJf "${out}" -C "${BUILD_DIR}" ;;
+        *) die "unknown archive format: ${fmt}" ;;
+      esac
+      rm -f "${out}"
+      finalize_extracted_source
+      log "源码包下载完成"
+      return 0
+    fi
+    warn "下载失败: ${url}"
+    rm -f "${out}"
+  done
+
+  local clone_urls=(
+    "${GH_PROXY_V4}${OCSERV_MIRROR_REPO}"
+    "${GH_PROXY_CDN}${OCSERV_MIRROR_REPO}"
+    "${OCSERV_MIRROR_REPO}"
+    "${OCSERV_GITLAB_REPO}"
+  )
+  for url in "${clone_urls[@]}"; do
+    log "克隆 ${url} (tag=${tag})..."
+    if git clone --depth 1 --branch "${tag}" "${url}" "${BUILD_DIR}/ocserv" 2>/dev/null; then
+      return 0
+    fi
+  done
+  for url in "${clone_urls[@]}"; do
+    warn "浅克隆失败，完整克隆 ${url}..."
+    if git clone "${url}" "${BUILD_DIR}/ocserv" 2>/dev/null; then
+      (
+        cd "${BUILD_DIR}/ocserv"
+        git checkout "${tag}" 2>/dev/null || die "无法检出 tag ${tag}"
+      )
+      return 0
+    fi
+  done
+  die "无法获取 ocserv 源码（tag=${tag}）"
 }
 
 build_install() {

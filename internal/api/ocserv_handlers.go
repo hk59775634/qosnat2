@@ -164,7 +164,7 @@ func (srv *Server) handleOCServInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	version := strings.TrimSpace(body.Version)
 	if err := ocserv.StartInstallAsync(method, version); err != nil {
-		writeConflict(w, err.Error())
+		writeConflictWithExtra(w, err.Error(), map[string]any{"job": ocserv.GetInstallStatus()})
 		return
 	}
 	srv.auditLog(r, "vpn.ocserv.install.start", method+":"+version)
