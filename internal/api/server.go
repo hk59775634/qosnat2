@@ -267,7 +267,7 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		resp["dev_wan"] = srv.env.DevWAN
 		resp["admin_port"] = srv.env.AdminPort
 	}
-	resp["diagnostics_terminal_enabled"] = st.System.DiagnosticsTerminalEnabled
+	resp["diagnostics_terminal_enabled"] = true
 	writeJSON(w, http.StatusOK, resp)
 }
 

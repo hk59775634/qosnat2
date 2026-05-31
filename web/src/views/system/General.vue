@@ -23,7 +23,6 @@ const form = ref({
   tls_acme_staging: false,
   tls_acme_renew_days: 30,
   tls_managed_cert_id: '',
-  diagnostics_terminal_enabled: false,
 })
 const err = ref('')
 const ok = ref('')
@@ -99,7 +98,6 @@ async function load() {
   const tlsCfg = cfg.value.tls || {}
   form.value.hostname = cfg.value.hostname || ''
   form.value.display_name = cfg.value.display_name || ''
-  form.value.diagnostics_terminal_enabled = cfg.value.diagnostics_terminal_enabled ?? false
   form.value.admin_port = cfg.value.admin_port || ''
   form.value.tls_enabled = tlsCfg.tls_enabled ?? false
   form.value.tls_domain = tlsCfg.domain || ''
@@ -171,13 +169,18 @@ function readFile(e, field) {
   e.target.value = ''
 }
 
-function buildPutBody() {
+function buildBasicPutBody() {
   return {
     hostname: form.value.hostname,
     display_name: form.value.display_name,
-    diagnostics_terminal_enabled: form.value.diagnostics_terminal_enabled,
     admin_port: form.value.admin_port || undefined,
     new_password: form.value.new_password || undefined,
+    current_password: form.value.current_password || undefined,
+  }
+}
+
+function buildTlsPutBody() {
+  return {
     current_password: form.value.current_password || undefined,
     tls_enabled: form.value.tls_enabled,
     tls_domain: form.value.tls_domain,
@@ -217,14 +220,15 @@ async function save() {
   warn.value = ''
   try {
     const needPw =
-      form.value.new_password ||
-      adminPortTouched() ||
-      (tlsSettingsTouched() && (form.value.tls_enabled || form.value.tls_acme_enabled || form.value.tls_cert))
+      activeTab.value === 'tls'
+        ? tlsSettingsTouched() &&
+          (form.value.tls_enabled || form.value.tls_acme_enabled || form.value.tls_cert)
+        : form.value.new_password || adminPortTouched()
     if (needPw && !form.value.current_password) {
       err.value = t('system.general.needPasswordForTls')
       return
     }
-    const res = await api.system.general.put(buildPutBody())
+    const res = await api.system.general.put(activeTab.value === 'tls' ? buildTlsPutBody() : buildBasicPutBody())
     ok.value = t('system.general.saved')
     if (res.warning) warn.value = res.warning
     if (res.admin_port) form.value.admin_port = res.admin_port
@@ -341,7 +345,7 @@ async function runAcme(action) {
   }
   acmeBusy.value = true
   try {
-    await api.system.general.put(buildPutBody())
+    await api.system.general.put(buildTlsPutBody())
     const res = await api.post('/api/v1/system/tls/acme', {
       action,
       current_password: form.value.current_password,
@@ -491,15 +495,6 @@ onUnmounted(stopVersionSwitchPoll)
         <div>
           <label class="text-xs text-slate-500">{{ t('system.general.currentPassword') }}</label>
           <input v-model="form.current_password" type="password" class="input-field mt-1" autocomplete="current-password" />
-        </div>
-        <div class="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
-          <label class="flex items-start gap-2 text-sm text-red-900 cursor-pointer">
-            <input v-model="form.diagnostics_terminal_enabled" type="checkbox" class="mt-1" />
-            <span>
-              <span class="font-medium">{{ t('system.general.terminalEnable') }}</span>
-              <span class="block text-xs text-red-800 mt-1">{{ t('system.general.terminalEnableHint') }}</span>
-            </span>
-          </label>
         </div>
         <div class="border-t border-slate-200 pt-4 space-y-3">
           <h4 class="text-sm font-semibold text-slate-800">{{ t('system.general.backupSection') }}</h4>

@@ -154,6 +154,9 @@ func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart 
 	}
 	srv.reloadEnv()
 	nowActive := srv.tlsActive()
+	if !enabled && !wasActive {
+		return false, nil
+	}
 	if enabled && wasActive && nowActive {
 		return false, nil
 	}

@@ -73,10 +73,6 @@ func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w, "", "client IP not allowed for web terminal (QOSNAT_TERMINAL_ALLOW_CIDRS)")
 		return
 	}
-	if !srv.store.Get().System.DiagnosticsTerminalEnabled {
-		writeForbidden(w, "", "web terminal disabled; enable in System → General")
-		return
-	}
 	select {
 	case terminalSlots <- struct{}{}:
 	default:

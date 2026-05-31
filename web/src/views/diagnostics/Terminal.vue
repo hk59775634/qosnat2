@@ -5,7 +5,6 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
-import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
@@ -13,8 +12,6 @@ const { t } = useI18n()
 const containerRef = ref(null)
 const status = ref('idle')
 const errMsg = ref('')
-const enabled = ref(false)
-const checked = ref(false)
 
 const termRef = shallowRef(null)
 const fitRef = shallowRef(null)
@@ -33,7 +30,6 @@ function sendResize() {
 }
 
 function connect() {
-  if (!enabled.value) return
   disconnect()
   status.value = 'connecting'
   errMsg.value = ''
@@ -126,21 +122,8 @@ function reconnect() {
 }
 
 onMounted(async () => {
-  try {
-    const h = await api.health()
-    enabled.value = !!h.diagnostics_terminal_enabled
-  } catch {
-    enabled.value = false
-  }
-  checked.value = true
-  if (enabled.value) {
-    status.value = 'idle'
-    await nextTick()
-    connect()
-  } else {
-    status.value = 'error'
-    errMsg.value = t('diagnostics.terminal.disabled')
-  }
+  await nextTick()
+  connect()
 })
 onBeforeUnmount(disconnect)
 </script>
@@ -153,7 +136,6 @@ onBeforeUnmount(disconnect)
     />
 
     <div
-      v-if="enabled"
       class="rounded-lg border border-red-300 bg-red-50 text-red-900 text-sm p-3 mb-3"
       role="alert"
     >
@@ -161,14 +143,7 @@ onBeforeUnmount(disconnect)
       <p class="text-xs mt-1 text-red-800">{{ t('diagnostics.terminal.dangerBody') }}</p>
     </div>
 
-    <div
-      v-else-if="checked"
-      class="rounded-lg border border-amber-200 bg-amber-50 text-amber-900 text-sm p-3 mb-3"
-    >
-      {{ t('diagnostics.terminal.disabled') }}
-    </div>
-
-    <div v-if="enabled" class="card card-body mb-3 flex flex-wrap items-center gap-3 text-sm">
+    <div class="card card-body mb-3 flex flex-wrap items-center gap-3 text-sm">
       <span
         class="inline-flex items-center gap-2"
         :class="{
@@ -208,7 +183,7 @@ onBeforeUnmount(disconnect)
 
     <p v-if="errMsg" class="text-red-600 text-sm mb-2">{{ errMsg }}</p>
 
-    <div v-if="enabled" class="card terminal-card overflow-hidden">
+    <div class="card terminal-card overflow-hidden">
       <div ref="containerRef" class="terminal-host" tabindex="0" />
     </div>
   </div>

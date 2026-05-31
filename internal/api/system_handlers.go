@@ -53,11 +53,17 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 		}
 		st := srv.store.Get()
 		portWarn := ""
-		acmeTouched := body.TLSDomain != "" || body.TLSAcmeEnabled != nil || body.TLSAcmeEmail != "" ||
-			body.TLSAcmeStaging != nil || body.TLSAcmeRenewDays != nil
-		managedCertTouched := body.TLSManagedCertID != nil
-		tlsModeTouched := body.TLSEnabled != nil || strings.TrimSpace(body.TLSCert) != "" ||
-			strings.TrimSpace(body.TLSKey) != "" || managedCertTouched
+		acmeTouched := (strings.TrimSpace(body.TLSDomain) != "" && strings.TrimSpace(body.TLSDomain) != strings.TrimSpace(st.System.TLSDomain)) ||
+			(body.TLSAcmeEnabled != nil && *body.TLSAcmeEnabled != st.System.TLSAcmeEnabled) ||
+			(body.TLSAcmeEmail != "" && strings.TrimSpace(body.TLSAcmeEmail) != strings.TrimSpace(st.System.TLSAcmeEmail)) ||
+			(body.TLSAcmeStaging != nil && *body.TLSAcmeStaging != st.System.TLSAcmeStaging) ||
+			(body.TLSAcmeRenewDays != nil && *body.TLSAcmeRenewDays > 0 && *body.TLSAcmeRenewDays != st.System.TLSAcmeRenewDays)
+		managedCertTouched := body.TLSManagedCertID != nil &&
+			strings.TrimSpace(*body.TLSManagedCertID) != strings.TrimSpace(st.System.TLSManagedCertID)
+		tlsModeTouched := managedCertTouched ||
+			strings.TrimSpace(body.TLSCert) != "" ||
+			strings.TrimSpace(body.TLSKey) != "" ||
+			(body.TLSEnabled != nil && *body.TLSEnabled != st.System.TLSEnabled)
 		if acmeTouched || tlsModeTouched {
 			if !srv.verifyAdmin(st.AdminUser, body.CurrentPassword) {
 				writeForbidden(w, "", "current password required to change HTTPS settings")

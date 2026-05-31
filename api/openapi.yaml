@@ -3686,9 +3686,9 @@ paths:
   /api/v1/diagnostics/terminal:
     get:
       tags: [diagnostics]
-      summary: Web 终端 WebSocket 升级端点（需 diagnostics_terminal_enabled）
+      summary: Web 终端 WebSocket 升级端点
       description: |
-        使用 WebSocket 连接；仅在系统设置中启用「Web Terminal」且已登录管理会话后可用。
+        使用 WebSocket 连接；须已登录管理会话。
         可选环境变量 `QOSNAT_TERMINAL_ALLOW_CIDRS` 限制客户端来源 IP。
         非 WebSocket GET 返回 400。
       responses:

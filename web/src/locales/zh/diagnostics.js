@@ -33,13 +33,11 @@ export default {
   terminal: {
     title: 'Web 终端',
     description: '在浏览器中打开本机 Shell，SSH 不可用时可用于排障与管理',
-    hint: '与 qosnatd 同权限（root）。仅用于 SSH 不可用时的应急排障，请勿日常开启。',
+    hint: '与 qosnatd 同权限（root）。仅用于 SSH 不可用时的应急排障。',
     dangerTitle: '高风险',
-    dangerBody: '该终端等同于网关上的 root Shell。仅在「系统 → 常规」中按需开启，生产环境不建议启用。',
-    disabled: 'Web Terminal 已禁用。可在「系统 → 常规」中开启（生产环境不推荐）。',
-    disabledShort: 'Web Terminal 已禁用',
+    dangerBody: '该终端等同于网关上的 root Shell，请谨慎操作。',
     reconnect: '重新连接',
-    connectFailed: '无法连接终端（请确认已在系统设置中启用且已登录）',
+    connectFailed: '无法连接终端（请确认已登录且服务正常）',
     sessionEnded: '会话已结束',
     closed: '连接已关闭 (code {code})',
     status: {

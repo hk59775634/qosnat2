@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
@@ -24,16 +24,6 @@ const NAV_GROUPS_KEY = 'qosnat2.nav.groups'
 
 const mobileOpen = ref(false)
 const sidebarCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === '1')
-const terminalEnabled = ref(false)
-
-onMounted(async () => {
-  try {
-    const h = await api.health()
-    terminalEnabled.value = !!h.diagnostics_terminal_enabled
-  } catch {
-    terminalEnabled.value = false
-  }
-})
 
 const isApiDocs = computed(() => route.name === 'docs-api')
 
@@ -86,9 +76,6 @@ const menu = computed(() => [
       { path: '/status/mark', label: t('nav.markIsolation') },
       { path: '/diagnostics/conntrack', label: t('nav.conntrack') },
       { path: '/diagnostics/capture', label: t('nav.capture') },
-      ...(terminalEnabled.value
-        ? [{ path: '/diagnostics/terminal', label: t('nav.terminal') }]
-        : []),
     ],
   },
   {
@@ -97,6 +84,7 @@ const menu = computed(() => [
       { path: '/system/general', label: t('nav.general') },
       { path: '/system/certificates', label: t('nav.certificates') },
       { path: '/system/advanced', label: t('nav.advanced') },
+      { path: '/system/terminal', label: t('nav.terminal') },
       { path: '/system/api-keys', label: t('nav.apiKeys') },
       { path: '/system/audit', label: t('nav.audit') },
       { path: '/docs/api', label: t('nav.apiDocs') },
