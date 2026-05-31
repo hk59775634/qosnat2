@@ -122,6 +122,17 @@ const warpExitLine = computed(() => {
   return ''
 })
 
+function formatWarpExitCheckedAt(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
+}
+
+const warpExitCheckedAt = computed(() => formatWarpExitCheckedAt(warpExitInfo.value?.fetched_at))
+
 const warpActiveJob = computed(() => {
   if (warpTaskJob.value?.state === 'running' || warpTaskJob.value?.state === 'failed') {
     return warpTaskJob.value
@@ -713,11 +724,14 @@ onUnmounted(() => {
           {{ warpDisconnecting ? t('network.wanLinks.warpDisconnecting') : t('network.wanLinks.warpDisconnectBtn') }}
         </button>
         <span
-          v-if="warpUiConnected"
+          v-if="warpEnabled && warpUiConnected"
           class="text-xs text-slate-600 font-mono pl-1 border-l border-slate-200"
           :title="warpExitInfo?.org || ''"
         >
-          <span v-if="warpExitLine">{{ t('network.wanLinks.warpExitLabel') }}: {{ warpExitLine }}</span>
+          <span v-if="warpExitLine">
+            {{ t('network.wanLinks.warpExitLabel') }}: {{ warpExitLine }}
+            <span v-if="warpExitCheckedAt" class="text-slate-500">{{ t('network.wanLinks.warpExitCheckedAt', { time: warpExitCheckedAt }) }}</span>
+          </span>
           <span v-else class="text-slate-400">{{ t('network.wanLinks.warpExitLoading') }}</span>
         </span>
       </div>

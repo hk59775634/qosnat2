@@ -2677,6 +2677,17 @@ paths:
                     type: string
                   root:
                     type: boolean
+                  exit_info:
+                    type: object
+                    description: 隧道出口 IP/地区（Cloudflare trace）
+                    properties:
+                      ip: { type: string }
+                      country: { type: string }
+                      region: { type: string }
+                      city: { type: string }
+                      org: { type: string }
+                      fetched_at: { type: string, format: date-time, description: 最后一次检测时间 }
+                      error: { type: string }
 
   /api/v1/network/warp/install:
     post:

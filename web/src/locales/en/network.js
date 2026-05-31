@@ -210,6 +210,7 @@ export default {
     warpTunnelDown: 'Tunnel down',
     warpExitLabel: 'Egress',
     warpExitLoading: 'Looking up egress IP…',
+    warpExitCheckedAt: ' · checked {time}',
     warpTask: 'Task status',
     warpTaskOpConnect: 'Connect',
     warpTaskOpDisconnect: 'Disconnect',

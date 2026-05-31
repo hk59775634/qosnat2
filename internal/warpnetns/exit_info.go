@@ -45,17 +45,26 @@ func GetExitInfo(connected bool) ExitInfo {
 	}
 	exitInfoMu.Lock()
 	if !exitInfoCachedAt.IsZero() && time.Since(exitInfoCachedAt) < exitInfoCacheTTL {
-		out := exitInfoCache
+		out := withFetchedAt(exitInfoCache, exitInfoCachedAt)
 		exitInfoMu.Unlock()
 		return out
 	}
 	exitInfoMu.Unlock()
 
 	st := fetchExitInfoFromNetns()
+	now := time.Now()
+	st = withFetchedAt(st, now)
 	exitInfoMu.Lock()
 	exitInfoCache = st
-	exitInfoCachedAt = time.Now()
+	exitInfoCachedAt = now
 	exitInfoMu.Unlock()
+	return st
+}
+
+func withFetchedAt(st ExitInfo, at time.Time) ExitInfo {
+	if st.FetchedAt == "" && !at.IsZero() {
+		st.FetchedAt = at.UTC().Format(time.RFC3339)
+	}
 	return st
 }
 

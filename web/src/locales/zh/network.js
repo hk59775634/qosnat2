@@ -210,6 +210,7 @@ export default {
     warpTunnelDown: '隧道异常',
     warpExitLabel: '出口',
     warpExitLoading: '正在查询出口 IP…',
+    warpExitCheckedAt: ' · 检测于 {time}',
     warpTask: '任务状态',
     warpTaskOpConnect: '连接',
     warpTaskOpDisconnect: '断开',
