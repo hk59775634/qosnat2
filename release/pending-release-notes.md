@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复 HTTP 管理页下 ocserv 客户端连接地址复制失败的问题
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -17,7 +17,7 @@
 
 ## 修复
 
-- 修复 ocserv 概览与 vhost 高级设置中「复制连接地址」在 HTTP 下失败：Clipboard API 不可用时回退 execCommand
+- （无）
 
 ## 删除
 
