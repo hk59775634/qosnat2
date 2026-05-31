@@ -5,16 +5,15 @@
 
 ## 概要
 
-发布流程要求编写结构化更新说明，并在 Web 版本页展示
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- 发布前须维护 `release/pending-release-notes.md`，CI 校验后写入 GitHub Release 与 `releases/notes/<版本>.md`
-- 版本清单增加 `summary` 字段；版本管理页展示选中版本的更新说明
+- （无）
 
 ## 优化
 
-- 新增 `scripts/release-notes.sh`（draft / validate / finalize / reset）与发布策略文档 `release/RELEASE.md`
+- （无）
 
 ## 修复
 
@@ -26,4 +25,4 @@
 
 ## 其他
 
-- 归档 v2026053106–v2026053111 历史更新说明
+- （无）
