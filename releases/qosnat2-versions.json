@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060103",
+      "tag": "v2026060103",
+      "published_at": "2026-06-01T13:17:55Z",
+      "summary": "启动时支持从 state.json.bak 自动恢复；补全 WARP License 应用接口 OpenAPI 文档。"
+    },
+    {
       "id": "2026060102",
       "tag": "v2026060102",
       "published_at": "2026-06-01T12:34:40Z",
@@ -25,12 +31,6 @@
       "tag": "v2026053122",
       "published_at": "2026-05-31T17:34:46Z",
       "summary": "WARP License Key 任意状态可编辑、独立保存，断开重连后生效"
-    },
-    {
-      "id": "2026053121",
-      "tag": "v2026053121",
-      "published_at": "2026-05-31T17:30:01Z",
-      "summary": "修复断开 WARP 后看门狗自动重连，断开期间可填写 License Key"
     }
   ]
 }
