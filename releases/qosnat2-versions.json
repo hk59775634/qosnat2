@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060101",
+      "tag": "v2026060101",
+      "published_at": "2026-06-01T08:53:21Z",
+      "summary": "修复 WARP 启用长时间卡在连接中；状态区显示 License Key 并支持应用 WARP+；加固损坏 netns pin 清理。"
+    },
+    {
       "id": "2026053123",
       "tag": "v2026053123",
       "published_at": "2026-05-31T17:50:59Z",
@@ -25,12 +31,6 @@
       "tag": "v2026053120",
       "published_at": "2026-05-31T17:21:19Z",
       "summary": "WARP 显示服务类型并支持 License Key 激活 WARP+；改端口、HTTPS 与版本切换统一密码确认"
-    },
-    {
-      "id": "2026053119",
-      "tag": "v2026053119",
-      "published_at": "2026-05-31T16:49:52Z",
-      "summary": "修复管理端口与 HTTPS 切换死锁；改端口后 UI 自动等待并跳转到新 URL"
     }
   ]
 }
