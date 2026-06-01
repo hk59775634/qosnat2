@@ -3,6 +3,7 @@ package warpnetns
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -27,10 +28,13 @@ func TestWarpSvcStartArgsUsesUnshare(t *testing.T) {
 }
 
 func TestEnsureNetnsResolvFileUsesCloudflareDNS(t *testing.T) {
-	_ = os.MkdirAll(netnsResolvDir, 0755)
-	_ = os.WriteFile(netnsResolvFile, []byte("nameserver 180.76.76.76\n"), 0644)
-	ensureNetnsResolvFile()
-	b, err := os.ReadFile(netnsResolvFile)
+	dir := t.TempDir()
+	file := filepath.Join(dir, "resolv.conf")
+	if err := os.WriteFile(file, []byte("nameserver 180.76.76.76\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	ensureNetnsResolvFileAt(dir, file)
+	b, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -195,19 +195,28 @@ func (s *Store) Path() string { return s.path }
 func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.loadLocked()
+}
+
+func (s *Store) loadLocked() error {
 	b, err := os.ReadFile(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			s.State = DefaultState()
-			return nil
+			return s.loadFromBackupOrDefault(fmt.Errorf("state file missing"))
 		}
-		return err
+		return s.loadFromBackupOrError(err)
 	}
+	if err := s.applyStateJSON(b); err != nil {
+		return s.loadFromBackupOrError(err)
+	}
+	return nil
+}
+
+func (s *Store) applyStateJSON(b []byte) error {
 	var disk struct {
 		State
 		Legacy natLegacyFields `json:"-"`
 	}
-	// 单独解析旧顶层字段
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
@@ -236,6 +245,40 @@ func (s *Store) Load() error {
 	s.State = disk.State
 	MigrateNatFromLegacy(&s.State, disk.Legacy)
 	s.ensureDefaultsLocked()
+	return nil
+}
+
+func (s *Store) backupPath() string { return s.path + ".bak" }
+
+func (s *Store) loadFromBackupOrError(loadErr error) error {
+	b, err := os.ReadFile(s.backupPath())
+	if err != nil {
+		return loadErr
+	}
+	if err := s.applyStateJSON(b); err != nil {
+		return loadErr
+	}
+	log.Printf("state: recovered from %s (%v)", s.backupPath(), loadErr)
+	if err := WriteFileAtomic(s.path, b, 0600); err != nil {
+		log.Printf("state: restore main file from backup failed: %v", err)
+	}
+	return nil
+}
+
+func (s *Store) loadFromBackupOrDefault(loadErr error) error {
+	b, err := os.ReadFile(s.backupPath())
+	if err != nil {
+		s.State = DefaultState()
+		return nil
+	}
+	if err := s.applyStateJSON(b); err != nil {
+		s.State = DefaultState()
+		return nil
+	}
+	log.Printf("state: no main file; loaded from %s", s.backupPath())
+	if err := WriteFileAtomic(s.path, b, 0600); err != nil {
+		log.Printf("state: create main file from backup failed: %v", err)
+	}
 	return nil
 }
 

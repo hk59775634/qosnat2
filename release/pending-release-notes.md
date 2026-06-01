@@ -5,7 +5,7 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+启动时支持从 state.json.bak 自动恢复；补全 WARP License 应用接口 OpenAPI 文档。
 
 ## 新增
 
@@ -17,7 +17,9 @@
 
 ## 修复
 
-- （无）
+- `state.json` 损坏或缺失时，优先从同目录 `state.json.bak` 加载并写回主文件，降低配置丢失风险。
+- OpenAPI 补充 `POST /api/v1/network/warp/license/apply`，与实现及 UI 对齐。
+- warpnetns resolv 单元测试改为临时目录，避免已安装 WARP 环境下 `go test` 失败。
 
 ## 删除
 

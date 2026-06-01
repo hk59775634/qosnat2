@@ -2885,6 +2885,30 @@ paths:
                   warp_license_key: { type: string }
                   warp_license_key_set: { type: boolean }
 
+  /api/v1/network/warp/license/apply:
+    post:
+      tags: [network]
+      summary: 对已连接的 WARP 应用已保存的 License Key
+      description: 需 root、已安装 warp-cli、WARP netns 健康且 state 中已有 license_key；不修改持久化配置。
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }
+                  warp_license_key: { type: string }
+                  warp_license_key_set: { type: boolean }
+                  exit_info:
+                    type: object
+                    description: 已连接时返回 WARP 出口信息
+        '400':
+          description: 未安装 WARP、未保存 Key 或 netns 不健康
+        '403':
+          description: 非 root 运行 qosnatd
+
   /api/v1/network/warp/disconnect:
     post:
       tags: [network]

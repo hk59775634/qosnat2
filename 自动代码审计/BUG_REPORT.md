@@ -2,7 +2,8 @@
 
 **首轮日期**: 2026-05-30  
 **第二轮复验**: 2026-05-31 · `v2026053101`  
-**第四轮复验**: 2026-05-31 · 迭代完成后 **`v2026053103`**
+**第四轮复验**: 2026-05-31 · 迭代完成后 **`v2026053103`**  
+**第十三轮复验**: 2026-06-01 · 工作区 HEAD / catalog **`v2026060102`**
 
 | Bug | 首轮 | 第四轮 |
 |-----|------|--------|
@@ -249,12 +250,30 @@
 
 ---
 
-## 优先级修复顺序建议
+## 第十三轮新增
 
-1. BUG-001 / BUG-011（nft flush 范围）
-2. BUG-002（Terminal）
-3. BUG-005（apply 互斥）
-4. BUG-003 / BUG-007（NAT/egress revert）
-5. BUG-004（applyNatStack 事务）
-6. BUG-006 / BUG-010（原子写）
-7. 其余 P2/P3
+### BUG-011 — **状态: ACCEPTED**（F-041，产品决策）
+
+保持 Web Terminal 为已认证管理员 root shell，不实施 `diagnostics_terminal_enabled` 门禁。
+
+### BUG-012 — **状态: FIXED**（F-042）
+
+已补全 `api/openapi.yaml` → `POST /api/v1/network/warp/license/apply`。
+
+### BUG-013 — **状态: ACCEPTED**（F-043，产品决策）
+
+`QOSNAT_TERMINAL_ALLOW_CIDRS` 未设置时继续允许任意客户端 IP。
+
+### BUG-014 — **状态: FIXED**（F-045）
+
+`ensureNetnsResolvFileAt` + 测试使用 `t.TempDir()`。
+
+### BUG-015 — **状态: FIXED**（F-046）
+
+`Store.Load` 在主文件缺失/损坏时从 `state.json.bak` 恢复并写回主文件。
+
+---
+
+## 优先级修复顺序建议（更新 2026-06-01）
+
+第十三轮计划项已处理：BUG-012/014/015 **FIXED**；BUG-011/013 **ACCEPTED**（Terminal 产品策略）。

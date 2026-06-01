@@ -15,11 +15,15 @@ const (
 var netnsResolvContent = []byte("nameserver 1.1.1.1\nnameserver 1.0.0.1\n")
 
 func ensureNetnsResolvFile() {
-	_ = os.MkdirAll(netnsResolvDir, 0755)
-	if b, err := os.ReadFile(netnsResolvFile); err == nil && bytes.Equal(bytes.TrimSpace(b), bytes.TrimSpace(netnsResolvContent)) {
+	ensureNetnsResolvFileAt(netnsResolvDir, netnsResolvFile)
+}
+
+func ensureNetnsResolvFileAt(dir, file string) {
+	_ = os.MkdirAll(dir, 0755)
+	if b, err := os.ReadFile(file); err == nil && bytes.Equal(bytes.TrimSpace(b), bytes.TrimSpace(netnsResolvContent)) {
 		return
 	}
-	_ = os.WriteFile(netnsResolvFile, netnsResolvContent, 0644)
+	_ = os.WriteFile(file, netnsResolvContent, 0644)
 }
 
 // BackupHostResolv 在首次启用 WARP 前保存宿主机 resolv.conf。
