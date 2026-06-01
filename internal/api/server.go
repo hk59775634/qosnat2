@@ -176,6 +176,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/network/egress-policies/bulk", srv.requireAuth(srv.handleNetworkEgressPoliciesBulk))
 	m.HandleFunc("/api/v1/network/warp/status", srv.requireAuth(srv.handleNetworkWarpStatus))
 	m.HandleFunc("/api/v1/network/warp/license", srv.requireAuth(srv.handleNetworkWarpLicense))
+	m.HandleFunc("/api/v1/network/warp/license/apply", srv.requireAuth(srv.handleNetworkWarpLicenseApply))
 	m.HandleFunc("/api/v1/network/warp/install", srv.requireAuth(srv.handleNetworkWarpInstall))
 	m.HandleFunc("/api/v1/network/warp/install/status", srv.requireAuth(srv.handleNetworkWarpInstallStatus))
 	m.HandleFunc("/api/v1/network/warp/connect", srv.requireAuth(srv.handleNetworkWarpConnect))

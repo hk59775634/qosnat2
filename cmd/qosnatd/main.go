@@ -70,6 +70,7 @@ func runServer() {
 		defer bpfM.Close()
 	}
 	srv := api.New(env, st, bpfM)
+	srv.ReconcileTLSOnBoot()
 	if err := srv.ApplyAll(); err != nil {
 		log.Printf("apply on start: %v", err)
 	}

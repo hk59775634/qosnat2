@@ -20,6 +20,8 @@ const warpStatusDefaults = {
   root: false,
   status_raw: '',
   exit_info: null,
+  warp_license_key: '',
+  warp_license_key_set: false,
 }
 const warpStatus = ref({ ...warpStatusDefaults })
 const installingWarp = ref(false)
@@ -37,6 +39,7 @@ const warpLicenseKey = ref('')
 const warpLicenseSaved = ref('')
 const warpLicenseSaving = ref(false)
 const warpLicenseDeleting = ref(false)
+const warpLicenseApplying = ref(false)
 const WARP_ACTION_LOCK_MS = 4000
 const warpActionLocked = ref(false)
 let warpActionLockTimer = null
@@ -149,6 +152,23 @@ const warpServiceLine = computed(() => {
 const warpLicenseKeySet = computed(() => !!warpStatus.value?.warp_license_key_set)
 
 const warpLicenseDirty = computed(() => warpLicenseKey.value !== warpLicenseSaved.value)
+
+const warpLicenseStatusText = computed(() => {
+  const key = warpLicenseDirty.value
+    ? warpLicenseKey.value.trim()
+    : String(warpLicenseSaved.value || warpStatus.value?.warp_license_key || '').trim()
+  return key
+})
+
+const warpCanApplyLicense = computed(
+  () =>
+    warpStatus.value?.root &&
+    warpStatus.value?.installed &&
+    warpUiConnected.value &&
+    warpStatus.value?.netns_healthy &&
+    !!warpLicenseStatusText.value &&
+    !warpLicenseDirty.value
+)
 
 function formatWarpExitCheckedAt(iso) {
   if (!iso) return ''
@@ -330,11 +350,21 @@ function stopWarpTaskPoll() {
 function startWarpTaskPoll() {
   stopWarpTaskPoll()
   warpTaskPollErrs.value = 0
+  const pollStart = Date.now()
+  const pollMaxMs = 120000
   warpTaskPoll.value = setInterval(async () => {
     try {
       const j = await api.network.warp.taskStatus()
       warpTaskPollErrs.value = 0
       warpTaskJob.value = normalizeWarpTask(j) || j
+      if (j.state === 'running' && Date.now() - pollStart > pollMaxMs) {
+        stopWarpTaskPoll()
+        warpConnecting.value = false
+        warpDisconnecting.value = false
+        err.value = t('network.wanLinks.warpTaskTimedOut')
+        await refreshWarpStatus()
+        return
+      }
       if (j.state === 'ok') {
         stopWarpTaskPoll()
         warpConnecting.value = false
@@ -473,6 +503,25 @@ async function saveWarpLicenseKey() {
     err.value = e.message
   } finally {
     warpLicenseSaving.value = false
+  }
+}
+
+async function applyWarpLicenseKey() {
+  if (!warpCanApplyLicense.value) return
+  err.value = ''
+  ok.value = ''
+  warpLicenseApplying.value = true
+  try {
+    const r = await api.network.warp.applyLicense()
+    if (r.exit_info) {
+      warpStatus.value = { ...warpStatus.value, exit_info: r.exit_info }
+    }
+    ok.value = r.message || t('network.wanLinks.warpLicenseKeyApplied')
+    await refreshWarpStatus()
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    warpLicenseApplying.value = false
   }
 }
 
@@ -810,6 +859,14 @@ onUnmounted(() => {
         <div v-if="warpEnabled && warpUiConnected && warpServiceLine">
           {{ t('network.wanLinks.warpTierLabel') }}: {{ warpServiceLine }}
         </div>
+        <div>
+          {{ t('network.wanLinks.warpLicenseKeyStatusLabel') }}:
+          <span v-if="warpLicenseStatusText" class="font-mono break-all">{{ warpLicenseStatusText }}</span>
+          <span v-else class="text-slate-400">{{ t('network.wanLinks.warpLicenseKeyNotSet') }}</span>
+          <span v-if="warpLicenseDirty && warpLicenseStatusText" class="text-amber-700 ml-1">
+            ({{ t('network.wanLinks.warpLicenseKeyUnsavedShort') }})
+          </span>
+        </div>
       </div>
       <div class="grid sm:grid-cols-2 gap-3">
         <div class="sm:col-span-2">
@@ -843,8 +900,17 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
+              class="btn-secondary"
+              :disabled="warpLicenseSaving || warpLicenseDeleting || warpLicenseApplying || warpTaskRunning || !warpCanApplyLicense"
+              :title="!warpCanApplyLicense ? t('network.wanLinks.warpLicenseKeyApplyDisabledHint') : ''"
+              @click="applyWarpLicenseKey"
+            >
+              {{ warpLicenseApplying ? t('network.wanLinks.warpLicenseKeyApplying') : t('network.wanLinks.warpLicenseKeyApply') }}
+            </button>
+            <button
+              type="button"
               class="btn-secondary text-red-700 border-red-200"
-              :disabled="warpLicenseSaving || warpLicenseDeleting || warpTaskRunning || (!warpLicenseKeySet && !warpLicenseKey.trim())"
+              :disabled="warpLicenseSaving || warpLicenseDeleting || warpLicenseApplying || warpTaskRunning || (!warpLicenseKeySet && !warpLicenseKey.trim())"
               @click="deleteWarpLicenseKey"
             >
               {{ warpLicenseDeleting ? t('network.wanLinks.warpLicenseKeyDeleting') : t('network.wanLinks.warpLicenseKeyDelete') }}

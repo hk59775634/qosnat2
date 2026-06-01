@@ -49,16 +49,25 @@ else
   warn "未安装 qosnatd systemd 单元，请手动启动 ${QOSNATD_BIN}"
 fi
 
-# 健康检查（优先 HTTPS，最多重试 10s）
+# 健康检查（HTTP 优先；仅 env 已配置 TLS 时才尝试 HTTPS；ApplyAll 启动较慢，最多等 15s）
 health_ok=0
-for _ in 1 2 3 4 5; do
-  for url in "https://127.0.0.1:8080/api/v1/health" "http://127.0.0.1:8080/api/v1/health"; do
-    if curl -skf "${url}" >/dev/null 2>&1; then
-      log "health OK: ${url}"
+try_https=0
+if [[ -f /etc/qosnat2/env ]] && grep -q '^TLS_CERT=' /etc/qosnat2/env 2>/dev/null; then
+  try_https=1
+fi
+for _ in $(seq 1 15); do
+  if [[ "${try_https}" -eq 1 ]]; then
+    if curl -skf "https://127.0.0.1:8080/api/v1/health" >/dev/null 2>&1; then
+      log "health OK: https://127.0.0.1:8080/api/v1/health"
       health_ok=1
-      break 2
+      break
     fi
-  done
+  fi
+  if curl -sf "http://127.0.0.1:8080/api/v1/health" >/dev/null 2>&1; then
+    log "health OK: http://127.0.0.1:8080/api/v1/health"
+    health_ok=1
+    break
+  fi
   sleep 1
 done
 [[ "${health_ok}" -eq 1 ]] || warn "health 检查未通过（服务可能仍绑定其他端口）"

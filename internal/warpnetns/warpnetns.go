@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -29,21 +28,16 @@ const (
 	warpCLI   = "/usr/bin/warp-cli"
 )
 
-var (
-	warpOpMu       sync.Mutex
-	warpOpInFlight int32
-)
+var warpOpInFlight int32
 
 // BeginOp 标记 WARP 连接/断开/恢复正在进行；此期间 Reconcile 不得重置 netns。
 func BeginOp() {
-	warpOpMu.Lock()
 	atomic.AddInt32(&warpOpInFlight, 1)
 }
 
 // EndOp 结束 WARP 操作标记。
 func EndOp() {
 	atomic.AddInt32(&warpOpInFlight, -1)
-	warpOpMu.Unlock()
 }
 
 // OpActive 是否有 WARP 连接/断开/恢复正在进行。
@@ -77,8 +71,12 @@ func saveState(st State) {
 	_ = os.WriteFile(stateFile, b, 0600)
 }
 
+func netnsPinPath() string {
+	return filepath.Join("/var/run/netns", NetnsName)
+}
+
 func netnsExists() bool {
-	_, err := os.Stat(filepath.Join("/var/run/netns", NetnsName))
+	_, err := os.Stat(netnsPinPath())
 	return err == nil
 }
 
@@ -99,12 +97,51 @@ func netnsUsable() bool {
 	return err == nil
 }
 
-func netnsPinValid() bool {
-	st, err := os.Stat(filepath.Join("/var/run/netns", NetnsName))
-	if err != nil {
+func netnsExecUsable() bool {
+	if !netnsExists() {
 		return false
 	}
-	return st.Mode()&0777 != 0
+	_, err := run("ip", "netns", "exec", NetnsName, "true")
+	return err == nil
+}
+
+func netnsPinValid() bool {
+	return netnsExecUsable()
+}
+
+// forceRemoveNetnsPin 强制拆除 netns 挂载点（损坏 pin / 只读空文件时 ip netns delete 可能无效）。
+func forceRemoveNetnsPin() {
+	if !netnsExists() {
+		return
+	}
+	killProcsInNamedNetns()
+	for i := 0; i < 5; i++ {
+		_, _ = run("ip", "netns", "delete", NetnsName)
+		if !netnsExists() {
+			return
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	pin := netnsPinPath()
+	_ = os.Chmod(pin, 0600)
+	_, _ = run("umount", "-l", pin)
+	_ = os.Remove(pin)
+	if netnsExists() {
+		_, _ = run("umount", "-f", pin)
+		_ = os.Chmod(pin, 0600)
+		_ = os.Remove(pin)
+	}
+}
+
+// clearStaleNetnsPin 移除损坏或不可 exec 的 netns pin，避免 ip netns add 报 File exists。
+func clearStaleNetnsPin() {
+	if !netnsExists() {
+		return
+	}
+	if netnsExecUsable() {
+		return
+	}
+	forceRemoveNetnsPin()
 }
 
 func hostVethPeerBroken() bool {
@@ -166,6 +203,9 @@ func needsNetnsReset() bool {
 
 // PrepareForConnect 连接前强制完整清理并重建 netns/veth（避免孤儿 qwp0 残留）。
 func PrepareForConnect() error {
+	if netnsExists() && !netnsExecUsable() {
+		forceRemoveNetnsPin()
+	}
 	RestoreHostResolv()
 	ensureNetnsResolvFile()
 	scrubWarpStack()
@@ -205,17 +245,20 @@ func scrubWarpStack() {
 	StopHostWarpSvc()
 	_, _ = run("bash", "-lc", "pkill -9 -x warp-svc 2>/dev/null; pkill -9 -x warp-cli 2>/dev/null; true")
 	time.Sleep(200 * time.Millisecond)
-	if netnsUsable() {
+	// 损坏 netns 时先删 veth，否则 ip netns 子系统全局报错且无法 exec。
+	if !netnsUsable() {
+		forceDeleteLink(VethHost)
+		forceDeleteLink(VethNS)
+		clearStaleNetnsPin()
+	} else {
 		stopSvcInNetns()
-	} else if netnsExists() {
-		killProcsInNamedNetns()
+		deleteWarpLinksInNetns()
+		forceDeleteLink(VethHost)
+		forceDeleteLink(VethNS)
 	}
-	deleteWarpLinksInNetns()
-	forceDeleteLink(VethHost)
-	forceDeleteLink(VethNS)
 	removeNATRule(uplink)
 	forceDeleteNetns()
-	_ = os.Remove(filepath.Join("/var/run/netns", NetnsName))
+	clearStaleNetnsPin()
 	saveState(State{Netns: NetnsName, UplinkDev: uplink})
 }
 
@@ -238,16 +281,18 @@ func forceDeleteNetns() {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	if !netnsUsable() {
-		_ = os.Remove(filepath.Join("/var/run/netns", NetnsName))
-	}
+	forceRemoveNetnsPin()
 	forceDeleteLink(VethHost)
 	forceDeleteLink(VethNS)
 }
 
 func killProcsInNamedNetns() {
-	target, err := os.Readlink(filepath.Join("/var/run/netns", NetnsName))
+	pinStat, err := os.Stat(netnsPinPath())
 	if err != nil {
+		return
+	}
+	pinInfo, ok := pinStat.Sys().(*syscall.Stat_t)
+	if !ok {
 		return
 	}
 	entries, err := os.ReadDir("/proc")
@@ -262,8 +307,12 @@ func killProcsInNamedNetns() {
 		if err != nil {
 			continue
 		}
-		ns, err := os.Readlink(filepath.Join("/proc", e.Name(), "ns/net"))
-		if err != nil || ns != target {
+		procStat, err := os.Stat(filepath.Join("/proc", e.Name(), "ns/net"))
+		if err != nil {
+			continue
+		}
+		procInfo, ok := procStat.Sys().(*syscall.Stat_t)
+		if !ok || procInfo.Dev != pinInfo.Dev || procInfo.Ino != pinInfo.Ino {
 			continue
 		}
 		_, _ = exec.Command("kill", "-9", strconv.Itoa(pid)).CombinedOutput()
@@ -441,14 +490,31 @@ func Ensure(uplink string) error {
 	return lastErr
 }
 
-func ensureNetnsVeth(uplink string) error {
-	if !netnsExists() {
-		if out, err := run("ip", "netns", "add", NetnsName); err != nil {
-			return fmt.Errorf("ip netns add: %s %w", strings.TrimSpace(string(out)), err)
+func recreateNetnsPin() error {
+	forceRemoveNetnsPin()
+	out, err := run("ip", "netns", "add", NetnsName)
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, "File exists") || strings.Contains(err.Error(), "exists") {
+			forceRemoveNetnsPin()
+			out, err = run("ip", "netns", "add", NetnsName)
+			msg = strings.TrimSpace(string(out))
+		}
+		if err != nil {
+			forceRemoveNetnsPin()
+			return fmt.Errorf("ip netns add: %s %w", msg, err)
 		}
 	}
-	if !netnsUsable() {
+	if !netnsExecUsable() {
+		forceRemoveNetnsPin()
 		return fmt.Errorf("warp netns %q exists but is not usable", NetnsName)
+	}
+	return nil
+}
+
+func ensureNetnsVeth(uplink string) error {
+	if err := recreateNetnsPin(); err != nil {
+		return err
 	}
 	_, _ = netnsExec("ip", "link", "set", "lo", "up")
 	if ifaceSysfsExists(VethHost) {
@@ -530,9 +596,16 @@ func enforceNetnsBaseline() {
 	ensureNetnsBypassRules()
 }
 
+const (
+	warpConnectCLIAttempts = 2
+	warpStablePollInterval = 250 * time.Millisecond
+	warpStablePollMax      = 16 // ~4s per CLI connect attempt
+	warpStableNeedHits     = 3  // ~750ms consecutive connected
+)
+
 func connectWarpWithRecovery() error {
 	var last string
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < warpConnectCLIAttempts; attempt++ {
 		enforceNetnsBaseline()
 		if out, err := netnsExec(warpCLI, "--accept-tos", "connect"); err != nil {
 			last = strings.TrimSpace(string(out))
@@ -543,8 +616,10 @@ func connectWarpWithRecovery() error {
 		if out, err := netnsExec(warpCLI, "--accept-tos", "status"); err == nil {
 			last = strings.TrimSpace(string(out))
 		}
-		_, _ = netnsExec(warpCLI, "--accept-tos", "disconnect")
-		time.Sleep(400 * time.Millisecond)
+		if attempt+1 < warpConnectCLIAttempts {
+			_, _ = netnsExec(warpCLI, "--accept-tos", "disconnect")
+			time.Sleep(300 * time.Millisecond)
+		}
 	}
 	if last == "" {
 		last = "daemon reports no network"
@@ -554,12 +629,12 @@ func connectWarpWithRecovery() error {
 
 func netnsWarpConnectedStable() bool {
 	consecutive := 0
-	for i := 0; i < 80; i++ {
-		time.Sleep(250 * time.Millisecond)
+	for i := 0; i < warpStablePollMax; i++ {
+		time.Sleep(warpStablePollInterval)
 		iface := warpIfaceInNetns()
 		if out, err := netnsExec(warpCLI, "--accept-tos", "status"); err == nil && WarpStatusConnected(string(out)) && iface != "" {
 			consecutive++
-			if consecutive >= 8 {
+			if consecutive >= warpStableNeedHits {
 				return true
 			}
 			continue
@@ -670,17 +745,21 @@ func connectedStackRecoverable() bool {
 	if OpActive() {
 		return true
 	}
+	if !netnsUsable() {
+		return false
+	}
 	st := loadState()
 	if linkExists(VethHost) || st.Connected {
-		if netnsExists() {
-			return ServiceRunning() || st.Connected || netnsUsable()
-		}
+		return ServiceRunning() || st.Connected
 	}
 	return false
 }
 
 // TryRepairConnectedNetns 在策略/nft 重载后尝试修复 veth/netns，避免误删 qosnat2-warp。
 func TryRepairConnectedNetns() error {
+	if OpActive() {
+		return nil
+	}
 	st := loadState()
 	uplink := strings.TrimSpace(st.UplinkDev)
 	if uplink == "" {
@@ -739,6 +818,10 @@ func Reconcile() {
 
 // ReconcileAfterWanLink 在 applyWarpWanLink 后校验 netns 仍可用。
 func ReconcileAfterWanLink() error {
+	if OpActive() {
+		EnsureHostNATOnly()
+		return nil
+	}
 	EnsureHostNATOnly()
 	if needsNetnsReset() {
 		if connectedStackRecoverable() {
@@ -876,6 +959,18 @@ func applyWarpLicense(licenseKey string) error {
 	return nil
 }
 
+// ApplyLicense runs warp-cli registration license in the WARP netns (WARP+ upgrade; same as warp-go --update --license).
+func ApplyLicense(licenseKey string) error {
+	if !NetnsHealthy() {
+		return fmt.Errorf("warp netns is not healthy")
+	}
+	if err := applyWarpLicense(licenseKey); err != nil {
+		return err
+	}
+	ClearExitInfoCache()
+	return nil
+}
+
 // DeleteRegistration 清除 netns 内 warp-cli 注册（无 License 时便于重新 registration new）。
 func DeleteRegistration() {
 	if !NetnsHealthy() {
@@ -890,12 +985,6 @@ func Connect(licenseKey string) (string, error) {
 	if err := PrepareForConnect(); err != nil {
 		return "", err
 	}
-	ok := false
-	defer func() {
-		if !ok {
-			scrubWarpStack()
-		}
-	}()
 	uplink := mainUplinkDev()
 	pid, err := startSvcInNetns()
 	if err != nil {
@@ -920,7 +1009,7 @@ func Connect(licenseKey string) (string, error) {
 		return "", fmt.Errorf("restore veth after warp connect: %w", err)
 	}
 	var iface string
-	for i := 0; i < 25; i++ {
+	for i := 0; i < 15; i++ {
 		time.Sleep(400 * time.Millisecond)
 		iface = warpIfaceInNetns()
 		if iface != "" {
@@ -938,7 +1027,7 @@ func Connect(licenseKey string) (string, error) {
 		return "", fmt.Errorf("restore veth after warp gateway nat: %w", err)
 	}
 	enforceNetnsBaseline()
-	if !NetnsHealthy() {
+	if !netnsHealthyAfterConnect() {
 		return "", fmt.Errorf("warp netns unhealthy after tunnel up")
 	}
 	st := loadState()
@@ -947,8 +1036,17 @@ func Connect(licenseKey string) (string, error) {
 	st.Connected = true
 	st.UplinkDev = uplink
 	saveState(st)
-	ok = true
 	return VethHost, nil
+}
+
+func netnsHealthyAfterConnect() bool {
+	for i := 0; i < 6; i++ {
+		if NetnsHealthy() {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return NetnsHealthy()
 }
 
 // Disconnect 断开 WARP 并完整清理 netns/veth。

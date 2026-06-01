@@ -335,11 +335,15 @@ function openConfirm(action) {
   confirmOpen.value = true
 }
 
-function closeConfirm() {
-  if (confirmSubmitting.value) return
+function resetConfirmModal() {
   confirmOpen.value = false
   confirmAction.value = ''
   confirmError.value = ''
+}
+
+function closeConfirm() {
+  if (confirmSubmitting.value) return
+  resetConfirmModal()
 }
 
 async function finishSystemSave(res, previousPort, wasTlsActive) {
@@ -445,12 +449,12 @@ async function handleConfirm(password) {
         break
     }
     if (!portSwitching.value) {
-      closeConfirm()
+      resetConfirmModal()
     }
   } catch (e) {
     confirmError.value = e.data?.error || e.message
     if (confirmAction.value === 'version' && e.data?.job) {
-      closeConfirm()
+      resetConfirmModal()
       applyVersionSwitchJob(e.data.job)
     }
   } finally {

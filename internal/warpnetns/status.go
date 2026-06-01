@@ -17,5 +17,8 @@ func WarpStatusConnected(raw string) bool {
 	if strings.Contains(low, "status update: connected") {
 		return true
 	}
+	if strings.Contains(low, "invalid argument") || strings.Contains(low, "no such file") {
+		return false
+	}
 	return strings.Contains(low, "connected")
 }

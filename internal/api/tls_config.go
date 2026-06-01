@@ -129,6 +129,37 @@ func removeTLSFiles() {
 	_ = os.Remove(defaultTLSKeyPath)
 }
 
+// ReconcileTLSOnBoot 若 state 启用了 HTTPS 但 env 未配置 TLS 路径（例如 env 被手改），从磁盘或托管证书库恢复。
+func (srv *Server) ReconcileTLSOnBoot() {
+	st := srv.store.Get()
+	if !st.System.TLSEnabled {
+		return
+	}
+	if srv.tlsActive() {
+		return
+	}
+	if tlsFileExists(defaultTLSCertPath) && tlsFileExists(defaultTLSKeyPath) {
+		srv.env.TLSCert = defaultTLSCertPath
+		srv.env.TLSKey = defaultTLSKeyPath
+		if err := writeRuntimeEnvMerged(srv.env); err != nil {
+			log.Printf("tls boot reconcile: write env: %v", err)
+			return
+		}
+		log.Printf("tls boot reconcile: restored HTTPS (%s)", defaultTLSCertPath)
+		return
+	}
+	certID := strings.TrimSpace(st.System.TLSManagedCertID)
+	if certID == "" {
+		log.Printf("tls boot reconcile: tls_enabled but no cert at %s", defaultTLSCertPath)
+		return
+	}
+	if _, err := srv.applyTLSFromManagedCertID(certID); err != nil {
+		log.Printf("tls boot reconcile: managed cert %s: %v", certID, err)
+		return
+	}
+	log.Printf("tls boot reconcile: restored HTTPS from managed cert %s", certID)
+}
+
 // applyTLS 写入证书、更新 env，并在响应返回后异步切换 HTTP/HTTPS 监听（不重启 qosnatd）。
 // 仅更新证书文件且模式不变时，tlsCertReloader 按 mtime 加载，可跳过监听重建。
 func (srv *Server) applyTLS(enabled bool, certPEM, keyPEM string) (needsRestart bool, err error) {

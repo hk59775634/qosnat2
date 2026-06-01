@@ -47,6 +47,9 @@ func (srv *Server) tryReloadNft() string {
 
 func (srv *Server) reconcileWarpAfterNft() {
 	warpnetns.ReconcileHostNAT()
+	if warpnetns.OpActive() {
+		return
+	}
 	if warpnetns.IsConnected() {
 		_ = warpnetns.ReconcileAfterWanLink()
 	}

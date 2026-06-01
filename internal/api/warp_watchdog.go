@@ -15,6 +15,7 @@ func (srv *Server) startWarpWatchdog() {
 	if srv.warpWatchCancel != nil {
 		return
 	}
+	clearStaleWarpTaskOnBoot()
 	ctx, cancel := context.WithCancel(context.Background())
 	srv.warpWatchCancel = cancel
 	go func() {
@@ -38,13 +39,16 @@ func (srv *Server) warpWatchdogTick() {
 	if !commandExists("warp-cli") {
 		return
 	}
+	if !warpnetns.OpActive() && warpnetns.NeedsReset() && !warpnetns.IsConnected() {
+		warpnetns.ResetBroken()
+	}
 	warpnetns.EnsureHostNATOnly()
 	if warpnetns.IsConnected() {
 		warpnetns.RefreshConnectedState()
 		srv.syncWarpStoreWhenEnabled()
 		return
 	}
-	if warpnetns.NetnsExists() && warpnetns.ServiceRunning() {
+	if !warpnetns.OpActive() && warpnetns.NetnsExists() && warpnetns.ServiceRunning() {
 		_ = warpnetns.TryRepairConnectedNetns()
 		if warpnetns.IsConnected() {
 			iface := warpHostIface()
@@ -95,8 +99,14 @@ func (srv *Server) ensureWarpTunnelAsync(reason string) {
 		return
 	}
 	st := getWarpTaskStatus()
-	if st.State == warpInstallStateRunning && st.Op == warpTaskOpDisconnect {
+	if st.State == warpInstallStateRunning {
 		return
+	}
+	// 刚失败不久时留给用户/UI 一次干净重试，避免与手动「启用」并发拆 netns。
+	if st.State == warpInstallStateFailed && st.FinishedAt != "" {
+		if t, err := time.Parse(time.RFC3339, st.FinishedAt); err == nil && time.Since(t) < 45*time.Second {
+			return
+		}
 	}
 	if err := srv.startWarpConnectAsync(nil); err != nil {
 		if reason != "" {

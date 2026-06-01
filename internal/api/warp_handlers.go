@@ -49,7 +49,7 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 	installed := commandExists("warp-cli")
 	netnsHealthy := warpnetns.NetnsHealthy()
 	service := warpnetns.ServiceRunning()
-	if !netnsHealthy && warpnetns.NetnsExists() && (service || warpnetns.IsConnected()) {
+	if !warpnetns.OpActive() && !netnsHealthy && warpnetns.NetnsExists() && (service || warpnetns.IsConnected()) {
 		_ = warpnetns.TryRepairConnectedNetns()
 		netnsHealthy = warpnetns.NetnsHealthy()
 	}
@@ -170,6 +170,49 @@ func (srv *Server) handleNetworkWarpLicenseDelete(w http.ResponseWriter, r *http
 		"warp_license_key":     "",
 		"warp_license_key_set": false,
 	})
+}
+
+func (srv *Server) handleNetworkWarpLicenseApply(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	if os.Getuid() != 0 {
+		writeForbidden(w, "", "apply license requires root")
+		return
+	}
+	if !commandExists("warp-cli") {
+		writeBadRequest(w, "warp not installed")
+		return
+	}
+	key := strings.TrimSpace(srv.store.Get().Network.WarpLicenseKey)
+	if key == "" {
+		writeBadRequest(w, "no license key saved")
+		return
+	}
+	if !warpnetns.NetnsHealthy() {
+		writeBadRequest(w, "WARP netns is not healthy; connect WARP first")
+		return
+	}
+	if err := warpnetns.ApplyLicense(key); err != nil {
+		if isWarpLicenseError(err) {
+			writeBadRequest(w, strings.TrimPrefix(err.Error(), "warp license: "))
+			return
+		}
+		writeInternalError(w, err.Error())
+		return
+	}
+	srv.auditLog(r, "network.warp.license.apply", "")
+	resp := map[string]any{
+		"ok":                   true,
+		"message":              "WARP+ license applied",
+		"warp_license_key":     key,
+		"warp_license_key_set": true,
+	}
+	if warpnetns.IsConnected() {
+		resp["exit_info"] = warpnetns.GetExitInfo(true)
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (srv *Server) handleNetworkWarpInstallStatus(w http.ResponseWriter, r *http.Request) {
@@ -515,12 +558,21 @@ func warpConnectedFromStatus(raw string) bool {
 	return warpnetns.WarpStatusConnected(raw)
 }
 
-func waitWarpHealthyStable(samples int, interval time.Duration, needConsecutive int) (bool, string) {
+// waitWarpConnectedStable 仅确认 warp-cli 已 Connected（不强制 NetnsHealthy，避免 veth 瞬时抖动导致长时间重试）。
+func waitWarpConnectedStable(samples int, interval time.Duration, needConsecutive int) (bool, string) {
 	last := ""
 	okStreak := 0
 	for i := 0; i < samples; i++ {
-		last = cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
-		if warpConnectedFromStatus(last) {
+		out, err := exec.Command("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status").CombinedOutput()
+		last = strings.TrimSpace(string(out))
+		if err != nil {
+			if last == "" {
+				last = err.Error()
+			} else {
+				last = last + " (" + err.Error() + ")"
+			}
+			okStreak = 0
+		} else if warpConnectedFromStatus(last) {
 			okStreak++
 			if okStreak >= needConsecutive {
 				return true, last
@@ -528,7 +580,9 @@ func waitWarpHealthyStable(samples int, interval time.Duration, needConsecutive 
 		} else {
 			okStreak = 0
 		}
-		time.Sleep(interval)
+		if i+1 < samples {
+			time.Sleep(interval)
+		}
 	}
 	return false, last
 }

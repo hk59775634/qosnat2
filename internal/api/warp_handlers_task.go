@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ const (
 	warpTaskOpDisconnect = "disconnect"
 
 	warpTaskStatusFile = "/var/lib/qosnat2/warp-task-status.json"
+	warpTaskTimeout = 90 * time.Second
 )
 
 type warpTaskStatus struct {
@@ -65,14 +67,36 @@ func finishWarpTask(started, op, state, msg string, result map[string]any) {
 	saveWarpTaskStatus(st)
 }
 
+func expireStaleWarpTaskIfNeeded(st warpTaskStatus) warpTaskStatus {
+	if st.State != warpInstallStateRunning || st.StartedAt == "" || warpTaskRunning {
+		return st
+	}
+	t, err := time.Parse(time.RFC3339, st.StartedAt)
+	if err != nil || time.Since(t) < warpTaskTimeout {
+		return st
+	}
+	finishWarpTask(st.StartedAt, st.Op, warpInstallStateFailed, "warp task expired (stale status)", nil)
+	return loadWarpTaskStatus()
+}
+
 func getWarpTaskStatus() warpTaskStatus {
 	warpTaskMu.Lock()
 	defer warpTaskMu.Unlock()
 	st := loadWarpTaskStatus()
+	st = expireStaleWarpTaskIfNeeded(st)
 	if warpTaskRunning && st.State != warpInstallStateRunning {
 		st.State = warpInstallStateRunning
 	}
 	return st
+}
+
+// clearStaleWarpTaskOnBoot 服务重启后清除残留的 running 任务状态，避免 UI 永久卡在连接中。
+func clearStaleWarpTaskOnBoot() {
+	st := loadWarpTaskStatus()
+	if st.State != warpInstallStateRunning {
+		return
+	}
+	finishWarpTask(st.StartedAt, st.Op, warpInstallStateFailed, "interrupted by qosnatd restart", nil)
 }
 
 func (srv *Server) startWarpTask(op string, r *http.Request, run func() (map[string]any, error)) error {
@@ -97,7 +121,27 @@ func (srv *Server) startWarpTask(op string, r *http.Request, run func() (map[str
 			Message:   "running",
 			StartedAt: started,
 		})
-		result, err := run()
+		deadline := time.After(warpTaskTimeout)
+		type taskResult struct {
+			result map[string]any
+			err    error
+		}
+		ch := make(chan taskResult, 1)
+		go func() {
+			r, e := run()
+			ch <- taskResult{r, e}
+		}()
+		var result map[string]any
+		var err error
+		select {
+		case tr := <-ch:
+			result, err = tr.result, tr.err
+		case <-deadline:
+			if op == warpTaskOpConnect {
+				warpnetns.ScrubAfterFailedConnect()
+			}
+			err = fmt.Errorf("warp %s timed out after %s", op, warpTaskTimeout)
+		}
 		if err != nil {
 			if result == nil {
 				result = map[string]any{}
@@ -187,12 +231,10 @@ func (srv *Server) runWarpConnect() (map[string]any, error) {
 				store.SetWarpEnabled(st, false)
 			})
 			_ = srv.store.Save()
-		}
-		if !warpnetns.RecoverQuick() {
 			warpnetns.ScrubAfterFailedConnect()
 			return nil, fmt.Errorf("%s", err.Error())
 		}
-		if !warpnetns.IsConnected() {
+		if !warpnetns.RecoverQuick() {
 			warpnetns.ScrubAfterFailedConnect()
 			return nil, fmt.Errorf("%s", err.Error())
 		}
@@ -201,46 +243,48 @@ func (srv *Server) runWarpConnect() (map[string]any, error) {
 			iface = "qwp0"
 		}
 	}
+	if iface == "" {
+		iface = warpnetns.HostInterface()
+	}
+	if iface == "" {
+		iface = "qwp0"
+	}
 	statusNow := cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
 	if !warpConnectedFromStatus(statusNow) {
-		if warpnetns.RecoverQuick() {
-			iface = warpnetns.HostInterface()
-			if iface == "" {
-				iface = "qwp0"
-			}
-			statusNow = cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
-			if !warpConnectedFromStatus(statusNow) {
-				warpnetns.ScrubAfterFailedConnect()
-				return nil, fmt.Errorf("warp recover completed but tunnel is still unhealthy")
-			}
-		} else {
-			warpnetns.ScrubAfterFailedConnect()
-			return nil, fmt.Errorf("warp connect reported success but tunnel is not healthy")
-		}
+		warpnetns.ScrubAfterFailedConnect()
+		return nil, fmt.Errorf("warp connect finished but cli status is not connected: %s", statusNow)
 	}
-	stable, finalStatus := waitWarpHealthyStable(8, 1*time.Second, 3)
+	stable, finalStatus := waitWarpConnectedStable(4, 500*time.Millisecond, 2)
 	if !stable {
 		warpnetns.ScrubAfterFailedConnect()
 		return map[string]any{"final_status": finalStatus},
-			fmt.Errorf("warp connected transiently but did not remain healthy")
+			fmt.Errorf("warp connected transiently but did not remain connected")
 	}
 	statusNow = finalStatus
+	policyWarn := ""
 	if err := srv.applyWarpPoliciesAfterConnect(iface); err != nil {
-		srv.rollbackFailedWarpConnect()
-		return nil, fmt.Errorf("warp connected but policy apply failed: %s", err.Error())
-	}
-	if err := verifyWarpTunnelHealthy(); err != nil {
-		srv.rollbackFailedWarpConnect()
-		return nil, fmt.Errorf("warp policies applied but tunnel is unhealthy: %s", err.Error())
+		policyWarn = err.Error()
+		log.Printf("warp connect: policy apply: %v", err)
+	} else if err := verifyWarpTunnelHealthy(); err != nil {
+		policyWarn = err.Error()
+		log.Printf("warp connect: post-policy health: %v", err)
 	}
 	statusNow = cmdOutput("ip", "netns", "exec", warpnetns.NetnsName, "warp-cli", "--accept-tos", "status")
+	if !warpConnectedFromStatus(statusNow) {
+		warpnetns.ScrubAfterFailedConnect()
+		return nil, fmt.Errorf("warp tunnel lost after policy apply: %s", statusNow)
+	}
 	warpnetns.ClearExitInfoCache()
+	msg := "WARP 已在隔离网络命名空间中连接，主路由未改变"
+	if policyWarn != "" {
+		msg = msg + "（策略应用警告: " + policyWarn + "）"
+	}
 	return map[string]any{
 		"ok":        true,
 		"interface": iface,
 		"netns":     warpnetns.NetnsName,
 		"wan_link":  store.WarpWanLink(iface),
-		"message":   "WARP 已在隔离网络命名空间中连接，主路由未改变",
+		"message":   msg,
 		"health": map[string]any{
 			"connected":       warpConnectedFromStatus(statusNow),
 			"service_running": warpnetns.ServiceRunning(),

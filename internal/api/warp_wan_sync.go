@@ -24,7 +24,10 @@ func (srv *Server) applyWarpWanLink(device string) error {
 	}
 	// 写入 qwp0 出站 masquerade 等 nft 规则；加载后 ReconcileHostNAT 回补 netns NAT/bypass。
 	if srv.setupComplete() {
-		if err := srv.reloadNft(); err != nil {
+		// 连接任务进行中勿 flush 全表 nft（会破坏 netns/veth）；仅回补 WARP NAT/bypass。
+		if warpnetns.OpActive() {
+			warpnetns.EnsureHostNATOnly()
+		} else if err := srv.reloadNft(); err != nil {
 			return err
 		}
 	} else {
@@ -97,7 +100,7 @@ func (srv *Server) reconcileWarpStoreState() {
 	}
 	iface := warpHostIface()
 	if warpnetns.IsConnected() || (warpnetns.NetnsExists() && warpnetns.ServiceRunning()) {
-		if !warpnetns.IsConnected() {
+		if !warpnetns.OpActive() && !warpnetns.IsConnected() {
 			_ = warpnetns.TryRepairConnectedNetns()
 		}
 		if i := warpnetns.HostInterface(); i != "" {

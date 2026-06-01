@@ -369,6 +369,22 @@ components:
         github_tag: { type: string, example: v2026052801 }
         prerelease: { type: boolean }
         published_at: { type: string, format: date-time }
+    SystemVersionSwitchJob:
+      type: object
+      description: 版本切换后台任务状态（持久化于 /var/lib/qosnat2/version-switch-status.json）
+      properties:
+        state:
+          type: string
+          enum: [idle, running, ok, failed]
+          description: idle=无任务；running=下载/安装中；ok=成功（服务可能正在重启）；failed=失败
+        message: { type: string, description: 人类可读状态说明 }
+        target_tag: { type: string, example: '2026052801', description: 目标版本号 }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        result:
+          type: object
+          additionalProperties: true
+          description: 成功时附加字段（如 tag、message）
     SystemVersionStatus:
       type: object
       properties:
@@ -381,12 +397,26 @@ components:
         releases:
           type: array
           items: { $ref: '#/components/schemas/ReleaseVersionItem' }
+        switch_task:
+          $ref: '#/components/schemas/SystemVersionSwitchJob'
+          description: 当前或最近一次版本切换任务（与 GET /system/version/switch/status 相同结构）
     SystemVersionSwitchPut:
       type: object
-      required: [tag, current_password]
+      required: [tag]
       properties:
-        tag: { type: string, example: '2026052801', description: 10 位版本号 }
-        current_password: { type: string }
+        tag: { type: string, example: '2026052801', description: 10 位版本号 YYYYMMDDNN }
+        current_password:
+          type: string
+          description: |
+            管理员当前密码。若已通过 POST /system/version/switch/verify 在同一会话内短时授权（约 2 分钟），
+            可省略本字段；否则必填。
+    SystemVersionSwitchAccepted:
+      type: object
+      properties:
+        ok: { type: boolean }
+        message: { type: string, example: 版本切换已在后台开始 }
+        tag: { type: string, example: '2026052801' }
+        job: { $ref: '#/components/schemas/SystemVersionSwitchJob' }
     OCServInstallPut:
       type: object
       properties:
@@ -1849,50 +1879,100 @@ paths:
     post:
       tags: [system]
       summary: 下载并切换到指定 release 版本（完成后重启 qosnatd）
+      description: |
+        需要 root 运行 qosnatd。推荐流程：先 POST `/system/version/switch/verify` 验证密码，
+        再 POST 本接口仅传 `tag`；verify 为同一会话 Cookie 授予约 2 分钟的一次性授权。
+        任务异步执行，通过 `job` 或 GET `/system/version/switch/status` 轮询进度。
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/SystemVersionSwitchPut'
       responses:
         '202':
+          description: 任务已入队
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok: { type: boolean }
-                  message: { type: string }
-                  tag: { type: string }
+                $ref: '#/components/schemas/SystemVersionSwitchAccepted'
         '403':
+          description: 非 root、密码未验证或口令错误
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '409':
+          description: 已有版本切换任务在运行
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+                  - type: object
+                    properties:
+                      job: { $ref: '#/components/schemas/SystemVersionSwitchJob' }
 
   /api/v1/system/version/switch/status:
     get:
       tags: [system]
       summary: 版本切换任务状态
+      description: 返回持久化任务状态；若进程内任务已结束但状态文件仍为 running，会自动 reconcile。
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemVersionSwitchJob'
+
+  /api/v1/system/version/switch/reset:
+    post:
+      tags: [system]
+      summary: 清除版本切换任务状态
+      description: 将任务状态重置为 idle，便于 UI 关闭任务面板后再次切换。running 任务进行中时返回 409。
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
       responses:
         '200':
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  ok: { type: boolean }
+                  job: { $ref: '#/components/schemas/SystemVersionSwitchJob' }
+        '409':
+          description: 任务仍在运行
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Error'
+                  - type: object
+                    properties:
+                      job: { $ref: '#/components/schemas/SystemVersionSwitchJob' }
 
   /api/v1/system/version/switch/verify:
     post:
       tags: [system]
       summary: 验证管理员密码以短时授权版本切换
+      description: |
+        校验当前管理员密码后，为调用方会话 Cookie 授予约 2 分钟的一次性授权；
+        随后 POST `/system/version/switch` 可仅提交 `tag`（无需再次传密码）。
+        授权在首次成功切换请求时被 consume，不可重放。
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               required: [current_password]
               properties:
-                current_password: { type: string }
+                current_password: { type: string, format: password }
       responses:
         '200':
           content:
@@ -1902,6 +1982,7 @@ paths:
                 properties:
                   ok: { type: boolean }
         '403':
+          description: 密码错误
           content:
             application/json:
               schema:
