@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060102",
+      "tag": "v2026060102",
+      "published_at": "2026-06-01T12:34:40Z",
+      "summary": "版本切换支持选择下载线路（直连、GitHub 代理、多 WAN 出口）；版本管理页布局与 rebuild 脚本改进。"
+    },
+    {
       "id": "2026060101",
       "tag": "v2026060101",
       "published_at": "2026-06-01T08:53:21Z",
@@ -25,12 +31,6 @@
       "tag": "v2026053121",
       "published_at": "2026-05-31T17:30:01Z",
       "summary": "修复断开 WARP 后看门狗自动重连，断开期间可填写 License Key"
-    },
-    {
-      "id": "2026053120",
-      "tag": "v2026053120",
-      "published_at": "2026-05-31T17:21:19Z",
-      "summary": "WARP 显示服务类型并支持 License Key 激活 WARP+；改端口、HTTPS 与版本切换统一密码确认"
     }
   ]
 }
