@@ -127,6 +127,21 @@ func flushRouteCache() {
 	_ = exec.Command("ip", "route", "flush", "cache").Run()
 }
 
+// AddDestinationRules 为指定目的 CIDR 添加策略路由（match=destination）。
+func AddDestinationRules(cidr string, table, priority int) error {
+	return addRules(cidr, "destination", table, priority)
+}
+
+// DeleteDestinationRules 删除 AddDestinationRules 写入的规则。
+func DeleteDestinationRules(cidr string, table, priority int) {
+	delRules(cidr, "destination", table, priority)
+}
+
+// FlushRouteCache 刷新路由缓存。
+func FlushRouteCache() {
+	flushRouteCache()
+}
+
 // ListRules 返回当前 ip rule（JSON 解析，供 API/调试）
 func ListRules() ([]map[string]any, error) {
 	out, err := exec.Command("ip", "-json", "rule", "list").Output()

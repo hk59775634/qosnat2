@@ -400,11 +400,37 @@ components:
         switch_task:
           $ref: '#/components/schemas/SystemVersionSwitchJob'
           description: 当前或最近一次版本切换任务（与 GET /system/version/switch/status 相同结构）
+        download_routes:
+          type: array
+          description: 可选下载线路（含多 WAN 出口，按已配置链路动态生成）
+          items: { $ref: '#/components/schemas/VersionDownloadRoute' }
+        default_download_route:
+          type: string
+          example: direct
+          description: 默认下载线路 id
+    VersionDownloadRoute:
+      type: object
+      properties:
+        id:
+          type: string
+          enum: [direct, gh_proxy_v4, gh_proxy_cdn, wan_1, wan_2]
+        wan_index: { type: integer, description: 多 WAN 时出口序号 1 或 2 }
+        wan_link_id: { type: string }
+        wan_name: { type: string }
+        device: { type: string }
+        gateway: { type: string }
     SystemVersionSwitchPut:
       type: object
       required: [tag]
       properties:
         tag: { type: string, example: '2026052801', description: 10 位版本号 YYYYMMDDNN }
+        download_route:
+          type: string
+          enum: [direct, gh_proxy_v4, gh_proxy_cdn, wan_1, wan_2]
+          default: direct
+          description: |
+            下载线路：直连、gh-proxy 镜像，或多 WAN 出口（wan_1/wan_2 为按 Tier 排序的第 1/2 条非 WARP 链路；
+            切换前解析 GitHub 相关域名并添加临时目的地址策略，完成后自动删除）。
         current_password:
           type: string
           description: |
@@ -416,6 +442,7 @@ components:
         ok: { type: boolean }
         message: { type: string, example: 版本切换已在后台开始 }
         tag: { type: string, example: '2026052801' }
+        download_route: { type: string, example: direct }
         job: { $ref: '#/components/schemas/SystemVersionSwitchJob' }
     OCServInstallPut:
       type: object
@@ -1883,6 +1910,7 @@ paths:
         需要 root 运行 qosnatd。推荐流程：先 POST `/system/version/switch/verify` 验证密码，
         再 POST 本接口仅传 `tag`；verify 为同一会话 Cookie 授予约 2 分钟的一次性授权。
         任务异步执行，通过 `job` 或 GET `/system/version/switch/status` 轮询进度。
+        请求体可选 `download_route`（直连 / gh-proxy / 多 WAN 出口），见 GET `/system/version` 的 `download_routes`。
       requestBody:
         required: true
         content:

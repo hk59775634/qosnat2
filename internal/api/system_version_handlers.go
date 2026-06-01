@@ -27,12 +27,14 @@ func (srv *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 	entries, listErr := releasecatalog.ListEntries("qosnat2")
 	releases := releasecatalog.ToReleaseMaps(entries)
 	resp := map[string]any{
-		"binary_path":     qosnatBinPath,
-		"current_tag":     currentTag,
-		"current_version": currentVersion,
-		"root_required":   os.Getuid() == 0,
-		"releases":        releases,
-		"manifest_url":    releasecatalog.ManifestURL("qosnat2"),
+		"binary_path":      qosnatBinPath,
+		"current_tag":      currentTag,
+		"current_version":  currentVersion,
+		"root_required":    os.Getuid() == 0,
+		"releases":         releases,
+		"manifest_url":     releasecatalog.ManifestURL("qosnat2"),
+		"download_routes":  buildDownloadRouteOptions(srv.store.Get()),
+		"default_download_route": releasecatalog.RouteDirect,
 	}
 	if listErr != nil {
 		resp["list_error"] = listErr.Error()
@@ -93,6 +95,7 @@ func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Requ
 	var body struct {
 		Tag           string `json:"tag"`
 		CurrentPasswd string `json:"current_password"`
+		DownloadRoute string `json:"download_route"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeBadJSON(w)
@@ -107,12 +110,17 @@ func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Requ
 		writeBadRequest(w, "invalid version id (expected YYYYMMDDNN)")
 		return
 	}
+	downloadRoute := releasecatalog.NormalizeDownloadRoute(body.DownloadRoute)
+	if !releasecatalog.ValidDownloadRoute(downloadRoute) {
+		writeBadRequest(w, "invalid download_route")
+		return
+	}
 	authorized, viaGrant := srv.versionSwitchAuthorized(r, body.CurrentPasswd)
 	if !authorized {
 		writeForbidden(w, "", "password verification required; confirm in version switch dialog")
 		return
 	}
-	if err := srv.startVersionSwitchAsync(r, versionID); err != nil {
+	if err := srv.startVersionSwitchAsync(r, versionID, downloadRoute); err != nil {
 		if viaGrant {
 			srv.versionSwitchRegrant(r)
 		}
@@ -120,10 +128,11 @@ func (srv *Server) handleSystemVersionSwitch(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{
-		"ok":      true,
-		"message": "版本切换已在后台开始",
-		"tag":     versionID,
-		"job":     getVersionSwitchStatus(),
+		"ok":             true,
+		"message":        "版本切换已在后台开始",
+		"tag":            versionID,
+		"download_route": downloadRoute,
+		"job":            getVersionSwitchStatus(),
 	})
 }
 

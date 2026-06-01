@@ -110,7 +110,7 @@ func getVersionSwitchStatus() versionSwitchStatus {
 	return st
 }
 
-func (srv *Server) startVersionSwitchAsync(r *http.Request, versionID string) error {
+func (srv *Server) startVersionSwitchAsync(r *http.Request, versionID, downloadRoute string) error {
 	versionSwitchMu.Lock()
 	reconcileVersionSwitchStatusLocked()
 	if versionSwitchRunning {
@@ -133,13 +133,28 @@ func (srv *Server) startVersionSwitchAsync(r *http.Request, versionID string) er
 		started := time.Now().UTC().Format(time.RFC3339)
 		saveVersionSwitchStatus(versionSwitchStatus{
 			State:     warpInstallStateRunning,
-			Message:   "downloading release",
+			Message:   "preparing download route",
 			TargetTag: versionID,
 			StartedAt: started,
 		})
 
-		if err := releasecatalog.InstallReleaseBinary(versionID, qosnatBinPath); err != nil {
-			finishVersionSwitch(started, warpInstallStateFailed, err.Error(), versionID, nil)
+		st := srv.store.Get()
+		tempRules, err := applyVersionSwitchTempEgress(st, downloadRoute)
+		if err != nil {
+			finishVersionSwitch(started, warpInstallStateFailed, err.Error(), versionID, map[string]any{
+				"download_route": downloadRoute,
+			})
+			return
+		}
+		defer removeVersionSwitchTempEgress(tempRules)
+
+		patchVersionSwitchStatus(func(st *versionSwitchStatus) {
+			st.Message = "downloading release (" + downloadRoute + ")"
+		})
+		if err := releasecatalog.InstallReleaseBinary(versionID, qosnatBinPath, downloadRoute); err != nil {
+			finishVersionSwitch(started, warpInstallStateFailed, err.Error(), versionID, map[string]any{
+				"download_route": downloadRoute,
+			})
 			return
 		}
 		patchVersionSwitchStatus(func(st *versionSwitchStatus) {
@@ -155,9 +170,10 @@ func (srv *Server) startVersionSwitchAsync(r *http.Request, versionID string) er
 		})
 		srv.auditLog(r, "system.version.switch", versionID)
 		finishVersionSwitch(started, warpInstallStateOK, "upgrade completed, service is restarting", versionID, map[string]any{
-			"ok":      true,
-			"tag":     versionID,
-			"message": "版本切换完成，服务即将重启",
+			"ok":             true,
+			"tag":            versionID,
+			"download_route": downloadRoute,
+			"message":        "版本切换完成，服务即将重启",
 		})
 		cmd := exec.Command("bash", "-lc", "sleep 1; systemctl restart qosnatd.service")
 		_ = cmd.Start()

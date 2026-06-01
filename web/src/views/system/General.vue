@@ -31,6 +31,7 @@ const warn = ref('')
 const acmeBusy = ref(false)
 const versionInfo = ref(null)
 const switchTag = ref('')
+const switchDownloadRoute = ref('direct')
 const versionSwitchJob = ref(null)
 const versionSwitchPoll = ref(null)
 const versionSwitchPollErrs = ref(0)
@@ -54,6 +55,30 @@ const selectedRelease = computed(() => {
   const tag = switchTag.value
   return (versionInfo.value?.releases || []).find((r) => r.tag === tag) || null
 })
+
+const downloadRouteOptions = computed(() => {
+  const routes = versionInfo.value?.download_routes || []
+  return routes.map((r) => ({
+    ...r,
+    label: downloadRouteLabel(r),
+  }))
+})
+
+function downloadRouteLabel(r) {
+  const id = r?.id || ''
+  if (id === 'direct') return t('system.general.downloadRouteDirect')
+  if (id === 'gh_proxy_v4') return t('system.general.downloadRouteGhV4')
+  if (id === 'gh_proxy_cdn') return t('system.general.downloadRouteGhCdn')
+  if (id === 'wan_1' || id === 'wan_2') {
+    return t('system.general.downloadRouteWan', {
+      index: r.wan_index || (id === 'wan_2' ? 2 : 1),
+      name: r.wan_name || 'WAN',
+      device: r.device || '—',
+      gateway: r.gateway || t('system.general.downloadRouteWanNoGw'),
+    })
+  }
+  return id
+}
 
 const activeTab = ref('basic')
 const generalTabs = computed(() => [
@@ -166,6 +191,9 @@ async function loadVersionInfo() {
   try {
     const v = await api.system.version.get()
     versionInfo.value = v
+    if (v?.default_download_route) {
+      switchDownloadRoute.value = v.default_download_route
+    }
     applyVersionSwitchJob(v?.switch_task)
     return v
   } catch {
@@ -611,7 +639,10 @@ async function executeVersionSwitch(password) {
     return
   }
   await api.system.version.switchVerify({ current_password: password })
-  const r = await api.system.version.switch({ tag: switchTag.value })
+  const r = await api.system.version.switch({
+    tag: switchTag.value,
+    download_route: switchDownloadRoute.value,
+  })
   const job = r?.job
   if (job?.state === 'ok') {
     applyVersionSwitchJob(job)
@@ -722,31 +753,50 @@ onUnmounted(() => {
           <p>{{ t('system.general.binaryPath') }}: <span class="font-mono">{{ versionInfo.binary_path }}</span></p>
           <p v-if="versionInfo.list_error" class="text-amber-700">{{ versionInfo.list_error }}</p>
         </div>
-        <div class="flex flex-wrap gap-2 items-end">
-          <label class="flex-1 min-w-[16rem]">
-            <span class="text-xs text-slate-500">{{ t('system.general.switchToVersion') }}</span>
-            <select v-model="switchTag" class="input-field mt-1 font-mono" :disabled="versionSwitchRunning || !versionInfo?.root_required">
+        <div class="space-y-4 max-w-2xl">
+          <div>
+            <label class="block text-xs text-slate-500">{{ t('system.general.downloadRoute') }}</label>
+            <select
+              v-model="switchDownloadRoute"
+              class="input-field mt-1 w-full text-sm"
+              :disabled="versionSwitchRunning || !versionInfo?.root_required"
+            >
+              <option v-for="opt in downloadRouteOptions" :key="opt.id" :value="opt.id">
+                {{ opt.label }}
+              </option>
+            </select>
+            <p class="text-xs text-slate-500 mt-1">{{ t('system.general.downloadRouteHint') }}</p>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500">{{ t('system.general.switchToVersion') }}</label>
+            <select
+              v-model="switchTag"
+              class="input-field mt-1 w-full font-mono text-sm"
+              :disabled="versionSwitchRunning || !versionInfo?.root_required"
+            >
               <option v-for="r in (versionInfo?.releases || [])" :key="r.tag" :value="r.tag">
                 {{ r.tag }}{{ r.summary ? ` — ${r.summary}` : '' }}{{ r.prerelease ? ' (pre)' : '' }}
               </option>
             </select>
-          </label>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="versionSwitchRunning || !versionInfo?.root_required"
-            @click="openVersionSwitchModal"
-          >
-            {{ versionSwitchRunning ? t('system.general.versionSwitching') : t('system.general.switchVersion') }}
-          </button>
-          <button
-            type="button"
-            class="btn-secondary"
-            :disabled="versionSwitchRunning"
-            @click="loadVersionInfo"
-          >
-            {{ t('common.refresh') }}
-          </button>
+          </div>
+          <div class="flex flex-wrap gap-2 pt-1">
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="versionSwitchRunning || !versionInfo?.root_required"
+              @click="openVersionSwitchModal"
+            >
+              {{ versionSwitchRunning ? t('system.general.versionSwitching') : t('system.general.switchVersion') }}
+            </button>
+            <button
+              type="button"
+              class="btn-secondary"
+              :disabled="versionSwitchRunning"
+              @click="loadVersionInfo"
+            >
+              {{ t('common.refresh') }}
+            </button>
+          </div>
         </div>
         <div
           v-if="selectedRelease && (selectedRelease.summary || releaseNotesText || releaseNotesLoading || releaseNotesErr)"

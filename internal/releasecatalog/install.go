@@ -11,9 +11,9 @@ import (
 	"strings"
 )
 
-// FetchReleaseArchive 下载 release 压缩包（直连 GitHub 失败时走 gh-proxy）。
-func FetchReleaseArchive(versionID string) ([]byte, string, error) {
-	urls := QosnatDownloadURLs(versionID)
+// FetchReleaseArchive 下载 release 压缩包。
+func FetchReleaseArchive(versionID, route string) ([]byte, string, error) {
+	urls := QosnatDownloadURLsForRoute(versionID, route)
 	if len(urls) == 0 {
 		return nil, "", fmt.Errorf("invalid version id")
 	}
@@ -21,8 +21,8 @@ func FetchReleaseArchive(versionID string) ([]byte, string, error) {
 }
 
 // InstallReleaseBinary 下载并安装指定版本的 qosnatd 与 BPF 对象。
-func InstallReleaseBinary(versionID, binPath string) error {
-	gz, _, err := FetchReleaseArchive(versionID)
+func InstallReleaseBinary(versionID, binPath, route string) error {
+	gz, _, err := FetchReleaseArchive(versionID, route)
 	if err != nil {
 		return err
 	}
