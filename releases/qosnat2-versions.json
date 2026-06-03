@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060301",
+      "tag": "v2026060301",
+      "published_at": "2026-06-03T03:35:19Z",
+      "summary": "修复整机重启后 NAT/路由偶发失效；启动 apply 更稳健（nft 优先、后台重试、二次 apply 兜底）。"
+    },
+    {
       "id": "2026060103",
       "tag": "v2026060103",
       "published_at": "2026-06-01T13:17:55Z",
@@ -25,12 +31,6 @@
       "tag": "v2026053123",
       "published_at": "2026-05-31T17:50:59Z",
       "summary": "WARP License Key 明文核对、删除 Key 停止错误重连，修复看门狗反复连接"
-    },
-    {
-      "id": "2026053122",
-      "tag": "v2026053122",
-      "published_at": "2026-05-31T17:34:46Z",
-      "summary": "WARP License Key 任意状态可编辑、独立保存，断开重连后生效"
     }
   ]
 }
