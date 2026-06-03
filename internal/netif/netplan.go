@@ -16,36 +16,37 @@ const NetplanConfigPath = "/etc/netplan/99-qosnat2.yaml"
 
 var netplanManagedDown []string
 
-// ApplyNetplan 根据 state 渲染并 netplan apply
-func ApplyNetplan(net store.NetworkState) error {
+// ApplyNetplan 根据 state 渲染并 netplan apply。applied 为 true 表示执行了 generate/apply。
+func ApplyNetplan(net store.NetworkState) (applied bool, err error) {
 	if _, err := exec.LookPath("netplan"); err != nil {
-		return fmt.Errorf("netplan not installed (apt install netplan.io)")
+		return false, fmt.Errorf("netplan not installed (apt install netplan.io)")
 	}
 	body, down, err := RenderNetplan(net)
 	if err != nil {
-		return err
+		return false, err
 	}
 	netplanManagedDown = down
 	if len(body) == 0 {
 		_ = os.Remove(NetplanConfigPath)
-	} else {
-		if err := os.MkdirAll(filepath.Dir(NetplanConfigPath), 0755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(NetplanConfigPath, body, 0644); err != nil {
-			return err
-		}
+		// 无托管接口/VLAN/tunnel 时不要 netplan apply，避免启动时打乱系统路由。
+		return false, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(NetplanConfigPath), 0755); err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(NetplanConfigPath, body, 0644); err != nil {
+		return false, err
 	}
 	if out, err := exec.Command("netplan", "generate").CombinedOutput(); err != nil {
-		return fmt.Errorf("netplan generate: %s %w", strings.TrimSpace(string(out)), err)
+		return false, fmt.Errorf("netplan generate: %s %w", strings.TrimSpace(string(out)), err)
 	}
 	if out, err := exec.Command("netplan", "apply").CombinedOutput(); err != nil {
-		return fmt.Errorf("netplan apply: %s %w", strings.TrimSpace(string(out)), err)
+		return false, fmt.Errorf("netplan apply: %s %w", strings.TrimSpace(string(out)), err)
 	}
 	for _, dev := range netplanManagedDown {
 		_, _ = exec.Command("ip", "link", "set", dev, "down").CombinedOutput()
 	}
-	return nil
+	return true, nil
 }
 
 // RenderNetplan 生成 YAML；无托管项时返回空 body

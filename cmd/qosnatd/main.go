@@ -71,9 +71,7 @@ func runServer() {
 	}
 	srv := api.New(env, st, bpfM)
 	srv.ReconcileTLSOnBoot()
-	if err := srv.ApplyAll(); err != nil {
-		log.Printf("apply on start: %v", err)
-	}
+	srv.ApplyAllOnBoot()
 	srv.StartBackground()
 	if err := srv.Listen(); err != nil {
 		log.Fatal(err)

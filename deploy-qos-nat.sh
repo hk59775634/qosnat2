@@ -289,6 +289,7 @@ After=network-online.target qosnatd.service
 [Service]
 Type=oneshot
 EnvironmentFile=${CONFIG_DIR}/env
+ExecStartPre=/bin/sleep 8
 ExecStart=${QOSNATD_BIN} apply-state
 RemainAfterExit=yes
 
@@ -324,6 +325,10 @@ cmd_start() {
     configure_ipssl_https
   fi
   systemctl restart qosnatd.service || systemctl start qosnatd.service || die "qosnatd 启动失败"
+  if command -v jq >/dev/null 2>&1 && [[ -f "${STATE_DIR}/state.json" ]] && jq -e '.setup_complete == true' "${STATE_DIR}/state.json" >/dev/null 2>&1; then
+    systemctl enable qos-nat.service 2>/dev/null || true
+    log "setup 已完成：已 enable qos-nat.service（重启后二次 apply-state）"
+  fi
   log "安装完成：仅 Web UI 已启动（数据面未加载，直至首次引导完成）"
   log "=========================================="
   log "初始管理员（请先登录，再完成 Web 引导）"

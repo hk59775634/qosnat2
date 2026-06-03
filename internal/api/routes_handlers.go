@@ -215,19 +215,29 @@ func (srv *Server) normalizeRouteInput(body store.RouteEntry) (store.RouteEntry,
 		return store.RouteEntry{}, errNeedGwOrDev()
 	}
 	entry := store.RouteEntry{
-		ID:      body.ID,
-		Dest:    dest,
-		Gateway: gw,
-		Device:  dev,
-		Table:   body.Table,
-		Metric:  body.Metric,
-		Scope:   strings.TrimSpace(body.Scope),
-		Comment: strings.TrimSpace(body.Comment),
-		Enabled: body.Enabled,
+		ID:       body.ID,
+		Dest:     dest,
+		Gateway:  gw,
+		Device:   dev,
+		Nexthops: append([]store.RouteNexthop(nil), body.Nexthops...),
+		Table:    body.Table,
+		Metric:   body.Metric,
+		Scope:    strings.TrimSpace(body.Scope),
+		Comment:  strings.TrimSpace(body.Comment),
+		Enabled:  body.Enabled,
 	}
 	if entry.ID == "" {
 		entry.Enabled = true
 		entry.ID = store.NewRouteID()
+	}
+	entry = route.InferRouteDevices(entry)
+	if entry.Device != "" && !route.LinkExists(entry.Device) {
+		return store.RouteEntry{}, errDeviceNotFound(entry.Device)
+	}
+	for _, nh := range entry.Nexthops {
+		if d := strings.TrimSpace(nh.Device); d != "" && !route.LinkExists(d) {
+			return store.RouteEntry{}, errDeviceNotFound(d)
+		}
 	}
 	return entry, nil
 }

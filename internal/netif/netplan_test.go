@@ -1,6 +1,7 @@
 package netif
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -38,5 +39,18 @@ func TestRenderNetplanEmpty(t *testing.T) {
 	}
 	if len(body) != 0 {
 		t.Fatalf("expected empty, got %q", body)
+	}
+}
+
+func TestApplyNetplanEmptySkipsGenerate(t *testing.T) {
+	if _, err := exec.LookPath("netplan"); err != nil {
+		t.Skip("netplan not installed")
+	}
+	applied, err := ApplyNetplan(store.NetworkState{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied {
+		t.Fatal("expected no netplan apply for empty state")
 	}
 }

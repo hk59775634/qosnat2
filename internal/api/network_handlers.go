@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
@@ -269,13 +268,6 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 		writeMethodNotAllowed(w)
 	}
 }
-
-func (srv *Server) applyNetworkVLANs() {
-	if err := srv.applyNetplan(); err != nil {
-		log.Printf("netplan apply: %v", err)
-	}
-}
-
 func (srv *Server) replayWanLinksOnBoot() {
 	warpnetns.Reconcile()
 	st := srv.store.Get()

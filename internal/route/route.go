@@ -89,6 +89,7 @@ func Apply(r store.RouteEntry) error {
 	if !r.Enabled {
 		return nil
 	}
+	r = InferRouteDevices(r)
 	args, err := buildReplaceArgs(r)
 	if err != nil {
 		return err

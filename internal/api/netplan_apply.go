@@ -63,7 +63,7 @@ func (srv *Server) applyNetplanWithRollback(beforeSave func(*store.State) error)
 			return fmt.Errorf("save state: %w", err)
 		}
 	}
-	if err := srv.applyNetplan(); err != nil {
+	if _, err := srv.applyNetplan(); err != nil {
 		srv.store.ReplaceState(prev)
 		if saveErr := srv.store.Save(); saveErr != nil {
 			return fmt.Errorf("netplan apply failed and revert save failed: %v (apply: %w)", saveErr, err)

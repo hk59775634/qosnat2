@@ -5,10 +5,11 @@ import (
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
-func (srv *Server) applyNetplan() error {
+func (srv *Server) applyNetplan() (bool, error) {
 	st := srv.store.Get()
-	if err := netif.ApplyNetplan(st.Network); err != nil {
-		return err
+	applied, err := netif.ApplyNetplan(st.Network)
+	if err != nil {
+		return applied, err
 	}
 	// 同步 VLAN 逻辑名
 	_ = srv.store.Update(func(st *store.State) {
@@ -26,7 +27,7 @@ func (srv *Server) applyNetplan() error {
 		}
 	})
 	if err := srv.store.Save(); err != nil {
-		return err
+		return applied, err
 	}
-	return nil
+	return applied, nil
 }

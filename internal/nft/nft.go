@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	RulesPath = "/etc/qosnat2/nftables-qosnat.nft"
-	TableName = "qosnat"
+	RulesPath       = "/etc/qosnat2/nftables-qosnat.nft"
+	RulesBackupPath = "/etc/qosnat2/nftables-qosnat.live.bak.nft"
+	TableName       = "qosnat"
 )
 
 // Config 运行期网卡名与管理端口（来自环境变量 / state）
@@ -238,7 +239,53 @@ func CheckRuleset(body string) error {
 	return nil
 }
 
-// Apply 生成、校验并加载 nftables
+// TableExists 报告 inet qosnat 表是否已加载。
+func TableExists() bool {
+	err := exec.Command("nft", "list", "table", "inet", TableName).Run()
+	return err == nil
+}
+
+func dumpLiveTable() string {
+	out, err := exec.Command("nft", "list", "table", "inet", TableName).CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return ""
+	}
+	return s + "\n"
+}
+
+func loadRulesetFile(path string) error {
+	out, err := exec.Command("nft", "-f", path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("nft load: %s %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func restoreLiveTable(backup string) error {
+	if strings.TrimSpace(backup) == "" {
+		return fmt.Errorf("no backup ruleset")
+	}
+	f, err := os.CreateTemp("", "qosnat-nft-restore-*.nft")
+	if err != nil {
+		return err
+	}
+	path := f.Name()
+	defer os.Remove(path)
+	if _, err := f.WriteString(backup); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return loadRulesetFile(path)
+}
+
+// Apply 生成、校验并加载 nftables；load 失败时尝试恢复先前 ruleset。
 func Apply(cfg Config, st store.State) error {
 	body, err := Render(cfg, st)
 	if err != nil {
@@ -247,11 +294,21 @@ func Apply(cfg Config, st store.State) error {
 	if err := CheckRuleset(body); err != nil {
 		return err
 	}
+	liveBackup := dumpLiveTable()
+	if liveBackup != "" {
+		_ = os.WriteFile(RulesBackupPath, []byte(liveBackup), 0644)
+	}
 	if err := WriteRulesFile(body); err != nil {
 		return err
 	}
-	if out, err := exec.Command("nft", "-f", RulesPath).CombinedOutput(); err != nil {
-		return fmt.Errorf("nft load: %s %w", strings.TrimSpace(string(out)), err)
+	if err := loadRulesetFile(RulesPath); err != nil {
+		if liveBackup != "" {
+			if revErr := restoreLiveTable(liveBackup); revErr != nil {
+				return fmt.Errorf("%v; restore previous ruleset: %v", err, revErr)
+			}
+			return fmt.Errorf("%v (previous ruleset restored)", err)
+		}
+		return err
 	}
 	return nil
 }

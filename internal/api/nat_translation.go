@@ -13,18 +13,27 @@ import (
 	"github.com/hk59775634/qosnat2/internal/unbound"
 )
 
-// applyNatStack nft + Jool + Unbound + dnsmasq（NAT64/NPTv6/DNS64 变更时）
+// applyNatStack nft + Jool + Unbound + dnsmasq（NAT64/NPTv6/DNS64 变更时；辅助组件失败则返回 error）
 func (srv *Server) applyNatStack() error {
-	return srv.applyNatStackWithRollback(nil)
+	return srv.applyNatStackWithRollbackOpts(nil, false)
+}
+
+// applyNatStackLenient 启动回放：nft 成功后 jool/unbound/dnsmasq 失败不阻断 NAT。
+func (srv *Server) applyNatStackLenient() error {
+	return srv.applyNatStackWithRollbackOpts(nil, true)
 }
 
 func (srv *Server) applyNatStackWithRollback(override *natStackSnapshot) error {
+	return srv.applyNatStackWithRollbackOpts(override, false)
+}
+
+func (srv *Server) applyNatStackWithRollbackOpts(override *natStackSnapshot, lenient bool) error {
 	return srv.withNftApply(func() error {
-		return srv.applyNatStackLocked(override)
+		return srv.applyNatStackLocked(override, lenient)
 	})
 }
 
-func (srv *Server) applyNatStackLocked(rollbackOverride *natStackSnapshot) (err error) {
+func (srv *Server) applyNatStackLocked(rollbackOverride *natStackSnapshot, lenient bool) (err error) {
 	start := time.Now()
 	rollback := srv.lastNatStackSnapshot()
 	if rollbackOverride != nil {
@@ -79,26 +88,43 @@ func (srv *Server) applyNatStackLocked(rollbackOverride *natStackSnapshot) (err 
 
 	if err := jool.Apply(st.Nat); err != nil {
 		status["last_error"] = err.Error()
-		return fmt.Errorf("jool: %w", err)
+		if lenient {
+			log.Printf("jool apply (non-fatal): %v", err)
+		} else {
+			return fmt.Errorf("jool: %w", err)
+		}
+	} else {
+		prog.jool = true
+		status["jool"] = true
 	}
-	prog.jool = true
-	status["jool"] = true
 
 	opts := srv.unboundOpts(st)
 	if err := unbound.Apply(st.Nat, opts); err != nil {
 		status["last_error"] = err.Error()
-		return fmt.Errorf("unbound: %w", err)
+		if lenient {
+			log.Printf("unbound apply (non-fatal): %v", err)
+		} else {
+			return fmt.Errorf("unbound: %w", err)
+		}
+	} else {
+		prog.unbound = true
+		status["unbound"] = true
 	}
-	prog.unbound = true
-	status["unbound"] = true
 
 	if err := srv.applyDNSMasqNAT(st); err != nil {
 		status["last_error"] = err.Error()
-		return fmt.Errorf("dnsmasq: %w", err)
+		if lenient {
+			log.Printf("dnsmasq apply (non-fatal): %v", err)
+		} else {
+			return fmt.Errorf("dnsmasq: %w", err)
+		}
+	} else {
+		prog.dnsmasq = true
+		status["dnsmasq"] = true
 	}
-	prog.dnsmasq = true
-	status["dnsmasq"] = true
-	status["last_error"] = ""
+	if prog.jool && prog.unbound && prog.dnsmasq {
+		status["last_error"] = ""
+	}
 	srv.recordNatStackSuccess(st)
 	return nil
 }
