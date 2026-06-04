@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"net"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -36,6 +37,10 @@ type DHCPState struct {
 	IPv6End        string            `json:"ipv6_end,omitempty"`
 	RAEnabled      bool              `json:"ra_enabled"`
 	RAIntervalSec  int               `json:"ra_interval_sec,omitempty"`
+	ChnroutesEnabled bool            `json:"chnroutes_enabled"`           // 国内外 DNS 分流（需 patched dnsmasq）
+	ChnroutesFile    string          `json:"chnroutes_file,omitempty"`    // 默认 /etc/qosnat2/chnroutes.txt
+	TrustedDNS       []string        `json:"trusted_dns,omitempty"`       // 国内 DNS → server=,1
+	UntrustedDNS     []string        `json:"untrusted_dns,omitempty"`     // 国外 DNS → server=,0
 }
 
 var macRE = regexp.MustCompile(`^([0-9a-f]{2}:){5}[0-9a-f]{2}$`)
@@ -77,6 +82,32 @@ func NormalizeDHCP(d *DHCPState, defaultIface string) error {
 		return err
 	} else {
 		d.UpstreamDNS = upstream
+	}
+	if trusted, err := normalizeDNSList(d.TrustedDNS, "trusted dns"); err != nil {
+		return err
+	} else {
+		d.TrustedDNS = trusted
+	}
+	if untrusted, err := normalizeDNSList(d.UntrustedDNS, "untrusted dns"); err != nil {
+		return err
+	} else {
+		d.UntrustedDNS = untrusted
+	}
+	if d.ChnroutesFile == "" {
+		d.ChnroutesFile = "/etc/qosnat2/chnroutes.txt"
+	}
+	if path, err := validateChnroutesPath(d.ChnroutesFile); err != nil {
+		return err
+	} else {
+		d.ChnroutesFile = path
+	}
+	if d.ChnroutesEnabled {
+		if !d.DNSEnabled {
+			return fmt.Errorf("chnroutes_enabled requires dns_enabled")
+		}
+		if len(d.TrustedDNS) == 0 && len(d.UntrustedDNS) == 0 {
+			return fmt.Errorf("chnroutes enabled: trusted_dns or untrusted_dns required")
+		}
 	}
 	if !d.ServiceActive() {
 		return nil
@@ -137,6 +168,24 @@ func NormalizeDHCP(d *DHCPState, defaultIface string) error {
 	return NormalizeDHCPv6(d)
 }
 
+func validateChnroutesPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "/etc/qosnat2/chnroutes.txt", nil
+	}
+	if strings.Contains(path, "..") {
+		return "", fmt.Errorf("invalid chnroutes_file path")
+	}
+	clean := filepath.Clean(path)
+	if clean != path {
+		return "", fmt.Errorf("invalid chnroutes_file path")
+	}
+	if !strings.HasPrefix(clean, "/etc/qosnat2/") {
+		return "", fmt.Errorf("chnroutes_file must be under /etc/qosnat2")
+	}
+	return clean, nil
+}
+
 func normalizeDNSList(list []string, label string) ([]string, error) {
 	if list == nil {
 		return []string{}, nil
@@ -165,6 +214,9 @@ func DefaultDHCP() DHCPState {
 		Netmask:       "255.255.255.0",
 		DNSServers:    []string{"8.8.8.8", "1.1.1.1"},
 		UpstreamDNS:   []string{},
+		TrustedDNS:    []string{"223.5.5.5", "114.114.114.114"},
+		UntrustedDNS:  []string{"8.8.8.8", "1.1.1.1"},
+		ChnroutesFile: "/etc/qosnat2/chnroutes.txt",
 		LeaseTimeSec:  86400,
 		Authoritative: true,
 		StaticLeases:  []DHCPStaticLease{},

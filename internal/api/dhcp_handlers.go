@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/dnsmasq"
 	"github.com/hk59775634/qosnat2/internal/route"
@@ -48,6 +49,7 @@ func (srv *Server) handleDHCPGet(w http.ResponseWriter, r *http.Request) {
 		"dev_lan":    srv.env.DevLAN,
 		"dev_wan":    srv.env.DevWAN,
 		"rendered":   rendered,
+		"chnroutes":  dnsmasq.ChnroutesFileInfo(cfg.ChnroutesFile),
 	})
 }
 
@@ -117,4 +119,38 @@ func (srv *Server) applyManagedDHCP() {
 	if err := dnsmasq.Apply(cfg, srv.dnsmasqOpts(st)); err != nil {
 		log.Printf("dhcp apply: %v", err)
 	}
+}
+
+func (srv *Server) handleDHCPChnroutesUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var body struct {
+		URL  string `json:"url"`
+		Path string `json:"path"`
+	}
+	_ = readJSON(r, &body)
+	st := srv.store.Get()
+	path := strings.TrimSpace(body.Path)
+	if path == "" {
+		path = st.DHCP.ChnroutesFile
+	}
+	if path == "" {
+		path = dnsmasq.DefaultChnroutesPath
+	}
+	url := strings.TrimSpace(body.URL)
+	if url == "" {
+		url = dnsmasq.DefaultChnroutesURL
+	}
+	entries, err := dnsmasq.DownloadChnroutes(path, url)
+	if err != nil {
+		writeInternalError(w, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":        true,
+		"entries":   entries,
+		"chnroutes": dnsmasq.ChnroutesFileInfo(path),
+	})
 }

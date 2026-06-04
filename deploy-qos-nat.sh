@@ -56,6 +56,8 @@ install_deps() {
     source "${deps_sh}"
     if qosnat_apt_install_packages; then
       log "依赖包已安装"
+      QOSNAT_ROOT="${ROOT}"
+      qosnat_install_dnsmasq_chnroutes || warn "patched dnsmasq build failed (chnroutes UI unavailable until fixed)"
       return 0
     fi
     warn "install-deps.sh 安装失败，尝试内联包列表"

@@ -40,3 +40,24 @@ func TestNormalizeDHCPBothOff(t *testing.T) {
 		t.Fatal("service should be inactive")
 	}
 }
+
+func TestNormalizeDHCPChnroutesRequiresDNS(t *testing.T) {
+	d := DefaultDHCP()
+	d.ChnroutesEnabled = true
+	d.TrustedDNS = []string{"223.5.5.5"}
+	if err := NormalizeDHCP(&d, "eth0"); err == nil {
+		t.Fatal("expected error when chnroutes without dns_enabled")
+	}
+}
+
+func TestNormalizeDHCPChnroutesPath(t *testing.T) {
+	d := DefaultDHCP()
+	d.DNSEnabled = true
+	d.Interface = "eth0"
+	d.ChnroutesEnabled = true
+	d.TrustedDNS = []string{"223.5.5.5"}
+	d.ChnroutesFile = "/etc/passwd"
+	if err := NormalizeDHCP(&d, "eth0"); err == nil {
+		t.Fatal("expected path validation error")
+	}
+}

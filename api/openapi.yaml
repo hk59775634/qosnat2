@@ -142,6 +142,20 @@ components:
           type: array
           items: { type: string }
           description: dnsmasq server= 转发上游；空则使用系统 resolv.conf
+        chnroutes_enabled:
+          type: boolean
+          description: 启用 chnroutes 国内外 DNS 分流（需 patched dnsmasq）
+        chnroutes_file:
+          type: string
+          description: chnroutes CIDR 列表路径，默认 /etc/qosnat2/chnroutes.txt
+        trusted_dns:
+          type: array
+          items: { type: string }
+          description: 国内 DNS，写入 server=,1
+        untrusted_dns:
+          type: array
+          items: { type: string }
+          description: 国外 DNS，写入 server=,0
         lease_time_sec: { type: integer }
         authoritative: { type: boolean }
         static_leases:
@@ -1135,6 +1149,21 @@ paths:
         '200':
           description: OK
 
+  /api/v1/dhcp/chnroutes/update:
+    post:
+      tags: [network]
+      summary: 下载/更新 chnroutes CIDR 列表
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string, description: "下载源 URL，默认 hk59775634/chnroutes（jsDelivr，失败时回退 GitHub Raw）" }
+                path: { type: string, description: 写入路径，默认 state 中 chnroutes_file }
+      responses:
+        '200':
+          description: ok + entries + chnroutes info
   /api/v1/dhcp/apply:
     post:
       tags: [network]

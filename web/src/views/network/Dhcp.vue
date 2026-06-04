@@ -17,6 +17,9 @@ const err = ref('')
 const ok = ref('')
 const dnsText = ref('')
 const upstreamDnsText = ref('')
+const trustedDnsText = ref('')
+const untrustedDnsText = ref('')
+const chnroutes = ref({ path: '', exists: false, entries: 0 })
 const staticForm = ref({ mac: '', ip: '', hostname: '', comment: '' })
 
 const bindIface = computed({
@@ -44,6 +47,9 @@ async function load() {
   leases.value = d.leases || []
   dnsText.value = (cfg.value.dns_servers || []).join('\n')
   upstreamDnsText.value = (cfg.value.upstream_dns || []).join('\n')
+  trustedDnsText.value = (cfg.value.trusted_dns || []).join('\n')
+  untrustedDnsText.value = (cfg.value.untrusted_dns || []).join('\n')
+  chnroutes.value = d.chnroutes || { path: cfg.value.chnroutes_file || '', exists: false, entries: 0 }
   if (!cfg.value.interface && devLan.value) {
     cfg.value.interface = devLan.value
   }
@@ -58,6 +64,14 @@ async function save(applyAfter) {
       .map((s) => s.trim())
       .filter(Boolean)
     cfg.value.upstream_dns = upstreamDnsText.value
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    cfg.value.trusted_dns = trustedDnsText.value
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    cfg.value.untrusted_dns = untrustedDnsText.value
       .split(/[\n,]+/)
       .map((s) => s.trim())
       .filter(Boolean)
@@ -86,6 +100,20 @@ function addStatic() {
 
 function removeStatic(i) {
   cfg.value.static_leases.splice(i, 1)
+}
+
+async function updateChnroutes() {
+  err.value = ''
+  ok.value = ''
+  try {
+    const d = await api.post('/api/v1/dhcp/chnroutes/update', {
+      path: cfg.value.chnroutes_file || undefined,
+    })
+    chnroutes.value = d.chnroutes || chnroutes.value
+    ok.value = t('network.dhcp.chnroutesUpdated', { n: d.entries ?? chnroutes.value.entries ?? 0 })
+  } catch (e) {
+    err.value = e.message
+  }
 }
 
 onMounted(load)
@@ -168,8 +196,51 @@ onMounted(load)
             class="input-field font-mono h-16"
             rows="2"
             :placeholder="t('network.dhcp.upstreamDnsPh')"
+            :disabled="cfg.chnroutes_enabled"
           />
           <p class="text-xs text-slate-400 mt-1">{{ t('network.dhcp.upstreamDnsHint') }}</p>
+        </div>
+
+        <div class="sm:col-span-2 border-t border-slate-100 pt-3 space-y-3">
+          <label class="flex items-center gap-2 text-sm font-medium">
+            <input v-model="cfg.chnroutes_enabled" type="checkbox" :disabled="!status?.chnroutes_support" />
+            {{ t('network.dhcp.chnroutesEnable') }}
+          </label>
+          <p v-if="!status?.chnroutes_support" class="text-xs text-amber-700">
+            {{ t('network.dhcp.chnroutesUnsupported') }}
+          </p>
+          <p v-else class="text-xs text-slate-500">{{ t('network.dhcp.chnroutesHint') }}</p>
+
+          <template v-if="cfg.chnroutes_enabled">
+            <div>
+              <label class="text-xs text-slate-500">{{ t('network.dhcp.chnroutesFile') }}</label>
+              <input
+                v-model="cfg.chnroutes_file"
+                class="input-field font-mono mt-1"
+                placeholder="/etc/qosnat2/chnroutes.txt"
+              />
+              <p class="text-xs text-slate-400 mt-1">
+                {{ t('network.dhcp.chnroutesFileStatus', {
+                  n: chnroutes.entries || 0,
+                  status: chnroutes.exists ? t('network.dhcp.chnroutesExists') : t('network.dhcp.chnroutesMissing'),
+                }) }}
+              </p>
+            </div>
+            <div>
+              <label class="text-xs text-slate-500">{{ t('network.dhcp.trustedDnsMultiline') }}</label>
+              <textarea v-model="trustedDnsText" class="input-field font-mono h-16" rows="2" />
+              <p class="text-xs text-slate-400 mt-1">{{ t('network.dhcp.trustedDnsHint') }}</p>
+            </div>
+            <div>
+              <label class="text-xs text-slate-500">{{ t('network.dhcp.untrustedDnsMultiline') }}</label>
+              <textarea v-model="untrustedDnsText" class="input-field font-mono h-16" rows="2" />
+              <p class="text-xs text-slate-400 mt-1">{{ t('network.dhcp.untrustedDnsHint') }}</p>
+            </div>
+            <button type="button" class="btn-secondary text-sm" @click="updateChnroutes">
+              {{ t('network.dhcp.chnroutesUpdate') }}
+            </button>
+            <p class="text-xs text-slate-400">{{ t('network.dhcp.chnroutesSource') }}</p>
+          </template>
         </div>
       </div>
 
@@ -211,6 +282,8 @@ onMounted(load)
         <span :class="status?.active ? 'text-green-700' : 'text-slate-500'">
           {{ dnsmasqStatusLabel }}
         </span>
+        <span v-if="status?.version"> · {{ status.version }}</span>
+        <span v-if="status?.chnroutes_support"> · chnroutes</span>
         <span v-if="status?.config"> · {{ status.config }}</span>
       </p>
     </div>

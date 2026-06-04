@@ -100,3 +100,29 @@ func TestRenderConfDisabled(t *testing.T) {
 		t.Fatalf("expected disabled comment:\n%s", body)
 	}
 }
+
+func TestRenderConfChnroutes(t *testing.T) {
+	dhcp := store.DefaultDHCP()
+	dhcp.Enabled = false
+	dhcp.DNSEnabled = true
+	dhcp.Interface = "ens19"
+	dhcp.ChnroutesEnabled = true
+	dhcp.ChnroutesFile = "/etc/qosnat2/chnroutes.txt"
+	dhcp.TrustedDNS = []string{"223.5.5.5"}
+	dhcp.UntrustedDNS = []string{"8.8.8.8"}
+	opts := ApplyOpts{ExceptWAN: "ens18", DevLAN: "ens19"}
+	body := RenderConf(dhcp, opts)
+	for _, want := range []string{
+		"chnroutes-file=/etc/qosnat2/chnroutes.txt\n",
+		"server=223.5.5.5,1\n",
+		"server=8.8.8.8,0\n",
+		"no-resolv\n",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "server=8.8.8.8\n") {
+		t.Fatal("plain upstream should not appear when chnroutes enabled")
+	}
+}

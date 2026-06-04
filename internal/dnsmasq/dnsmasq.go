@@ -20,10 +20,12 @@ const (
 
 // Status 运行状态
 type Status struct {
-	Installed bool   `json:"installed"`
-	Active    bool   `json:"active"`
-	Config    string `json:"config_path"`
-	LeasesRaw string `json:"leases_raw,omitempty"`
+	Installed         bool   `json:"installed"`
+	Active            bool   `json:"active"`
+	Config            string `json:"config_path"`
+	LeasesRaw         string `json:"leases_raw,omitempty"`
+	ChnroutesSupport  bool   `json:"chnroutes_support"`
+	Version           string `json:"version,omitempty"`
 }
 
 // Iface 网卡摘要
@@ -175,15 +177,38 @@ func dhcpIPv6DNSClients(dhcp store.DHCPState) bool {
 }
 
 func writeUpstreamDNSSection(b *bytes.Buffer, dhcp store.DHCPState, opts ApplyOpts) {
-	if !dhcp.DNSEnabled || len(dhcp.UpstreamDNS) == 0 {
+	if !dhcp.DNSEnabled {
 		return
 	}
 	if opts.Nat.DNS64UsesDnsmasqRelay() {
 		return
 	}
+	if dhcp.ChnroutesEnabled {
+		writeChnroutesSection(b, dhcp)
+		return
+	}
+	if len(dhcp.UpstreamDNS) == 0 {
+		return
+	}
 	b.WriteString("\n# qosnat2 DNS resolver upstream (dnsmasq forwarding)\n")
 	for _, u := range dhcp.UpstreamDNS {
 		b.WriteString(fmt.Sprintf("server=%s\n", u))
+	}
+	b.WriteString("no-resolv\n")
+}
+
+func writeChnroutesSection(b *bytes.Buffer, dhcp store.DHCPState) {
+	path := strings.TrimSpace(dhcp.ChnroutesFile)
+	if path == "" {
+		path = DefaultChnroutesPath
+	}
+	b.WriteString("\n# qosnat2 chnroutes split DNS (patched dnsmasq)\n")
+	b.WriteString(fmt.Sprintf("chnroutes-file=%s\n", path))
+	for _, u := range dhcp.TrustedDNS {
+		b.WriteString(fmt.Sprintf("server=%s,1\n", u))
+	}
+	for _, u := range dhcp.UntrustedDNS {
+		b.WriteString(fmt.Sprintf("server=%s,0\n", u))
 	}
 	b.WriteString("no-resolv\n")
 }
@@ -271,7 +296,18 @@ func WriteConf(dhcp store.DHCPState, opts ApplyOpts) error {
 // Apply 写配置并 reload/start dnsmasq
 func Apply(dhcp store.DHCPState, opts ApplyOpts) error {
 	if !installed() {
-		return fmt.Errorf("dnsmasq not installed (apt install dnsmasq)")
+		return fmt.Errorf("dnsmasq not installed (run scripts/build-dnsmasq-chnroutes.sh or apt install dnsmasq)")
+	}
+	if dhcp.ChnroutesEnabled && !SupportsChnroutes() {
+		return fmt.Errorf("chnroutes enabled but dnsmasq lacks chnroutes patch (run scripts/build-dnsmasq-chnroutes.sh)")
+	}
+	if dhcp.ChnroutesEnabled {
+		info := ChnroutesFileInfo(dhcp.ChnroutesFile)
+		if !info.Exists {
+			if _, err := DownloadChnroutes(dhcp.ChnroutesFile, DefaultChnroutesURL); err != nil {
+				return fmt.Errorf("chnroutes file missing and download failed: %w", err)
+			}
+		}
 	}
 	if err := WriteConf(dhcp, opts); err != nil {
 		return err
@@ -336,8 +372,14 @@ func waitActive(timeout time.Duration) error {
 // ShowStatus 服务与租约
 func ShowStatus() Status {
 	st := Status{
-		Installed: installed(),
-		Config:    confPath,
+		Installed:        installed(),
+		Config:           confPath,
+		ChnroutesSupport: SupportsChnroutes(),
+	}
+	if st.Installed {
+		if out, err := exec.Command("dnsmasq", "--version").CombinedOutput(); err == nil {
+			st.Version = strings.TrimSpace(strings.Split(string(out), "\n")[0])
+		}
 	}
 	if !st.Installed {
 		return st

@@ -20,6 +20,10 @@ QOSNAT_APT_PACKAGES=(
   tcpdump
   conntrack
   dnsmasq
+  libdbus-1-dev
+  libidn2-dev
+  nettle-dev
+  libnftables-dev
   unbound
   nodejs
   npm
@@ -39,4 +43,19 @@ qosnat_apt_install_packages() {
   apt-get update -qq
   apt-get install -y -qq "${QOSNAT_APT_PACKAGES[@]}"
   apt-get install -y -qq "${QOSNAT_APT_PACKAGES_OPTIONAL[@]}" || true
+}
+
+# 安装带 chnroutes 补丁的 dnsmasq（替换 /usr/sbin/dnsmasq，保留 .dist 备份）
+qosnat_install_dnsmasq_chnroutes() {
+  local script="${QOSNAT_ROOT:-}/scripts/build-dnsmasq-chnroutes.sh"
+  if [[ -z "${QOSNAT_ROOT:-}" ]]; then
+    script="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/build-dnsmasq-chnroutes.sh"
+  fi
+  [[ -x "${script}" ]] || script="$(dirname "${BASH_SOURCE[0]}")/build-dnsmasq-chnroutes.sh"
+  if [[ ! -f "${script}" ]]; then
+    echo "WARN: missing ${script}, skip patched dnsmasq build" >&2
+    return 0
+  fi
+  chmod +x "${script}"
+  bash "${script}"
 }

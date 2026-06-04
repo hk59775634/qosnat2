@@ -114,6 +114,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/logout", srv.requireAuth(srv.handleLogout))
 	m.HandleFunc("/api/v1/api-keys", srv.requireAuth(srv.handleAPIKeys))
 
+	m.HandleFunc("/api/v1/dhcp/chnroutes/update", srv.requireAuth(srv.handleDHCPChnroutesUpdate))
 	m.HandleFunc("/api/v1/dhcp/apply", srv.requireAuth(srv.handleDHCPApply))
 	m.HandleFunc("/api/v1/dhcp", srv.requireAuth(srv.handleDHCP))
 	m.HandleFunc("/api/v1/routes/apply", srv.requireAuth(srv.handleRoutesApply))

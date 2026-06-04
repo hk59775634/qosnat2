@@ -355,6 +355,15 @@ func (s *Store) ensureDefaultsLocked() {
 	if s.State.DHCP.Netmask == "" {
 		s.State.DHCP.Netmask = def.Netmask
 	}
+	if s.State.DHCP.ChnroutesFile == "" {
+		s.State.DHCP.ChnroutesFile = def.ChnroutesFile
+	}
+	if s.State.DHCP.TrustedDNS == nil {
+		s.State.DHCP.TrustedDNS = []string{}
+	}
+	if s.State.DHCP.UntrustedDNS == nil {
+		s.State.DHCP.UntrustedDNS = []string{}
+	}
 	if s.State.Firewall.WanPortForwards == nil {
 		s.State.Firewall.WanPortForwards = []WanPortForward{}
 	}
