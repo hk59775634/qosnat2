@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060401",
+      "tag": "v2026060401",
+      "published_at": "2026-06-04T04:31:46Z",
+      "summary": "dnsmasq 源码打 chnroutes 补丁，支持国内外 DNS 分流；Web UI 配置并从 hk59775634/chnroutes 自动更新路由表。"
+    },
+    {
       "id": "2026060301",
       "tag": "v2026060301",
       "published_at": "2026-06-03T03:35:19Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060101",
       "published_at": "2026-06-01T08:53:21Z",
       "summary": "修复 WARP 启用长时间卡在连接中；状态区显示 License Key 并支持应用 WARP+；加固损坏 netns pin 清理。"
-    },
-    {
-      "id": "2026053123",
-      "tag": "v2026053123",
-      "published_at": "2026-05-31T17:50:59Z",
-      "summary": "WARP License Key 明文核对、删除 Key 停止错误重连，修复看门狗反复连接"
     }
   ]
 }
