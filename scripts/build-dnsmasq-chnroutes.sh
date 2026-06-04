@@ -57,7 +57,10 @@ if [[ -n "${OUTPUT:-}" ]]; then
   OUTPUT="$(mkdir -p "$(dirname "${OUTPUT}")" && cd "$(dirname "${OUTPUT}")" && pwd)/$(basename "${OUTPUT}")"
 fi
 
-mkdir -p "${WORK}" "${QOSNAT_LIB}"
+mkdir -p "${WORK}"
+if [[ -z "${OUTPUT:-}" ]]; then
+  mkdir -p "${QOSNAT_LIB}"
+fi
 cd "${WORK}"
 
 TARBALL="dnsmasq-${DNSMASQ_VERSION}.tar.gz"
