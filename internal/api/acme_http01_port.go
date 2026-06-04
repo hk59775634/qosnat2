@@ -47,6 +47,6 @@ func (srv *Server) setAcmeTempAllowHTTP01(v bool) error {
 	if err := srv.store.Save(); err != nil {
 		return err
 	}
-	// nft 重建会 delete table inet qosnat，因此用 reload 保证规则变更立即生效。
+	// reload 会替换 inet qosnat 整表，保证 ACME 临时 tcp/80 规则立即生效。
 	return srv.reloadNft()
 }

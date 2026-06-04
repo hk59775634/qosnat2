@@ -20,8 +20,8 @@ func TestRenderSNATAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(body, "delete table inet qosnat") {
-		t.Fatal("expected scoped delete table, not global flush")
+	if strings.Contains(body, "delete table inet qosnat") {
+		t.Fatal("delete table must not be in rendered ruleset (Apply deletes live table separately)")
 	}
 	if strings.Contains(body, "flush ruleset") {
 		t.Fatal("must not flush entire ruleset")
