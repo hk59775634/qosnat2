@@ -28,6 +28,7 @@ DNSMASQ_APT_PACKAGES=(
   libidn2-dev
   nettle-dev
   libnftables-dev
+  libnetfilter-conntrack-dev
 )
 
 # 写入系统路径需 root；仅 OUTPUT 打包（CI/release）时可在非 root 下编译（依赖已由 apt 预装）
