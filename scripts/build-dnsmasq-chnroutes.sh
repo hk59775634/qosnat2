@@ -30,17 +30,20 @@ DNSMASQ_APT_PACKAGES=(
   libnftables-dev
 )
 
+# 写入系统路径需 root；仅 OUTPUT 打包（CI/release）时可在非 root 下编译（依赖已由 apt 预装）
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-  die "run as root (sudo $0)"
+  if [[ -z "${OUTPUT:-}" ]]; then
+    die "run as root (sudo $0)"
+  fi
 fi
 
-if command -v apt-get &>/dev/null; then
+if command -v apt-get &>/dev/null && [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
   export DEBIAN_FRONTEND=noninteractive
   log "install build dependencies (apt)…"
   apt-get update -qq || warn "apt-get update failed, continuing"
   apt-get install -y -qq "${DNSMASQ_APT_PACKAGES[@]}" || die "install dnsmasq build deps failed"
-else
-  warn "no apt-get; assuming build tools are already installed"
+elif [[ -z "${OUTPUT:-}" ]]; then
+  warn "no apt-get or not root; assuming build tools are already installed"
 fi
 
 need curl
@@ -49,6 +52,10 @@ need make
 need cc
 need pkg-config
 need python3
+
+if [[ -n "${OUTPUT:-}" ]]; then
+  OUTPUT="$(mkdir -p "$(dirname "${OUTPUT}")" && cd "$(dirname "${OUTPUT}")" && pwd)/$(basename "${OUTPUT}")"
+fi
 
 mkdir -p "${WORK}" "${QOSNAT_LIB}"
 cd "${WORK}"
