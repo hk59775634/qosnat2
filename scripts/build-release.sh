@@ -65,8 +65,22 @@ mkdir -p "${OUT_DIR}"
 install -d "${OUT_DIR}/lib"
 cp -f "${ASSETS}/classify.bpf.o" "${OUT_DIR}/lib/classify.bpf.o"
 
+# --- dnsmasq-chnroutes（Ubuntu 24.04 amd64 预编译，目标机免编译）---
+BUILD_DNSMASQ="${BUILD_DNSMASQ:-1}"
+if [[ "${BUILD_DNSMASQ}" == "1" ]]; then
+  chmod +x "${ROOT}/scripts/build-dnsmasq-chnroutes.sh" "${ROOT}/scripts/install-dnsmasq-chnroutes-binary.sh"
+  log "编译 dnsmasq-chnroutes -> ${OUT_DIR}/lib/dnsmasq-chnroutes …"
+  OUTPUT="${OUT_DIR}/lib/dnsmasq-chnroutes" bash "${ROOT}/scripts/build-dnsmasq-chnroutes.sh"
+else
+  warn "BUILD_DNSMASQ=0：release 包不含预编译 dnsmasq-chnroutes"
+fi
+
 TARBALL="${OUT_DIR}/qosnat2-linux-amd64.tar.gz"
-tar -C "${OUT_DIR}" -czf "${TARBALL}" "$(basename "${BINARY}")" lib/classify.bpf.o
+TAR_ITEMS=("$(basename "${BINARY}")" lib/classify.bpf.o)
+if [[ -f "${OUT_DIR}/lib/dnsmasq-chnroutes" ]]; then
+  TAR_ITEMS+=("lib/dnsmasq-chnroutes")
+fi
+tar -C "${OUT_DIR}" -czf "${TARBALL}" "${TAR_ITEMS[@]}"
 
 log "完成:"
 log "  二进制: ${BINARY}"

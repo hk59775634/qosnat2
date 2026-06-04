@@ -129,7 +129,7 @@ export default {
     upstreamDnsHint: '写入 dnsmasq 的 server= 并启用 no-resolv；留空则使用系统 /etc/resolv.conf。启用 NAT64 本地 Unbound 中继时此项被忽略。',
     chnroutesEnable: '启用 chnroutes 国内外 DNS 分流',
     chnroutesHint: '国内 DNS（trust=1）仅接受 chnroutes 网段内的 A 记录；国外 DNS（trust=0）仅接受网段外地址。列表来源：hk59775634/chnroutes（APNIC CN，每日更新）。',
-    chnroutesUnsupported: '当前 dnsmasq 未含 chnroutes 补丁，请点击下方按钮编译安装（需 root 运行 qosnatd，约数分钟）。',
+    chnroutesUnsupported: '当前 dnsmasq 未含 chnroutes 补丁。请点击下方安装（优先使用 release 预编译包；无包时再源码编译，需 root）。',
     dnsmasqChnroutesInstallBtn: '安装 chnroutes 版 dnsmasq',
     dnsmasqChnroutesInstalling: '正在编译安装 dnsmasq…',
     dnsmasqChnroutesInstalled: 'chnroutes 版 dnsmasq 已安装',

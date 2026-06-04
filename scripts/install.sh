@@ -236,6 +236,17 @@ download_release_binary() {
     install -d /usr/lib/qosnat2
     install -m 0644 "${tmp}/lib/classify.bpf.o" /usr/lib/qosnat2/classify.bpf.o
   fi
+  if [[ -f "${tmp}/lib/dnsmasq-chnroutes" ]]; then
+    install -d /usr/local/lib/qosnat2
+    install -m 0755 "${tmp}/lib/dnsmasq-chnroutes" /usr/local/lib/qosnat2/dnsmasq-chnroutes
+    if command -v dnsmasq &>/dev/null && ! dnsmasq --help 2>&1 | grep -q chnroutes-file; then
+      if [[ -x /usr/sbin/dnsmasq && ! -f /usr/sbin/dnsmasq.dist ]]; then
+        cp -a /usr/sbin/dnsmasq /usr/sbin/dnsmasq.dist
+      fi
+      install -m 0755 "${tmp}/lib/dnsmasq-chnroutes" /usr/sbin/dnsmasq
+      log "已从 release 安装 dnsmasq-chnroutes"
+    fi
+  fi
   rm -rf "${tmp}"
   install -d /etc/qosnat2
   local id="${QOSNAT_RELEASE_TAG#v}"

@@ -13,17 +13,22 @@ log() { echo "[$(date '+%F %T')] $*"; }
 warn() { echo "[$(date '+%F %T')] WARN: $*" >&2; }
 die() { echo "[$(date '+%F %T')] ERROR: $*" >&2; exit 1; }
 
-need() { command -v "$1" &>/dev/null || die "missing command: $1"; }
-
-need curl
-need patch
-need make
-need cc
-need pkg-config
+need() { command -v "$1" &>/dev/null || die "missing command: $1 (install build deps via apt)"; }
 
 # 与 Ubuntu dnsmasq 包对齐的编译选项（systemd-helper 需要 DBus/DNSSEC 等）
 DNSMASQ_COPTS="${DNSMASQ_COPTS:--DHAVE_DBUS -DHAVE_DNSSEC -DHAVE_CONNTRACK -DHAVE_IDN2 -DHAVE_IPSET -DHAVE_NFTSET -DHAVE_AUTH -DHAVE_LOOP -DHAVE_DUMPFILE}"
-DNSMASQ_BUILD_DEPS=(libdbus-1-dev libidn2-dev nettle-dev libnftables-dev)
+# 编译工具 + 头文件库（UI/API 触发安装时主机可能仅有 dnsmasq 运行时包）
+DNSMASQ_APT_PACKAGES=(
+  build-essential
+  curl
+  patch
+  pkg-config
+  python3
+  libdbus-1-dev
+  libidn2-dev
+  nettle-dev
+  libnftables-dev
+)
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   die "run as root (sudo $0)"
@@ -31,8 +36,19 @@ fi
 
 if command -v apt-get &>/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
-  apt-get install -y -qq "${DNSMASQ_BUILD_DEPS[@]}" || die "install dnsmasq build deps failed"
+  log "install build dependencies (apt)…"
+  apt-get update -qq || warn "apt-get update failed, continuing"
+  apt-get install -y -qq "${DNSMASQ_APT_PACKAGES[@]}" || die "install dnsmasq build deps failed"
+else
+  warn "no apt-get; assuming build tools are already installed"
 fi
+
+need curl
+need patch
+need make
+need cc
+need pkg-config
+need python3
 
 mkdir -p "${WORK}" "${QOSNAT_LIB}"
 cd "${WORK}"
@@ -82,21 +98,18 @@ make COPTS="${DNSMASQ_COPTS}" -j"$(nproc 2>/dev/null || echo 2)"
 BUILT="${WORK}/${SRC}/src/dnsmasq"
 [[ -x "${BUILT}" ]] || die "build failed: ${BUILT}"
 
-install -m 0755 "${BUILT}" "${QOSNAT_LIB}/dnsmasq-chnroutes"
-if [[ -x "${INSTALL_BIN}" && ! -f "${INSTALL_BIN}.dist" ]]; then
-  log "backup ${INSTALL_BIN} -> ${INSTALL_BIN}.dist"
-  cp -a "${INSTALL_BIN}" "${INSTALL_BIN}.dist"
-fi
-install -m 0755 "${BUILT}" "${INSTALL_BIN}"
-
-if command -v systemctl &>/dev/null && systemctl is-active --quiet dnsmasq 2>/dev/null; then
-  systemctl restart dnsmasq || true
+# 仅产出预编译二进制（release 打包），不写入系统路径
+if [[ -n "${OUTPUT:-}" ]]; then
+  mkdir -p "$(dirname "${OUTPUT}")"
+  install -m 0755 "${BUILT}" "${OUTPUT}"
+  log "prebuilt written: ${OUTPUT}"
+  "${OUTPUT}" --help 2>&1 | grep -q chnroutes-file || die "prebuilt lacks chnroutes-file"
+  exit 0
 fi
 
-log "installed patched dnsmasq:"
-"${INSTALL_BIN}" --version | head -1
-"${INSTALL_BIN}" --help 2>&1 | grep -q chnroutes-file && log "chnroutes-file: supported"
-# 与 systemd-helper checkconfig 一致做一次自检
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+bash "${ROOT_DIR}/scripts/install-dnsmasq-chnroutes-binary.sh" "${BUILT}"
+
 if ! "${INSTALL_BIN}" --test -7 /etc/dnsmasq.d,.dpkg-dist,.dpkg-old,.dpkg-new --local-service >/dev/null 2>&1; then
   warn "dnsmasq --test with --local-service failed; check compile options"
 fi

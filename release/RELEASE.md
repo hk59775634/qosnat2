@@ -35,6 +35,12 @@ CI 步骤：
 4. 归档至 `releases/notes/<版本>.md`，写入 manifest `summary`
 5. 重置 pending 模板并 commit manifest + 归档说明
 
+## Release 包内容（Ubuntu 24.04 amd64）
+
+- `qosnatd-linux-amd64` — 控制面（内嵌 Web + BPF）
+- `lib/classify.bpf.o` — eBPF 分类器
+- `lib/dnsmasq-chnroutes` — 预编译 chnroutes 补丁版 dnsmasq（目标机免编译；版本切换/一键安装时自动部署到 `/usr/local/lib/qosnat2` 与 `/usr/sbin/dnsmasq`）
+
 ## 发布后
 
 - GitHub Release 页与 [`releases/notes/`](../releases/notes/) 可查阅完整说明

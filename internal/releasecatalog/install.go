@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/hk59775634/qosnat2/internal/dnsmasq"
 )
 
 // FetchReleaseArchive 下载 release 压缩包。
@@ -32,7 +34,7 @@ func InstallReleaseBinary(versionID, binPath, route string) error {
 	}
 	defer os.RemoveAll(tmp)
 
-	if err := extractReleaseTarGz(gz, tmp); err != nil {
+	if err := ExtractReleaseTarGz(gz, tmp); err != nil {
 		return fmt.Errorf("extract release: %w", err)
 	}
 	bin := filepath.Join(tmp, "qosnatd-linux-amd64")
@@ -55,10 +57,19 @@ func InstallReleaseBinary(versionID, binPath, route string) error {
 			return fmt.Errorf("install bpf: %w", err)
 		}
 	}
+	if !dnsmasq.SupportsChnroutes() {
+		prebuilt := filepath.Join(tmp, dnsmasq.ReleaseTarDnsmasqRel)
+		if _, err := os.Stat(prebuilt); err == nil {
+			if err := dnsmasq.InstallChnroutesBinary(prebuilt); err != nil {
+				return fmt.Errorf("install dnsmasq-chnroutes: %w", err)
+			}
+		}
+	}
 	return nil
 }
 
-func extractReleaseTarGz(gz []byte, destDir string) error {
+// ExtractReleaseTarGz 解压 qosnat2-linux-amd64.tar.gz 到目录。
+func ExtractReleaseTarGz(gz []byte, destDir string) error {
 	gr, err := gzip.NewReader(bytes.NewReader(gz))
 	if err != nil {
 		return err

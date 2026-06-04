@@ -129,7 +129,7 @@ export default {
     upstreamDnsHint: 'Written as server= in dnsmasq with no-resolv. Empty uses system /etc/resolv.conf. Ignored when NAT64 uses local Unbound relay.',
     chnroutesEnable: 'Enable chnroutes split DNS (domestic vs foreign)',
     chnroutesHint: 'Trusted DNS (trust=1) accepts A records only inside chnroutes; untrusted (trust=0) only outside. List from hk59775634/chnroutes (APNIC CN, daily).',
-    chnroutesUnsupported: 'Current dnsmasq lacks the chnroutes patch. Use the button below to build and install (requires root qosnatd; may take several minutes).',
+    chnroutesUnsupported: 'Current dnsmasq lacks the chnroutes patch. Use the button below (release prebuilt first; source compile as fallback; requires root).',
     dnsmasqChnroutesInstallBtn: 'Install chnroutes dnsmasq',
     dnsmasqChnroutesInstalling: 'Building patched dnsmasq…',
     dnsmasqChnroutesInstalled: 'chnroutes dnsmasq installed',

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/dnsmasq"
+	"github.com/hk59775634/qosnat2/internal/releasecatalog"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -132,7 +133,7 @@ func (srv *Server) handleDHCPDnsmasqInstallChnroutes(w http.ResponseWriter, r *h
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"ok":      true,
-		"message": "dnsmasq chnroutes 编译安装已在后台开始",
+		"message": "dnsmasq chnroutes 安装已在后台开始（优先使用 release 预编译包）",
 		"job":     getDnsmasqChnroutesInstallStatus(),
 	})
 }
@@ -153,17 +154,6 @@ func (srv *Server) startDnsmasqChnroutesInstallAsync(r *http.Request) error {
 			dnsmasqChnroutesInstallMu.Unlock()
 		}()
 		started := time.Now().UTC().Format(time.RFC3339)
-		saveDnsmasqChnroutesInstallStatus(dnsmasqChnroutesInstallStatus{
-			State:     warpInstallStateRunning,
-			Message:   "preparing build",
-			StartedAt: started,
-		})
-
-		script, err := resolveChnroutesBuildScript()
-		if err != nil {
-			finishDnsmasqChnroutesInstall(started, warpInstallStateFailed, err.Error())
-			return
-		}
 		_ = os.MkdirAll(filepath.Dir(dnsmasqChnroutesInstallLogFile), 0755)
 		logf, err := os.Create(dnsmasqChnroutesInstallLogFile)
 		if err != nil {
@@ -171,22 +161,24 @@ func (srv *Server) startDnsmasqChnroutesInstallAsync(r *http.Request) error {
 			return
 		}
 		defer logf.Close()
-		_, _ = fmt.Fprintf(logf, "=== build-dnsmasq-chnroutes %s ===\n", started)
+		_, _ = fmt.Fprintf(logf, "=== dnsmasq-chnroutes install %s ===\n", started)
 
-		saveDnsmasqChnroutesInstallStatus(dnsmasqChnroutesInstallStatus{
-			State:     warpInstallStateRunning,
-			Message:   "compiling patched dnsmasq (may take several minutes)",
-			StartedAt: started,
-		})
-		cmd := exec.Command("bash", script)
-		cmd.Stdout = logf
-		cmd.Stderr = logf
-		if err := cmd.Run(); err != nil {
-			finishDnsmasqChnroutesInstall(started, warpInstallStateFailed, "build failed: "+err.Error())
-			return
+		if ok, msg := installDnsmasqChnroutesPrebuilt(logf, started); ok {
+			if msg != "" {
+				_, _ = fmt.Fprintln(logf, msg)
+			}
+		} else if ok, msg := installDnsmasqChnroutesFromRelease(logf, started); ok {
+			if msg != "" {
+				_, _ = fmt.Fprintln(logf, msg)
+			}
+		} else {
+			if err := compileDnsmasqChnroutes(logf, started); err != nil {
+				finishDnsmasqChnroutesInstall(started, warpInstallStateFailed, err.Error())
+				return
+			}
 		}
 		if !dnsmasq.SupportsChnroutes() {
-			finishDnsmasqChnroutesInstall(started, warpInstallStateFailed, "build finished but dnsmasq --help lacks chnroutes-file")
+			finishDnsmasqChnroutesInstall(started, warpInstallStateFailed, "install finished but dnsmasq --help lacks chnroutes-file")
 			return
 		}
 		if srv.setupComplete() {
@@ -204,5 +196,57 @@ func (srv *Server) startDnsmasqChnroutesInstallAsync(r *http.Request) error {
 		srv.auditLog(r, "dhcp.dnsmasq.install_chnroutes", "")
 		finishDnsmasqChnroutesInstall(started, warpInstallStateOK, "patched dnsmasq installed")
 	}()
+	return nil
+}
+
+func installDnsmasqChnroutesPrebuilt(logf *os.File, started string) (bool, string) {
+	saveDnsmasqChnroutesInstallStatus(dnsmasqChnroutesInstallStatus{
+		State:     warpInstallStateRunning,
+		Message:   "installing prebuilt dnsmasq-chnroutes",
+		StartedAt: started,
+	})
+	path, err := dnsmasq.LocatePrebuiltChnroutes()
+	if err != nil {
+		return false, ""
+	}
+	_, _ = fmt.Fprintf(logf, "using local prebuilt: %s\n", path)
+	if err := dnsmasq.InstallChnroutesBinary(path); err != nil {
+		_, _ = fmt.Fprintf(logf, "prebuilt install failed: %v\n", err)
+		return false, ""
+	}
+	return true, "installed from local prebuilt"
+}
+
+func installDnsmasqChnroutesFromRelease(logf *os.File, started string) (bool, string) {
+	saveDnsmasqChnroutesInstallStatus(dnsmasqChnroutesInstallStatus{
+		State:     warpInstallStateRunning,
+		Message:   "installing dnsmasq-chnroutes from release bundle",
+		StartedAt: started,
+	})
+	_, _ = fmt.Fprintln(logf, "try release bundle…")
+	if err := releasecatalog.InstallDnsmasqChnroutesFromRelease(""); err != nil {
+		_, _ = fmt.Fprintf(logf, "release prebuilt: %v\n", err)
+		return false, ""
+	}
+	return true, "installed from release bundle"
+}
+
+func compileDnsmasqChnroutes(logf *os.File, started string) error {
+	saveDnsmasqChnroutesInstallStatus(dnsmasqChnroutesInstallStatus{
+		State:     warpInstallStateRunning,
+		Message:   "compiling patched dnsmasq (fallback, may take several minutes)",
+		StartedAt: started,
+	})
+	script, err := resolveChnroutesBuildScript()
+	if err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(logf, "fallback compile: %s\n", script)
+	cmd := exec.Command("bash", script)
+	cmd.Stdout = logf
+	cmd.Stderr = logf
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("build failed: %w", err)
+	}
 	return nil
 }

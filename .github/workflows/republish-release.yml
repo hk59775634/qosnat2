@@ -45,7 +45,9 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm libbpf-dev make rsync jq
+          sudo apt-get install -y clang llvm libbpf-dev make rsync jq \
+            build-essential curl patch pkg-config python3 \
+            libdbus-1-dev libidn2-dev nettle-dev libnftables-dev
 
       - name: Build release assets
         run: |

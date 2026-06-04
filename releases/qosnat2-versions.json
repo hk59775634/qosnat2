@@ -6,7 +6,7 @@
       "id": "2026060401",
       "tag": "v2026060401",
       "published_at": "2026-06-04T04:31:46Z",
-      "summary": "dnsmasq chnroutes 国内外 DNS 分流；Web 一键安装 patched dnsmasq 并自动更新路由表。"
+      "summary": "dnsmasq chnroutes 分流；Release 含预编译 dnsmasq-chnroutes（Ubuntu 24.04 amd64），免编译安装。"
     },
     {
       "id": "2026060301",

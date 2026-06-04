@@ -45,17 +45,34 @@ qosnat_apt_install_packages() {
   apt-get install -y -qq "${QOSNAT_APT_PACKAGES_OPTIONAL[@]}" || true
 }
 
-# 安装带 chnroutes 补丁的 dnsmasq（替换 /usr/sbin/dnsmasq，保留 .dist 备份）
+# 安装带 chnroutes 补丁的 dnsmasq（优先 release 预编译包，否则源码编译）
 qosnat_install_dnsmasq_chnroutes() {
+  local lib="${QOSNAT_LIB:-/usr/local/lib/qosnat2}"
+  local install_bin="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/scripts/install-dnsmasq-chnroutes-binary.sh"
+  if command -v dnsmasq &>/dev/null && dnsmasq --help 2>&1 | grep -q chnroutes-file; then
+    return 0
+  fi
+  if [[ -f "${lib}/dnsmasq-chnroutes" ]] && "${lib}/dnsmasq-chnroutes" --help 2>&1 | grep -q chnroutes-file; then
+    bash "${install_bin}" "${lib}/dnsmasq-chnroutes"
+    return 0
+  fi
+  local prebuilt="${QOSNAT_ROOT:-}/dist/lib/dnsmasq-chnroutes"
+  if [[ -z "${QOSNAT_ROOT:-}" ]]; then
+    prebuilt="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/dist/lib/dnsmasq-chnroutes"
+  fi
+  if [[ -f "${prebuilt}" ]]; then
+    bash "${install_bin}" "${prebuilt}"
+    return 0
+  fi
   local script="${QOSNAT_ROOT:-}/scripts/build-dnsmasq-chnroutes.sh"
   if [[ -z "${QOSNAT_ROOT:-}" ]]; then
     script="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/build-dnsmasq-chnroutes.sh"
   fi
-  [[ -x "${script}" ]] || script="$(dirname "${BASH_SOURCE[0]}")/build-dnsmasq-chnroutes.sh"
+  [[ -f "${script}" ]] || script="$(dirname "${BASH_SOURCE[0]}")/build-dnsmasq-chnroutes.sh"
   if [[ ! -f "${script}" ]]; then
     echo "WARN: missing ${script}, skip patched dnsmasq build" >&2
     return 0
   fi
-  chmod +x "${script}"
+  chmod +x "${script}" "${install_bin}"
   bash "${script}"
 }
