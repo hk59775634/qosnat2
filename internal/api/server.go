@@ -114,6 +114,8 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/logout", srv.requireAuth(srv.handleLogout))
 	m.HandleFunc("/api/v1/api-keys", srv.requireAuth(srv.handleAPIKeys))
 
+	m.HandleFunc("/api/v1/dhcp/dnsmasq/install-chnroutes/status", srv.requireAuth(srv.handleDHCPDnsmasqInstallChnroutesStatus))
+	m.HandleFunc("/api/v1/dhcp/dnsmasq/install-chnroutes", srv.requireAuth(srv.handleDHCPDnsmasqInstallChnroutes))
 	m.HandleFunc("/api/v1/dhcp/chnroutes/update", srv.requireAuth(srv.handleDHCPChnroutesUpdate))
 	m.HandleFunc("/api/v1/dhcp/apply", srv.requireAuth(srv.handleDHCPApply))
 	m.HandleFunc("/api/v1/dhcp", srv.requireAuth(srv.handleDHCP))

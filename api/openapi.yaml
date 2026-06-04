@@ -1149,6 +1149,31 @@ paths:
         '200':
           description: OK
 
+  /api/v1/dhcp/dnsmasq/install-chnroutes:
+    post:
+      tags: [network]
+      summary: 编译安装 chnroutes 补丁版 dnsmasq（需 root，后台任务）
+      responses:
+        '202':
+          description: accepted + job
+        '200':
+          description: 已支持 chnroutes，无需安装
+  /api/v1/dhcp/dnsmasq/install-chnroutes/status:
+    get:
+      tags: [network]
+      summary: chnroutes 版 dnsmasq 安装任务状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state: { type: string, enum: [idle, running, ok, failed] }
+                  message: { type: string }
+                  started_at: { type: string, format: date-time }
+                  finished_at: { type: string, format: date-time }
+                  log_tail: { type: string }
   /api/v1/dhcp/chnroutes/update:
     post:
       tags: [network]

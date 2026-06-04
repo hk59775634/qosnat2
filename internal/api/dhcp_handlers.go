@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/dnsmasq"
@@ -42,14 +43,16 @@ func (srv *Server) handleDHCPGet(w http.ResponseWriter, r *http.Request) {
 		leases = []dnsmasq.LeaseEntry{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"config":     cfg,
-		"status":     dnsSt,
-		"leases":     leases,
-		"interfaces": ifaces,
-		"dev_lan":    srv.env.DevLAN,
-		"dev_wan":    srv.env.DevWAN,
-		"rendered":   rendered,
-		"chnroutes":  dnsmasq.ChnroutesFileInfo(cfg.ChnroutesFile),
+		"config":              cfg,
+		"status":              dnsSt,
+		"leases":              leases,
+		"interfaces":          ifaces,
+		"dev_lan":             srv.env.DevLAN,
+		"dev_wan":             srv.env.DevWAN,
+		"rendered":            rendered,
+		"chnroutes":           dnsmasq.ChnroutesFileInfo(cfg.ChnroutesFile),
+		"root":                os.Getuid() == 0,
+		"dnsmasq_install_job": getDnsmasqChnroutesInstallStatus(),
 	})
 }
 

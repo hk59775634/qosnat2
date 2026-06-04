@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 
@@ -15,12 +15,21 @@ const rendered = ref('')
 const leases = ref([])
 const err = ref('')
 const ok = ref('')
+const dnsRoot = ref(false)
 const dnsText = ref('')
 const upstreamDnsText = ref('')
 const trustedDnsText = ref('')
 const untrustedDnsText = ref('')
 const chnroutes = ref({ path: '', exists: false, entries: 0 })
 const staticForm = ref({ mac: '', ip: '', hostname: '', comment: '' })
+const installingDnsmasq = ref(false)
+const dnsmasqInstallJob = ref(null)
+const dnsmasqInstallPoll = ref(null)
+const dnsmasqInstallPollErrs = ref(0)
+
+const dnsmasqInstallRunning = computed(
+  () => installingDnsmasq.value || dnsmasqInstallJob.value?.state === 'running',
+)
 
 const bindIface = computed({
   get: () => cfg.value?.interface || devLan.value || '',
@@ -50,8 +59,79 @@ async function load() {
   trustedDnsText.value = (cfg.value.trusted_dns || []).join('\n')
   untrustedDnsText.value = (cfg.value.untrusted_dns || []).join('\n')
   chnroutes.value = d.chnroutes || { path: cfg.value.chnroutes_file || '', exists: false, entries: 0 }
+  dnsRoot.value = !!d.root
+  dnsmasqInstallJob.value = d.dnsmasq_install_job || null
+  installingDnsmasq.value = d.dnsmasq_install_job?.state === 'running'
+  if (installingDnsmasq.value && !dnsmasqInstallPoll.value) {
+    startDnsmasqInstallPoll()
+  }
   if (!cfg.value.interface && devLan.value) {
     cfg.value.interface = devLan.value
+  }
+}
+
+function stopDnsmasqInstallPoll() {
+  if (dnsmasqInstallPoll.value) {
+    clearInterval(dnsmasqInstallPoll.value)
+    dnsmasqInstallPoll.value = null
+  }
+}
+
+function startDnsmasqInstallPoll() {
+  stopDnsmasqInstallPoll()
+  dnsmasqInstallPollErrs.value = 0
+  dnsmasqInstallPoll.value = setInterval(async () => {
+    try {
+      const j = await api.dhcp.installChnroutesDnsmasqStatus()
+      dnsmasqInstallPollErrs.value = 0
+      dnsmasqInstallJob.value = j
+      if (j.state === 'ok') {
+        stopDnsmasqInstallPoll()
+        installingDnsmasq.value = false
+        dnsmasqInstallJob.value = null
+        ok.value = t('network.dhcp.dnsmasqChnroutesInstalled')
+        await load()
+      } else if (j.state === 'failed') {
+        stopDnsmasqInstallPoll()
+        installingDnsmasq.value = false
+        err.value = j.message || t('network.dhcp.dnsmasqChnroutesInstallFailed')
+      }
+    } catch {
+      dnsmasqInstallPollErrs.value += 1
+      if (dnsmasqInstallPollErrs.value >= 3) {
+        stopDnsmasqInstallPoll()
+        installingDnsmasq.value = false
+        err.value = t('network.dhcp.dnsmasqChnroutesInstallStatusLost')
+      }
+    }
+  }, 3000)
+}
+
+async function installChnroutesDnsmasq() {
+  err.value = ''
+  ok.value = ''
+  if (!dnsRoot.value) {
+    err.value = t('network.dhcp.dnsmasqChnroutesInstallNeedRoot')
+    return
+  }
+  try {
+    installingDnsmasq.value = true
+    const r = await api.dhcp.installChnroutesDnsmasq()
+    const state = r?.job?.state || ''
+    if (state === 'ok') {
+      installingDnsmasq.value = false
+      dnsmasqInstallJob.value = null
+      ok.value = r.message || t('network.dhcp.dnsmasqChnroutesInstalled')
+      await load()
+      return
+    }
+    ok.value = r.message || t('network.dhcp.dnsmasqChnroutesInstalling')
+    dnsmasqInstallJob.value = r.job || { state: 'running' }
+    startDnsmasqInstallPoll()
+  } catch (e) {
+    installingDnsmasq.value = false
+    if (e.data?.job) dnsmasqInstallJob.value = e.data.job
+    err.value = e.message
   }
 }
 
@@ -117,6 +197,7 @@ async function updateChnroutes() {
 }
 
 onMounted(load)
+onBeforeUnmount(stopDnsmasqInstallPoll)
 </script>
 
 <template>
@@ -210,6 +291,41 @@ onMounted(load)
             {{ t('network.dhcp.chnroutesUnsupported') }}
           </p>
           <p v-else class="text-xs text-slate-500">{{ t('network.dhcp.chnroutesHint') }}</p>
+          <div v-if="!status?.chnroutes_support" class="space-y-2">
+            <button
+              type="button"
+              class="btn-secondary text-sm"
+              :disabled="dnsmasqInstallRunning || !dnsRoot"
+              :title="!dnsRoot ? t('network.dhcp.dnsmasqChnroutesInstallNeedRoot') : ''"
+              @click="installChnroutesDnsmasq"
+            >
+              {{
+                dnsmasqInstallRunning
+                  ? t('network.dhcp.dnsmasqChnroutesInstalling')
+                  : t('network.dhcp.dnsmasqChnroutesInstallBtn')
+              }}
+            </button>
+            <div
+              v-if="
+                dnsmasqInstallRunning
+                  || (dnsmasqInstallJob && (dnsmasqInstallJob.state === 'running' || dnsmasqInstallJob.state === 'failed'))
+              "
+              class="p-3 rounded border text-xs space-y-2"
+              :class="dnsmasqInstallJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'"
+            >
+              <div class="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                <span>
+                  {{ t('network.dhcp.dnsmasqChnroutesInstallTask') }}:
+                  <strong>{{ dnsmasqInstallJob?.state || 'running' }}</strong>
+                </span>
+                <span v-if="dnsmasqInstallJob?.message" class="text-slate-600">{{ dnsmasqInstallJob.message }}</span>
+              </div>
+              <pre
+                v-if="dnsmasqInstallJob?.log_tail"
+                class="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700"
+              >{{ dnsmasqInstallJob.log_tail }}</pre>
+            </div>
+          </div>
 
           <template v-if="cfg.chnroutes_enabled">
             <div>
