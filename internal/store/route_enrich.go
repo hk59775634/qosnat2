@@ -17,6 +17,9 @@ func egressPolicyDisplay(p EgressPolicy) string {
 	if n := strings.TrimSpace(p.Name); n != "" {
 		return n
 	}
+	if lbl := EgressEndpointsLabel(p); lbl != "" {
+		return lbl
+	}
 	return p.CIDR
 }
 

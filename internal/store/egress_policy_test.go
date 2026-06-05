@@ -36,8 +36,8 @@ func TestNormalizeEgressPolicy(t *testing.T) {
 	if p.Priority != 100 || p.ID == "" {
 		t.Fatalf("got %+v", p)
 	}
-	if p.Match != "source" {
-		t.Fatalf("match=%q want source", p.Match)
+	if p.SrcCIDR != "10.250.0.0/24" {
+		t.Fatalf("src_cidr=%q want migrated from cidr", p.SrcCIDR)
 	}
 }
 
@@ -46,8 +46,32 @@ func TestNormalizeEgressPolicyMatch(t *testing.T) {
 	if err := NormalizeEgressPolicy(p); err != nil {
 		t.Fatal(err)
 	}
-	if p.Match != "destination" {
-		t.Fatalf("match=%q", p.Match)
+	if p.DstCIDR != "173.245.48.0/20" {
+		t.Fatalf("dst_cidr=%q", p.DstCIDR)
+	}
+}
+
+func TestNormalizeEgressPolicyBothEndpoints(t *testing.T) {
+	p := &EgressPolicy{
+		SrcCIDR: "10.250.0.0/24", DstAlias: "google_ipv4",
+		WanLinkID: "wan-1",
+	}
+	if err := NormalizeEgressPolicy(p); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExpandEgressIPRules_both(t *testing.T) {
+	p := EgressPolicy{
+		SrcCIDR: "10.0.0.0/8", DstCIDR: "8.8.8.0/24",
+		Priority: 100, Enabled: true,
+	}
+	rules, err := ExpandEgressIPRules(p, 201, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 1 || rules[0].From != "10.0.0.0/8" || rules[0].To != "8.8.8.0/24" || rules[0].Mode != "both" {
+		t.Fatalf("got %+v", rules)
 	}
 }
 

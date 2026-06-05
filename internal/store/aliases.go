@@ -4,16 +4,19 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
 // AliasSet nft 对象组（ipv4 地址/网段集合，asn 为 ASN 前缀集合）
 type AliasSet struct {
-	Name    string   `json:"name"`
-	Type    string   `json:"type"` // ipv4_addr | asn
-	ASN     int      `json:"asn,omitempty"`
-	Members []string `json:"members"`
-	Comment string   `json:"comment,omitempty"`
+	Name         string   `json:"name"`
+	Type         string   `json:"type"` // ipv4_addr | asn
+	ASN          int      `json:"asn,omitempty"`
+	Members      []string `json:"members"`
+	URL          string   `json:"url,omitempty"`            // 可选：从 URL 拉取 members
+	URLFetchedAt string   `json:"url_fetched_at,omitempty"` // 上次 URL 拉取时间（RFC3339）
+	Comment      string   `json:"comment,omitempty"`
 }
 
 // NormalizeAlias 校验别名
@@ -54,11 +57,21 @@ func NormalizeAlias(a *AliasSet) error {
 		}
 		members = append(members, m)
 	}
-	if len(members) == 0 {
-		return fmt.Errorf("members required")
-	}
 	a.Members = members
 	a.Comment = strings.TrimSpace(a.Comment)
+	a.URL = strings.TrimSpace(a.URL)
+	if a.URL != "" {
+		if _, err := url.Parse(a.URL); err != nil {
+			return fmt.Errorf("url: %w", err)
+		}
+		if len(members) == 0 {
+			a.Members = nil
+			return nil
+		}
+	}
+	if len(members) == 0 {
+		return fmt.Errorf("members required (or set url to fetch)")
+	}
 	return nil
 }
 
@@ -96,6 +109,20 @@ func AliasReferencedByRules(rules []FilterRule, name string) bool {
 	}
 	for _, r := range rules {
 		if strings.TrimSpace(r.SrcAlias) == name || strings.TrimSpace(r.DstAlias) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// AliasReferencedByEgress 是否有出站策略引用该别名。
+func AliasReferencedByEgress(policies []EgressPolicy, name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, p := range policies {
+		if strings.TrimSpace(p.SrcAlias) == name || strings.TrimSpace(p.DstAlias) == name {
 			return true
 		}
 	}

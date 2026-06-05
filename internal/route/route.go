@@ -117,17 +117,10 @@ func Delete(r store.RouteEntry) error {
 	return nil
 }
 
-// ApplyAll 回放 state 中启用的路由
+// ApplyAll 回放 state 中启用的路由（跳过未变化项，批量 ip -batch）。
 func ApplyAll(routes []store.RouteEntry) error {
-	for _, r := range routes {
-		if !r.Enabled {
-			continue
-		}
-		if err := Apply(r); err != nil {
-			return fmt.Errorf("%s: %w", r.ID, err)
-		}
-	}
-	return nil
+	_, err := ApplyAllDiff(routes)
+	return err
 }
 
 func buildReplaceArgs(r store.RouteEntry) ([]string, error) {

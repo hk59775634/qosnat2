@@ -99,6 +99,10 @@ type SystemState struct {
 	AcmeTempAllowHTTP01 bool `json:"acme_temp_allow_http01,omitempty"`
 	// DiagnosticsTerminalEnabled 为 true 时允许 Web Terminal（默认 false，等同 root shell）。
 	DiagnosticsTerminalEnabled bool `json:"diagnostics_terminal_enabled,omitempty"`
+	// RouteBackend 托管路由下发方式：kernel（ip -batch）| frr（staticd/zebra）。
+	RouteBackend string `json:"route_backend,omitempty"`
+	// FrrBootOnStartup 保存时是否 systemctl enable frr。
+	FrrBootOnStartup bool `json:"frr_boot_on_startup,omitempty"`
 }
 
 // APIKey 持久化 API Key（仅存 key_hash；创建时明文仅返回一次）

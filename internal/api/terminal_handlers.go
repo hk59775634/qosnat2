@@ -89,11 +89,21 @@ func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 	conn.SetReadLimit(terminalReadLimit)
 
-	shell := os.Getenv("SHELL")
-	if shell == "" {
-		shell = "/bin/bash"
+	var cmd *exec.Cmd
+	shell := strings.TrimSpace(r.URL.Query().Get("shell"))
+	if shell == "vtysh" {
+		if _, err := exec.LookPath("vtysh"); err != nil {
+			_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\n[terminal] vtysh not installed\r\n"))
+			return
+		}
+		cmd = exec.Command("vtysh")
+	} else {
+		sh := os.Getenv("SHELL")
+		if sh == "" {
+			sh = "/bin/bash"
+		}
+		cmd = exec.Command(sh)
 	}
-	cmd := exec.Command(shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
 	ptmx, err := pty.Start(cmd)
 	if err != nil {

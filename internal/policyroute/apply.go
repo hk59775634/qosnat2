@@ -13,16 +13,23 @@ import (
 
 // Apply 根据 state 安装/更新 ip rule（先清理当前策略条目，再写入启用的规则）
 func Apply(st store.State) error {
+	aliases := store.AliasByName(st.Firewall.Aliases)
 	for _, p := range st.Network.EgressPolicies {
 		tbl := store.WanLinkRouteTable(p.WanLinkID, st.Network.WanLinks)
 		if tbl > 0 {
-			delRules(p.CIDR, p.Match, tbl, p.Priority)
+			deleteExpandedPolicy(p, tbl, aliases)
 		}
 	}
 	resolved := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
 	for _, re := range resolved {
-		if err := addRules(re.Policy.CIDR, re.Policy.Match, re.Table, re.Priority); err != nil {
+		rules, err := store.ExpandEgressIPRules(re.Policy, re.Table, aliases)
+		if err != nil {
 			return fmt.Errorf("egress %s: %w", re.Policy.ID, err)
+		}
+		for _, r := range rules {
+			if err := addExpandedRule(r); err != nil {
+				return fmt.Errorf("egress %s: %w", re.Policy.ID, err)
+			}
 		}
 	}
 	if err := checkUnresolvedEgress(st, resolved); err != nil {
@@ -58,62 +65,106 @@ func checkUnresolvedEgress(st store.State, resolved []store.ResolvedEgress) erro
 }
 
 // DeletePolicy 删除单条出站策略对应的 ip rule（在从 state 移除前调用）
-func DeletePolicy(p store.EgressPolicy, links []store.WanLink) {
+func DeletePolicy(p store.EgressPolicy, links []store.WanLink, aliases map[string]store.AliasSet) {
 	tbl := store.WanLinkRouteTable(p.WanLinkID, links)
 	if tbl > 0 {
-		delRules(p.CIDR, p.Match, tbl, p.Priority)
+		deleteExpandedPolicy(p, tbl, aliases)
 	}
 	flushRouteCache()
 }
 
-func ruleDirections(match string) (mainDir, policyDir string) {
-	if match == "" {
-		match = "source"
+func deleteExpandedPolicy(p store.EgressPolicy, table int, aliases map[string]store.AliasSet) {
+	rules, err := store.ExpandEgressIPRules(p, table, aliases)
+	if err != nil {
+		return
 	}
-	mainDir = "to"
-	policyDir = "from"
-	if match == "destination" {
-		mainDir = "from"
-		policyDir = "to"
+	for _, r := range rules {
+		delExpandedRule(r)
 	}
-	return mainDir, policyDir
 }
 
-func addRules(cidr, match string, table, priority int) error {
-	toPrio := priority - 1
+func addExpandedRule(r store.EgressIPRule) error {
+	toPrio := r.Priority - 1
 	if toPrio < 1 {
 		toPrio = 1
 	}
-	mainDir, policyDir := ruleDirections(match)
-	if out, err := exec.Command("ip", "rule", "add", mainDir, cidr, "lookup", "main", "priority", strconv.Itoa(toPrio)).CombinedOutput(); err != nil {
-		msg := strings.TrimSpace(string(out))
-		if !strings.Contains(msg, "File exists") {
-			return fmt.Errorf("ip rule to %s: %s %w", cidr, msg, err)
-		}
+	if err := addPolicyRuleLookup(r.From, r.To, strconv.Itoa(r.Table), r.Priority); err != nil {
+		return err
 	}
-	if out, err := exec.Command("ip", "rule", "add", policyDir, cidr, "lookup", strconv.Itoa(table), "priority", strconv.Itoa(priority)).CombinedOutput(); err != nil {
+	return addMainBypass(r, toPrio)
+}
+
+func addPolicyRuleLookup(from, to, lookup string, priority int) error {
+	args := []string{"rule", "add"}
+	if from != "" {
+		args = append(args, "from", from)
+	}
+	if to != "" {
+		args = append(args, "to", to)
+	}
+	args = append(args, "lookup", lookup, "priority", strconv.Itoa(priority))
+	if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if !strings.Contains(msg, "File exists") {
-			_ = exec.Command("ip", "rule", "del", mainDir, cidr, "lookup", "main", "priority", strconv.Itoa(toPrio)).Run()
-			return fmt.Errorf("ip rule from %s: %s %w", cidr, msg, err)
+			return fmt.Errorf("ip %s: %s %w", strings.Join(args, " "), msg, err)
 		}
 	}
 	return nil
 }
 
-func delRules(cidr, match string, table, priority int) {
-	toPrio := priority - 1
+func addMainBypass(r store.EgressIPRule, toPrio int) error {
+	switch r.Mode {
+	case "source":
+		if r.From == "" {
+			return nil
+		}
+		return addPolicyRuleLookup("", r.From, "main", toPrio)
+	case "destination":
+		if r.To == "" {
+			return nil
+		}
+		return addPolicyRuleLookup(r.To, "", "main", toPrio)
+	case "both":
+		if r.From != "" && r.To != "" {
+			return addPolicyRuleLookup(r.From, r.To, "main", toPrio)
+		}
+	}
+	return nil
+}
+
+func delExpandedRule(r store.EgressIPRule) {
+	toPrio := r.Priority - 1
 	if toPrio < 1 {
 		toPrio = 1
 	}
-	mainDir, policyDir := ruleDirections(match)
-	delRuleLoop(policyDir, cidr, strconv.Itoa(table), priority)
-	delRuleLoop(mainDir, cidr, "main", toPrio)
+	delRuleLoop(r.From, r.To, strconv.Itoa(r.Table), r.Priority)
+	switch r.Mode {
+	case "source":
+		if r.From != "" {
+			delRuleLoop("", r.From, "main", toPrio)
+		}
+	case "destination":
+		if r.To != "" {
+			delRuleLoop(r.To, "", "main", toPrio)
+		}
+	case "both":
+		if r.From != "" && r.To != "" {
+			delRuleLoop(r.From, r.To, "main", toPrio)
+		}
+	}
 }
 
-func delRuleLoop(dir, cidr, lookup string, priority int) {
+func delRuleLoop(from, to, lookup string, priority int) {
 	for {
-		if out, err := exec.Command("ip", "rule", "del", dir, cidr, "lookup", lookup, "priority", strconv.Itoa(priority)).CombinedOutput(); err != nil {
+		args := []string{"rule", "del"}
+		if from != "" {
+			args = append(args, "from", from)
+		}
+		if to != "" {
+			args = append(args, "to", to)
+		}
+		args = append(args, "lookup", lookup, "priority", strconv.Itoa(priority))
+		if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil {
 			msg := strings.TrimSpace(string(out))
 			if msg == "" || strings.Contains(strings.ToLower(msg), "not found") || strings.Contains(msg, "No such file") {
 				break
@@ -129,12 +180,12 @@ func flushRouteCache() {
 
 // AddDestinationRules 为指定目的 CIDR 添加策略路由（match=destination）。
 func AddDestinationRules(cidr string, table, priority int) error {
-	return addRules(cidr, "destination", table, priority)
+	return addExpandedRule(store.EgressIPRule{To: cidr, Table: table, Priority: priority, Mode: "destination"})
 }
 
 // DeleteDestinationRules 删除 AddDestinationRules 写入的规则。
 func DeleteDestinationRules(cidr string, table, priority int) {
-	delRules(cidr, "destination", table, priority)
+	delExpandedRule(store.EgressIPRule{To: cidr, Table: table, Priority: priority, Mode: "destination"})
 }
 
 // FlushRouteCache 刷新路由缓存。
@@ -153,4 +204,18 @@ func ListRules() ([]map[string]any, error) {
 		return nil, err
 	}
 	return raw, nil
+}
+
+// ruleDirections 保留供测试兼容旧 match 语义。
+func ruleDirections(match string) (mainDir, policyDir string) {
+	if match == "" {
+		match = "source"
+	}
+	mainDir = "to"
+	policyDir = "from"
+	if match == "destination" {
+		mainDir = "from"
+		policyDir = "to"
+	}
+	return mainDir, policyDir
 }

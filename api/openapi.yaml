@@ -215,11 +215,13 @@ components:
         system: { type: boolean, description: true 表示平台受管规则，不可 PUT/DELETE }
     FirewallAliasSet:
       type: object
-      required: [name, members]
+      required: [name]
       properties:
         name: { type: string }
         type: { type: string, enum: [ipv4_addr], description: "asn 类型暂不支持" }
         members: { type: array, items: { type: string }, description: IPv4 地址或 CIDR }
+        url: { type: string, description: '从 URL 拉取 CIDR 列表（每行一条）' }
+        url_fetched_at: { type: string, description: '上次 URL 拉取时间 RFC3339' }
         asn: { type: integer, deprecated: true }
         comment: { type: string }
     FirewallRulesListResponse:
@@ -570,10 +572,15 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
-        cidr: { type: string, description: 源 IPv4 CIDR，如 ocserv 地址池 }
-        wan_link_id: { type: string, description: 绑定的 WanLink.id }
-        snat_ip: { type: string, description: 出站 SNAT 地址，空则使用该 WAN 口首个全球 IPv4 }
-        priority: { type: integer, description: ip rule 优先级，默认 100 }
+        cidr: { type: string, description: '旧版单 CIDR（兼容）' }
+        match: { type: string, enum: [source, destination], description: '旧版匹配方向（兼容）' }
+        src_cidr: { type: string }
+        dst_cidr: { type: string }
+        src_alias: { type: string, description: '源地址别名' }
+        dst_alias: { type: string, description: '目标地址别名' }
+        wan_link_id: { type: string, description: '绑定的 WanLink.id' }
+        snat_ip: { type: string, description: '出站 SNAT 地址，空则使用该 WAN 口首个全球 IPv4' }
+        priority: { type: integer, description: 'ip rule 优先级，默认 100' }
         enabled: { type: boolean }
     ResolvedEgress:
       type: object
@@ -1246,6 +1253,98 @@ paths:
           in: path
           required: true
           schema: { type: string }
+
+  /api/v1/frr:
+    get:
+      tags: [network]
+      summary: FRR 状态、路由后端与配置摘要
+      responses:
+        '200':
+          description: status, route_backend, boot_on_startup, extra_config
+    put:
+      tags: [network]
+      summary: 保存路由后端与开机启动设置
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                route_backend: { type: string, enum: [kernel, frr] }
+                boot_on_startup: { type: boolean }
+                extra_config: { type: string }
+      responses:
+        '200':
+          description: ok
+
+  /api/v1/frr/install:
+    post:
+      tags: [network]
+      summary: 后台 apt 安装 FRR
+      responses:
+        '202':
+          description: install started
+        '200':
+          description: already installed
+
+  /api/v1/frr/install/status:
+    get:
+      tags: [network]
+      summary: FRR 安装任务状态
+      responses:
+        '200':
+          description: job state
+
+  /api/v1/frr/service:
+    post:
+      tags: [network]
+      summary: FRR systemd 操作 start|stop|restart
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [start, stop, restart] }
+      responses:
+        '200':
+          description: ok
+
+  /api/v1/frr/config:
+    get:
+      tags: [network]
+      summary: 读取 FRR 原始配置文件
+      parameters:
+        - name: which
+          in: query
+          schema: { type: string, enum: [frr.conf, extra, managed, daemons, include] }
+      responses:
+        '200':
+          description: path + content
+    put:
+      tags: [network]
+      summary: 写入 FRR 原始配置文件
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [which, content]
+              properties:
+                which: { type: string }
+                content: { type: string }
+      responses:
+        '200':
+          description: ok
+
+  /api/v1/frr/apply:
+    post:
+      tags: [network]
+      summary: 通过 FRR 回放托管路由
+      responses:
+        '200':
+          description: ok
 
   /api/v1/nat/policy-routes:
     get:
@@ -2408,6 +2507,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+
+  /api/v1/firewall/aliases/refresh:
+    post:
+      tags: [nat]
+      summary: 从 URL 刷新别名 members
+      parameters:
+        - name: name
+          in: query
+          schema: { type: string }
+          description: 指定别名；省略则刷新所有带 url 的别名
+      responses:
+        '200':
+          description: ok
 
   /api/v1/system/mark-policy:
     get:

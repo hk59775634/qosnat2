@@ -71,7 +71,7 @@ func TestRenderEgressDestinationSNAT(t *testing.T) {
 	}
 	st.Network.EgressPolicies = []store.EgressPolicy{
 		{
-			ID: "eg-cf", CIDR: "173.245.48.0/20", Match: "destination",
+			ID: "eg-cf", DstCIDR: "173.245.48.0/20",
 			WanLinkID: "wan-us", SNATIP: "100.64.0.249", Enabled: true,
 		},
 	}

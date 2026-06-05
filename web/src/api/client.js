@@ -190,11 +190,16 @@ export const api = {
     },
     apply: () => request('/api/v1/firewall/apply', { method: 'POST', body: '{}' }),
     discard: () => request('/api/v1/firewall/discard', { method: 'POST', body: '{}' }),
-    aliases: {
-      list: () => request('/api/v1/firewall/aliases'),
-      add: (body) => request('/api/v1/firewall/aliases', { method: 'POST', body: JSON.stringify(body) }),
-      del: (name) => request(`/api/v1/firewall/aliases?name=${encodeURIComponent(name)}`, { method: 'DELETE' }),
-    },
+  aliases: {
+    list: () => request('/api/v1/firewall/aliases'),
+    add: (body) => request('/api/v1/firewall/aliases', { method: 'POST', body: JSON.stringify(body) }),
+    refresh: (name) =>
+      request(
+        `/api/v1/firewall/aliases/refresh${name ? `?name=${encodeURIComponent(name)}` : ''}`,
+        { method: 'POST', body: '{}' },
+      ),
+    del: (name) => request(`/api/v1/firewall/aliases?name=${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  },
   },
   network: {
     vlans: {
@@ -301,6 +306,21 @@ export const api = {
     installChnroutesDnsmasq: () =>
       request('/api/v1/dhcp/dnsmasq/install-chnroutes', { method: 'POST', body: '{}' }),
     installChnroutesDnsmasqStatus: () => request('/api/v1/dhcp/dnsmasq/install-chnroutes/status'),
+  },
+  frr: {
+    get: () => request('/api/v1/frr'),
+    put: (body) => request('/api/v1/frr', { method: 'PUT', body: JSON.stringify(body) }),
+    apply: () => request('/api/v1/frr/apply', { method: 'POST', body: '{}' }),
+    install: () => request('/api/v1/frr/install', { method: 'POST', body: '{}' }),
+    installStatus: () => request('/api/v1/frr/install/status'),
+    service: (action) =>
+      request('/api/v1/frr/service', { method: 'POST', body: JSON.stringify({ action }) }),
+    getConfig: (which) => request(`/api/v1/frr/config?which=${encodeURIComponent(which)}`),
+    putConfig: (which, content) =>
+      request('/api/v1/frr/config', {
+        method: 'PUT',
+        body: JSON.stringify({ which, content }),
+      }),
   },
   get: (path) => request(path),
   post: (path, body) => request(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),

@@ -69,7 +69,7 @@ func (srv *Server) applyManagedRoutesWithRetry() {
 			time.Sleep(2 * time.Second)
 		}
 		st := srv.store.Get()
-		if err := route.ApplyAll(st.Routes); err != nil {
+		if _, err := route.ApplyManagedRoutes(st.Routes, st.System.RouteBackend); err != nil {
 			log.Printf("routes apply (attempt %d/%d): %v", i+1, attempts, err)
 			continue
 		}

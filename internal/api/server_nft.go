@@ -66,6 +66,9 @@ func (srv *Server) reloadNft() error {
 }
 
 func (srv *Server) reloadNftLocked() error {
+	if warns := srv.refreshURLAliasesLocked(); len(warns) > 0 {
+		log.Printf("url alias refresh: %v", warns)
+	}
 	start := time.Now()
 	st := srv.store.Get()
 	err := nft.Apply(srv.nftCfg(), st)
@@ -80,6 +83,9 @@ func (srv *Server) reloadNftLocked() error {
 
 // applyWanLinkDataPlane 多 WAN 变更后同步策略路由与 nft。
 func (srv *Server) applyWanLinkDataPlane() error {
+	if warns := srv.refreshURLAliasesLocked(); len(warns) > 0 {
+		log.Printf("url alias refresh: %v", warns)
+	}
 	if err := policyroute.Apply(srv.store.Get()); err != nil {
 		return err
 	}

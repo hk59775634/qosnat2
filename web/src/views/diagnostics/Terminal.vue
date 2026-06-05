@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -8,6 +9,7 @@ import '@xterm/xterm/css/xterm.css'
 import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
+const route = useRoute()
 
 const containerRef = ref(null)
 const status = ref('idle')
@@ -20,7 +22,8 @@ let resizeObserver = null
 
 function terminalWsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}/api/v1/diagnostics/terminal`
+  const shell = route.query.shell ? `?shell=${encodeURIComponent(String(route.query.shell))}` : ''
+  return `${proto}//${window.location.host}/api/v1/diagnostics/terminal${shell}`
 }
 
 function sendResize() {

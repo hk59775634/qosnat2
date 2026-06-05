@@ -32,6 +32,7 @@ QOSNAT_APT_PACKAGES=(
 # NAT64 数据面（内核模块需与运行内核匹配，失败时请安装 jool-dkms）
 QOSNAT_APT_PACKAGES_OPTIONAL=(
   jool-tools
+  frr
 )
 
 qosnat_apt_install_packages() {

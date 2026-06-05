@@ -10,12 +10,19 @@ import (
 
 const EgressTableBase = 201
 
-// EgressPolicy 将源网段流量导向指定 WanLink（Linux 策略路由 + 对应 WAN 口 SNAT）
+// GoogleIPv4RangesURL Google 官方 IPv4-only 网段列表。
+const GoogleIPv4RangesURL = "https://www.gstatic.com/ipranges/goog_ipv4_only.txt"
+
+// EgressPolicy 将源/目的网段流量导向指定 WanLink（Linux 策略路由 + 对应 WAN 口 SNAT）
 type EgressPolicy struct {
 	ID        string `json:"id"`
 	Name      string `json:"name,omitempty"`
-	CIDR      string `json:"cidr"`
-	Match     string `json:"match,omitempty"` // source|destination，默认 source
+	CIDR      string `json:"cidr,omitempty"`  // 兼容旧版：单 CIDR + match
+	Match     string `json:"match,omitempty"` // 兼容旧版：source|destination
+	SrcCIDR   string `json:"src_cidr,omitempty"`
+	DstCIDR   string `json:"dst_cidr,omitempty"`
+	SrcAlias  string `json:"src_alias,omitempty"`
+	DstAlias  string `json:"dst_alias,omitempty"`
 	WanLinkID string `json:"wan_link_id"`
 	SNATIP    string `json:"snat_ip,omitempty"` // 空则使用该 WAN 口首个全球 IPv4
 	Priority  int    `json:"priority"`          // ip rule 优先级，越小越优先；默认 100
@@ -39,21 +46,59 @@ func NormalizeEgressPolicy(p *EgressPolicy) error {
 	p.Name = strings.TrimSpace(p.Name)
 	p.CIDR = strings.TrimSpace(p.CIDR)
 	p.Match = strings.TrimSpace(strings.ToLower(p.Match))
+	p.SrcCIDR = strings.TrimSpace(p.SrcCIDR)
+	p.DstCIDR = strings.TrimSpace(p.DstCIDR)
+	p.SrcAlias = strings.TrimSpace(p.SrcAlias)
+	p.DstAlias = strings.TrimSpace(p.DstAlias)
 	p.WanLinkID = strings.TrimSpace(p.WanLinkID)
 	p.SNATIP = strings.TrimSpace(p.SNATIP)
-	if p.CIDR == "" {
-		return fmt.Errorf("cidr required")
+
+	// 旧版 cidr+match 迁移到 src/dst
+	if p.SrcCIDR == "" && p.DstCIDR == "" && p.SrcAlias == "" && p.DstAlias == "" && p.CIDR != "" {
+		if p.Match == "destination" {
+			p.DstCIDR = p.CIDR
+		} else {
+			p.SrcCIDR = p.CIDR
+		}
 	}
-	if err := ValidateCIDR(p.CIDR); err != nil {
-		return err
+	if p.SrcCIDR == "" && p.DstCIDR == "" && p.SrcAlias == "" && p.DstAlias == "" {
+		return fmt.Errorf("source or destination (cidr or alias) required")
+	}
+	if p.SrcCIDR != "" && p.SrcAlias != "" {
+		return fmt.Errorf("src_cidr and src_alias are mutually exclusive")
+	}
+	if p.DstCIDR != "" && p.DstAlias != "" {
+		return fmt.Errorf("dst_cidr and dst_alias are mutually exclusive")
+	}
+	if p.SrcCIDR != "" {
+		if err := ValidateCIDR(p.SrcCIDR); err != nil {
+			return fmt.Errorf("src_cidr: %w", err)
+		}
+	}
+	if p.DstCIDR != "" {
+		if err := ValidateCIDR(p.DstCIDR); err != nil {
+			return fmt.Errorf("dst_cidr: %w", err)
+		}
+	}
+	if p.SrcAlias != "" {
+		if err := ValidateAliasName(p.SrcAlias); err != nil {
+			return fmt.Errorf("src_alias: %w", err)
+		}
+	}
+	if p.DstAlias != "" {
+		if err := ValidateAliasName(p.DstAlias); err != nil {
+			return fmt.Errorf("dst_alias: %w", err)
+		}
+	}
+	if p.CIDR != "" {
+		if err := ValidateCIDR(p.CIDR); err != nil {
+			return err
+		}
 	}
 	if p.WanLinkID == "" {
 		return fmt.Errorf("wan_link_id required")
 	}
-	if p.Match == "" {
-		p.Match = "source"
-	}
-	if p.Match != "source" && p.Match != "destination" {
+	if p.Match != "" && p.Match != "source" && p.Match != "destination" {
 		return fmt.Errorf("match must be source or destination")
 	}
 	if p.SNATIP != "" {
@@ -120,33 +165,91 @@ func EgressPolicyCIDRs(policies []EgressPolicy) []string {
 	return EgressPolicySourceMatchCIDRs(policies)
 }
 
-// EgressPolicySourceMatchCIDRs 仅 source 匹配（默认）的出站 CIDR。
+// EgressPolicySourceMatchCIDRs 仅 source 侧 CIDR（用于主 WAN SNAT 排除）；别名在运行时展开。
 func EgressPolicySourceMatchCIDRs(policies []EgressPolicy) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	for _, p := range EnabledEgressPolicies(policies) {
-		m := p.Match
-		if m == "" {
-			m = "source"
+		for _, c := range []string{p.SrcCIDR, legacySourceCIDR(p)} {
+			c = strings.TrimSpace(c)
+			if c == "" || p.SrcAlias != "" {
+				continue
+			}
+			if _, ok := seen[c]; ok {
+				continue
+			}
+			seen[c] = struct{}{}
+			out = append(out, c)
 		}
-		if m != "source" {
-			continue
-		}
-		if _, ok := seen[p.CIDR]; ok {
-			continue
-		}
-		seen[p.CIDR] = struct{}{}
-		out = append(out, p.CIDR)
 	}
 	return out
 }
 
-// EgressSNATAddrPrefix 返回 nft SNAT 行使用的地址选择前缀（source→saddr，destination→daddr）。
+func legacySourceCIDR(p EgressPolicy) string {
+	if p.SrcCIDR != "" || p.DstCIDR != "" || p.SrcAlias != "" || p.DstAlias != "" {
+		return ""
+	}
+	if p.Match == "destination" {
+		return ""
+	}
+	return p.CIDR
+}
+
+// EgressSNATAddrPrefix 返回 nft SNAT 行使用的地址选择前缀（兼容旧 match 字段）。
 func EgressSNATAddrPrefix(match string) string {
 	if strings.TrimSpace(strings.ToLower(match)) == "destination" {
 		return "ip daddr"
 	}
 	return "ip saddr"
+}
+
+// EgressSNATMatchClause 生成 nft SNAT 匹配子句（支持源/目的 CIDR 与别名组合）。
+func EgressSNATMatchClause(p EgressPolicy) string {
+	var parts []string
+	if p.SrcAlias != "" {
+		parts = append(parts, "ip saddr @alias_"+p.SrcAlias)
+	} else if c := strings.TrimSpace(p.SrcCIDR); c != "" {
+		parts = append(parts, "ip saddr "+c)
+	}
+	if p.DstAlias != "" {
+		parts = append(parts, "ip daddr @alias_"+p.DstAlias)
+	} else if c := strings.TrimSpace(p.DstCIDR); c != "" {
+		parts = append(parts, "ip daddr "+c)
+	}
+	if len(parts) == 0 && p.CIDR != "" {
+		parts = append(parts, EgressSNATAddrPrefix(p.Match)+" "+p.CIDR)
+	}
+	return strings.Join(parts, " ")
+}
+
+// EgressPolicySignature 用于去重比较。
+func EgressPolicySignature(p EgressPolicy) string {
+	return strings.Join([]string{
+		p.SrcCIDR, p.DstCIDR, p.SrcAlias, p.DstAlias, p.CIDR, p.Match, p.WanLinkID,
+	}, "|")
+}
+
+// ValidateEgressPolicyAliases 校验引用的别名存在且有成员。
+func ValidateEgressPolicyAliases(p EgressPolicy, aliases []AliasSet) error {
+	byName := AliasByName(aliases)
+	for _, field := range []struct {
+		name, val string
+	}{
+		{"src_alias", p.SrcAlias},
+		{"dst_alias", p.DstAlias},
+	} {
+		if field.val == "" {
+			continue
+		}
+		a, ok := byName[field.val]
+		if !ok {
+			return fmt.Errorf("%s: alias %q not found", field.name, field.val)
+		}
+		if len(a.Members) == 0 {
+			return fmt.Errorf("%s: alias %q has no members", field.name, field.val)
+		}
+	}
+	return nil
 }
 
 // FilterPolicyRoutesForWAN 从 policy_routes 中去掉已由出站策略接管的 CIDR

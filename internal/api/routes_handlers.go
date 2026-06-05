@@ -30,11 +30,12 @@ func (srv *Server) handleRoutesGet(w http.ResponseWriter, r *http.Request) {
 	live = route.MarkManaged(live, st.Routes)
 	managed := store.EnrichManagedRoutes(st.Routes, st)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"managed": managed,
-		"live":    live,
-		"dev_lan": srv.env.DevLAN,
-		"dev_wan": srv.env.DevWAN,
-		"table":   254,
+		"managed":       managed,
+		"live":          live,
+		"dev_lan":       srv.env.DevLAN,
+		"dev_wan":       srv.env.DevWAN,
+		"table":         254,
+		"route_backend": route.NormalizeBackend(st.System.RouteBackend),
 	})
 }
 
@@ -191,11 +192,12 @@ func (srv *Server) handleRoutesApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := srv.store.Get()
-	if err := route.ApplyAll(st.Routes); err != nil {
+	res, err := route.ApplyManagedRoutes(st.Routes, st.System.RouteBackend)
+	if err != nil {
 		writeInternalError(w, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res})
 }
 
 func (srv *Server) normalizeRouteInput(body store.RouteEntry) (store.RouteEntry, error) {
@@ -254,7 +256,7 @@ func errNeedGwOrDev() error    { return errGwDev{} }
 
 func (srv *Server) applyManagedRoutes() {
 	st := srv.store.Get()
-	if err := route.ApplyAll(st.Routes); err != nil {
+	if _, err := route.ApplyManagedRoutes(st.Routes, st.System.RouteBackend); err != nil {
 		log.Printf("routes apply: %v", err)
 	}
 }

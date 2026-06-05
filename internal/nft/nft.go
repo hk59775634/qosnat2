@@ -103,17 +103,20 @@ func Render(cfg Config, st store.State) (string, error) {
 	}
 	writeNPTv6Postrouting(&b, cfg, st.Nat)
 	for _, e := range egress {
-		addrSel := store.EgressSNATAddrPrefix(e.Policy.Match)
+		match := store.EgressSNATMatchClause(e.Policy)
+		if match == "" {
+			continue
+		}
 		if e.Masquerade {
 			b.WriteString(fmt.Sprintf(
-				"        %s %s oifname \"%s\" masquerade\n",
-				addrSel, e.Policy.CIDR, e.Device,
+				"        %s oifname \"%s\" masquerade\n",
+				match, e.Device,
 			))
 			continue
 		}
 		b.WriteString(fmt.Sprintf(
-			"        %s %s oifname \"%s\" snat to %s\n",
-			addrSel, e.Policy.CIDR, e.Device, e.SNATIP,
+			"        %s oifname \"%s\" snat to %s\n",
+			match, e.Device, e.SNATIP,
 		))
 	}
 	if len(ips) > 0 {

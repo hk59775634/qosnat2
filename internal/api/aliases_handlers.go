@@ -25,6 +25,12 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 			writeBadRequest(w, err.Error())
 			return
 		}
+		if body.URL != "" && len(body.Members) == 0 {
+			if err := store.RefreshAliasFromURL(&body); err != nil {
+				writeBadRequest(w, err.Error())
+				return
+			}
+		}
 		st := srv.store.Get()
 		var newAliases []store.AliasSet
 		replaced := false
@@ -79,6 +85,10 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 		}
 		if store.AliasReferencedByRules(st.Firewall.FilterRules, name) {
 			writeConflict(w, "alias is referenced by firewall rules")
+			return
+		}
+		if store.AliasReferencedByEgress(st.Network.EgressPolicies, name) {
+			writeConflict(w, "alias is referenced by egress policies")
 			return
 		}
 		proposed := st

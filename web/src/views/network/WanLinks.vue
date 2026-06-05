@@ -8,6 +8,8 @@ import PageTabs from '@/components/PageTabs.vue'
 const { t } = useI18n()
 const links = ref([])
 const egress = ref([])
+const aliases = ref([])
+const googleIpv4Url = ref('')
 const resolved = ref([])
 const cloudflareCIDRs = ref([])
 const warpStatusDefaults = {
@@ -57,8 +59,12 @@ const form = ref({
 })
 const egForm = ref({
   name: 'US exit',
-  cidr: '10.250.0.0/24',
-  match: 'source',
+  src_mode: 'cidr',
+  src_cidr: '10.250.0.0/24',
+  src_alias: '',
+  dst_mode: 'none',
+  dst_cidr: '',
+  dst_alias: '',
   wan_link_id: '',
   snat_ip: '',
   priority: 100,
@@ -68,8 +74,12 @@ const editingId = ref(null)
 const editingEgressId = ref(null)
 const egEditForm = ref({
   name: '',
-  cidr: '',
-  match: 'source',
+  src_mode: 'cidr',
+  src_cidr: '',
+  src_alias: '',
+  dst_mode: 'none',
+  dst_cidr: '',
+  dst_alias: '',
   wan_link_id: '',
   snat_ip: '',
   priority: 100,
@@ -288,6 +298,8 @@ async function load() {
   links.value = wan.wan_links || []
   devWan.value = wan.dev_wan || ''
   egress.value = eg.egress_policies || []
+  aliases.value = eg.aliases || []
+  googleIpv4Url.value = eg.google_ipv4_url || 'https://www.gstatic.com/ipranges/goog_ipv4_only.txt'
   resolved.value = eg.resolved || []
   cloudflareCIDRs.value = eg.cloudflare_cdn_cidrs_ipv4 || []
   applyWarpStatus(ws)
@@ -636,10 +648,106 @@ async function remove(id) {
 async function addEgress() {
   err.value = ''
   try {
-    const body = { ...egForm.value }
-    if (!body.snat_ip) delete body.snat_ip
+    const body = buildEgressBody(egForm.value)
     await api.network.egressPolicies.add(body)
     ok.value = t('common.saved')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+function buildEgressBody(f) {
+  const body = {
+    name: f.name,
+    wan_link_id: f.wan_link_id,
+    priority: f.priority,
+    enabled: f.enabled,
+  }
+  if (f.snat_ip) body.snat_ip = f.snat_ip
+  if (f.src_mode === 'cidr' && f.src_cidr) body.src_cidr = f.src_cidr.trim()
+  if (f.src_mode === 'alias' && f.src_alias) body.src_alias = f.src_alias
+  if (f.dst_mode === 'cidr' && f.dst_cidr) body.dst_cidr = f.dst_cidr.trim()
+  if (f.dst_mode === 'alias' && f.dst_alias) body.dst_alias = f.dst_alias
+  return body
+}
+
+function egressEndpointsLabel(p) {
+  const parts = []
+  if (p.src_alias) parts.push(`${t('network.wanLinks.srcShort')}:@${p.src_alias}`)
+  else if (p.src_cidr) parts.push(`${t('network.wanLinks.srcShort')}:${p.src_cidr}`)
+  else if (p.cidr && p.match !== 'destination') parts.push(`${t('network.wanLinks.srcShort')}:${p.cidr}`)
+  if (p.dst_alias) parts.push(`${t('network.wanLinks.dstShort')}:@${p.dst_alias}`)
+  else if (p.dst_cidr) parts.push(`${t('network.wanLinks.dstShort')}:${p.dst_cidr}`)
+  else if (p.cidr && (p.match === 'destination' || (!p.src_cidr && !p.src_alias))) {
+    parts.push(`${t('network.wanLinks.dstShort')}:${p.cidr}`)
+  }
+  return parts.join(' · ') || '—'
+}
+
+function policyToEditForm(p) {
+  let src_mode = 'none'
+  let dst_mode = 'none'
+  let src_cidr = ''
+  let src_alias = ''
+  let dst_cidr = ''
+  let dst_alias = ''
+  if (p.src_alias) {
+    src_mode = 'alias'
+    src_alias = p.src_alias
+  } else if (p.src_cidr) {
+    src_mode = 'cidr'
+    src_cidr = p.src_cidr
+  } else if (p.cidr && p.match !== 'destination') {
+    src_mode = 'cidr'
+    src_cidr = p.cidr
+  }
+  if (p.dst_alias) {
+    dst_mode = 'alias'
+    dst_alias = p.dst_alias
+  } else if (p.dst_cidr) {
+    dst_mode = 'cidr'
+    dst_cidr = p.dst_cidr
+  } else if (p.cidr && p.match === 'destination') {
+    dst_mode = 'cidr'
+    dst_cidr = p.cidr
+  }
+  return {
+    name: p.name || '',
+    src_mode,
+    src_cidr,
+    src_alias,
+    dst_mode,
+    dst_cidr,
+    dst_alias,
+    wan_link_id: p.wan_link_id,
+    snat_ip: p.snat_ip || '',
+    priority: p.priority,
+    enabled: p.enabled,
+  }
+}
+
+async function addGooglePreset() {
+  if (!egForm.value.wan_link_id) return
+  err.value = ''
+  ok.value = ''
+  const url = googleIpv4Url.value
+  try {
+    await api.firewall.aliases.add({
+      name: 'google_ipv4',
+      type: 'ipv4_addr',
+      url,
+      comment: 'Google IPv4-only ranges',
+    })
+    await api.network.egressPolicies.add({
+      name: 'Google IPv4',
+      dst_alias: 'google_ipv4',
+      wan_link_id: egForm.value.wan_link_id,
+      snat_ip: egForm.value.snat_ip || undefined,
+      priority: egForm.value.priority || 100,
+      enabled: true,
+    })
+    ok.value = t('network.wanLinks.googlePresetOk')
     await load()
   } catch (e) {
     err.value = e.message
@@ -675,15 +783,7 @@ async function addCloudflarePreset() {
 
 function startEditEgress(p) {
   editingEgressId.value = p.id
-  egEditForm.value = {
-    name: p.name || '',
-    cidr: p.cidr,
-    match: p.match || 'source',
-    wan_link_id: p.wan_link_id,
-    snat_ip: p.snat_ip || '',
-    priority: p.priority,
-    enabled: p.enabled,
-  }
+  egEditForm.value = policyToEditForm(p)
 }
 
 function cancelEditEgress() {
@@ -694,8 +794,7 @@ async function saveEditEgress() {
   if (!editingEgressId.value) return
   err.value = ''
   try {
-    const body = { ...egEditForm.value }
-    if (!body.snat_ip) delete body.snat_ip
+    const body = buildEgressBody(egEditForm.value)
     await api.network.egressPolicies.put(editingEgressId.value, body)
     editingEgressId.value = null
     ok.value = t('common.saved')
@@ -982,21 +1081,50 @@ onUnmounted(() => {
           <input v-model="egForm.name" class="input-field mt-1" />
         </div>
         <div>
-          <label class="text-xs text-slate-500">{{ t('network.wanLinks.targetCidr') }}</label>
-          <input v-model="egForm.cidr" class="input-field mt-1 font-mono" placeholder="10.250.0.0/24" />
-        </div>
-        <div>
-          <label class="text-xs text-slate-500">{{ t('network.wanLinks.matchType') }}</label>
-          <select v-model="egForm.match" class="input-field mt-1">
-            <option value="source">{{ t('network.wanLinks.matchSource') }}</option>
-            <option value="destination">{{ t('network.wanLinks.matchDestination') }}</option>
-          </select>
-        </div>
-        <div>
           <label class="text-xs text-slate-500">{{ t('network.wanLinks.wanLink') }}</label>
           <select v-model="egForm.wan_link_id" class="input-field mt-1">
             <option value="">{{ t('network.interfaces.choose') }}</option>
             <option v-for="o in linkOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.srcAddress') }}</label>
+          <select v-model="egForm.src_mode" class="input-field mt-1 mb-1">
+            <option value="none">{{ t('network.wanLinks.matchAny') }}</option>
+            <option value="cidr">{{ t('network.wanLinks.matchCidr') }}</option>
+            <option value="alias">{{ t('network.wanLinks.matchAlias') }}</option>
+          </select>
+          <input
+            v-if="egForm.src_mode === 'cidr'"
+            v-model="egForm.src_cidr"
+            class="input-field font-mono"
+            placeholder="10.250.0.0/24"
+          />
+          <select v-else-if="egForm.src_mode === 'alias'" v-model="egForm.src_alias" class="input-field font-mono">
+            <option value="">{{ t('network.interfaces.choose') }}</option>
+            <option v-for="a in aliases" :key="a.name" :value="a.name">
+              {{ a.name }} ({{ (a.members || []).length }})
+            </option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.dstAddress') }}</label>
+          <select v-model="egForm.dst_mode" class="input-field mt-1 mb-1">
+            <option value="none">{{ t('network.wanLinks.matchAny') }}</option>
+            <option value="cidr">{{ t('network.wanLinks.matchCidr') }}</option>
+            <option value="alias">{{ t('network.wanLinks.matchAlias') }}</option>
+          </select>
+          <input
+            v-if="egForm.dst_mode === 'cidr'"
+            v-model="egForm.dst_cidr"
+            class="input-field font-mono"
+            placeholder="173.245.48.0/20"
+          />
+          <select v-else-if="egForm.dst_mode === 'alias'" v-model="egForm.dst_alias" class="input-field font-mono">
+            <option value="">{{ t('network.interfaces.choose') }}</option>
+            <option v-for="a in aliases" :key="'d-' + a.name" :value="a.name">
+              {{ a.name }} ({{ (a.members || []).length }})
+            </option>
           </select>
         </div>
         <div>
@@ -1021,6 +1149,12 @@ onUnmounted(() => {
         >
           {{ t('network.wanLinks.cloudflarePreset') }}
         </button>
+        <button type="button" class="btn-secondary" :disabled="!egForm.wan_link_id" @click="addGooglePreset">
+          {{ t('network.wanLinks.googlePreset') }}
+        </button>
+        <RouterLink to="/firewall/aliases" class="btn-secondary text-xs inline-flex items-center">
+          {{ t('network.wanLinks.manageAliases') }}
+        </RouterLink>
       </div>
     </div>
 
@@ -1029,8 +1163,7 @@ onUnmounted(() => {
         <thead>
           <tr>
             <th>{{ t('common.name') }}</th>
-            <th>{{ t('network.wanLinks.targetCidr') }}</th>
-            <th>{{ t('network.wanLinks.matchType') }}</th>
+            <th>{{ t('network.wanLinks.endpoints') }}</th>
             <th>{{ t('network.wanLinks.wanLink') }}</th>
             <th>SNAT</th>
             <th>{{ t('network.wanLinks.routeTable') }}</th>
@@ -1042,11 +1175,24 @@ onUnmounted(() => {
           <tr v-for="p in egress" :key="p.id" :class="editingEgressId === p.id ? 'bg-slate-50' : ''">
             <template v-if="editingEgressId === p.id">
               <td><input v-model="egEditForm.name" class="input-field text-xs" /></td>
-              <td><input v-model="egEditForm.cidr" class="input-field text-xs font-mono" /></td>
-              <td>
-                <select v-model="egEditForm.match" class="input-field text-xs">
-                  <option value="source">{{ t('network.wanLinks.matchSource') }}</option>
-                  <option value="destination">{{ t('network.wanLinks.matchDestination') }}</option>
+              <td class="space-y-1 min-w-[14rem]">
+                <select v-model="egEditForm.src_mode" class="input-field text-xs">
+                  <option value="none">{{ t('network.wanLinks.srcAddress') }}: {{ t('network.wanLinks.matchAny') }}</option>
+                  <option value="cidr">{{ t('network.wanLinks.srcAddress') }}: CIDR</option>
+                  <option value="alias">{{ t('network.wanLinks.srcAddress') }}: {{ t('network.wanLinks.matchAlias') }}</option>
+                </select>
+                <input v-if="egEditForm.src_mode === 'cidr'" v-model="egEditForm.src_cidr" class="input-field text-xs font-mono" />
+                <select v-else-if="egEditForm.src_mode === 'alias'" v-model="egEditForm.src_alias" class="input-field text-xs">
+                  <option v-for="a in aliases" :key="'es-' + a.name" :value="a.name">{{ a.name }}</option>
+                </select>
+                <select v-model="egEditForm.dst_mode" class="input-field text-xs">
+                  <option value="none">{{ t('network.wanLinks.dstAddress') }}: {{ t('network.wanLinks.matchAny') }}</option>
+                  <option value="cidr">{{ t('network.wanLinks.dstAddress') }}: CIDR</option>
+                  <option value="alias">{{ t('network.wanLinks.dstAddress') }}: {{ t('network.wanLinks.matchAlias') }}</option>
+                </select>
+                <input v-if="egEditForm.dst_mode === 'cidr'" v-model="egEditForm.dst_cidr" class="input-field text-xs font-mono" />
+                <select v-else-if="egEditForm.dst_mode === 'alias'" v-model="egEditForm.dst_alias" class="input-field text-xs">
+                  <option v-for="a in aliases" :key="'ed-' + a.name" :value="a.name">{{ a.name }}</option>
                 </select>
               </td>
               <td>
@@ -1067,8 +1213,7 @@ onUnmounted(() => {
             </template>
             <template v-else>
               <td>{{ p.name || p.id }}</td>
-              <td class="font-mono">{{ p.cidr }}</td>
-              <td>{{ p.match === 'destination' ? t('network.wanLinks.matchDestination') : t('network.wanLinks.matchSource') }}</td>
+              <td class="font-mono text-xs">{{ egressEndpointsLabel(p) }}</td>
               <td class="font-mono">{{ links.find((w) => w.id === p.wan_link_id)?.name || p.wan_link_id }}</td>
               <td class="font-mono text-xs">
                 {{ resolvedRow(p.id)?.snat_ip || p.snat_ip || t('network.wanLinks.snatAuto') }}
@@ -1082,7 +1227,7 @@ onUnmounted(() => {
             </template>
           </tr>
           <tr v-if="!egress.length">
-            <td colspan="8" class="text-center text-slate-400 py-3">{{ t('network.wanLinks.noEgress') }}</td>
+            <td colspan="7" class="text-center text-slate-400 py-3">{{ t('network.wanLinks.noEgress') }}</td>
           </tr>
         </tbody>
       </table>

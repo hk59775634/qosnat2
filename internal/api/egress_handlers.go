@@ -27,8 +27,10 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			"egress_policies":           policies,
 			"wan_links":                 links,
 			"resolved":                  resolved,
+			"aliases":                   st.Firewall.Aliases,
 			"dev_wan":                   srv.env.DevWAN,
 			"cloudflare_cdn_cidrs_ipv4": store.CloudflareCDNCIDRsV4(),
+			"google_ipv4_url":           store.GoogleIPv4RangesURL,
 		})
 	case http.MethodPost:
 		var body store.EgressPolicy
@@ -45,9 +47,14 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeBadRequest(w, "wan_link_id not found")
 			return
 		}
+		if err := store.ValidateEgressPolicyAliases(body, st.Firewall.Aliases); err != nil {
+			writeBadRequest(w, err.Error())
+			return
+		}
+		sig := store.EgressPolicySignature(body)
 		for _, p := range st.Network.EgressPolicies {
-			if p.CIDR == body.CIDR && p.ID != body.ID {
-				writeBadRequest(w, "cidr already used by another egress policy")
+			if store.EgressPolicySignature(p) == sig && p.ID != body.ID {
+				writeBadRequest(w, "duplicate egress policy endpoints")
 				return
 			}
 		}
@@ -80,9 +87,14 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeBadRequest(w, "wan_link_id not found")
 			return
 		}
+		if err := store.ValidateEgressPolicyAliases(body, stBefore.Firewall.Aliases); err != nil {
+			writeBadRequest(w, err.Error())
+			return
+		}
+		sig := store.EgressPolicySignature(body)
 		for _, p := range stBefore.Network.EgressPolicies {
-			if p.ID != id && p.CIDR == body.CIDR {
-				writeBadRequest(w, "cidr already used")
+			if p.ID != id && store.EgressPolicySignature(p) == sig {
+				writeBadRequest(w, "duplicate egress policy endpoints")
 				return
 			}
 		}
@@ -113,7 +125,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			return
 		}
 		if old.ID != "" {
-			policyroute.DeletePolicy(old, stBefore.Network.WanLinks)
+			policyroute.DeletePolicy(old, stBefore.Network.WanLinks, store.AliasByName(stBefore.Firewall.Aliases))
 		}
 		if !srv.saveState(w) {
 			srv.setEgressPolicies(backup)
@@ -161,7 +173,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeNftApplyError(w, err)
 			return
 		}
-		policyroute.DeletePolicy(removed, links)
+		policyroute.DeletePolicy(removed, links, store.AliasByName(srv.store.Get().Firewall.Aliases))
 		if !srv.saveState(w) {
 			srv.setEgressPolicies(backup)
 			return
@@ -251,16 +263,21 @@ func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *htt
 			writeBadRequest(w, "wan_link_id not found: "+p.WanLinkID)
 			return
 		}
+		if err := store.ValidateEgressPolicyAliases(p, st.Firewall.Aliases); err != nil {
+			writeBadRequest(w, err.Error())
+			return
+		}
 		normalized = append(normalized, p)
 	}
 	var added, skipped int
 	if !srv.commitEgressChange(w, func(st *store.State) {
-		existingCIDR := map[string]struct{}{}
+		existingSig := map[string]struct{}{}
 		for _, p := range st.Network.EgressPolicies {
-			existingCIDR[p.CIDR] = struct{}{}
+			existingSig[store.EgressPolicySignature(p)] = struct{}{}
 		}
 		for _, p := range normalized {
-			if _, dup := existingCIDR[p.CIDR]; dup {
+			sig := store.EgressPolicySignature(p)
+			if _, dup := existingSig[sig]; dup {
 				if body.SkipExisting {
 					skipped++
 					continue
@@ -268,7 +285,7 @@ func (srv *Server) handleNetworkEgressPoliciesBulk(w http.ResponseWriter, r *htt
 				continue
 			}
 			st.Network.EgressPolicies = append(st.Network.EgressPolicies, p)
-			existingCIDR[p.CIDR] = struct{}{}
+			existingSig[sig] = struct{}{}
 			added++
 		}
 		if added > 0 {

@@ -1,14 +1,29 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
+import FloatingTerminal from '@/components/FloatingTerminal.vue'
 
 const { t } = useI18n()
 const managed = ref([])
 const live = ref([])
 const devLan = ref('')
 const devWan = ref('')
+const routeBackend = ref('kernel')
+const frrBootOnStartup = ref(false)
+const frrStatus = ref({})
+const frrRoot = ref(false)
+const frrInstallJob = ref(null)
+const installingFrr = ref(false)
+const frrInstallPoll = ref(null)
+const frrInstallPollErrs = ref(0)
+const showTerminal = ref(false)
+const showConfig = ref(false)
+const configTab = ref('frr.conf')
+const configPath = ref('')
+const configContent = ref('')
+const configSaving = ref(false)
 const err = ref('')
 const ok = ref('')
 const form = ref({
@@ -20,12 +35,151 @@ const form = ref({
   enabled: true,
 })
 
+const configTabs = [
+  { id: 'frr.conf', labelKey: 'network.routes.frrConfigTabFrr' },
+  { id: 'extra', labelKey: 'network.routes.frrConfigTabExtra' },
+  { id: 'managed', labelKey: 'network.routes.frrConfigTabManaged' },
+  { id: 'daemons', labelKey: 'network.routes.frrConfigTabDaemons' },
+]
+
+async function loadFrr() {
+  try {
+    const f = await api.frr.get()
+    routeBackend.value = f.route_backend || 'kernel'
+    frrBootOnStartup.value = !!f.boot_on_startup
+    frrStatus.value = f.status || {}
+    frrRoot.value = !!f.root
+    frrInstallJob.value = f.install_job || null
+  } catch {
+    frrStatus.value = {}
+  }
+}
+
 async function load() {
   const d = await api.get('/api/v1/routes')
   managed.value = d.managed || []
   live.value = d.live || []
   devLan.value = d.dev_lan || ''
   devWan.value = d.dev_wan || ''
+  if (d.route_backend) routeBackend.value = d.route_backend
+  await loadFrr()
+}
+
+function stopFrrInstallPoll() {
+  if (frrInstallPoll.value) {
+    clearInterval(frrInstallPoll.value)
+    frrInstallPoll.value = null
+  }
+}
+
+function startFrrInstallPoll() {
+  stopFrrInstallPoll()
+  frrInstallPollErrs.value = 0
+  frrInstallPoll.value = setInterval(async () => {
+    try {
+      const j = await api.frr.installStatus()
+      frrInstallPollErrs.value = 0
+      frrInstallJob.value = j
+      if (j.state === 'ok') {
+        stopFrrInstallPoll()
+        installingFrr.value = false
+        frrInstallJob.value = null
+        ok.value = t('network.routes.frrInstalledOk')
+        await loadFrr()
+      } else if (j.state === 'failed') {
+        stopFrrInstallPoll()
+        installingFrr.value = false
+        err.value = j.message || t('network.routes.frrInstallFailed')
+      }
+    } catch {
+      frrInstallPollErrs.value += 1
+      if (frrInstallPollErrs.value >= 3) {
+        stopFrrInstallPoll()
+        installingFrr.value = false
+      }
+    }
+  }, 3000)
+}
+
+async function installFrr() {
+  err.value = ''
+  ok.value = ''
+  if (!frrRoot.value) {
+    err.value = t('network.routes.frrInstallNeedRoot')
+    return
+  }
+  try {
+    installingFrr.value = true
+    const r = await api.frr.install()
+    if (r?.job?.state === 'ok') {
+      installingFrr.value = false
+      ok.value = r.message || t('network.routes.frrInstalledOk')
+      await loadFrr()
+      return
+    }
+    ok.value = r.message || t('network.routes.frrInstalling')
+    frrInstallJob.value = r.job || { state: 'running' }
+    startFrrInstallPoll()
+  } catch (e) {
+    installingFrr.value = false
+    err.value = e.message
+  }
+}
+
+async function saveFrr() {
+  err.value = ''
+  ok.value = ''
+  try {
+    await api.frr.put({
+      route_backend: routeBackend.value,
+      boot_on_startup: frrBootOnStartup.value,
+    })
+    ok.value = t('network.routes.frrSaved')
+    await loadFrr()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+async function frrService(action) {
+  err.value = ''
+  try {
+    await api.frr.service(action)
+    ok.value = t('network.routes.frrServiceDone')
+    await loadFrr()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+async function openConfigModal() {
+  showConfig.value = true
+  await loadConfigTab(configTab.value)
+}
+
+async function loadConfigTab(which) {
+  configTab.value = which
+  try {
+    const d = await api.frr.getConfig(which)
+    configPath.value = d.path || ''
+    configContent.value = d.content || ''
+  } catch (e) {
+    err.value = e.message
+    configContent.value = ''
+  }
+}
+
+async function saveConfig() {
+  configSaving.value = true
+  err.value = ''
+  try {
+    await api.frr.putConfig(configTab.value, configContent.value)
+    ok.value = t('network.routes.frrConfigSaved')
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    configSaving.value = false
+  }
 }
 
 async function addRoute() {
@@ -88,8 +242,14 @@ function routeTableLabel(r) {
 async function applyAll() {
   err.value = ''
   try {
-    await api.post('/api/v1/routes/apply', {})
-    ok.value = t('network.routes.replayed')
+    const d = await api.post('/api/v1/routes/apply', {})
+    const r = d.result || {}
+    const applied = r.applied ?? 0
+    const skipped = r.skipped ?? 0
+    ok.value =
+      applied === 0 && skipped > 0
+        ? t('network.routes.replayNoop')
+        : t('network.routes.replayed', { applied, skipped })
     await load()
   } catch (e) {
     err.value = e.message
@@ -106,6 +266,7 @@ function fmtRoute(r) {
 }
 
 onMounted(load)
+onBeforeUnmount(stopFrrInstallPoll)
 </script>
 
 <template>
@@ -142,6 +303,89 @@ onMounted(load)
       <div class="flex gap-2 mt-4">
         <button type="button" class="btn-primary" @click="addRoute">{{ t('network.routes.addApply') }}</button>
         <button type="button" class="btn-secondary" @click="applyAll">{{ t('network.routes.replay') }}</button>
+      </div>
+    </div>
+
+    <div class="card card-body mb-0 space-y-4">
+      <div>
+        <h3 class="font-medium">{{ t('network.routes.frrSection') }}</h3>
+        <p class="text-xs text-slate-500 mt-1">{{ t('network.routes.frrHint') }}</p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3 text-sm">
+        <div class="sm:col-span-2">
+          <label class="text-xs text-slate-500">{{ t('network.routes.routeBackend') }}</label>
+          <select v-model="routeBackend" class="input-field mt-1">
+            <option value="kernel">{{ t('network.routes.routeBackendKernel') }}</option>
+            <option value="frr">{{ t('network.routes.routeBackendFrr') }}</option>
+          </select>
+        </div>
+      </div>
+
+      <template v-if="routeBackend === 'frr'">
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span
+            class="inline-flex px-2 py-0.5 rounded"
+            :class="frrStatus.package_installed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+          >
+            {{ frrStatus.package_installed ? t('network.routes.frrInstalled') : t('network.routes.frrNotInstalled') }}
+          </span>
+          <span
+            v-if="frrStatus.package_installed"
+            class="inline-flex px-2 py-0.5 rounded"
+            :class="frrStatus.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'"
+          >
+            {{ frrStatus.active ? t('network.routes.frrActive') : t('network.routes.frrInactive') }}
+          </span>
+          <span v-if="frrStatus.version" class="text-slate-500 font-mono">{{ frrStatus.version }}</span>
+        </div>
+
+        <div v-if="!frrStatus.package_installed" class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="btn-primary"
+            :disabled="installingFrr"
+            @click="installFrr"
+          >
+            {{ installingFrr ? t('network.routes.frrInstalling') : t('network.routes.frrInstall') }}
+          </button>
+          <p v-if="frrInstallJob?.log_tail" class="text-xs text-slate-500 font-mono whitespace-pre-wrap max-w-full">
+            {{ frrInstallJob.log_tail }}
+          </p>
+        </div>
+
+        <label class="flex items-start gap-2 text-sm">
+          <input v-model="frrBootOnStartup" type="checkbox" class="mt-0.5" />
+          <span>
+            {{ t('network.routes.frrBootOnStartup') }}
+            <span class="block text-xs text-slate-500">{{ t('network.routes.frrBootHint') }}</span>
+          </span>
+        </label>
+
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn-secondary" @click="saveFrr">{{ t('network.routes.frrSave') }}</button>
+          <template v-if="frrStatus.package_installed">
+            <button type="button" class="btn-secondary" @click="frrService('start')">
+              {{ t('network.routes.frrServiceStart') }}
+            </button>
+            <button type="button" class="btn-secondary" @click="frrService('stop')">
+              {{ t('network.routes.frrServiceStop') }}
+            </button>
+            <button type="button" class="btn-secondary" @click="frrService('restart')">
+              {{ t('network.routes.frrServiceRestart') }}
+            </button>
+          </template>
+          <button type="button" class="btn-secondary" @click="showTerminal = true">
+            {{ t('network.routes.frrOpenVtysh') }}
+          </button>
+          <button type="button" class="btn-secondary" @click="openConfigModal">
+            {{ t('network.routes.frrEditConfig') }}
+          </button>
+        </div>
+      </template>
+
+      <div v-else class="flex flex-wrap gap-2">
+        <button type="button" class="btn-secondary" @click="saveFrr">{{ t('network.routes.frrSave') }}</button>
       </div>
     </div>
 
@@ -216,5 +460,67 @@ onMounted(load)
         </table>
       </section>
     </div>
+
+    <FloatingTerminal
+      :open="showTerminal"
+      shell="vtysh"
+      :title="t('network.routes.frrTerminalTitle')"
+      @close="showTerminal = false"
+    />
+
+    <Teleport to="body">
+      <div
+        v-if="showConfig"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40"
+        role="dialog"
+        aria-modal="true"
+        @click.self="showConfig = false"
+      >
+        <div class="card w-full max-w-3xl shadow-xl flex flex-col max-h-[90vh]" @click.stop>
+          <div class="flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-200">
+            <div>
+              <h3 class="font-semibold text-sm">{{ t('network.routes.frrConfigTitle') }}</h3>
+              <p v-if="configPath" class="text-xs text-slate-500 font-mono mt-0.5">{{ configPath }}</p>
+            </div>
+            <button
+              type="button"
+              class="text-slate-400 hover:text-slate-600 text-xl leading-none"
+              @click="showConfig = false"
+            >
+              ×
+            </button>
+          </div>
+          <div class="flex flex-wrap gap-1 px-4 pt-3 border-b border-slate-100">
+            <button
+              v-for="tab in configTabs"
+              :key="tab.id"
+              type="button"
+              class="text-xs px-3 py-1.5 rounded-t border-b-2 -mb-px"
+              :class="
+                configTab === tab.id
+                  ? 'border-blue-500 text-blue-700 bg-blue-50'
+                  : 'border-transparent text-slate-600 hover:bg-slate-50'
+              "
+              @click="loadConfigTab(tab.id)"
+            >
+              {{ t(tab.labelKey) }}
+            </button>
+          </div>
+          <div class="p-4 flex-1 min-h-0 flex flex-col gap-3">
+            <textarea
+              v-model="configContent"
+              class="input-field font-mono text-xs flex-1 min-h-[20rem] resize-y"
+              spellcheck="false"
+            />
+            <div class="flex justify-end gap-2">
+              <button type="button" class="btn-secondary" @click="showConfig = false">{{ t('common.cancel') }}</button>
+              <button type="button" class="btn-primary" :disabled="configSaving" @click="saveConfig">
+                {{ t('common.save') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
