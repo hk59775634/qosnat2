@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060501",
+      "tag": "v2026060501",
+      "published_at": "2026-06-05T04:33:50Z",
+      "summary": "FRR 路由完整 UI；出站策略支持源/目标双端与 URL 别名；托管路由 diff+batch 回放优化。"
+    },
+    {
       "id": "2026060401",
       "tag": "v2026060401",
       "published_at": "2026-06-04T04:31:46Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060102",
       "published_at": "2026-06-01T12:34:40Z",
       "summary": "版本切换支持选择下载线路（直连、GitHub 代理、多 WAN 出口）；版本管理页布局与 rebuild 脚本改进。"
-    },
-    {
-      "id": "2026060101",
-      "tag": "v2026060101",
-      "published_at": "2026-06-01T08:53:21Z",
-      "summary": "修复 WARP 启用长时间卡在连接中；状态区显示 License Key 并支持应用 WARP+；加固损坏 netns pin 清理。"
     }
   ]
 }
