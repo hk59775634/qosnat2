@@ -28,7 +28,7 @@ func (srv *Server) syncAutoFirewallRules() {
 			OCServTCP:     vp.OCServTCP,
 			OCServUDP:     vp.OCServUDP,
 			WGPorts:       vp.WGPorts,
-		}, s.Firewall.WanPortForwards, srv.env.DevLAN)
+		}, s.Firewall.WanPortForwards, srv.env.DevLAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN))
 		s.Firewall.FilterRules = synced
 	})
 }

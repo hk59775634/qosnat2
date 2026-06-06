@@ -8,6 +8,13 @@ import (
 
 const autoFwdIDPrefix = "auto-fwd-"
 
+// HairpinAddrResolver 查询网卡公网地址（生成 hairpin input 规则时使用）。
+type HairpinAddrResolver struct {
+	PrimaryIPv4 func(dev string) (string, error)
+	PrimaryIPv6 func(dev string) (string, error)
+	IsLocalIP   func(ip string) bool
+}
+
 // AutoForwardRuleID 端口转发关联的防火墙规则 ID（按协议展开）。
 func AutoForwardRuleID(forwardID, proto string) string {
 	return fmt.Sprintf("%s%s-%s", autoFwdIDPrefix, forwardID, proto)
@@ -46,6 +53,46 @@ func BuildAutoForwardFilterRules(forwards []WanPortForward, devLAN string) []Fil
 				DstAddr:   f.RedirectIP,
 				DstPort:   f.RedirectPort,
 				Comment:   fmt.Sprintf("端口转发 %s（自动）", comment),
+				Enabled:   true,
+				System:    true,
+				IPVersion: f.IPVersion,
+			}
+			if !IsAnyCIDR(src) {
+				r.SrcAddr = src
+			}
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// BuildAutoHairpinForwardFilterRules 内网经公网 IP 访问端口转发目标时的 LAN→LAN forward 放行。
+func BuildAutoHairpinForwardFilterRules(forwards []WanPortForward, devLAN string, isLocal func(string) bool) []FilterRule {
+	devLAN = strings.TrimSpace(devLAN)
+	if devLAN == "" || len(forwards) == 0 {
+		return nil
+	}
+	var out []FilterRule
+	for _, f := range forwards {
+		if isLocal != nil && isLocal(strings.TrimSpace(f.RedirectIP)) {
+			continue
+		}
+		comment := strings.TrimSpace(f.Comment)
+		if comment == "" {
+			comment = f.ID
+		}
+		src := strings.TrimSpace(f.SrcAddr)
+		for _, proto := range ForwardProtos(f.Proto) {
+			r := FilterRule{
+				ID:        AutoForwardRuleID("hairpin-"+f.ID, proto),
+				Chain:     "forward",
+				Action:    "accept",
+				Iif:       devLAN,
+				Oif:       devLAN,
+				Proto:     proto,
+				DstAddr:   f.RedirectIP,
+				DstPort:   f.RedirectPort,
+				Comment:   fmt.Sprintf("端口转发回流 %s（自动）", comment),
 				Enabled:   true,
 				System:    true,
 				IPVersion: f.IPVersion,

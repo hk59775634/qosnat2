@@ -71,7 +71,7 @@ export default {
     linkageStep2:
       'forward (auto-fwd-*): accept {wan} → {lan} for the redirect IP/port so traffic is not dropped by the default forward deny.',
     linkageStep3:
-      'prerouting/postrouting (hairpin): clients on {lan} using the public IP:port are DNAT’d and masqueraded back to the same internal host.',
+      'Hairpin: LAN clients using the public IP:port get DNAT + LAN→LAN forward + masquerade for internal targets; gateway-local targets use input auto-input-hairpin-* (admin/VPN/forwards).',
     linkageNote:
       'Custom forward drop rules are evaluated before auto-fwd-*; a broad block can still stop a forward. Delete the forward here to remove DNAT and its auto rules together.',
     linkageFirewallLink: 'View synced rules in Firewall (forward chain)',

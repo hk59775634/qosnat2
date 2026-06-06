@@ -40,7 +40,7 @@ func (srv *Server) handleFirewallRulesGet(w http.ResponseWriter, r *http.Request
 		OCServTCP:     vp.OCServTCP,
 		OCServUDP:     vp.OCServUDP,
 		WGPorts:       vp.WGPorts,
-	}, st.Firewall.WanPortForwards, srv.env.DevLAN); ok {
+	}, st.Firewall.WanPortForwards, srv.env.DevLAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN)); ok {
 		applied = synced
 		needSave = true
 	}

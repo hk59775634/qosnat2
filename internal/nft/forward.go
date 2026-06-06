@@ -8,6 +8,16 @@ import (
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
+func hairpinLocalDevices(cfg Config) []string {
+	var devs []string
+	for _, d := range []string{cfg.DevLAN, cfg.DevWAN} {
+		if d = strings.TrimSpace(d); d != "" {
+			devs = append(devs, d)
+		}
+	}
+	return devs
+}
+
 func writeWanForwardRules(b *strings.Builder, cfg Config, forwards []store.WanPortForward) {
 	for _, f := range forwards {
 		iface := strings.TrimSpace(f.Interface)
@@ -27,7 +37,11 @@ func writeWanForwardHairpinRules(b *strings.Builder, cfg Config, forwards []stor
 	}
 	primary4 := netif.PrimaryIPv4
 	primary6 := netif.PrimaryIPv6
+	localDevs := hairpinLocalDevices(cfg)
 	for _, f := range forwards {
+		if strings.TrimSpace(f.RedirectIP) != "" && netif.IsAssignedIP(f.RedirectIP, localDevs...) {
+			continue
+		}
 		iface := strings.TrimSpace(f.Interface)
 		if iface == "" {
 			iface = cfg.DevWAN
@@ -49,9 +63,13 @@ func writeWanForwardHairpinSNAT(b *strings.Builder, cfg Config, forwards []store
 		return
 	}
 	seen := map[string]struct{}{}
+	localDevs := hairpinLocalDevices(cfg)
 	for _, f := range forwards {
 		rip := strings.TrimSpace(f.RedirectIP)
 		if rip == "" {
+			continue
+		}
+		if netif.IsAssignedIP(rip, localDevs...) {
 			continue
 		}
 		if _, ok := seen[rip]; ok {

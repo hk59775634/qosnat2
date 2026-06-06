@@ -8,10 +8,12 @@ import (
 
 // Auto rule IDs (reserved prefix auto-).
 const (
-	autoIDInputAdmin     = "auto-input-admin"
-	autoIDInputOcservTCP = "auto-input-ocserv-tcp"
-	autoIDInputOcservUDP = "auto-input-ocserv-udp"
-	autoIDInputWanDrop   = "auto-input-wan-drop"
+	autoIDInputAdmin        = "auto-input-admin"
+	autoIDInputHairpinAdmin = "auto-input-hairpin-admin"
+	autoIDInputHairpinFwd   = "auto-input-hairpin-fwd"
+	autoIDInputOcservTCP    = "auto-input-ocserv-tcp"
+	autoIDInputOcservUDP    = "auto-input-ocserv-udp"
+	autoIDInputWanDrop      = "auto-input-wan-drop"
 )
 
 // AutoInputVPN mirrors nft.VPNFirewall without importing nft.
@@ -193,11 +195,120 @@ func splitAutoInputByDrop(rules []FilterRule) (accepts, drops []FilterRule) {
 	return accepts, drops
 }
 
+// BuildAutoHairpinInputRules 内网访问公网 IP 上本机服务时的 input 放行（NAT reflection / 环回）。
+func BuildAutoHairpinInputRules(wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, devLAN string, resolver HairpinAddrResolver) []FilterRule {
+	devLAN = strings.TrimSpace(devLAN)
+	if devLAN == "" || resolver.PrimaryIPv4 == nil {
+		return nil
+	}
+	port := parsePortInt(adminPort)
+	var out []FilterRule
+	wanIP := func(dev string) string {
+		ip, err := resolver.PrimaryIPv4(dev)
+		if err != nil {
+			return ""
+		}
+		return ip
+	}
+	mirror := func(id, wan, addrFam, wanAddr, proto string, dstPort int, comment string) {
+		if wanAddr == "" || dstPort <= 0 {
+			return
+		}
+		r := FilterRule{
+			ID:      id,
+			Chain:   "input",
+			Action:  "accept",
+			Iif:     devLAN,
+			Proto:   proto,
+			DstAddr: wanAddr,
+			DstPort: dstPort,
+			Comment: comment,
+			Enabled: true,
+			System:  true,
+		}
+		if addrFam == "ipv6" {
+			r.IPVersion = "ipv6"
+		}
+		out = append(out, r)
+	}
+	for _, wan := range wanDevs {
+		wan = strings.TrimSpace(wan)
+		if wan == "" {
+			continue
+		}
+		sfx := wan
+		mirror(
+			autoIDInputHairpinAdmin+"-"+sfx, wan, "ipv4", wanIP(wan), "tcp", port,
+			fmt.Sprintf("内网访问公网 IP 管理口 %s（自动）", wan),
+		)
+		if vpn.OCServEnabled && vpn.OCServTCP > 0 {
+			mirror(
+				autoIDInputOcservTCP+"-hairpin-"+sfx, wan, "ipv4", wanIP(wan), "tcp", vpn.OCServTCP,
+				fmt.Sprintf("内网访问公网 IP OpenConnect TCP %s（自动）", wan),
+			)
+		}
+		if vpn.OCServEnabled && vpn.OCServUDP > 0 {
+			mirror(
+				autoIDInputOcservUDP+"-hairpin-"+sfx, wan, "ipv4", wanIP(wan), "udp", vpn.OCServUDP,
+				fmt.Sprintf("内网访问公网 IP OpenConnect UDP %s（自动）", wan),
+			)
+		}
+		for _, p := range vpn.WGPorts {
+			if p <= 0 {
+				continue
+			}
+			mirror(
+				fmt.Sprintf("auto-input-wg-hairpin-%d-%s", p, sfx), wan, "ipv4", wanIP(wan), "udp", p,
+				fmt.Sprintf("内网访问公网 IP WireGuard UDP/%d %s（自动）", p, wan),
+			)
+		}
+	}
+	primary4 := resolver.PrimaryIPv4
+	primary6 := resolver.PrimaryIPv6
+	for _, f := range forwards {
+		iface := strings.TrimSpace(f.Interface)
+		if iface == "" {
+			continue
+		}
+		wanAddr := HairpinMatchAddr(f, iface, primary4, primary6)
+		if wanAddr == "" {
+			continue
+		}
+		comment := strings.TrimSpace(f.Comment)
+		if comment == "" {
+			comment = f.ID
+		}
+		src := strings.TrimSpace(f.SrcAddr)
+		for _, proto := range ForwardProtos(f.Proto) {
+			r := FilterRule{
+				ID:        fmt.Sprintf("%s-%s-%s", autoIDInputHairpinFwd, f.ID, proto),
+				Chain:     "input",
+				Action:    "accept",
+				Iif:       devLAN,
+				Proto:     proto,
+				DstAddr:   wanAddr,
+				DstPort:   f.DstPort,
+				Comment:   fmt.Sprintf("内网访问公网 IP 端口转发 %s（自动）", comment),
+				Enabled:   true,
+				System:    true,
+				IPVersion: f.IPVersion,
+			}
+			if !IsAnyCIDR(src) {
+				r.SrcAddr = src
+			}
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // SyncAutoFilterRules 合并用户规则与自动规则。
-// forward：用户 → 端口转发自动规则。
-// input：自动放行(admin/VPN) → 用户 → 自动 WAN 丢弃（管理口/VPN 不被用户 drop 覆盖）。
-func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, devLAN string) ([]FilterRule, bool) {
+// forward：用户 → 端口转发 WAN→LAN → 端口转发回流 LAN→LAN。
+// input：公网 IP 环回 → 自动放行(admin/VPN) → 用户 → 自动 WAN 丢弃。
+func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, devLAN string, resolver HairpinAddrResolver) ([]FilterRule, bool) {
 	desiredFwd := BuildAutoForwardFilterRules(forwards, devLAN)
+	desiredHairpinFwd := BuildAutoHairpinForwardFilterRules(forwards, devLAN, resolver.IsLocalIP)
+	hairpinInput := BuildAutoHairpinInputRules(wanDevs, adminPort, vpn, forwards, devLAN, resolver)
 	autoInputAccept, autoInputDrop := splitAutoInputByDrop(BuildAutoInputRules(wanDevs, adminPort, vpn))
 	var userFwd, userInput []FilterRule
 	for _, r := range rules {
@@ -210,9 +321,11 @@ func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string,
 			userFwd = append(userFwd, r)
 		}
 	}
-	merged := append(append(append(append(
+	merged := append(append(append(append(append(append(
 		append([]FilterRule{}, userFwd...),
 		desiredFwd...),
+		desiredHairpinFwd...),
+		hairpinInput...),
 		autoInputAccept...),
 		userInput...),
 		autoInputDrop...)

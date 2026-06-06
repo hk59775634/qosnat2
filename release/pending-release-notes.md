@@ -5,19 +5,20 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+修复公网 IP 环回（NAT Reflection）：内网可经公网 IP 访问网关本机服务及端口转发目标。
 
 ## 新增
 
-- （无）
+- 自动生成 hairpin input 规则（`auto-input-hairpin-*`）：内网访问公网 IP 上的管理口、VPN 与端口转发端口
+- 端口转发回流时自动生成 LAN→LAN forward 放行（`auto-fwd-hairpin-*`）
 
 ## 优化
 
-- （无）
+- 端口转发目标为本机地址时跳过无意义的回流 DNAT/SNAT，改由 input 链直接放行
 
 ## 修复
 
-- （无）
+- 内网经公网 IP 访问端口转发内网主机时被 forward 默认丢弃导致不通
 
 ## 删除
 
@@ -25,4 +26,4 @@
 
 ## 其他
 
-- （无）
+- API 文档与端口转发页说明补充 hairpin 行为

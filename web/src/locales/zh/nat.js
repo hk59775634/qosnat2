@@ -71,7 +71,7 @@ export default {
     linkageStep2:
       'forward（auto-fwd-*）：放行 {wan} → {lan} 的转发流量（匹配 redirect IP/端口），避免被 forward 默认丢弃拦截。',
     linkageStep3:
-      'prerouting/postrouting（hairpin/回流）：{lan} 内网访问公网 IP:端口 时再次 DNAT，并经 LAN 口 masquerade 回到同一内网主机。',
+      'hairpin/回流：内网访问公网 IP:端口 时，目标为内网主机则 DNAT + LAN→LAN forward + masquerade；目标为本机则 input 链 auto-input-hairpin-* 直接放行公网 IP:端口（管理口/VPN/端口转发同步生成）。',
     linkageNote:
       '自定义 forward 丢弃规则排在 auto-fwd-* 之前；过宽的 drop 仍可能阻断转发。在此删除转发会同时移除 DNAT 与关联的自动防火墙规则。',
     linkageFirewallLink: '在防火墙中查看同步规则（forward 链）',

@@ -29,6 +29,51 @@ func TestBuildAutoForwardFilterRules(t *testing.T) {
 	}
 }
 
+func TestBuildAutoHairpinForwardFilterRules(t *testing.T) {
+	fwd := []WanPortForward{{
+		ID: "fwd-abc", Interface: "eth0", IPVersion: "ipv4", Proto: "tcp",
+		DstPort: 443, RedirectIP: "192.168.1.10", RedirectPort: 8443,
+	}}
+	rules := BuildAutoHairpinForwardFilterRules(fwd, "br-lan", nil)
+	if len(rules) != 1 {
+		t.Fatalf("want 1 rule, got %d", len(rules))
+	}
+	if rules[0].ID != "auto-fwd-hairpin-fwd-abc-tcp" {
+		t.Fatalf("id: %s", rules[0].ID)
+	}
+	if rules[0].Iif != "br-lan" || rules[0].Oif != "br-lan" {
+		t.Fatalf("unexpected: %+v", rules[0])
+	}
+}
+
+func TestBuildAutoHairpinInputRules(t *testing.T) {
+	resolver := HairpinAddrResolver{
+		PrimaryIPv4: func(dev string) (string, error) {
+			if dev == "eth0" {
+				return "203.0.113.10", nil
+			}
+			return "", nil
+		},
+	}
+	fwd := []WanPortForward{{
+		ID: "fwd-1", Interface: "eth0", IPVersion: "ipv4", Proto: "tcp",
+		DstPort: 443, RedirectIP: "192.168.1.10", RedirectPort: 443,
+	}}
+	rules := BuildAutoHairpinInputRules([]string{"eth0"}, "8443", AutoInputVPN{}, fwd, "br-lan", resolver)
+	var admin, portFwd bool
+	for _, r := range rules {
+		if r.ID == "auto-input-hairpin-admin-eth0" && r.DstAddr == "203.0.113.10" && r.DstPort == 8443 {
+			admin = true
+		}
+		if r.ID == "auto-input-hairpin-fwd-fwd-1-tcp" && r.DstAddr == "203.0.113.10" && r.DstPort == 443 {
+			portFwd = true
+		}
+	}
+	if !admin || !portFwd {
+		t.Fatalf("missing hairpin input rules: %+v", rules)
+	}
+}
+
 func TestSyncAutoFilterRulesRemovesStaleForwardRules(t *testing.T) {
 	stale := FilterRule{ID: "auto-fwd-old-udp", Chain: "forward", Action: "accept", System: true}
 	user := FilterRule{ID: "fr-1", Chain: "forward", Action: "drop", Enabled: true}
@@ -36,7 +81,7 @@ func TestSyncAutoFilterRulesRemovesStaleForwardRules(t *testing.T) {
 		ID: "fwd-new", Interface: "wan0", Proto: "tcp", DstPort: 80,
 		RedirectIP: "10.0.0.2", RedirectPort: 8080,
 	}}
-	merged, changed := SyncAutoFilterRules([]FilterRule{user, stale}, []string{"wan0"}, "8080", AutoInputVPN{}, fwd, "lan0")
+	merged, changed := SyncAutoFilterRules([]FilterRule{user, stale}, []string{"wan0"}, "8080", AutoInputVPN{}, fwd, "lan0", HairpinAddrResolver{})
 	if !changed {
 		t.Fatal("expected change")
 	}

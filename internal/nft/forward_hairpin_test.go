@@ -25,9 +25,31 @@ func TestRenderWanForwardHairpin(t *testing.T) {
 	if !strings.Contains(body, wantSNAT) {
 		t.Fatalf("missing hairpin snat:\n%s", body)
 	}
-	wantFilter := `auto-fwd-fwd-1-tcp`
 	if !strings.Contains(body, `iifname "ens18" oifname "ens19" ip daddr 192.168.1.10 tcp dport 443 accept`) {
 		t.Fatalf("missing auto forward filter in render:\n%s", body)
 	}
-	_ = wantFilter
+	if !strings.Contains(body, `iifname "ens19" oifname "ens19" ip daddr 192.168.1.10 tcp dport 443 accept`) {
+		t.Fatalf("missing hairpin forward filter in render:\n%s", body)
+	}
+}
+
+func TestRenderWanForwardHairpinSkipsGatewayLocal(t *testing.T) {
+	st := store.DefaultState()
+	st.Firewall.WanPortForwards = []store.WanPortForward{{
+		ID: "fwd-local", Interface: "ens18", IPVersion: "ipv4", Proto: "tcp",
+		DstAddr: "203.0.113.10", DstPort: 443, RedirectIP: "127.0.0.1", RedirectPort: 443,
+	}}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, `iifname "ens19" meta nfproto ipv4 ip daddr 203.0.113.10`) {
+		t.Fatalf("should not hairpin DNAT to gateway-local redirect:\n%s", body)
+	}
+	if !strings.Contains(body, `iifname "ens19" ip daddr 203.0.113.10 tcp dport 443 accept`) {
+		t.Fatalf("missing hairpin input for gateway-local forward:\n%s", body)
+	}
+	if strings.Contains(body, `iifname "ens19" oifname "ens19" ip daddr 127.0.0.1`) {
+		t.Fatalf("should not hairpin forward for gateway-local redirect:\n%s", body)
+	}
 }

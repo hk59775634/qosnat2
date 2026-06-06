@@ -59,6 +59,7 @@ func Render(cfg Config, st store.State) (string, error) {
 		},
 		st.Firewall.WanPortForwards,
 		cfg.DevLAN,
+		HairpinAddrResolver(cfg.DevLAN, cfg.DevWAN),
 	)
 	routes := st.Nat.IPv4.PolicyRoutes
 	if len(routes) == 0 {

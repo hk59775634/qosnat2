@@ -222,7 +222,10 @@ DELETE 别名：若仍有规则引用 → **409** `alias is referenced by firewa
 
 1. **prerouting DNAT** — WAN 口匹配并重写到 `redirect_ip:redirect_port`
 2. **forward 自动规则** — id 形如 `auto-fwd-{转发id}-tcp`（`tcp_udp` 时还有 `-udp`）；放行 WAN→LAN 转发
-3. **hairpin** — 内网访问公网 IP:端口 时的回流 DNAT + masquerade
+3. **hairpin** — 内网访问公网 IP:端口 时的回流：
+   - 目标为内网主机：`prerouting` DNAT + `forward` LAN→LAN 放行 + `postrouting` masquerade
+   - 目标为本机（网关）：跳过 DNAT，生成 `input` 链 `auto-input-hairpin-*` 放行公网 IP:端口
+   - 管理口/VPN 端口同步生成 `auto-input-hairpin-admin-*` 等规则
 
 删除端口转发会一并移除上述 DNAT 与 `auto-fwd-*` 规则。**请勿**在防火墙页单独删改 `auto-fwd-*`（API 403）。
 

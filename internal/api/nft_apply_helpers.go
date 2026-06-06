@@ -38,6 +38,7 @@ func (srv *Server) syncedFirewallState(st store.State) store.State {
 		},
 		st.Firewall.WanPortForwards,
 		srv.env.DevLAN,
+		nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN),
 	)
 	st.Firewall.FilterRules = rules
 	return st
