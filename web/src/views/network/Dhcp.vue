@@ -21,7 +21,7 @@ const upstreamDnsText = ref('')
 const trustedDnsText = ref('')
 const untrustedDnsText = ref('')
 const chnroutes = ref({ path: '', exists: false, entries: 0 })
-const staticForm = ref({ mac: '', ip: '', hostname: '', comment: '' })
+const staticForm = ref({ mac: '', ip: '', hostname: '', router: '', dns: '', comment: '' })
 const installingDnsmasq = ref(false)
 const dnsmasqInstallJob = ref(null)
 const dnsmasqInstallPoll = ref(null)
@@ -167,15 +167,36 @@ async function save(applyAfter) {
   }
 }
 
+function parseDnsList(text) {
+  return String(text || '')
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 function addStatic() {
   if (!staticForm.value.mac || !staticForm.value.ip) {
     err.value = t('network.dhcp.staticNeedMacIp')
     return
   }
+  const entry = {
+    mac: staticForm.value.mac,
+    ip: staticForm.value.ip,
+    hostname: staticForm.value.hostname,
+    comment: staticForm.value.comment,
+  }
+  const router = staticForm.value.router?.trim()
+  if (router) entry.router = router
+  const dns = parseDnsList(staticForm.value.dns)
+  if (dns.length) entry.dns_servers = dns
   if (!cfg.value.static_leases) cfg.value.static_leases = []
-  cfg.value.static_leases.push({ ...staticForm.value })
-  staticForm.value = { mac: '', ip: '', hostname: '', comment: '' }
+  cfg.value.static_leases.push(entry)
+  staticForm.value = { mac: '', ip: '', hostname: '', router: '', dns: '', comment: '' }
   err.value = ''
+}
+
+function staticDnsLabel(sl) {
+  return (sl.dns_servers || []).join(', ')
 }
 
 function removeStatic(i) {
@@ -411,13 +432,26 @@ onBeforeUnmount(stopDnsmasqInstallPoll)
           <input v-model="staticForm.mac" class="input-field font-mono text-xs" placeholder="aa:bb:cc:dd:ee:ff" />
           <input v-model="staticForm.ip" class="input-field font-mono text-xs" placeholder="192.168.1.50" />
           <input v-model="staticForm.hostname" class="input-field text-xs" :placeholder="t('network.dhcp.hostname')" />
+          <input
+            v-model="staticForm.router"
+            class="input-field font-mono text-xs"
+            :placeholder="t('network.dhcp.staticGatewayOptional')"
+          />
+          <input
+            v-model="staticForm.dns"
+            class="input-field font-mono text-xs sm:col-span-2"
+            :placeholder="t('network.dhcp.staticDnsOptional')"
+          />
           <button type="button" class="btn-secondary text-xs" @click="addStatic">{{ t('common.add') }}</button>
         </div>
+        <p class="text-xs text-slate-400 mb-2">{{ t('network.dhcp.staticOptsHint') }}</p>
         <table class="data w-full text-xs">
           <thead>
             <tr>
               <th>{{ t('network.dhcp.mac') }}</th>
               <th>{{ t('network.dhcp.ip') }}</th>
+              <th>{{ t('network.dhcp.gateway') }}</th>
+              <th>{{ t('network.dhcp.dns') }}</th>
               <th></th>
             </tr>
           </thead>
@@ -425,12 +459,14 @@ onBeforeUnmount(stopDnsmasqInstallPoll)
             <tr v-for="(sl, i) in cfg.static_leases" :key="i">
               <td class="font-mono">{{ sl.mac }}</td>
               <td class="font-mono">{{ sl.ip }}</td>
+              <td class="font-mono">{{ sl.router || '—' }}</td>
+              <td class="font-mono">{{ staticDnsLabel(sl) || '—' }}</td>
               <td>
                 <button type="button" class="text-red-600" @click="removeStatic(i)">{{ t('common.delete') }}</button>
               </td>
             </tr>
             <tr v-if="!cfg.static_leases?.length">
-              <td colspan="3" class="text-center text-slate-400 py-3">{{ t('network.dhcp.none') }}</td>
+              <td colspan="5" class="text-center text-slate-400 py-3">{{ t('network.dhcp.none') }}</td>
             </tr>
           </tbody>
         </table>

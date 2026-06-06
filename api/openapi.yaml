@@ -166,6 +166,11 @@ components:
               mac: { type: string }
               ip: { type: string }
               hostname: { type: string }
+              router: { type: string, description: 覆盖默认网关（DHCP option 3） }
+              dns_servers:
+                type: array
+                items: { type: string }
+                description: 覆盖默认 DNS（DHCP option 6）
               comment: { type: string }
     RouteEntry:
       type: object

@@ -101,6 +101,48 @@ func TestRenderConfDisabled(t *testing.T) {
 	}
 }
 
+func TestRenderConfStaticLeaseOptions(t *testing.T) {
+	dhcp := store.DefaultDHCP()
+	dhcp.Enabled = true
+	dhcp.Interface = "ens19"
+	dhcp.StaticLeases = []store.DHCPStaticLease{{
+		MAC:        "aa:bb:cc:dd:ee:ff",
+		IP:         "192.168.1.50",
+		Hostname:   "printer",
+		Router:     "192.168.1.254",
+		DNSServers: []string{"1.1.1.1", "8.8.8.8"},
+	}}
+	opts := ApplyOpts{DevLAN: "ens19"}
+	body := RenderConf(dhcp, opts)
+	for _, want := range []string{
+		"dhcp-host=aa:bb:cc:dd:ee:ff,set:qosnat-sl-0,192.168.1.50,printer\n",
+		"dhcp-option=tag:qosnat-sl-0,option:router,192.168.1.254\n",
+		"dhcp-option=tag:qosnat-sl-0,option:dns-server,1.1.1.1,8.8.8.8\n",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
+	}
+}
+
+func TestRenderConfStaticLeaseNoOptions(t *testing.T) {
+	dhcp := store.DefaultDHCP()
+	dhcp.Enabled = true
+	dhcp.Interface = "ens19"
+	dhcp.StaticLeases = []store.DHCPStaticLease{{
+		MAC: "aa:bb:cc:dd:ee:ff",
+		IP:  "192.168.1.50",
+	}}
+	opts := ApplyOpts{DevLAN: "ens19"}
+	body := RenderConf(dhcp, opts)
+	if !strings.Contains(body, "dhcp-host=aa:bb:cc:dd:ee:ff,192.168.1.50\n") {
+		t.Fatalf("expected plain dhcp-host:\n%s", body)
+	}
+	if strings.Contains(body, "set:qosnat-sl-0") {
+		t.Fatal("should not set tag without per-host options")
+	}
+}
+
 func TestRenderConfChnroutes(t *testing.T) {
 	dhcp := store.DefaultDHCP()
 	dhcp.Enabled = false

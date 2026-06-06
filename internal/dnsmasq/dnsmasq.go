@@ -124,6 +124,10 @@ func writeBindSection(b *bytes.Buffer, dhcp store.DHCPState, opts ApplyOpts) {
 	}
 }
 
+func staticLeaseTag(i int) string {
+	return fmt.Sprintf("qosnat-sl-%d", i)
+}
+
 func writeDHCPSection(b *bytes.Buffer, dhcp store.DHCPState) {
 	if dhcp.Authoritative {
 		b.WriteString("dhcp-authoritative\n")
@@ -143,12 +147,25 @@ func writeDHCPSection(b *bytes.Buffer, dhcp store.DHCPState) {
 		b.WriteString(fmt.Sprintf("domain=%s\n", d))
 		b.WriteString(fmt.Sprintf("dhcp-option=option:domain-name,%s\n", d))
 	}
-	for _, sl := range dhcp.StaticLeases {
-		line := fmt.Sprintf("dhcp-host=%s,%s", sl.MAC, sl.IP)
-		if sl.Hostname != "" {
-			line += "," + sl.Hostname
+	for i, sl := range dhcp.StaticLeases {
+		tag := staticLeaseTag(i)
+		hasOpts := strings.TrimSpace(sl.Router) != "" || len(sl.DNSServers) > 0
+		var parts []string
+		parts = append(parts, sl.MAC)
+		if hasOpts {
+			parts = append(parts, "set:"+tag)
 		}
-		b.WriteString(line + "\n")
+		parts = append(parts, sl.IP)
+		if sl.Hostname != "" {
+			parts = append(parts, sl.Hostname)
+		}
+		b.WriteString("dhcp-host=" + strings.Join(parts, ",") + "\n")
+		if r := strings.TrimSpace(sl.Router); r != "" {
+			b.WriteString(fmt.Sprintf("dhcp-option=tag:%s,option:router,%s\n", tag, r))
+		}
+		if len(sl.DNSServers) > 0 {
+			b.WriteString(fmt.Sprintf("dhcp-option=tag:%s,option:dns-server,%s\n", tag, strings.Join(sl.DNSServers, ",")))
+		}
 	}
 	if dhcp.IPv6Enabled {
 		prefix := strings.TrimSpace(dhcp.IPv6Prefix)

@@ -8,7 +8,13 @@ func CloneDHCP(d DHCPState) DHCPState {
 	out.TrustedDNS = append([]string(nil), d.TrustedDNS...)
 	out.UntrustedDNS = append([]string(nil), d.UntrustedDNS...)
 	if len(d.StaticLeases) > 0 {
-		out.StaticLeases = append([]DHCPStaticLease(nil), d.StaticLeases...)
+		out.StaticLeases = make([]DHCPStaticLease, len(d.StaticLeases))
+		for i, sl := range d.StaticLeases {
+			out.StaticLeases[i] = sl
+			if len(sl.DNSServers) > 0 {
+				out.StaticLeases[i].DNSServers = append([]string(nil), sl.DNSServers...)
+			}
+		}
 	}
 	return out
 }

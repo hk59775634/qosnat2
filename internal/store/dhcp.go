@@ -10,10 +10,12 @@ import (
 
 // DHCPStaticLease 静态 DHCP 绑定
 type DHCPStaticLease struct {
-	MAC      string `json:"mac"`
-	IP       string `json:"ip"`
-	Hostname string `json:"hostname,omitempty"`
-	Comment  string `json:"comment,omitempty"`
+	MAC        string   `json:"mac"`
+	IP         string   `json:"ip"`
+	Hostname   string   `json:"hostname,omitempty"`
+	Router     string   `json:"router,omitempty"`      // 覆盖默认网关（option 3）
+	DNSServers []string `json:"dns_servers,omitempty"` // 覆盖默认 DNS（option 6）
+	Comment    string   `json:"comment,omitempty"`
 }
 
 // DHCPState LAN dnsmasq 服务（DHCP 与 DNS 可独立启用）
@@ -157,11 +159,21 @@ func NormalizeDHCP(d *DHCPState, defaultIface string) error {
 		if net.ParseIP(ip) == nil {
 			return fmt.Errorf("invalid static lease ip: %q", sl.IP)
 		}
+		router := strings.TrimSpace(sl.Router)
+		if router != "" && net.ParseIP(router) == nil {
+			return fmt.Errorf("invalid static lease router: %q", sl.Router)
+		}
+		dns, err := normalizeDNSList(sl.DNSServers, "static lease dns")
+		if err != nil {
+			return err
+		}
 		leases = append(leases, DHCPStaticLease{
-			MAC:      mac,
-			IP:       ip,
-			Hostname: strings.TrimSpace(sl.Hostname),
-			Comment:  strings.TrimSpace(sl.Comment),
+			MAC:        mac,
+			IP:         ip,
+			Hostname:   strings.TrimSpace(sl.Hostname),
+			Router:     router,
+			DNSServers: dns,
+			Comment:    strings.TrimSpace(sl.Comment),
 		})
 	}
 	d.StaticLeases = leases
