@@ -5,11 +5,11 @@
 
 ## 概要
 
-DHCP 静态租约支持按 MAC 单独指定网关与 DNS。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- 静态租约可为单个 MAC 覆盖默认网关（DHCP option 3）与 DNS（option 6）；留空时仍使用全局 DHCP 配置
+- （无）
 
 ## 优化
 
@@ -25,4 +25,4 @@ DHCP 静态租约支持按 MAC 单独指定网关与 DNS。
 
 ## 其他
 
-- OpenAPI 补充静态租约 router、dns_servers 字段；dnsmasq 通过 tag 下发 per-host 选项
+- （无）

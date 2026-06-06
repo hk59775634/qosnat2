@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060601",
+      "tag": "v2026060601",
+      "published_at": "2026-06-06T03:01:50Z",
+      "summary": "DHCP 静态租约支持按 MAC 单独指定网关与 DNS。"
+    },
+    {
       "id": "2026060501",
       "tag": "v2026060501",
       "published_at": "2026-06-05T04:33:50Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060103",
       "published_at": "2026-06-01T13:17:55Z",
       "summary": "启动时支持从 state.json.bak 自动恢复；补全 WARP License 应用接口 OpenAPI 文档。"
-    },
-    {
-      "id": "2026060102",
-      "tag": "v2026060102",
-      "published_at": "2026-06-01T12:34:40Z",
-      "summary": "版本切换支持选择下载线路（直连、GitHub 代理、多 WAN 出口）；版本管理页布局与 rebuild 脚本改进。"
     }
   ]
 }
