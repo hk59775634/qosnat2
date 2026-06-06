@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060603",
+      "tag": "v2026060603",
+      "published_at": "2026-06-06T04:19:26Z",
+      "summary": "修复多 WAN 页面因 i18n 文案中 `@name` 被误解析导致整页空白的问题。"
+    },
+    {
       "id": "2026060602",
       "tag": "v2026060602",
       "published_at": "2026-06-06T03:57:46Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060401",
       "published_at": "2026-06-04T04:31:46Z",
       "summary": "dnsmasq chnroutes 分流；Release 含预编译 dnsmasq-chnroutes（Ubuntu 24.04 amd64），免编译安装。"
-    },
-    {
-      "id": "2026060301",
-      "tag": "v2026060301",
-      "published_at": "2026-06-03T03:35:19Z",
-      "summary": "修复整机重启后 NAT/路由偶发失效；启动 apply 更稳健（nft 优先、后台重试、二次 apply 兜底）。"
     }
   ]
 }

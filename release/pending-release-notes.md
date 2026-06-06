@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复多 WAN 页面因 i18n 文案中 `@name` 被误解析导致整页空白的问题。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -17,8 +17,7 @@
 
 ## 修复
 
-- 多 WAN / 出站策略页：`egressHint` 文案中的 `@name` 按 vue-i18n 规则转义，避免渲染时抛出 Invalid linked format 导致页面空白
-- 多 WAN 页：补充 RouterLink 导入；加载 API 失败时显示错误而非静默失败
+- （无）
 
 ## 删除
 
