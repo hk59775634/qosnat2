@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
@@ -290,26 +291,31 @@ async function refreshWarpStatus() {
 }
 
 async function load() {
-  const [wan, eg, ws] = await Promise.all([
-    api.network.wanLinks.list(),
-    api.network.egressPolicies.list(),
-    api.network.warp.status(),
-  ])
-  links.value = wan.wan_links || []
-  devWan.value = wan.dev_wan || ''
-  egress.value = eg.egress_policies || []
-  aliases.value = eg.aliases || []
-  googleIpv4Url.value = eg.google_ipv4_url || 'https://www.gstatic.com/ipranges/goog_ipv4_only.txt'
-  resolved.value = eg.resolved || []
-  cloudflareCIDRs.value = eg.cloudflare_cdn_cidrs_ipv4 || []
-  applyWarpStatus(ws)
-  if (!form.value.device && devWan.value) form.value.device = devWan.value
-  if (!egForm.value.wan_link_id && links.value.length) {
-    const pick =
-      links.value.find((w) => w.enabled && w.device === devWan.value) ||
-      links.value.find((w) => w.enabled) ||
-      links.value[0]
-    if (pick) egForm.value.wan_link_id = pick.id
+  err.value = ''
+  try {
+    const [wan, eg, ws] = await Promise.all([
+      api.network.wanLinks.list(),
+      api.network.egressPolicies.list(),
+      api.network.warp.status(),
+    ])
+    links.value = wan?.wan_links || []
+    devWan.value = wan?.dev_wan || ''
+    egress.value = eg?.egress_policies || []
+    aliases.value = eg?.aliases || []
+    googleIpv4Url.value = eg?.google_ipv4_url || 'https://www.gstatic.com/ipranges/goog_ipv4_only.txt'
+    resolved.value = eg?.resolved || []
+    cloudflareCIDRs.value = eg?.cloudflare_cdn_cidrs_ipv4 || []
+    applyWarpStatus(ws)
+    if (!form.value.device && devWan.value) form.value.device = devWan.value
+    if (!egForm.value.wan_link_id && links.value.length) {
+      const pick =
+        links.value.find((w) => w.enabled && w.device === devWan.value) ||
+        links.value.find((w) => w.enabled) ||
+        links.value[0]
+      if (pick) egForm.value.wan_link_id = pick.id
+    }
+  } catch (e) {
+    err.value = e?.message || String(e)
   }
 }
 

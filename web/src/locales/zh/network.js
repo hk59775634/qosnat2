@@ -230,7 +230,7 @@ export default {
     iface: '网卡',
     noExtra: '未配置额外 WAN',
     egressTitle: '出站策略（源/目标网段 → WAN）',
-    egressHint: '可同时指定源与目标（CIDR 或别名 @name）。别名可在「防火墙别名」中维护，也支持从 URL 拉取大量网段（如 Google IPv4 列表）。',
+    egressHint: "可同时指定源与目标（CIDR 或别名 {'@'}name）。别名可在「防火墙别名」中维护，也支持从 URL 拉取大量网段（如 Google IPv4 列表）。",
     sourceCidr: '源网段',
     targetCidr: '网段',
     srcAddress: '源地址',

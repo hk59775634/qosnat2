@@ -230,7 +230,7 @@ export default {
     iface: 'Interface',
     noExtra: 'No extra WAN links configured',
     egressTitle: 'Egress policies (source/destination CIDR -> WAN)',
-    egressHint: 'Specify source and/or destination (CIDR or alias @name). Aliases can be maintained under Firewall Aliases, including URL-fetched lists (e.g. Google IPv4 ranges).',
+    egressHint: "Specify source and/or destination (CIDR or alias {'@'}name). Aliases can be maintained under Firewall Aliases, including URL-fetched lists (e.g. Google IPv4 ranges).",
     sourceCidr: 'Source CIDR',
     targetCidr: 'CIDR',
     srcAddress: 'Source',
