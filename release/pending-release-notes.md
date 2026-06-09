@@ -5,24 +5,19 @@
 
 ## 概要
 
-QoS 数据面审计项修复：设备感知 HTB 同步、冷启动不覆盖 ifb0 队列深度、重建后全量补类与 ringbuf 并行、WG mirred 内网跳过、出站策略路由失败可观测。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- `/api/v1/health` 与 Prometheus 指标增加出站策略路由（`egress_routes`）最近一次错误状态
+- （无）
 
 ## 优化
 
-- HTB `known` 按 IP+网卡分别记录，sync 按 profile/WG 选择整形设备
-- 数据面重建后 `syncActiveHostHTBAll` 全量补建缺失 HTB 类
-- ringbuf 使用 4 worker 并行 EnsureHost，加速 /24 网段首包建类
-- eBPF `Load()` 仅拉起 ifb0，不再将 txqueuelen 重置为 5000
+- （无）
 
 ## 修复
 
-- WireGuard 等非双向 mirred 接口增加 prio 5 dst 本地跳过，避免隧道内 ping/内网流量误进 IFB
-- WG `EnsureHostOnDevice` 失败现记录日志（不再静默丢弃）
-- 出站策略路由 `policyroute.Apply` 失败写入 dataplane 指标并在 health 暴露 `egress_routes_ok`
+- （无）
 
 ## 删除
 
@@ -30,4 +25,4 @@ QoS 数据面审计项修复：设备感知 HTB 同步、冷启动不覆盖 ifb0
 
 ## 其他
 
-- 新增 `internal/shaper/htb_known_test.go` 覆盖设备感知 known 映射
+- （无）
