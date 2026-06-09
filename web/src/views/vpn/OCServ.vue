@@ -1450,9 +1450,9 @@ onUnmounted(() => {
           <button type="button" class="btn-primary text-sm" @click="save">{{ t('ocserv.saveGroupGlobals') }}</button>
           <button type="button" class="btn-secondary text-sm" :disabled="!status?.installed" @click="apply">{{ t('common.saveAndApply') }}</button>
         </div>
-        <div class="border rounded-lg p-4 space-y-3 bg-blue-50/30">
+        <div class="border rounded-lg p-4 space-y-4 bg-blue-50/30">
           <h4 class="text-sm font-medium">{{ editingGroup ? t('ocserv.editGroup', { name: editingGroup }) : t('ocserv.addGroup') }}</h4>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <label>
               {{ t('ocserv.groupName') }}
               <input v-model="groupForm.name" class="input w-full mt-1 font-mono" :disabled="!!editingGroup" :placeholder="t('ocserv.groupNamePh')" />
@@ -1477,14 +1477,6 @@ onUnmounted(() => {
               MTU
               <input v-model.number="groupForm.mtu" type="number" class="input w-full mt-1" min="0" />
             </label>
-            <label class="flex items-end gap-2 pb-1 sm:col-span-2">
-              <input v-model="groupForm.list_in_select_group" type="checkbox" />
-              {{ t('ocserv.groupListInSelectGroup') }}
-            </label>
-            <label class="flex items-end gap-2 pb-1">
-              <input v-model="groupForm.tunnel_all_dns" type="checkbox" />
-              tunnel-all-dns
-            </label>
             <label>
               {{ t('ocserv.downCapM') }}
               <input v-model.number="groupForm.down_mbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
@@ -1493,30 +1485,51 @@ onUnmounted(() => {
               {{ t('ocserv.upCapM') }}
               <input v-model.number="groupForm.up_mbps" type="number" class="input w-full mt-1" min="0" step="0.1" />
             </label>
-            <label class="sm:col-span-2">
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label class="flex gap-2 text-sm p-2 border rounded cursor-pointer bg-white/60">
+              <input v-model="groupForm.list_in_select_group" type="checkbox" class="mt-0.5 shrink-0" />
+              <span>
+                <span class="font-medium">{{ t('ocserv.groupListInSelectGroup') }}</span>
+                <span class="block text-xs text-slate-500">{{ t('ocserv.groupListInSelectGroupHint') }}</span>
+              </span>
+            </label>
+            <label class="flex gap-2 text-sm p-2 border rounded cursor-pointer bg-white/60">
+              <input v-model="groupForm.tunnel_all_dns" type="checkbox" class="mt-0.5 shrink-0" />
+              <span>
+                <span class="font-medium">tunnel-all-dns</span>
+                <span class="block text-xs text-slate-500">{{ t('ocserv.groupTunnelAllDnsHint') }}</span>
+              </span>
+            </label>
+          </div>
+          <div class="grid grid-cols-1 gap-3 text-sm">
+            <label>
               {{ t('ocserv.dnsLines') }}
               <textarea v-model="groupFormDns" class="input w-full mt-1 font-mono text-xs" rows="2" />
             </label>
-            <label class="sm:col-span-2">
+            <label>
               {{ t('ocserv.routesLines') }}
               <textarea v-model="groupFormRoutes" class="input w-full mt-1 font-mono text-xs" rows="2" />
             </label>
-            <label class="sm:col-span-2">
+            <label>
               {{ t('ocserv.noRoutesLines') }}
               <textarea v-model="groupFormNoRoutes" class="input w-full mt-1 font-mono text-xs" rows="2" />
             </label>
           </div>
-          <div class="flex gap-2">
+          <div class="flex gap-2 pt-1">
             <button type="button" class="btn-primary text-sm" @click="saveGroup">{{ editingGroup ? t('ocserv.updateGroup') : t('ocserv.addGroup') }}</button>
             <button v-if="editingGroup" type="button" class="btn-secondary text-sm" @click="cancelEditGroup">{{ t('common.cancel') }}</button>
           </div>
         </div>
-        <input
-          v-model="groupSearch"
-          type="search"
-          class="input w-full max-w-md text-sm"
-          :placeholder="t('ocserv.searchGroups')"
-        />
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <h4 class="text-sm font-medium">{{ t('ocserv.groupListTitle') }}</h4>
+          <input
+            v-model="groupSearch"
+            type="search"
+            class="input w-full sm:max-w-xs text-sm"
+            :placeholder="t('ocserv.searchGroups')"
+          />
+        </div>
         <div class="table-wrap overflow-x-auto">
           <table class="data w-full text-sm">
             <thead>
@@ -1533,7 +1546,18 @@ onUnmounted(() => {
               <tr v-for="g in filteredGroups" :key="g.name">
                 <td class="font-mono">{{ g.name }}</td>
                 <td>{{ g.label || '—' }}</td>
-                <td>{{ g.omit_select_group ? t('ocserv.groupSelectGroupNo') : t('ocserv.groupSelectGroupYes') }}</td>
+                <td>
+                  <span
+                    v-if="g.omit_select_group"
+                    class="inline-block text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600"
+                    :title="t('ocserv.groupSelectGroupNo')"
+                  >{{ t('ocserv.groupSelectGroupConfigOnly') }}</span>
+                  <span
+                    v-else
+                    class="inline-block text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700"
+                    :title="t('ocserv.groupSelectGroupYes')"
+                  >{{ t('ocserv.groupSelectGroupListed') }}</span>
+                </td>
                 <td class="font-mono text-xs">{{ g.ipv4_network ? `${g.ipv4_network}/${g.ipv4_netmask || ''}` : '—' }}</td>
                 <td>{{ g.comment || '—' }}</td>
                 <td class="whitespace-nowrap space-x-2">
