@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060903",
+      "tag": "v2026060903",
+      "published_at": "2026-06-09T17:02:34Z",
+      "summary": "修复 ocserv RADIUS 未启用 groupconfig 时的本地组配置、多 WAN 策略路由出站与组配置文件命名。"
+    },
+    {
       "id": "2026060902",
       "tag": "v2026060902",
       "published_at": "2026-06-09T08:03:27Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060602",
       "published_at": "2026-06-06T03:57:46Z",
       "summary": "修复公网 IP 环回（NAT Reflection）：内网可经公网 IP 访问网关本机服务及端口转发目标。"
-    },
-    {
-      "id": "2026060601",
-      "tag": "v2026060601",
-      "published_at": "2026-06-06T03:01:50Z",
-      "summary": "DHCP 静态租约支持按 MAC 单独指定网关与 DNS。"
     }
   ]
 }

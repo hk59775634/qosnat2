@@ -5,11 +5,11 @@
 
 ## 概要
 
-修复 ocserv RADIUS 未启用 groupconfig 时的本地组配置、多 WAN 策略路由出站与组配置文件命名。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- ocserv 高级选项 `select-group-by-url`（默认与 cisco-client-compat 一同开启）
+- （无）
 
 ## 优化
 
@@ -17,9 +17,7 @@
 
 ## 修复
 
-- ocserv RADIUS 认证在未启用 `groupconfig` 时仍可编辑并下发 `config-per-group`、`select-group`、`auto-select-group = false` 等本地组属性
-- 多 WAN：副链路不再写入主路由表，改为策略路由表 default + ip rule，修复出站策略不生效
-- ocserv 组配置文件写入 `config-per-group/<name>`（不带 `.conf` 后缀），并清理遗留 `.conf` 文件
+- （无）
 
 ## 删除
 
