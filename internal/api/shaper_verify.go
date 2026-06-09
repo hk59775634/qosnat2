@@ -29,6 +29,9 @@ func (srv *Server) verifyUploadPath(mirredCIDRs []string) error {
 		if !strings.Contains(s, "u32") {
 			return fmt.Errorf("%s ingress: missing u32 mirred to ifb", lan)
 		}
+		if !strings.Contains(s, "pref 5") || !strings.Contains(s, "match ip dst") {
+			return fmt.Errorf("%s ingress: missing local dst skip (prio 5, LAN bypass IFB)", lan)
+		}
 	}
 	ifbOut, _ := exec.Command("tc", "qdisc", "show", "dev", shaper.IFBDev).CombinedOutput()
 	if !strings.Contains(string(ifbOut), "htb") {

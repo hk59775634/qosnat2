@@ -9,6 +9,12 @@ import (
 	"strings"
 )
 
+const (
+	mirredSkipPrio = "5"  // dst 在内网 → 跳过 IFB（prio 低于 mirred）
+	mirredSrcPrio  = "10" // src 在策略网段 → mirred 上行整形
+	mirredDstPrio  = "11" // WG 客户端 bidirectional dst 匹配
+)
+
 func sortCIDRsByPrefixLen(cidrs []string) []string {
 	type item struct {
 		cidr string
@@ -43,6 +49,9 @@ func sortCIDRsByPrefixLen(cidrs []string) []string {
 
 // ApplyIFBMirred 将 LAN ingress 匹配源网段的上行导入 ifb0（u32+mirred，比 flower 对本机目的更可靠）
 func ApplyIFBMirred(devLAN string, cidrs []string) error {
+	if err := applyMirredLocalSkip(devLAN, cidrs); err != nil {
+		return err
+	}
 	return ApplyIFBMirredOnDevice(devLAN, cidrs)
 }
 
@@ -63,7 +72,7 @@ func ApplyIFBMirredOnDevice(dev string, cidrs []string) error {
 		seen[cidr] = struct{}{}
 		delIFBMirredU32(dev, cidr)
 		out, err := exec.Command("tc", "filter", "add", "dev", dev, "ingress",
-			"protocol", "ip", "prio", "10", "u32",
+			"protocol", "ip", "prio", mirredSrcPrio, "u32",
 			"match", "ip", "src", cidr,
 			"action", "mirred", "egress", "redirect", "dev", ifbDev).CombinedOutput()
 		if err != nil {
@@ -94,7 +103,7 @@ func ApplyIFBMirredOnDeviceBidirectional(dev string, cidrs []string) error {
 		delIFBMirredU32(dev, cidr)
 		delIFBMirredDstU32(dev, cidr)
 		out, err := exec.Command("tc", "filter", "add", "dev", dev, "ingress",
-			"protocol", "ip", "prio", "10", "u32",
+			"protocol", "ip", "prio", mirredSrcPrio, "u32",
 			"match", "ip", "src", cidr,
 			"action", "mirred", "egress", "redirect", "dev", ifbDev).CombinedOutput()
 		if err != nil {
@@ -104,7 +113,7 @@ func ApplyIFBMirredOnDeviceBidirectional(dev string, cidrs []string) error {
 			}
 		}
 		out, err = exec.Command("tc", "filter", "add", "dev", dev, "ingress",
-			"protocol", "ip", "prio", "11", "u32",
+			"protocol", "ip", "prio", mirredDstPrio, "u32",
 			"match", "ip", "dst", cidr,
 			"action", "mirred", "egress", "redirect", "dev", ifbDev).CombinedOutput()
 		if err != nil {
@@ -118,6 +127,59 @@ func ApplyIFBMirredOnDeviceBidirectional(dev string, cidrs []string) error {
 }
 
 var flowerSrcIPRe = regexp.MustCompile(`src_ip ([0-9a-fA-F./:]+)`)
+
+// applyMirredLocalSkip 目的地址在策略/LAN 网段时跳过 IFB（ping 回复、内网互访不走上行整形）
+func applyMirredLocalSkip(dev string, skipCIDRs []string) error {
+	if dev == "" || len(skipCIDRs) == 0 {
+		return nil
+	}
+	flushMirredLocalSkip(dev)
+	seen := map[string]struct{}{}
+	for _, cidr := range sortCIDRsByPrefixLen(skipCIDRs) {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		if _, ok := seen[cidr]; ok {
+			continue
+		}
+		seen[cidr] = struct{}{}
+		out, err := exec.Command("tc", "filter", "add", "dev", dev, "ingress",
+			"protocol", "ip", "prio", mirredSkipPrio, "u32",
+			"match", "ip", "dst", cidr,
+			"action", "ok").CombinedOutput()
+		if err != nil {
+			msg := strings.TrimSpace(string(out))
+			if !strings.Contains(msg, "File exists") {
+				return fmt.Errorf("ifb mirred local skip %s %s: %s %w", dev, cidr, msg, err)
+			}
+		}
+	}
+	return nil
+}
+
+func delMirredLocalSkip(dev, cidr string) {
+	for i := 0; i < 8; i++ {
+		out, _ := exec.Command("tc", "filter", "del", "dev", dev, "ingress",
+			"protocol", "ip", "prio", mirredSkipPrio, "u32", "match", "ip", "dst", cidr).CombinedOutput()
+		msg := string(out)
+		if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") {
+			break
+		}
+	}
+}
+
+func flushMirredLocalSkip(dev string) {
+	for i := 0; i < 64; i++ {
+		out, _ := exec.Command("tc", "filter", "del", "dev", dev, "ingress",
+			"protocol", "ip", "prio", mirredSkipPrio, "u32").CombinedOutput()
+		msg := string(out)
+		if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") ||
+			strings.Contains(msg, "does not match") {
+			break
+		}
+	}
+}
 
 func delIFBMirredU32(devLAN, cidr string) {
 	for i := 0; i < 8; i++ {
@@ -174,7 +236,7 @@ func delAllFlowerIngress(devLAN string, knownCIDRs []string) {
 }
 
 func flushIngressMirredU32(devLAN string) {
-	for _, prio := range []string{"10", "11"} {
+	for _, prio := range []string{mirredSkipPrio, mirredSrcPrio, mirredDstPrio} {
 		for i := 0; i < 64; i++ {
 			out, _ := exec.Command("tc", "filter", "del", "dev", devLAN, "ingress",
 				"protocol", "ip", "prio", prio, "u32").CombinedOutput()
@@ -248,6 +310,7 @@ func ClearIFBMirred(devLAN string, cidrs []string) {
 	}
 	for _, cidr := range cidrs {
 		c := strings.TrimSpace(cidr)
+		delMirredLocalSkip(devLAN, c)
 		delIFBMirredU32(devLAN, c)
 		delIFBMirredDstU32(devLAN, c)
 	}

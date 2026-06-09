@@ -119,6 +119,8 @@ func (srv *Server) syncShaperDevices() {
 }
 
 // syncActiveHostHTB 按 BPF 活跃/classid 表在 ifb/LAN 上补建 HTB 类（/24 等网段模板依赖此路径）
+const htbSyncBatchSize = 64
+
 func (srv *Server) syncActiveHostHTB() {
 	if srv.hosts == nil || srv.bpf == nil || !srv.bpf.Ready() {
 		return
@@ -126,17 +128,35 @@ func (srv *Server) syncActiveHostHTB() {
 	st := srv.store.Get()
 	dev := srv.shaperDefaultDevice(st)
 	seen := map[string]struct{}{}
+	ensured := 0
+	tryEnsure := func(ip string, down, up uint64, minor uint32) {
+		if ensured >= htbSyncBatchSize {
+			return
+		}
+		if srv.hosts.HostConfigured(ip, minor, down, up) {
+			return
+		}
+		if err := srv.hosts.EnsureHostOnDevice(ip, down, up, minor, dev); err != nil {
+			log.Printf("sync htb %s: %v", ip, err)
+			return
+		}
+		ensured++
+	}
 	entries, err := srv.bpf.ListActive()
 	if err == nil {
 		for _, e := range entries {
 			seen[e.IP] = struct{}{}
 			down, up, ok := srv.bpf.LookupRates(e.IP)
 			if !ok {
-				_ = srv.hosts.DeleteHostOnDevice(e.IP, dev)
-				_ = srv.bpf.PurgeActive(e.IP)
+				if err := srv.hosts.DeleteHostOnDevice(e.IP, dev); err != nil {
+					log.Printf("sync htb purge %s: %v", e.IP, err)
+				}
+				if err := srv.bpf.PurgeActive(e.IP); err != nil {
+					log.Printf("sync active purge %s: %v", e.IP, err)
+				}
 				continue
 			}
-			_ = srv.hosts.EnsureHostOnDevice(e.IP, down, up, e.ClassMinor, dev)
+			tryEnsure(e.IP, down, up, e.ClassMinor)
 		}
 	}
 	_ = srv.bpf.EachClassid(func(ip string, minor uint32) error {
@@ -147,7 +167,7 @@ func (srv *Server) syncActiveHostHTB() {
 		if !ok {
 			return nil
 		}
-		_ = srv.hosts.EnsureHostOnDevice(ip, down, up, minor, dev)
+		tryEnsure(ip, down, up, minor)
 		return nil
 	})
 }

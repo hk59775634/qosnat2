@@ -39,13 +39,6 @@ func (g *GCRunner) RunOnce() (int, error) {
 		keep = g.KeepVIP()
 	}
 	for _, a := range active {
-		down, up := a.DownBPS, a.UpBPS
-		if down == 0 && up == 0 {
-			if d, u, ok := g.BPF.LookupRates(a.IP); ok {
-				down, up = d, u
-			}
-		}
-		_ = g.Hosts.EnsureHost(a.IP, down, up, a.ClassMinor)
 		if keep[a.IP] {
 			continue
 		}

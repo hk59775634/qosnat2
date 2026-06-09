@@ -53,6 +53,11 @@ if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -q 'pref 10 u32'; th
 else
   bad "TC u32 mirred prio 10 on $DEV_LAN (flower legacy not acceptable)"
 fi
+if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -qE 'pref 5 u32.*match.*ip dst'; then
+  ok "TC u32 local skip prio 5 on $DEV_LAN (dst in LAN bypass IFB)"
+else
+  bad "TC u32 local skip prio 5 missing on $DEV_LAN"
+fi
 if tc filter show dev "$DEV_LAN" ingress 2>/dev/null | grep -q flower; then
   bad "legacy flower mirred still on $DEV_LAN"
 fi

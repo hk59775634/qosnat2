@@ -108,10 +108,11 @@ func (srv *Server) rebuildShaperDataPlane() {
 		srv.hosts.ResetKnown()
 	}
 	if err := shaper.SetupP0(shaper.Config{
-		DevLAN:    srv.env.DevLAN,
-		Leaf:      st.Shaper.Leaf,
-		FQFlows:   st.Shaper.FQFlows,
-		FQQuantum: st.Shaper.FQQuantum,
+		DevLAN:     srv.env.DevLAN,
+		Leaf:       st.Shaper.Leaf,
+		FQFlows:    st.Shaper.FQFlows,
+		FQQuantum:  st.Shaper.FQQuantum,
+		TxQueueLen: st.System.TxQueueLenLAN,
 	}); err != nil {
 		log.Printf("rebuild SetupP0: %v", err)
 		return

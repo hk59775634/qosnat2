@@ -11,13 +11,19 @@ import (
 	"github.com/hk59775634/qosnat2/internal/route"
 )
 
+type hostState struct {
+	minor uint32
+	down  uint64
+	up    uint64
+}
+
 // HostShaper 每 /32 动态 HTB 类（LAN egress 下行 + ifb 上行；extraDev 如 wg0 用于 VPN 隧道）
 type HostShaper struct {
 	mu       sync.Mutex
 	leaf     string
 	lan      string
 	extraDev string
-	known    map[string]uint32 // ip -> minor
+	known    map[string]hostState // ip -> 已安装 HTB 状态
 }
 
 func NewHostShaper(devLAN, leaf string) *HostShaper {
@@ -27,15 +33,30 @@ func NewHostShaper(devLAN, leaf string) *HostShaper {
 	return &HostShaper{
 		leaf:  leaf,
 		lan:   devLAN,
-		known: map[string]uint32{},
+		known: map[string]hostState{},
 	}
 }
 
 // ResetKnown 重建 HTB 根后清空内存中的 ip→minor（避免以为 u32 仍存在）
 func (h *HostShaper) ResetKnown() {
 	h.mu.Lock()
-	h.known = map[string]uint32{}
+	h.known = map[string]hostState{}
 	h.mu.Unlock()
+}
+
+// HostConfigured 报告 ip 是否已按给定速率/minor 安装 HTB（供 sync 增量补建）
+func (h *HostShaper) HostConfigured(ip string, minor uint32, down, up uint64) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	st, ok := h.known[ip]
+	return ok && st.minor == minor && st.down == down && st.up == up
+}
+
+func (h *HostShaper) markConfigured(ip string, minor uint32, down, up uint64) {
+	if h.known == nil {
+		h.known = map[string]hostState{}
+	}
+	h.known[ip] = hostState{minor: minor, down: down, up: up}
 }
 
 // SetExtraDev 设置附加整形接口（WireGuard wg0 等）
@@ -89,7 +110,11 @@ func (h *HostShaper) EnsureHostOnDevice(ip string, downBPS, upBPS uint64, minor 
 		}
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	if st, ok := h.known[ip]; ok && st.minor == minor && st.down == downBPS && st.up == upBPS {
+		h.mu.Unlock()
+		return nil
+	}
+	h.mu.Unlock()
 
 	down := bpsToTC(downBPS)
 	up := bpsToTC(upBPS)
@@ -106,7 +131,7 @@ func (h *HostShaper) EnsureHostOnDevice(ip string, downBPS, upBPS uint64, minor 
 			return fmt.Errorf("ifb u32 %s: %w", ip, err)
 		}
 	}
-	h.known[ip] = minor
+	h.markConfigured(ip, minor, downBPS, upBPS)
 	return nil
 }
 
@@ -116,7 +141,13 @@ func (h *HostShaper) DeleteHostOnDevice(ip string, dev string) error {
 		dev = h.lan
 	}
 	h.mu.Lock()
-	minor, ok := h.known[ip]
+	st, ok := h.known[ip]
+	var minor uint32
+	if ok {
+		minor = st.minor
+		delete(h.known, ip)
+	}
+	h.mu.Unlock()
 	if !ok {
 		var err error
 		minor, err = MinorForIP(ip)
@@ -124,8 +155,6 @@ func (h *HostShaper) DeleteHostOnDevice(ip string, dev string) error {
 			return err
 		}
 	}
-	delete(h.known, ip)
-	h.mu.Unlock()
 
 	cid := fmt.Sprintf("1:%x", minor)
 	_ = removeIFBUploadFilter(ip)
@@ -145,7 +174,11 @@ func (h *HostShaper) EnsureHost(ip string, downBPS, upBPS uint64, minor uint32) 
 		}
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	if st, ok := h.known[ip]; ok && st.minor == minor && st.down == downBPS && st.up == upBPS {
+		h.mu.Unlock()
+		return nil
+	}
+	h.mu.Unlock()
 
 	down := bpsToTC(downBPS)
 	up := bpsToTC(upBPS)
@@ -165,13 +198,19 @@ func (h *HostShaper) EnsureHost(ip string, downBPS, upBPS uint64, minor uint32) 
 	if err := installIFBUploadFilter(ip, minor); err != nil {
 		return fmt.Errorf("ifb u32 %s: %w", ip, err)
 	}
-	h.known[ip] = minor
+	h.markConfigured(ip, minor, downBPS, upBPS)
 	return nil
 }
 
 func (h *HostShaper) DeleteHost(ip string) error {
 	h.mu.Lock()
-	minor, ok := h.known[ip]
+	st, ok := h.known[ip]
+	var minor uint32
+	if ok {
+		minor = st.minor
+		delete(h.known, ip)
+	}
+	h.mu.Unlock()
 	if !ok {
 		var err error
 		minor, err = MinorForIP(ip)
@@ -179,8 +218,6 @@ func (h *HostShaper) DeleteHost(ip string) error {
 			return err
 		}
 	}
-	delete(h.known, ip)
-	h.mu.Unlock()
 
 	cid := fmt.Sprintf("1:%x", minor)
 	_ = removeIFBUploadFilter(ip)
@@ -198,18 +235,20 @@ func (h *HostShaper) ensureClass(dev, classid, rate, ceil string) error {
 		"tc", "class", "add", "dev", dev, "parent", parent,
 		"classid", classid, "htb", "rate", rate, "ceil", ceil,
 	}
-	if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+	if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err == nil {
+		return h.ensureLeaf(dev, classid)
+	} else {
 		msg := string(out)
-		if !strings.Contains(msg, "File exists") {
+		if strings.Contains(msg, "File exists") {
 			chg := []string{"tc", "class", "change", "dev", dev, "parent", parent,
 				"classid", classid, "htb", "rate", rate, "ceil", ceil}
 			if out2, err2 := exec.Command(chg[0], chg[1:]...).CombinedOutput(); err2 != nil {
 				return fmt.Errorf("%s %w", strings.TrimSpace(string(out2)), err2)
 			}
-			return h.ensureLeaf(dev, classid)
+			return nil
 		}
+		return fmt.Errorf("%s %w", strings.TrimSpace(msg), err)
 	}
-	return h.ensureLeaf(dev, classid)
 }
 
 func (h *HostShaper) ensureLeaf(dev, classid string) error {

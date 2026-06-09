@@ -13,10 +13,11 @@ import (
 
 // Config TC/IFB 拓扑参数
 type Config struct {
-	DevLAN    string
-	Leaf      string // fq_codel | cake
-	FQFlows   int
-	FQQuantum int
+	DevLAN     string
+	Leaf       string // fq_codel | cake
+	FQFlows    int
+	FQQuantum  int
+	TxQueueLen int // ifb0 txqueuelen；0 表示默认 5000
 }
 
 const IFBDev = "ifb0"
@@ -33,7 +34,7 @@ func SetupP0(cfg Config) error {
 		_ = exec.CommandContext(ctx, "modprobe", m).Run()
 		cancel()
 	}
-	if err := EnsureIFB(); err != nil {
+	if err := EnsureIFBWithQLen(cfg.TxQueueLen); err != nil {
 		return err
 	}
 	fq := FQOpts{Flows: cfg.FQFlows, Quantum: cfg.FQQuantum}
@@ -54,7 +55,12 @@ func SetupP0(cfg Config) error {
 
 // EnsureIFB 确保 ifb0 存在（eBPF Load 与 TC 拓扑均依赖）
 func EnsureIFB() error {
-	return netif.EnsureIFB()
+	return EnsureIFBWithQLen(0)
+}
+
+// EnsureIFBWithQLen 确保 ifb0 存在并设置 txqueuelen
+func EnsureIFBWithQLen(qlen int) error {
+	return netif.EnsureIFBTuned(qlen)
 }
 
 func setupHTBRoot(dev, leaf string, fq FQOpts) error {

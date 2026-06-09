@@ -191,6 +191,9 @@ func (srv *Server) applySystemTuning(st store.State) error {
 		if err := netif.SetTxQueueLen(srv.env.DevLAN, qlen); err != nil {
 			log.Printf("txqueuelen %s: %v", srv.env.DevLAN, err)
 		}
+		if err := netif.SetTxQueueLen(netif.IFBDev, qlen); err != nil {
+			log.Printf("txqueuelen %s: %v", netif.IFBDev, err)
+		}
 		if sys.RpsLAN {
 			if err := netif.ApplyRPS(srv.env.DevLAN); err != nil {
 				log.Printf("rps %s: %v", srv.env.DevLAN, err)

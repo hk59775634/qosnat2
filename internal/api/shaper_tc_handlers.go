@@ -47,10 +47,11 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 		if body.Apply && srv.setupComplete() {
 			st := srv.store.Get()
 			if err := shaper.SetupP0(shaper.Config{
-				DevLAN:    srv.env.DevLAN,
-				Leaf:      st.Shaper.Leaf,
-				FQFlows:   st.Shaper.FQFlows,
-				FQQuantum: st.Shaper.FQQuantum,
+				DevLAN:     srv.env.DevLAN,
+				Leaf:       st.Shaper.Leaf,
+				FQFlows:    st.Shaper.FQFlows,
+				FQQuantum:  st.Shaper.FQQuantum,
+				TxQueueLen: st.System.TxQueueLenLAN,
 			}); err != nil {
 				writeInternalError(w, err.Error())
 				return

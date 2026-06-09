@@ -6,19 +6,26 @@ import (
 	"strings"
 )
 
+const IFBDev = "ifb0"
+
 // EnsureIFB 创建并拉起 ifb0（eBPF rewriteIFBIndex 与 TC 上行整形依赖）
 func EnsureIFB() error {
-	if LinkExists("ifb0") {
-		if out, err := exec.Command("ip", "link", "set", "ifb0", "up").CombinedOutput(); err != nil {
+	return EnsureIFBTuned(0)
+}
+
+// EnsureIFBTuned 创建 ifb0 并按与物理网卡相同的规则设置 txqueuelen（0 表示默认 5000）
+func EnsureIFBTuned(qlen int) error {
+	if LinkExists(IFBDev) {
+		if out, err := exec.Command("ip", "link", "set", IFBDev, "up").CombinedOutput(); err != nil {
 			return fmt.Errorf("ip link set ifb0 up: %s %w", strings.TrimSpace(string(out)), err)
 		}
-		return nil
+	} else {
+		if out, err := exec.Command("ip", "link", "add", IFBDev, "type", "ifb").CombinedOutput(); err != nil {
+			return fmt.Errorf("ip link add ifb0: %s %w", strings.TrimSpace(string(out)), err)
+		}
+		if out, err := exec.Command("ip", "link", "set", IFBDev, "up").CombinedOutput(); err != nil {
+			return fmt.Errorf("ip link set ifb0 up: %s %w", strings.TrimSpace(string(out)), err)
+		}
 	}
-	if out, err := exec.Command("ip", "link", "add", "ifb0", "type", "ifb").CombinedOutput(); err != nil {
-		return fmt.Errorf("ip link add ifb0: %s %w", strings.TrimSpace(string(out)), err)
-	}
-	if out, err := exec.Command("ip", "link", "set", "ifb0", "up").CombinedOutput(); err != nil {
-		return fmt.Errorf("ip link set ifb0 up: %s %w", strings.TrimSpace(string(out)), err)
-	}
-	return nil
+	return SetTxQueueLen(IFBDev, EffectiveTxQLen(qlen))
 }

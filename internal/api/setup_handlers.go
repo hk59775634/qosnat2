@@ -244,9 +244,10 @@ func (srv *Server) setupPrepareTC() error {
 	}
 	st := srv.store.Get()
 	return shaper.SetupP0(shaper.Config{
-		DevLAN:    srv.env.DevLAN,
-		Leaf:      st.Shaper.Leaf,
-		FQFlows:   st.Shaper.FQFlows,
-		FQQuantum: st.Shaper.FQQuantum,
+		DevLAN:     srv.env.DevLAN,
+		Leaf:       st.Shaper.Leaf,
+		FQFlows:    st.Shaper.FQFlows,
+		FQQuantum:  st.Shaper.FQQuantum,
+		TxQueueLen: st.System.TxQueueLenLAN,
 	})
 }
