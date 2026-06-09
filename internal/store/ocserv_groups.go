@@ -8,11 +8,12 @@ import (
 
 var ocservGroupNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
-// OCServGroup 用户组；Apply 时写入 config-per-group/<name> 与 select-group
+// OCServGroup 用户组；Apply 时写入 config-per-group/<name>；未 OmitSelectGroup 时另写 select-group
 type OCServGroup struct {
-	Name         string   `json:"name"`
-	Label        string   `json:"label,omitempty"` // select-group 展示名 [label]
-	Comment      string   `json:"comment,omitempty"`
+	Name            string   `json:"name"`
+	Label           string   `json:"label,omitempty"` // select-group 展示名 [label]
+	Comment         string   `json:"comment,omitempty"`
+	OmitSelectGroup bool     `json:"omit_select_group,omitempty"` // true: 仅 config-per-group，不写入 ocserv.conf select-group
 	DNS          []string `json:"dns,omitempty"`
 	Routes       []string `json:"routes,omitempty"`
 	NoRoutes     []string `json:"no_routes,omitempty"`

@@ -697,6 +697,9 @@ components:
         tx_data_per_sec: { type: integer, description: 服务端上行限速（限制客户端上传） }
         mtu: { type: integer }
         tunnel_all_dns: { type: boolean }
+        omit_select_group:
+          type: boolean
+          description: true 时仅写入 config-per-group，不在 ocserv.conf 列出 select-group
     OCServInstallJobStatus:
       type: object
       description: ocserv 源码安装后台任务（GET install/status 与 GET ocserv 内 install_job）

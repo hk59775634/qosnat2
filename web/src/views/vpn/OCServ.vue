@@ -118,6 +118,7 @@ function emptyGroupForm() {
     tunnel_all_dns: false,
     down_mbps: 0,
     up_mbps: 0,
+    list_in_select_group: true,
   }
 }
 
@@ -626,6 +627,7 @@ function buildGroupPayload(form, dnsT, routesT, noRoutesT) {
     ipv4_netmask: form.ipv4_netmask,
     mtu: form.mtu || 0,
     tunnel_all_dns: !!form.tunnel_all_dns,
+    omit_select_group: !form.list_in_select_group,
     ...ocservBpsFromClientMbps(form.down_mbps, form.up_mbps),
   }
 }
@@ -643,6 +645,7 @@ function startEditGroup(g) {
     tunnel_all_dns: !!g.tunnel_all_dns,
     down_mbps: caps.downMbps,
     up_mbps: caps.upMbps,
+    list_in_select_group: !g.omit_select_group,
   }
   groupFormDns.value = listToText(g.dns)
   groupFormRoutes.value = listToText(g.routes)
@@ -1474,6 +1477,10 @@ onUnmounted(() => {
               MTU
               <input v-model.number="groupForm.mtu" type="number" class="input w-full mt-1" min="0" />
             </label>
+            <label class="flex items-end gap-2 pb-1 sm:col-span-2">
+              <input v-model="groupForm.list_in_select_group" type="checkbox" />
+              {{ t('ocserv.groupListInSelectGroup') }}
+            </label>
             <label class="flex items-end gap-2 pb-1">
               <input v-model="groupForm.tunnel_all_dns" type="checkbox" />
               tunnel-all-dns
@@ -1516,6 +1523,7 @@ onUnmounted(() => {
               <tr>
                 <th>{{ t('ocserv.groupName') }}</th>
                 <th>{{ t('ocserv.groupLabel') }}</th>
+                <th>{{ t('ocserv.groupSelectGroupCol') }}</th>
                 <th>{{ t('ocserv.groupNet') }}</th>
                 <th>{{ t('common.comment') }}</th>
                 <th></th>
@@ -1525,6 +1533,7 @@ onUnmounted(() => {
               <tr v-for="g in filteredGroups" :key="g.name">
                 <td class="font-mono">{{ g.name }}</td>
                 <td>{{ g.label || '—' }}</td>
+                <td>{{ g.omit_select_group ? t('ocserv.groupSelectGroupNo') : t('ocserv.groupSelectGroupYes') }}</td>
                 <td class="font-mono text-xs">{{ g.ipv4_network ? `${g.ipv4_network}/${g.ipv4_netmask || ''}` : '—' }}</td>
                 <td>{{ g.comment || '—' }}</td>
                 <td class="whitespace-nowrap space-x-2">
@@ -1533,7 +1542,7 @@ onUnmounted(() => {
                 </td>
               </tr>
               <tr v-if="!filteredGroups.length">
-                <td colspan="5" class="text-center text-slate-400 py-6">{{ t('ocserv.noGroups') }}</td>
+                <td colspan="6" class="text-center text-slate-400 py-6">{{ t('ocserv.noGroups') }}</td>
               </tr>
             </tbody>
           </table>

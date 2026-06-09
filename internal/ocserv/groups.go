@@ -52,6 +52,9 @@ func renderGroupGlobals(b *bytes.Buffer, o store.OCServState) {
 		fmt.Fprintf(b, "%sdefault-select-group = %s\n", prefix, g)
 	}
 	for _, gr := range o.Groups {
+		if gr.OmitSelectGroup {
+			continue
+		}
 		line := gr.Name
 		if lbl := strings.TrimSpace(gr.Label); lbl != "" {
 			line = fmt.Sprintf("%s[%s]", gr.Name, lbl)
