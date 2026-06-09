@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/warpnetns"
 )
@@ -19,7 +18,7 @@ func (srv *Server) applyWarpWanLink(device string) error {
 		return err
 	}
 	srv.applyManagedRoutes()
-	if err := policyroute.Apply(srv.store.Get()); err != nil {
+	if err := srv.applyEgressPolicyRoutes(); err != nil {
 		return err
 	}
 	// 写入 qwp0 出站 masquerade 等 nft 规则；加载后 ReconcileHostNAT 回补 netns NAT/bypass。

@@ -17,13 +17,20 @@ type hostState struct {
 	up    uint64
 }
 
+// hostEntry 按网卡分别记录 egress HTB；ifb 上行每 IP 共享一份。
+type hostEntry struct {
+	egress map[string]hostState
+	ifb    hostState
+	ifbSet bool
+}
+
 // HostShaper 每 /32 动态 HTB 类（LAN egress 下行 + ifb 上行；extraDev 如 wg0 用于 VPN 隧道）
 type HostShaper struct {
 	mu       sync.Mutex
 	leaf     string
 	lan      string
 	extraDev string
-	known    map[string]hostState // ip -> 已安装 HTB 状态
+	known    map[string]*hostEntry // ip -> 各网卡已安装状态
 }
 
 func NewHostShaper(devLAN, leaf string) *HostShaper {
@@ -33,30 +40,98 @@ func NewHostShaper(devLAN, leaf string) *HostShaper {
 	return &HostShaper{
 		leaf:  leaf,
 		lan:   devLAN,
-		known: map[string]hostState{},
+		known: map[string]*hostEntry{},
 	}
 }
 
 // ResetKnown 重建 HTB 根后清空内存中的 ip→minor（避免以为 u32 仍存在）
 func (h *HostShaper) ResetKnown() {
 	h.mu.Lock()
-	h.known = map[string]hostState{}
+	h.known = map[string]*hostEntry{}
 	h.mu.Unlock()
 }
 
-// HostConfigured 报告 ip 是否已按给定速率/minor 安装 HTB（供 sync 增量补建）
-func (h *HostShaper) HostConfigured(ip string, minor uint32, down, up uint64) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	st, ok := h.known[ip]
-	return ok && st.minor == minor && st.down == down && st.up == up
+func (h *HostShaper) getEntryLocked(ip string) *hostEntry {
+	if h.known == nil {
+		h.known = map[string]*hostEntry{}
+	}
+	e, ok := h.known[ip]
+	if !ok {
+		e = &hostEntry{egress: map[string]hostState{}}
+		h.known[ip] = e
+	}
+	if e.egress == nil {
+		e.egress = map[string]hostState{}
+	}
+	return e
 }
 
-func (h *HostShaper) markConfigured(ip string, minor uint32, down, up uint64) {
-	if h.known == nil {
-		h.known = map[string]hostState{}
+func egressMatches(st hostState, minor uint32, downBPS uint64) bool {
+	return st.minor == minor && st.down == downBPS
+}
+
+func ifbMatches(st hostState, minor uint32, upBPS uint64) bool {
+	return st.minor == minor && st.up == upBPS
+}
+
+// HostConfiguredOnDevice 报告 ip 在指定 egress 网卡 + ifb 上行是否已按速率安装
+func (h *HostShaper) HostConfiguredOnDevice(ip, dev string, minor uint32, down, up uint64) bool {
+	if dev == "" {
+		dev = h.lan
 	}
-	h.known[ip] = hostState{minor: minor, down: down, up: up}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	e := h.known[ip]
+	if e == nil {
+		return false
+	}
+	if dev == IFBDev {
+		return e.ifbSet && ifbMatches(e.ifb, minor, up)
+	}
+	st, ok := e.egress[dev]
+	if !ok || !egressMatches(st, minor, down) {
+		return false
+	}
+	return e.ifbSet && ifbMatches(e.ifb, minor, up)
+}
+
+func (h *HostShaper) hostFullyConfigured(ip string, minor uint32, down, up uint64, extraDev string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	e := h.known[ip]
+	if e == nil || !e.ifbSet || !ifbMatches(e.ifb, minor, up) {
+		return false
+	}
+	st, ok := e.egress[h.lan]
+	if !ok || !egressMatches(st, minor, down) {
+		return false
+	}
+	if extraDev != "" {
+		st, ok := e.egress[extraDev]
+		if !ok || !egressMatches(st, minor, down) {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *HostShaper) markDevice(ip, dev string, minor uint32, downBPS, upBPS uint64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	e := h.getEntryLocked(ip)
+	if dev != IFBDev {
+		e.egress[dev] = hostState{minor: minor, down: downBPS}
+		e.ifb = hostState{minor: minor, up: upBPS}
+		e.ifbSet = true
+	} else {
+		e.ifb = hostState{minor: minor, up: upBPS}
+		e.ifbSet = true
+	}
+}
+
+// HostConfigured 兼容旧调用：默认 LAN 设备
+func (h *HostShaper) HostConfigured(ip string, minor uint32, down, up uint64) bool {
+	return h.HostConfiguredOnDevice(ip, h.lan, minor, down, up)
 }
 
 // SetExtraDev 设置附加整形接口（WireGuard wg0 等）
@@ -83,7 +158,6 @@ func bpsToTC(bps uint64) string {
 	if bps == 0 {
 		return "1mbit"
 	}
-	// HTB 使用 bit/s；Map 存 bytes/s → bits/s = bps*8
 	bits := bps * 8
 	if bits >= 1_000_000_000 {
 		return fmt.Sprintf("%dGbit", bits/1_000_000_000)
@@ -109,12 +183,9 @@ func (h *HostShaper) EnsureHostOnDevice(ip string, downBPS, upBPS uint64, minor 
 			return err
 		}
 	}
-	h.mu.Lock()
-	if st, ok := h.known[ip]; ok && st.minor == minor && st.down == downBPS && st.up == upBPS {
-		h.mu.Unlock()
+	if h.HostConfiguredOnDevice(ip, dev, minor, downBPS, upBPS) {
 		return nil
 	}
-	h.mu.Unlock()
 
 	down := bpsToTC(downBPS)
 	up := bpsToTC(upBPS)
@@ -131,7 +202,7 @@ func (h *HostShaper) EnsureHostOnDevice(ip string, downBPS, upBPS uint64, minor 
 			return fmt.Errorf("ifb u32 %s: %w", ip, err)
 		}
 	}
-	h.markConfigured(ip, minor, downBPS, upBPS)
+	h.markDevice(ip, dev, minor, downBPS, upBPS)
 	return nil
 }
 
@@ -141,14 +212,25 @@ func (h *HostShaper) DeleteHostOnDevice(ip string, dev string) error {
 		dev = h.lan
 	}
 	h.mu.Lock()
-	st, ok := h.known[ip]
+	e := h.known[ip]
 	var minor uint32
-	if ok {
-		minor = st.minor
-		delete(h.known, ip)
+	if e != nil {
+		if st, ok := e.egress[dev]; ok {
+			minor = st.minor
+		} else if e.ifbSet {
+			minor = e.ifb.minor
+		}
+		delete(e.egress, dev)
+		if dev != IFBDev {
+			e.ifbSet = false
+		}
+		if len(e.egress) == 0 && !e.ifbSet {
+			delete(h.known, ip)
+		}
 	}
 	h.mu.Unlock()
-	if !ok {
+
+	if minor == 0 {
 		var err error
 		minor, err = MinorForIP(ip)
 		if err != nil {
@@ -173,45 +255,73 @@ func (h *HostShaper) EnsureHost(ip string, downBPS, upBPS uint64, minor uint32) 
 			return err
 		}
 	}
-	h.mu.Lock()
-	if st, ok := h.known[ip]; ok && st.minor == minor && st.down == downBPS && st.up == upBPS {
-		h.mu.Unlock()
+	extra := ""
+	if h.extraDev != "" && route.LinkExists(h.extraDev) {
+		extra = h.extraDev
+	}
+	if h.hostFullyConfigured(ip, minor, downBPS, upBPS, extra) {
 		return nil
 	}
-	h.mu.Unlock()
 
 	down := bpsToTC(downBPS)
 	up := bpsToTC(upBPS)
 	cid := fmt.Sprintf("1:%x", minor)
 
-	if err := h.ensureClass(h.lan, cid, down, down); err != nil {
-		return fmt.Errorf("lan %s: %w", ip, err)
-	}
-	if h.extraDev != "" && route.LinkExists(h.extraDev) {
-		if err := h.ensureClass(h.extraDev, cid, down, down); err != nil {
-			return fmt.Errorf("%s %s: %w", h.extraDev, ip, err)
+	if !h.HostConfiguredOnDevice(ip, h.lan, minor, downBPS, upBPS) {
+		if err := h.ensureClass(h.lan, cid, down, down); err != nil {
+			return fmt.Errorf("lan %s: %w", ip, err)
 		}
 	}
-	if err := h.ensureClass(IFBDev, cid, up, up); err != nil {
-		return fmt.Errorf("ifb %s: %w", ip, err)
+	if extra != "" && !h.HostConfiguredOnDevice(ip, extra, minor, downBPS, upBPS) {
+		if err := h.ensureClass(extra, cid, down, down); err != nil {
+			return fmt.Errorf("%s %s: %w", extra, ip, err)
+		}
 	}
-	if err := installIFBUploadFilter(ip, minor); err != nil {
-		return fmt.Errorf("ifb u32 %s: %w", ip, err)
+	h.mu.Lock()
+	e := h.known[ip]
+	needIFB := e == nil || !e.ifbSet || !ifbMatches(e.ifb, minor, upBPS)
+	h.mu.Unlock()
+	if needIFB {
+		if err := h.ensureClass(IFBDev, cid, up, up); err != nil {
+			return fmt.Errorf("ifb %s: %w", ip, err)
+		}
+		if err := installIFBUploadFilter(ip, minor); err != nil {
+			return fmt.Errorf("ifb u32 %s: %w", ip, err)
+		}
 	}
-	h.markConfigured(ip, minor, downBPS, upBPS)
+
+	h.mu.Lock()
+	e = h.getEntryLocked(ip)
+	e.egress[h.lan] = hostState{minor: minor, down: downBPS}
+	if extra != "" {
+		e.egress[extra] = hostState{minor: minor, down: downBPS}
+	}
+	e.ifb = hostState{minor: minor, up: upBPS}
+	e.ifbSet = true
+	h.mu.Unlock()
 	return nil
 }
 
 func (h *HostShaper) DeleteHost(ip string) error {
 	h.mu.Lock()
-	st, ok := h.known[ip]
+	e := h.known[ip]
+	var devs []string
 	var minor uint32
-	if ok {
-		minor = st.minor
+	if e != nil {
+		for d := range e.egress {
+			devs = append(devs, d)
+		}
+		if e.ifbSet {
+			minor = e.ifb.minor
+		} else if len(devs) > 0 {
+			minor = e.egress[devs[0]].minor
+		}
 		delete(h.known, ip)
 	}
+	extra := h.extraDev
 	h.mu.Unlock()
-	if !ok {
+
+	if minor == 0 {
 		var err error
 		minor, err = MinorForIP(ip)
 		if err != nil {
@@ -222,8 +332,11 @@ func (h *HostShaper) DeleteHost(ip string) error {
 	cid := fmt.Sprintf("1:%x", minor)
 	_ = removeIFBUploadFilter(ip)
 	_ = h.delClass(h.lan, cid)
-	if h.extraDev != "" {
-		_ = h.delClass(h.extraDev, cid)
+	for _, d := range devs {
+		_ = h.delClass(d, cid)
+	}
+	if extra != "" {
+		_ = h.delClass(extra, cid)
 	}
 	_ = h.delClass(IFBDev, cid)
 	return nil

@@ -121,7 +121,9 @@ func (srv *Server) syncWGPeerRates() {
 				log.Printf("wg bpf profile %s: %v", cidr, err)
 				continue
 			}
-			_ = srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, iface)
+			if err := srv.hosts.EnsureHostOnDevice(ip, rv.DownBPS, rv.UpBPS, rv.ClassMinor, iface); err != nil {
+				log.Printf("wg peer htb %s@%s: %v", ip, iface, err)
+			}
 			_ = srv.store.Update(func(s *store.State) {
 				srv.assignProfileOnAdd(s, cidr, down, up, 32, iface)
 			})

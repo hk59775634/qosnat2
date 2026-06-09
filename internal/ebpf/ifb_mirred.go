@@ -272,6 +272,9 @@ func ResetIFBMirredOnDevice(dev string, cidrs []string, clientBidirectionalMirre
 	if clientBidirectionalMirred {
 		return ApplyIFBMirredOnDeviceBidirectional(dev, cidrs)
 	}
+	if err := applyMirredLocalSkip(dev, cidrs); err != nil {
+		return err
+	}
 	return ApplyIFBMirredOnDevice(dev, cidrs)
 }
 

@@ -24,6 +24,11 @@ type dataplaneMetrics struct {
 	natStackLastMS    float64
 	natStackLastError string
 	natStackLastAt    time.Time
+
+	egressRoutesTotal     uint64
+	egressRoutesLastMS    float64
+	egressRoutesLastError string
+	egressRoutesLastAt    time.Time
 }
 
 func (m *dataplaneMetrics) recordNftReload(d time.Duration, err error) {
@@ -39,6 +44,22 @@ func (m *dataplaneMetrics) recordNftReload(d time.Duration, err error) {
 		m.nftReloadLastError = err.Error()
 	} else {
 		m.nftReloadLastError = ""
+	}
+}
+
+func (m *dataplaneMetrics) recordEgressRoutes(d time.Duration, err error) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.egressRoutesTotal++
+	m.egressRoutesLastMS = float64(d.Milliseconds())
+	m.egressRoutesLastAt = time.Now().UTC()
+	if err != nil {
+		m.egressRoutesLastError = err.Error()
+	} else {
+		m.egressRoutesLastError = ""
 	}
 }
 
@@ -82,6 +103,12 @@ func (m *dataplaneMetrics) snapshot(conntrack stats.System) map[string]any {
 		"last_error": m.natStackLastError,
 		"last_at":    formatMetricTime(m.natStackLastAt),
 	}
+	out["egress_routes"] = map[string]any{
+		"total":      m.egressRoutesTotal,
+		"last_ms":    m.egressRoutesLastMS,
+		"last_error": m.egressRoutesLastError,
+		"last_at":    formatMetricTime(m.egressRoutesLastAt),
+	}
 	return out
 }
 
@@ -119,11 +146,15 @@ func (srv *Server) handleMetricsPrometheus(w http.ResponseWriter, r *http.Reques
 	snap := srv.dataplaneMetrics.snapshot(sys)
 	nft, _ := snap["nft_reload"].(map[string]any)
 	nat, _ := snap["nat_stack_apply"].(map[string]any)
+	egress, _ := snap["egress_routes"].(map[string]any)
 	if nft == nil {
 		nft = map[string]any{}
 	}
 	if nat == nil {
 		nat = map[string]any{}
+	}
+	if egress == nil {
+		egress = map[string]any{}
 	}
 
 	var b strings.Builder
@@ -135,6 +166,8 @@ func (srv *Server) handleMetricsPrometheus(w http.ResponseWriter, r *http.Reques
 	writePromGauge(&b, "qosnat_nft_reload_last_ms", toFloat(nft["last_ms"]), "Last nft reload duration ms")
 	writePromCounter(&b, "qosnat_nat_stack_apply_total", toFloat(nat["total"]), "Total NAT stack apply operations")
 	writePromGauge(&b, "qosnat_nat_stack_apply_last_ms", toFloat(nat["last_ms"]), "Last NAT stack apply duration ms")
+	writePromCounter(&b, "qosnat_egress_routes_apply_total", toFloat(egress["total"]), "Total egress policy route apply operations")
+	writePromGauge(&b, "qosnat_egress_routes_apply_last_ms", toFloat(egress["last_ms"]), "Last egress policy route apply duration ms")
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

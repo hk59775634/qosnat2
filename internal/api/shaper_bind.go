@@ -11,6 +11,7 @@ import (
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
+	"github.com/hk59775634/qosnat2/internal/wg"
 )
 
 func (srv *Server) shaperDefaultDevice(st store.State) string {
@@ -118,26 +119,62 @@ func (srv *Server) syncShaperDevices() {
 	}
 }
 
+// shapeDeviceForIP 解析 Per-IP 整形应落在哪块网卡（profile.device / WG peer / 默认 LAN）
+func (srv *Server) shapeDeviceForIP(ip string, st store.State) string {
+	cidr := store.Host32ProfileCIDR(ip)
+	for _, p := range st.Shaper.Profiles {
+		if p.CIDR == cidr {
+			return srv.profileDevice(p, st)
+		}
+	}
+	for _, inst := range st.VPN.WireGuards {
+		if !inst.Enabled {
+			continue
+		}
+		iface := strings.TrimSpace(inst.Interface)
+		if iface == "" {
+			iface = "wg0"
+		}
+		for _, p := range inst.Peers {
+			if wg.PeerRateShapeIP(inst, p) != ip {
+				continue
+			}
+			if p.Rate != nil && (strings.TrimSpace(p.Rate.Down) != "" || strings.TrimSpace(p.Rate.Up) != "") {
+				return iface
+			}
+		}
+	}
+	return srv.shaperDefaultDevice(st)
+}
+
 // syncActiveHostHTB 按 BPF 活跃/classid 表在 ifb/LAN 上补建 HTB 类（/24 等网段模板依赖此路径）
 const htbSyncBatchSize = 64
 
 func (srv *Server) syncActiveHostHTB() {
+	srv.syncActiveHostHTBWithLimit(htbSyncBatchSize)
+}
+
+func (srv *Server) syncActiveHostHTBAll() {
+	srv.syncActiveHostHTBWithLimit(0)
+}
+
+func (srv *Server) syncActiveHostHTBWithLimit(batchLimit int) {
 	if srv.hosts == nil || srv.bpf == nil || !srv.bpf.Ready() {
 		return
 	}
 	st := srv.store.Get()
-	dev := srv.shaperDefaultDevice(st)
 	seen := map[string]struct{}{}
 	ensured := 0
 	tryEnsure := func(ip string, down, up uint64, minor uint32) {
-		if ensured >= htbSyncBatchSize {
+		if batchLimit > 0 && ensured >= batchLimit {
 			return
 		}
-		if srv.hosts.HostConfigured(ip, minor, down, up) {
+		dev := srv.shapeDeviceForIP(ip, st)
+		if srv.hosts.HostConfiguredOnDevice(ip, dev, minor, down, up) {
 			return
 		}
 		if err := srv.hosts.EnsureHostOnDevice(ip, down, up, minor, dev); err != nil {
-			log.Printf("sync htb %s: %v", ip, err)
+			log.Printf("sync htb %s@%s: %v", ip, dev, err)
 			return
 		}
 		ensured++
@@ -148,6 +185,7 @@ func (srv *Server) syncActiveHostHTB() {
 			seen[e.IP] = struct{}{}
 			down, up, ok := srv.bpf.LookupRates(e.IP)
 			if !ok {
+				dev := srv.shapeDeviceForIP(e.IP, st)
 				if err := srv.hosts.DeleteHostOnDevice(e.IP, dev); err != nil {
 					log.Printf("sync htb purge %s: %v", e.IP, err)
 				}
@@ -196,7 +234,7 @@ func (srv *Server) reattachShaperDataPath() {
 		log.Printf("reattach lan egress %s: %v", srv.env.DevLAN, err)
 	}
 	srv.replayProfileUploadHTB()
-	srv.syncActiveHostHTB()
+	srv.syncActiveHostHTBAll()
 	if err := srv.verifyUploadPath(cidrs); err != nil {
 		log.Printf("shaper upload path: %v", err)
 	}

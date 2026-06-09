@@ -5,16 +5,26 @@ import (
 	"encoding/binary"
 	"errors"
 	"log"
+	"sync"
 
 	"github.com/cilium/ebpf/ringbuf"
 )
+
+const ringbufWorkers = 4
+
+type ringbufJob struct {
+	ip    string
+	down  uint64
+	up    uint64
+	minor uint32
+}
 
 // HostEnsurer 收到 NEW_HOST 时建 HTB 类
 type HostEnsurer interface {
 	EnsureHost(ip string, downBPS, upBPS uint64, minor uint32) error
 }
 
-// StartRingbuf 读取 events ringbuf
+// StartRingbuf 读取 events ringbuf（多 worker 并行 EnsureHost，加速 /24 等网段首包建类）
 func (m *Manager) StartRingbuf(ctx context.Context, hs HostEnsurer) error {
 	m.mu.RLock()
 	if !m.loaded || m.objs == nil {
@@ -26,8 +36,26 @@ func (m *Manager) StartRingbuf(ctx context.Context, hs HostEnsurer) error {
 	if err != nil {
 		return err
 	}
+	jobs := make(chan ringbufJob, 256)
+	var wg sync.WaitGroup
+	for i := 0; i < ringbufWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				if hs == nil {
+					continue
+				}
+				if err := hs.EnsureHost(j.ip, j.down, j.up, j.minor); err != nil {
+					log.Printf("ringbuf ensure %s: %v", j.ip, err)
+				}
+			}
+		}()
+	}
 	go func() {
 		defer rd.Close()
+		defer close(jobs)
+		defer wg.Wait()
 		for {
 			select {
 			case <-ctx.Done():
@@ -55,10 +83,10 @@ func (m *Manager) StartRingbuf(ctx context.Context, hs HostEnsurer) error {
 			up := binary.LittleEndian.Uint64(b[16:24])
 			minor := binary.LittleEndian.Uint32(b[24:28])
 			ip := HostKeyToIP(ipBE)
-			if hs != nil {
-				if err := hs.EnsureHost(ip, down, up, minor); err != nil {
-					log.Printf("ringbuf ensure %s: %v", ip, err)
-				}
+			select {
+			case jobs <- ringbufJob{ip: ip, down: down, up: up, minor: minor}:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()

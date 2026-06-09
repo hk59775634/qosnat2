@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/nft"
-	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -214,7 +213,7 @@ func (srv *Server) applyEgressDataPlaneLocked() error {
 		return err
 	}
 	srv.applyManagedRoutes()
-	if err := policyroute.Apply(srv.store.Get()); err != nil {
+	if err := srv.applyEgressPolicyRoutes(); err != nil {
 		return err
 	}
 	return srv.reloadNftLocked()

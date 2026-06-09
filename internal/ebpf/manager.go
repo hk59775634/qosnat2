@@ -73,7 +73,7 @@ func (m *Manager) Load() error {
 	if m.loaded {
 		return nil
 	}
-	if err := netif.EnsureIFB(); err != nil {
+	if err := netif.EnsureIFBUp(); err != nil {
 		return err
 	}
 	spec, err := m.loadCollectionSpec()

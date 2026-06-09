@@ -34,7 +34,7 @@ func runApplyState() {
 	if err := st.Load(); err != nil {
 		log.Fatalf("load state: %v", err)
 	}
-	_ = netif.EnsureIFB()
+	_ = netif.EnsureIFBUp()
 	bpfM := ebpf.New()
 	if err := bpfM.Load(); err != nil {
 		log.Printf("ebpf load: %v", err)
@@ -62,7 +62,7 @@ func runServer() {
 	if err := st.Save(); err != nil {
 		log.Printf("init state file: %v", err)
 	}
-	_ = netif.EnsureIFB()
+	_ = netif.EnsureIFBUp()
 	bpfM := ebpf.New()
 	if err := bpfM.Load(); err != nil {
 		log.Printf("ebpf load (P1): %v — 请确认已 make bpf 且 /usr/lib/qosnat2/classify.bpf.o 存在", err)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/policyroute"
@@ -224,13 +225,17 @@ func (srv *Server) replayEgressOnBoot() {
 }
 
 // applyEgressPolicyRoutes 回放 ip rule（applyState / 手动 apply 时调用）
-func (srv *Server) applyEgressPolicyRoutes() {
+func (srv *Server) applyEgressPolicyRoutes() error {
 	if !srv.store.Get().SetupComplete {
-		return
+		return nil
 	}
-	if err := policyroute.Apply(srv.store.Get()); err != nil {
+	start := time.Now()
+	err := policyroute.Apply(srv.store.Get())
+	srv.dataplaneMetrics.recordEgressRoutes(time.Since(start), err)
+	if err != nil {
 		log.Printf("egress policy routes: %v", err)
 	}
+	return err
 }
 
 // handleNetworkEgressPoliciesBulk 原子批量添加出站策略（单次 state 保存 + 单次 dataplane apply）。

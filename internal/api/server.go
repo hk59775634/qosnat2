@@ -281,6 +281,16 @@ func (srv *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		resp["admin_port"] = srv.env.AdminPort
 	}
 	resp["diagnostics_terminal_enabled"] = true
+	if srv.store.Get().SetupComplete {
+		snap := srv.dataplaneMetrics.snapshot(stats.System{})
+		if egress, _ := snap["egress_routes"].(map[string]any); egress != nil {
+			lastErr, _ := egress["last_error"].(string)
+			resp["egress_routes_ok"] = lastErr == ""
+			if lastErr != "" {
+				resp["egress_routes_error"] = lastErr
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

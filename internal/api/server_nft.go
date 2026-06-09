@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/nft"
-	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/warpnetns"
 )
@@ -86,7 +85,7 @@ func (srv *Server) applyWanLinkDataPlane() error {
 	if warns := srv.refreshURLAliasesLocked(); len(warns) > 0 {
 		log.Printf("url alias refresh: %v", warns)
 	}
-	if err := policyroute.Apply(srv.store.Get()); err != nil {
+	if err := srv.applyEgressPolicyRoutes(); err != nil {
 		return err
 	}
 	return srv.reloadNft()
