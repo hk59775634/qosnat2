@@ -5,15 +5,15 @@
 
 ## 概要
 
-ocserv 组管理支持可选是否写入 select-group 列表，未选中时仅生成 config-per-group 配置文件。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- 添加/编辑组时可勾选「加入客户端可选列表（select-group）」；不勾选则仅写 config-per-group，不在 ocserv.conf 列出
+- （无）
 
 ## 优化
 
-- 组列表增加「select-group」列，显示是否加入可选列表
+- （无）
 
 ## 修复
 
