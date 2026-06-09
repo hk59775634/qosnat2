@@ -20,7 +20,7 @@ type OCServRadius struct {
 	AuthPort        int    `json:"auth_port,omitempty"`         // 默认 1812
 	AcctPort        int    `json:"acct_port,omitempty"`         // 默认 1813
 	Secret          string `json:"secret,omitempty"`            // 共享密钥；GET 不返回
-	GroupConfig     bool   `json:"groupconfig,omitempty"`       // 从 RADIUS 读取 per-user 配置
+	GroupConfig     bool   `json:"groupconfig"`                 // 从 RADIUS 读取 per-user 配置；false 时可用本地 config-per-group
 	NASIdentifier   string `json:"nas_identifier,omitempty"`    // NAS-Identifier 属性
 	AcctEnabled     bool   `json:"acct_enabled,omitempty"`      // RADIUS 计费
 	StatsReportTime int    `json:"stats_report_time,omitempty"` // 计费上报间隔（秒），默认 360
@@ -107,6 +107,11 @@ func DefaultOCServ() OCServState {
 // OCServUsesRadius 是否使用 RADIUS 认证
 func OCServUsesRadius(o OCServState) bool {
 	return strings.TrimSpace(o.AuthMethod) == OCServAuthRadius
+}
+
+// OCServRadiusUsesGroupconfig RADIUS 认证且从 RADIUS 读取组/用户配置（groupconfig=true）
+func OCServRadiusUsesGroupconfig(o OCServState) bool {
+	return OCServUsesRadius(o) && o.Radius.GroupConfig
 }
 
 // NormalizeOCServ 校验 ocserv 配置

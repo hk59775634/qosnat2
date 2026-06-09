@@ -26,7 +26,7 @@ func configPerGroupDir(o store.OCServState) string {
 
 func renderGroupGlobals(b *bytes.Buffer, o store.OCServState) {
 	// auth=radius 且 groupconfig=true 时本地组配置不生效：保留为注释，便于回切 plain 时恢复。
-	commented := store.OCServUsesRadius(o) && o.Radius.GroupConfig
+	commented := store.OCServRadiusUsesGroupconfig(o)
 	prefix := ""
 	if commented {
 		prefix = "# "
@@ -95,7 +95,7 @@ func renderGroupConf(g store.OCServGroup) string {
 
 // WriteGroupConfigs 同步组配置目录与默认组配置（plain 或 radius 未启用 groupconfig 时）
 func WriteGroupConfigs(o store.OCServState) error {
-	if store.OCServUsesRadius(o) && o.Radius.GroupConfig {
+	if store.OCServRadiusUsesGroupconfig(o) {
 		return nil
 	}
 	dir := configPerGroupDir(o)

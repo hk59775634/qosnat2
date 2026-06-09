@@ -136,7 +136,7 @@ const downMbps = ref(0)
 const upMbps = ref(0)
 
 const isRadius = computed(() => cfg.value?.auth_method === 'radius')
-const radiusUsesGroupconfig = computed(() => isRadius.value && !!cfg.value?.radius?.groupconfig)
+const radiusUsesGroupconfig = computed(() => isRadius.value && cfg.value?.radius?.groupconfig === true)
 const useOcctl = computed(() => !!cfg.value?.advanced?.use_occtl)
 
 const needsCiscoSvcUdp443 = computed(() => {
@@ -1422,6 +1422,9 @@ onUnmounted(() => {
       <p class="text-xs text-slate-500">{{ t('ocserv.groupsHint') }}</p>
       <div v-if="radiusUsesGroupconfig" class="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
         {{ t('ocserv.groupsRadius') }}
+      </div>
+      <div v-else-if="isRadius" class="text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded p-3">
+        {{ t('ocserv.groupsRadiusLocal') }}
       </div>
       <template v-if="!radiusUsesGroupconfig">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/80 rounded border text-sm">

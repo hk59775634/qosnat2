@@ -9,8 +9,8 @@ import (
 )
 
 func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
-	if store.OCServUsesRadius(srv.store.Get().VPN.OCServ) && r.Method != http.MethodGet {
-		writeBadRequest(w, "RADIUS 模式下组由外部目录管理")
+	if store.OCServRadiusUsesGroupconfig(srv.store.Get().VPN.OCServ) && r.Method != http.MethodGet {
+		writeBadRequest(w, "RADIUS groupconfig 已启用，组配置由外部目录管理")
 		return
 	}
 	switch r.Method {
