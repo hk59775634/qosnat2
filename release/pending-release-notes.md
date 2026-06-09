@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复 RADIUS 未启用 groupconfig 时组 API 仍拒绝编辑的问题。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -17,8 +17,7 @@
 
 ## 修复
 
-- ocserv 组 API：仅在 RADIUS 且 `groupconfig=true` 时禁止本地组增删改；取消勾选后可正常保存组与 config-per-group
-- `groupconfig` 状态持久化到 state.json（显式 true/false），前端按 `groupconfig === true` 判断是否外部管理
+- （无）
 
 ## 删除
 
