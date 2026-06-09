@@ -36,15 +36,21 @@ type ipRouteJSON struct {
 	Flags    []string `json:"flags"`
 }
 
-// ListLive 读取指定路由表
+// ListLive 读取指定路由表；空表或未创建的策略表返回 nil。
 func ListLive(table int) ([]LiveRoute, error) {
 	if table == 0 {
 		table = 254
 	}
 	args := []string{"-json", "route", "show", "table", strconv.Itoa(table)}
-	out, err := exec.Command("ip", args...).Output()
+	out, err := exec.Command("ip", args...).CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("ip route show: %w", err)
+		msg := strings.ToLower(string(out))
+		if table != 254 && (strings.Contains(msg, "fib table does not exist") ||
+			strings.Contains(msg, "does not exist") ||
+			strings.Contains(msg, "not found")) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("ip route show: %s %w", strings.TrimSpace(string(out)), err)
 	}
 	var raw []ipRouteJSON
 	if err := json.Unmarshal(out, &raw); err != nil {
