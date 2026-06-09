@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026060901",
+      "tag": "v2026060901",
+      "published_at": "2026-06-09T07:11:57Z",
+      "summary": "修复高负载长时间运行后内网 ping 高延迟/丢包：排除内网流量 IFB 误整形、对齐 ifb0 队列深度，并降低 HTB 同步风暴。"
+    },
+    {
       "id": "2026060603",
       "tag": "v2026060603",
       "published_at": "2026-06-06T04:19:26Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060501",
       "published_at": "2026-06-05T04:33:50Z",
       "summary": "FRR 路由完整 UI；出站策略支持源/目标双端与 URL 别名；托管路由 diff+batch 回放优化。"
-    },
-    {
-      "id": "2026060401",
-      "tag": "v2026060401",
-      "published_at": "2026-06-04T04:31:46Z",
-      "summary": "dnsmasq chnroutes 分流；Release 含预编译 dnsmasq-chnroutes（Ubuntu 24.04 amd64），免编译安装。"
     }
   ]
 }
