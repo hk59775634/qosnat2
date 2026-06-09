@@ -136,6 +136,7 @@ const downMbps = ref(0)
 const upMbps = ref(0)
 
 const isRadius = computed(() => cfg.value?.auth_method === 'radius')
+const radiusUsesGroupconfig = computed(() => isRadius.value && !!cfg.value?.radius?.groupconfig)
 const useOcctl = computed(() => !!cfg.value?.advanced?.use_occtl)
 
 const needsCiscoSvcUdp443 = computed(() => {
@@ -191,6 +192,7 @@ const defaultAdvanced = () => ({
   deny_roaming: false,
   cisco_client_compat: true,
   cisco_svc_client_compat: false,
+  select_group_by_url: true,
   client_bypass_protocol: false,
   compression: false,
   keepalive: true,
@@ -228,7 +230,7 @@ const defaultAdvanced = () => ({
 
 const FEATURE_KEYS = [
   'tcp', 'udp', 'try_mtu_discovery', 'isolate_workers', 'dtls_legacy', 'cisco_client_compat',
-  'cisco_svc_client_compat', 'client_bypass_protocol', 'deny_roaming', 'compression', 'keepalive',
+  'select_group_by_url', 'cisco_svc_client_compat', 'client_bypass_protocol', 'deny_roaming', 'compression', 'keepalive',
   'dpd', 'mobile_dpd', 'switch_to_tcp', 'rekey', 'predictable_ips', 'ping_leases', 'use_occtl', 'camouflage',
 ]
 
@@ -1418,10 +1420,10 @@ onUnmounted(() => {
     <div v-if="cfg && activeTab === 'groups'" class="card p-4 space-y-4">
       <h3 class="font-medium">{{ t('ocserv.groupsTitle') }}</h3>
       <p class="text-xs text-slate-500">{{ t('ocserv.groupsHint') }}</p>
-      <div v-if="isRadius" class="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
+      <div v-if="radiusUsesGroupconfig" class="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
         {{ t('ocserv.groupsRadius') }}
       </div>
-      <template v-else>
+      <template v-if="!radiusUsesGroupconfig">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50/80 rounded border text-sm">
           <label class="sm:col-span-2">
             {{ t('ocserv.groupDir') }}

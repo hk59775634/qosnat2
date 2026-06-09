@@ -10,6 +10,7 @@ type OCServAdvanced struct {
 	DenyRoaming       bool `json:"deny_roaming"`
 	CiscoClientCompat bool `json:"cisco_client_compat"`
 	CiscoSvcCompat    bool `json:"cisco_svc_client_compat"`
+	SelectGroupByURL  bool `json:"select_group_by_url"`
 	ClientBypassProto bool `json:"client_bypass_protocol"`
 	Compression       bool `json:"compression"`
 	Keepalive         bool `json:"keepalive"`
@@ -61,6 +62,7 @@ func DefaultOCServAdvanced() OCServAdvanced {
 		DenyRoaming:          false,
 		CiscoClientCompat:    true,
 		CiscoSvcCompat:       false,
+		SelectGroupByURL:     true,
 		ClientBypassProto:    false,
 		Compression:          false,
 		Keepalive:            true,

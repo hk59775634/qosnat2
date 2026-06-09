@@ -43,7 +43,8 @@ func IsAutoManagedRoute(r RouteEntry) bool {
 		return true
 	}
 	return strings.HasPrefix(r.Comment, wanRouteCommentPrefix) ||
-		strings.HasPrefix(r.Comment, egressRouteCommentPrefix)
+		strings.HasPrefix(r.Comment, egressRouteCommentPrefix) ||
+		strings.HasPrefix(r.Comment, wanPolicyRouteCommentPrefix)
 }
 
 // NewRouteID 生成路由条目 ID

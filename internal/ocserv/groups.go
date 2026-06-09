@@ -25,8 +25,8 @@ func configPerGroupDir(o store.OCServState) string {
 }
 
 func renderGroupGlobals(b *bytes.Buffer, o store.OCServState) {
-	// auth=radius 时本地组配置不生效：保留为注释，便于回切 plain 时恢复。
-	commented := store.OCServUsesRadius(o)
+	// auth=radius 且 groupconfig=true 时本地组配置不生效：保留为注释，便于回切 plain 时恢复。
+	commented := store.OCServUsesRadius(o) && o.Radius.GroupConfig
 	prefix := ""
 	if commented {
 		prefix = "# "
@@ -45,6 +45,8 @@ func renderGroupGlobals(b *bytes.Buffer, o store.OCServState) {
 	}
 	if o.AutoSelectGroup {
 		fmt.Fprintf(b, "%sauto-select-group = true\n", prefix)
+	} else if !commented {
+		fmt.Fprintf(b, "%sauto-select-group = false\n", prefix)
 	}
 	if g := strings.TrimSpace(o.DefaultSelectGroup); g != "" {
 		fmt.Fprintf(b, "%sdefault-select-group = %s\n", prefix, g)
@@ -91,9 +93,9 @@ func renderGroupConf(g store.OCServGroup) string {
 	return b.String()
 }
 
-// WriteGroupConfigs 同步组配置目录与默认组配置（仅 plain 认证；RADIUS 用 groupconfig）
+// WriteGroupConfigs 同步组配置目录与默认组配置（plain 或 radius 未启用 groupconfig 时）
 func WriteGroupConfigs(o store.OCServState) error {
-	if store.OCServUsesRadius(o) {
+	if store.OCServUsesRadius(o) && o.Radius.GroupConfig {
 		return nil
 	}
 	dir := configPerGroupDir(o)
@@ -112,25 +114,33 @@ func WriteGroupConfigs(o store.OCServState) error {
 			return err
 		}
 	}
-	// 清理已删除的组文件：仅删除我们曾管理的名称为 *.conf
+	// 清理已删除的组文件（ocserv 组配置不带 .conf 后缀；同时移除遗留 *.conf）
 	entries, _ := os.ReadDir(dir)
 	want := map[string]bool{}
 	for _, g := range o.Groups {
-		want[g.Name+".conf"] = true
+		want[g.Name] = true
 	}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		name := e.Name()
-		if strings.HasSuffix(name, ".conf") && !want[name] {
+		base := strings.TrimSuffix(name, ".conf")
+		if want[name] || want[base] {
+			continue
+		}
+		if !strings.Contains(name, ".") || strings.HasSuffix(name, ".conf") {
 			_ = os.Remove(filepath.Join(dir, name))
 		}
 	}
 	for _, g := range o.Groups {
-		p := filepath.Join(dir, g.Name+".conf")
+		p := filepath.Join(dir, g.Name)
 		if err := os.WriteFile(p, []byte(renderGroupConf(g)), 0644); err != nil {
 			return fmt.Errorf("write group %s: %w", g.Name, err)
+		}
+		legacy := filepath.Join(dir, g.Name+".conf")
+		if _, err := os.Stat(legacy); err == nil {
+			_ = os.Remove(legacy)
 		}
 	}
 	return nil

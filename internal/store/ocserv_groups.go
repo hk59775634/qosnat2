@@ -8,7 +8,7 @@ import (
 
 var ocservGroupNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
-// OCServGroup 用户组；Apply 时写入 config-per-group/<name>.conf 与 select-group
+// OCServGroup 用户组；Apply 时写入 config-per-group/<name> 与 select-group
 type OCServGroup struct {
 	Name         string   `json:"name"`
 	Label        string   `json:"label,omitempty"` // select-group 展示名 [label]

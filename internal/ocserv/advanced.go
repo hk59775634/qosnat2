@@ -31,6 +31,7 @@ func renderAdvanced(b *bytes.Buffer, o store.OCServState) {
 	appendBoolLine(b, "deny-roaming", a.DenyRoaming)
 	appendBoolLine(b, "cisco-client-compat", a.CiscoClientCompat)
 	appendBoolLine(b, "cisco-svc-client-compat", a.CiscoSvcCompat)
+	appendBoolLine(b, "select-group-by-url", a.SelectGroupByURL)
 	appendBoolLine(b, "client-bypass-protocol", a.ClientBypassProto)
 	appendBoolLine(b, "compression", a.Compression)
 	appendBoolLine(b, "predictable-ips", a.PredictableIPs)

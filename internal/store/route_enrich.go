@@ -54,9 +54,9 @@ func wanRouteSourceNote(st State, r RouteEntry) string {
 	return "多 WAN"
 }
 
-func egressRouteSourceNote(st State, policyID string) string {
+func egressRouteSourceNote(st State, suffix string) string {
 	for _, p := range st.Network.EgressPolicies {
-		if p.ID != policyID {
+		if p.ID != suffix {
 			continue
 		}
 		w, ok := FindWanLink(st.Network.WanLinks, p.WanLinkID)
@@ -66,7 +66,20 @@ func egressRouteSourceNote(st State, policyID string) string {
 		}
 		return fmt.Sprintf("出站 · %s → %s · 表%d", egressPolicyDisplay(p), wanLinkDisplay(w), tbl)
 	}
+	if w, ok := FindWanLink(st.Network.WanLinks, suffix); ok {
+		tbl := WanLinkRouteTable(w.ID, st.Network.WanLinks)
+		return fmt.Sprintf("出站 · %s · 表%d", wanLinkDisplay(w), tbl)
+	}
 	return "出站策略"
+}
+
+func wanPolicyRouteSourceNote(st State, wanID string) string {
+	w, ok := FindWanLink(st.Network.WanLinks, wanID)
+	if !ok {
+		return "策略 WAN"
+	}
+	tbl := WanLinkRouteTable(w.ID, st.Network.WanLinks)
+	return fmt.Sprintf("策略 WAN · %s · 表%d", wanLinkDisplay(w), tbl)
 }
 
 // EnrichRouteEntry 补全来源与说明（兼容旧数据未写入 source 字段）
@@ -85,6 +98,15 @@ func EnrichRouteEntry(r RouteEntry, st State) RouteEntry {
 		if r.SourceNote == "" {
 			id := strings.TrimPrefix(r.Comment, egressRouteCommentPrefix)
 			r.SourceNote = egressRouteSourceNote(st, id)
+		}
+		return r
+	}
+	if strings.HasPrefix(r.Comment, wanPolicyRouteCommentPrefix) {
+		r.Source = RouteSourceEgress
+		r.Locked = true
+		if r.SourceNote == "" {
+			id := strings.TrimPrefix(r.Comment, wanPolicyRouteCommentPrefix)
+			r.SourceNote = wanPolicyRouteSourceNote(st, id)
 		}
 		return r
 	}

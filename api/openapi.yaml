@@ -785,6 +785,7 @@ components:
         predictable_ips: { type: boolean }
         dtls_legacy: { type: boolean }
         cisco_client_compat: { type: boolean }
+        select_group_by_url: { type: boolean }
         cisco_svc_client_compat: { type: boolean }
         no_udp: { type: boolean }
         banner: { type: string }
@@ -828,6 +829,7 @@ components:
         udp: { type: boolean }
         deny_roaming: { type: boolean }
         cisco_client_compat: { type: boolean }
+        select_group_by_url: { type: boolean }
         compression: { type: boolean }
         keepalive: { type: boolean }
         dpd: { type: boolean }

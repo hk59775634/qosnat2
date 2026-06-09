@@ -14,19 +14,16 @@ func TestSyncWanRoutesNexthopWeight(t *testing.T) {
 	}
 	SyncWanRoutes(st)
 	if len(st.Routes) != 2 {
-		t.Fatalf("routes len=%d want 2", len(st.Routes))
+		t.Fatalf("routes len=%d want manual + primary default", len(st.Routes))
 	}
-	var nh *RouteEntry
+	var primary *RouteEntry
 	for i := range st.Routes {
-		if st.Routes[i].ID == "wan-nh-100" {
-			nh = &st.Routes[i]
+		if st.Routes[i].Comment == wanRouteCommentPrefix+"w1" {
+			primary = &st.Routes[i]
 		}
 	}
-	if nh == nil || len(nh.Nexthops) != 2 {
-		t.Fatalf("expected nexthop route, got %+v", st.Routes)
-	}
-	if nh.Nexthops[0].Weight != 3 || nh.Nexthops[1].Weight != 1 {
-		t.Fatalf("weights %+v", nh.Nexthops)
+	if primary == nil || primary.Device != "eth0" {
+		t.Fatalf("expected primary w1 in main, got %+v", st.Routes)
 	}
 }
 

@@ -30,17 +30,51 @@ func TestRenderConfRadius(t *testing.T) {
 	if !strings.Contains(conf, "try-mtu-discovery = true") {
 		t.Fatalf("missing advanced: %s", conf)
 	}
+	if !strings.Contains(conf, "select-group-by-url = true") {
+		t.Fatalf("missing select-group-by-url: %s", conf)
+	}
 	if strings.Contains(conf, "plain[passwd") {
 		t.Fatal("should not use plain auth")
 	}
 	if strings.Contains(conf, "\nconfig-per-group = ") {
-		t.Fatalf("radius must comment out config-per-group:\n%s", conf)
+		t.Fatalf("radius groupconfig must comment out config-per-group:\n%s", conf)
 	}
 	if !strings.Contains(conf, "# config-per-group = /etc/ocserv/config-per-group/") {
-		t.Fatalf("missing commented config-per-group in radius mode:\n%s", conf)
+		t.Fatalf("missing commented config-per-group in radius groupconfig mode:\n%s", conf)
 	}
 	if !strings.Contains(conf, "# default-group-config = /etc/ocserv/defaults/group.conf") {
-		t.Fatalf("missing commented default-group-config in radius mode:\n%s", conf)
+		t.Fatalf("missing commented default-group-config in radius groupconfig mode:\n%s", conf)
+	}
+}
+
+func TestRenderConfRadiusNoGroupconfig(t *testing.T) {
+	o := store.DefaultOCServ()
+	o.AuthMethod = store.OCServAuthRadius
+	o.Radius = store.OCServRadius{
+		Server:      "10.0.0.1",
+		AuthPort:    1812,
+		Secret:      "s3cret",
+		GroupConfig: false,
+	}
+	o.Groups = []store.OCServGroup{
+		{Name: "hk", Label: "香港"},
+		{Name: "us", Label: "美国"},
+	}
+	conf := RenderConf(o, nil)
+	if !strings.Contains(conf, `auth = "radius[config=/etc/radcli/radiusclient.conf]"`) {
+		t.Fatalf("missing radius auth without groupconfig: %s", conf)
+	}
+	if strings.Contains(conf, "groupconfig=true") {
+		t.Fatal("should not include groupconfig")
+	}
+	if !strings.Contains(conf, "config-per-group = /etc/ocserv/config-per-group/") {
+		t.Fatalf("missing config-per-group:\n%s", conf)
+	}
+	if !strings.Contains(conf, "auto-select-group = false") {
+		t.Fatalf("missing auto-select-group false:\n%s", conf)
+	}
+	if !strings.Contains(conf, "select-group = hk[香港]") || !strings.Contains(conf, "select-group = us[美国]") {
+		t.Fatalf("missing select-group lines:\n%s", conf)
 	}
 }
 
