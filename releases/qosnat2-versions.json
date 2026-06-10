@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061001",
+      "tag": "v2026061001",
+      "published_at": "2026-06-10T01:08:27Z",
+      "summary": "修复多 WAN 启用 WARP 时损坏的 qosnat2-warp netns pin 无法清理、反复报 File exists 的问题。"
+    },
+    {
       "id": "2026060907",
       "tag": "v2026060907",
       "published_at": "2026-06-09T18:25:18Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060904",
       "published_at": "2026-06-09T17:24:48Z",
       "summary": "修复多 WAN 出站策略表 default 路由无法下发，导致匹配源网段仍走主 WAN 的问题。"
-    },
-    {
-      "id": "2026060903",
-      "tag": "v2026060903",
-      "published_at": "2026-06-09T17:02:34Z",
-      "summary": "修复 ocserv RADIUS 未启用 groupconfig 时的本地组配置、多 WAN 策略路由出站与组配置文件命名。"
     }
   ]
 }
