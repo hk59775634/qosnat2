@@ -25,6 +25,14 @@ export default {
     title: 'Firewall rules',
     description:
       'pfSense-style: pick an interface to view and edit its rules; forward/input chains, locked auto rules, and custom rules.',
+    sessionLimitTitle: 'Per-IP outbound session limit',
+    sessionLimitHint:
+      'Caps concurrent NAT conntrack sessions per internal source IP (LAN, QoS CIDRs, ocserv/WG pools auto-included). 0 = off; new connections are dropped when over limit.',
+    sessionLimitMax: 'Max sessions per IP',
+    sessionLimitOff: '0 = off',
+    sessionLimitActive: 'Active: max {n} per IP',
+    sessionLimitCidrs: 'Monitored CIDRs ({n})',
+    sessionLimitSaved: 'Per-IP session limit saved and applied',
     filterByIface: 'Interface',
     tabAll: 'All',
     tabFloating: 'Floating',

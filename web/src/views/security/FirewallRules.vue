@@ -63,6 +63,10 @@ const editing = ref(null)
 const formPanel = ref(null)
 const searchQuery = ref('')
 const acmeTempAllow = ref(false)
+const maxSessionsPerIP = ref(0)
+const sessionLimitCidrs = ref([])
+const sessionLimitDraft = ref(0)
+const sessionLimitSaving = ref(false)
 const selectedRule = ref(null)
 const nftLines = ref({})
 const ifaceList = ref([])
@@ -295,6 +299,30 @@ function focusPendingRule() {
   openView(hit)
 }
 
+async function saveSessionLimit() {
+  sessionLimitSaving.value = true
+  err.value = ''
+  ok.value = ''
+  try {
+    const res = await api.firewall.sessionLimit.put({
+      max_sessions_per_ip: Number(sessionLimitDraft.value) || 0,
+    })
+    maxSessionsPerIP.value = res.max_sessions_per_ip || 0
+    sessionLimitCidrs.value = res.session_limit_cidrs || []
+    sessionLimitDraft.value = maxSessionsPerIP.value
+    ok.value = t('security.firewall.sessionLimitSaved')
+    rendered.value = (await api.firewall.rules.list()).rendered || rendered.value
+  } catch (e) {
+    err.value = friendlyApiError(e)
+  } finally {
+    sessionLimitSaving.value = false
+  }
+}
+
+const sessionLimitDirty = computed(
+  () => (Number(sessionLimitDraft.value) || 0) !== (Number(maxSessionsPerIP.value) || 0),
+)
+
 async function load() {
   const d = await api.firewall.rules.list()
   rules.value = d.rules || []
@@ -305,6 +333,9 @@ async function load() {
   aliasNames.value = d.alias_names || []
   vpnMeta.value = d.vpn || {}
   acmeTempAllow.value = !!d.acme_temp_allow_http01
+  maxSessionsPerIP.value = d.max_sessions_per_ip || 0
+  sessionLimitCidrs.value = d.session_limit_cidrs || []
+  sessionLimitDraft.value = maxSessionsPerIP.value
   rendered.value = d.rendered || ''
   ifaceList.value = d.interfaces || []
   nftLines.value = d.nft_lines || {}
@@ -684,6 +715,41 @@ onMounted(() => {
 <template>
   <div class="page-stack fw-page">
     <PageHeader :title="t('security.firewall.title')" :description="t('security.firewall.description')" :ok="ok" :err="err" />
+
+    <div class="card p-4 mb-3 space-y-3">
+      <h3 class="text-sm font-semibold text-slate-800">{{ t('security.firewall.sessionLimitTitle') }}</h3>
+      <p class="text-xs text-slate-500">{{ t('security.firewall.sessionLimitHint') }}</p>
+      <div class="flex flex-wrap items-end gap-3">
+        <label class="text-sm">
+          {{ t('security.firewall.sessionLimitMax') }}
+          <input
+            v-model.number="sessionLimitDraft"
+            type="number"
+            min="0"
+            max="100000"
+            class="input w-full mt-1 max-w-xs"
+            :placeholder="t('security.firewall.sessionLimitOff')"
+          />
+        </label>
+        <button
+          type="button"
+          class="btn-primary text-sm"
+          :disabled="sessionLimitSaving || !sessionLimitDirty"
+          @click="saveSessionLimit"
+        >
+          {{ sessionLimitSaving ? t('common.processing') : t('common.save') }}
+        </button>
+        <span v-if="maxSessionsPerIP > 0" class="text-xs text-emerald-700">
+          {{ t('security.firewall.sessionLimitActive', { n: maxSessionsPerIP }) }}
+        </span>
+      </div>
+      <details v-if="sessionLimitCidrs.length" class="text-xs text-slate-600">
+        <summary class="cursor-pointer select-none">{{ t('security.firewall.sessionLimitCidrs', { n: sessionLimitCidrs.length }) }}</summary>
+        <ul class="mt-2 font-mono space-y-0.5 max-h-32 overflow-y-auto">
+          <li v-for="c in sessionLimitCidrs" :key="c">{{ c }}</li>
+        </ul>
+      </details>
+    </div>
 
     <div
       v-if="hasPendingChanges"

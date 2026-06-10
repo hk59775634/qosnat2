@@ -190,6 +190,10 @@ export const api = {
     },
     apply: () => request('/api/v1/firewall/apply', { method: 'POST', body: '{}' }),
     discard: () => request('/api/v1/firewall/discard', { method: 'POST', body: '{}' }),
+    sessionLimit: {
+      put: (body) =>
+        request('/api/v1/firewall/session-limit', { method: 'PUT', body: JSON.stringify(body) }),
+    },
   aliases: {
     list: () => request('/api/v1/firewall/aliases'),
     add: (body) => request('/api/v1/firewall/aliases', { method: 'POST', body: JSON.stringify(body) }),

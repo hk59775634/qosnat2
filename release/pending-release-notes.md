@@ -5,11 +5,12 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+新增每内网源 IP 的 NAT 出站 conntrack 会话上限，自动覆盖 LAN、QoS 网段、ocserv/WG 隧道地址。
 
 ## 新增
 
-- （无）
+- 防火墙页可配置每 IP 最大出站会话数（nft ct count，0=关闭）
+- 自动聚合监控网段：QoS 策略、NAT 路由、DHCP LAN、ocserv 池、WireGuard peer 等
 
 ## 优化
 
@@ -25,4 +26,4 @@
 
 ## 其他
 
-- （无）
+- API：`PUT /api/v1/firewall/session-limit`

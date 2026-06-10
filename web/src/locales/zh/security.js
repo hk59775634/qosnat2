@@ -25,6 +25,14 @@ export default {
     title: '防火墙规则',
     description:
       '类似 pfSense：先选择网卡再查看/编辑规则；支持转发与入站链、自动同步规则（不可删改）及自定义规则。',
+    sessionLimitTitle: '每 IP 出站会话上限',
+    sessionLimitHint:
+      '限制每个内网源 IP 的并发 NAT conntrack 会话数（LAN、QoS 网段、ocserv/WG 隧道地址等自动纳入）。0 表示不限制；新建连接超限时丢弃。',
+    sessionLimitMax: '每 IP 最大会话数',
+    sessionLimitOff: '0 = 关闭',
+    sessionLimitActive: '已启用：每 IP 最多 {n} 条',
+    sessionLimitCidrs: '监控网段（{n}）',
+    sessionLimitSaved: '每 IP 会话上限已保存并应用',
     filterByIface: '网卡',
     tabAll: '全部',
     tabFloating: '浮动',

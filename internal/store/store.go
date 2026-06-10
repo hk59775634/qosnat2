@@ -56,6 +56,8 @@ type FirewallState struct {
 	PendingFilterDraft bool             `json:"pending_filter_draft,omitempty"`
 	PendingFilterRules []FilterRule     `json:"pending_filter_rules,omitempty"`
 	Aliases            []AliasSet       `json:"aliases"`
+	// MaxSessionsPerIP 每内网源 IP 最大出站 conntrack 会话数；0=不限制。
+	MaxSessionsPerIP int `json:"max_sessions_per_ip,omitempty"`
 }
 
 // DefaultDisplayName 控制台 UI 默认产品名（非功能标识）

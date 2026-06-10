@@ -79,6 +79,9 @@ func Render(cfg Config, st store.State) (string, error) {
 	// 删除旧表在 Apply() 中按 TableExists() 执行，避免 ruleset 内 delete 导致 nft -c 失败（表未加载时）。
 	b.WriteString(fmt.Sprintf("table inet %s {\n", TableName))
 	writeAliasSets(&b, st.Firewall.Aliases)
+	if st.Firewall.MaxSessionsPerIP > 0 {
+		writeSessionLimitSet(&b)
+	}
 
 	// prerouting DNAT
 	b.WriteString("    chain prerouting {\n")
@@ -147,6 +150,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("    chain forward {\n")
 	b.WriteString("        type filter hook forward priority filter; policy accept;\n")
 	b.WriteString("        ct state established,related accept\n")
+	writeSessionLimitRules(&b, st)
 	writeFilterRules(&b, "forward", st.Firewall.FilterRules)
 	egressDevs := make([]string, 0, len(egress))
 	for _, e := range egress {

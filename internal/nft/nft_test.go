@@ -116,6 +116,36 @@ func TestRenderEgressWarpMasquerade(t *testing.T) {
 	}
 }
 
+func TestRenderSessionLimitPerIP(t *testing.T) {
+	st := store.DefaultState()
+	st.Firewall.MaxSessionsPerIP = 500
+	st.Shaper.PolicyCIDR = "10.254.0.0/15"
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"set qosnat2_sess_per_ip",
+		"ct state new ip saddr 10.254.0.0/15 add @qosnat2_sess_per_ip",
+		"ct count over 500",
+		`comment "qosnat2-per-ip-sess-limit"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in render", want)
+		}
+	}
+	fwd := strings.Split(body, "chain forward {")[1]
+	fwd = strings.Split(fwd, "    }\n\n")[0]
+	drop := strings.Index(fwd, `drop comment "qosnat2-forward-default-deny"`)
+	limit := strings.Index(fwd, "qosnat2-per-ip-sess-limit")
+	if drop < 0 || limit < 0 {
+		t.Fatalf("missing forward drop or session limit")
+	}
+	if limit > drop {
+		t.Fatalf("session limit must be before forward default drop")
+	}
+}
+
 func TestRenderAcmeOpen80(t *testing.T) {
 	st := store.DefaultState()
 	st.System.AcmeTempAllowHTTP01 = true

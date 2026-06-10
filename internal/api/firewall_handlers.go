@@ -102,6 +102,8 @@ func (srv *Server) handleFirewallRulesGet(w http.ResponseWriter, r *http.Request
 		},
 		"acme_temp_allow_http01":     st.System.AcmeTempAllowHTTP01,
 		"acme_temp_allow_http01_ips": st.System.AcmeTempAllowHTTP01IPs,
+		"max_sessions_per_ip":        st.Firewall.MaxSessionsPerIP,
+		"session_limit_cidrs":        store.CollectSessionLimitCIDRs(st),
 		"rendered":               srv.firewallRendered(),
 	})
 }

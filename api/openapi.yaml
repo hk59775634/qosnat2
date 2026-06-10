@@ -250,6 +250,13 @@ components:
           type: array
           items: { type: string }
           description: HTTP-01 期间临时放行的本机目标 IPv4（域名 DNS 与本机地址交集）
+        max_sessions_per_ip:
+          type: integer
+          description: 每内网源 IP 最大出站 conntrack 会话数；0=不限制
+        session_limit_cidrs:
+          type: array
+          items: { type: string }
+          description: 自动纳入会话上限监控的源网段列表
         rendered: { type: string, description: 完整 inet qosnat ruleset 文本预览 }
     NatIPv4State:
       type: object
@@ -2316,6 +2323,33 @@ paths:
       responses:
         '200':
           description: 已恢复为当前已应用规则集
+
+  /api/v1/firewall/session-limit:
+    get:
+      tags: [nat]
+      summary: 每 IP 出站 conntrack 会话上限配置
+      responses:
+        '200':
+          description: max_sessions_per_ip 与自动聚合的 session_limit_cidrs
+    put:
+      tags: [nat]
+      summary: 设置每 IP 出站 conntrack 会话上限（需 root，立即 reload nft）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [max_sessions_per_ip]
+              properties:
+                max_sessions_per_ip:
+                  type: integer
+                  minimum: 0
+                  maximum: 100000
+                  description: 0=关闭；1–100000 为每源 IP 最大并发 NAT 会话数
+      responses:
+        '200':
+          description: 已保存并应用
 
   /api/v1/firewall/rules:
     get:
