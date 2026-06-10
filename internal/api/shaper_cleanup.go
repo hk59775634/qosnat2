@@ -100,7 +100,7 @@ func (srv *Server) purgeOrphanShaperHosts() {
 
 // rebuildShaperDataPlane 增删 profile 后重建 HTB 根 + BPF map + mirred/u32（与 UI「重建根 qdisc」一致）
 func (srv *Server) rebuildShaperDataPlane() {
-	if srv.bpf == nil || !srv.bpf.Ready() || srv.env.DevLAN == "" {
+	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() || srv.env.DevLAN == "" {
 		return
 	}
 	st := srv.store.Get()

@@ -2,6 +2,12 @@ export default {
   profiles: {
     title: 'QoS 策略',
     description: 'LAN HTB 网段限速与 eBPF 分类',
+    enableQos: '启用 QoS 流量整形',
+    enableQosHint: '关闭后卸载 TC/eBPF/ifb 整形，仅保留 NAT 与路由（策略配置仍保存在本页，再次启用后生效）',
+    qosDisabled: 'QoS 已关闭：当前为纯 NAT 模式，下方配置仅保存不生效',
+    qosEnabledOn: 'QoS 已启用并应用',
+    qosEnabledOff: 'QoS 已关闭，运行中整形已清除',
+    togglingQos: '应用中…',
     leafQdisc: '叶子 qdisc',
     fqFlows: 'FQ 流数（fq flows）',
     fqQuantum: 'FQ 量子（fq quantum）',

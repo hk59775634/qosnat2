@@ -127,12 +127,20 @@ func EnsureDeviceWithFQ(dev, leaf string, fq FQOpts) error {
 	return ensureClsact(dev)
 }
 
-// Teardown 停止时清理（可选）
-func Teardown(devLAN string) {
-	if devLAN != "" {
-		_ = exec.Command("tc", "qdisc", "del", "dev", devLAN, "clsact").Run()
-		_ = exec.Command("tc", "qdisc", "del", "dev", devLAN, "root").Run()
+// TeardownDevice 移除单网卡上的 QoS qdisc/filter（保留网卡本身）
+func TeardownDevice(dev string) {
+	if dev == "" {
+		return
 	}
-	_ = exec.Command("tc", "qdisc", "del", "dev", IFBDev, "root").Run()
+	_ = exec.Command("tc", "filter", "del", "dev", dev, "ingress").Run()
+	_ = exec.Command("tc", "filter", "del", "dev", dev, "egress").Run()
+	_ = exec.Command("tc", "qdisc", "del", "dev", dev, "clsact").Run()
+	_ = exec.Command("tc", "qdisc", "del", "dev", dev, "root").Run()
+}
+
+// Teardown 停止时清理 LAN + ifb0（纯 NAT 模式）
+func Teardown(devLAN string) {
+	TeardownDevice(devLAN)
+	TeardownDevice(IFBDev)
 	_ = exec.Command("ip", "link", "del", IFBDev).Run()
 }

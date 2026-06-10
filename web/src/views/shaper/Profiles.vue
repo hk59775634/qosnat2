@@ -23,9 +23,12 @@ const tcLeaf = ref('fq_codel')
 const tcFlows = ref(0)
 const tcQuantum = ref(0)
 const tcSaving = ref(false)
+const qosEnabled = ref(false)
+const togglingQos = ref(false)
 
 async function load() {
   const d = await api.shaper.profiles()
+  qosEnabled.value = !!d.enabled
   profiles.value = d.profiles || []
   interfaces.value = d.interfaces || []
   bindDevice.value = d.bind_device || d.dev_lan || ''
@@ -35,6 +38,23 @@ async function load() {
   tcLeaf.value = d.leaf || 'fq_codel'
   tcFlows.value = d.fq_flows || 0
   tcQuantum.value = d.fq_quantum || 0
+}
+
+async function toggleQos() {
+  togglingQos.value = true
+  err.value = ''
+  ok.value = ''
+  try {
+    const res = await api.shaper.enabled.put({ enabled: qosEnabled.value, apply: true })
+    qosEnabled.value = !!res.enabled
+    ok.value = qosEnabled.value ? t('shaper.profiles.qosEnabledOn') : t('shaper.profiles.qosEnabledOff')
+    await load()
+  } catch (e) {
+    qosEnabled.value = !qosEnabled.value
+    err.value = e.message
+  } finally {
+    togglingQos.value = false
+  }
 }
 
 async function saveTC() {
@@ -116,6 +136,25 @@ onMounted(load)
     <PageHeader :title="t('shaper.profiles.title')" :description="t('shaper.profiles.description')" :ok="ok" :err="err" />
 
     <div class="card card-body text-sm space-y-2">
+      <label class="flex items-start gap-3 cursor-pointer select-none">
+        <input
+          v-model="qosEnabled"
+          type="checkbox"
+          class="mt-1"
+          :disabled="togglingQos"
+          @change="toggleQos"
+        />
+        <span>
+          <span class="font-medium text-slate-800">{{ t('shaper.profiles.enableQos') }}</span>
+          <span class="block text-xs text-slate-500 mt-0.5">{{ t('shaper.profiles.enableQosHint') }}</span>
+        </span>
+      </label>
+      <p v-if="!qosEnabled" class="text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1.5 text-xs">
+        {{ t('shaper.profiles.qosDisabled') }}
+      </p>
+    </div>
+
+    <div class="card card-body text-sm space-y-2" :class="{ 'opacity-60': !qosEnabled }">
       <ShaperBindBar
         embedded
         :bind-device="bindDevice"
@@ -145,7 +184,11 @@ onMounted(load)
       </div>
     </div>
 
-    <form class="card card-body grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 items-end" @submit.prevent="submit">
+    <form
+      class="card card-body grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 items-end"
+      :class="{ 'opacity-60': !qosEnabled }"
+      @submit.prevent="submit"
+    >
       <div class="lg:col-span-2">
         <label class="text-xs text-slate-600">{{ t('shaper.profiles.cidrLabel') }}</label>
         <input v-model="form.cidr" class="input-field mt-0.5 font-mono" :placeholder="t('shaper.profiles.cidrPh')" />
@@ -186,7 +229,7 @@ onMounted(load)
 
     <p v-if="savingOrder" class="text-xs text-slate-500">{{ t('security.firewall.savingOrder') }}</p>
 
-    <div class="card table-wrap card-body !p-2">
+    <div class="card table-wrap card-body !p-2" :class="{ 'opacity-60': !qosEnabled }">
       <table class="data w-full">
         <thead>
           <tr>

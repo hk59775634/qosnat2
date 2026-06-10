@@ -34,7 +34,11 @@ func (srv *Server) ApplyAll() error {
 	if err := srv.applyNatStackLenient(); err != nil {
 		return err
 	}
-	srv.applyShaperP0(st)
+	if srv.shaperEnabled() {
+		srv.applyShaperP0(st)
+	} else {
+		srv.teardownShaperRuntime()
+	}
 	srv.replayWanLinksOnBoot()
 	srv.replayEgressOnBoot()
 	netplanApplied := srv.applyNetworkVLANs()
@@ -44,7 +48,9 @@ func (srv *Server) ApplyAll() error {
 		srv.applyManagedRoutesWithRetry()
 	}
 	srv.applyEgressPolicyRoutes()
-	srv.applyEBPF(st)
+	if srv.shaperEnabled() {
+		srv.applyEBPF(st)
+	}
 	return nil
 }
 
@@ -158,7 +164,7 @@ func (srv *Server) shaperMirredCIDRs(st store.State) []string {
 
 // StartBackground ringbuf + 空闲 GC
 func (srv *Server) StartBackground() {
-	if srv.bpf == nil || !srv.bpf.Ready() || srv.ringCancel != nil {
+	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() || srv.ringCancel != nil {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())

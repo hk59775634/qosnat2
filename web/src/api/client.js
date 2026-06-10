@@ -290,6 +290,10 @@ export const api = {
     },
     putProfile: (body) =>
       request('/api/v1/shaper/profiles', { method: 'PUT', body: JSON.stringify(body) }),
+    enabled: {
+      get: () => request('/api/v1/shaper/enabled'),
+      put: (body) => request('/api/v1/shaper/enabled', { method: 'PUT', body: JSON.stringify(body) }),
+    },
     profiles: () => request('/api/v1/shaper/profiles'),
     delProfile: (cidr) => request(`/api/v1/shaper/profiles?cidr=${encodeURIComponent(cidr)}`, { method: 'DELETE' }),
     reorderProfiles: (order) =>

@@ -47,6 +47,7 @@ func (srv *Server) handleStatsDashboard(w http.ResponseWriter, r *http.Request) 
 		"system":          sys,
 		"ebpf":            srv.bpfStatus(),
 		"shaper": map[string]any{
+			"enabled":          st.Shaper.Enabled,
 			"policy_cidr":      st.Shaper.PolicyCIDR,
 			"idle_timeout_sec": st.Shaper.IdleTimeoutSec,
 			"profile_rules":    len(st.Shaper.Profiles),

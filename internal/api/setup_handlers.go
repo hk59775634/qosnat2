@@ -239,7 +239,7 @@ func enableDataplaneOneshot() error {
 }
 
 func (srv *Server) setupPrepareTC() error {
-	if os.Getuid() != 0 || srv.env.DevLAN == "" {
+	if os.Getuid() != 0 || srv.env.DevLAN == "" || !srv.shaperEnabled() {
 		return nil
 	}
 	st := srv.store.Get()

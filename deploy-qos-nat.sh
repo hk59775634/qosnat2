@@ -233,6 +233,7 @@ init_state() {
   "static_mappings": {},
   "prefix_mappings": {},
   "shaper": {
+    "enabled": false,
     "policy_cidr": "10.0.0.0/8",
     "default_profile": { "host_mask": 32 },
     "profiles": [],

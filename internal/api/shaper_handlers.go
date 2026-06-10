@@ -43,15 +43,11 @@ func (srv *Server) rateVal(down, up string) (ebpf.RateVal, error) {
 // upsertShaperProfile 写入 BPF/HTB/state；wizard 额外同步 policy_routes 与默认 policy_cidr
 // refresh=false 时由调用方批量结束后统一 refreshShaperAfterChange
 func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device string, wizard bool, refresh bool) (added bool, err error) {
-	if !srv.bpfReady() {
-		return false, errEbpfNotLoaded
-	}
 	dev, err := srv.normalizeProfileDevice(device)
 	if err != nil {
 		return false, err
 	}
-	rv, err := srv.rateVal(down, up)
-	if err != nil {
+	if _, err := srv.rateVal(down, up); err != nil {
 		return false, err
 	}
 	// 必须先更新内存 state 再装 TC/BPF；BPF 失败则不持久化。
@@ -87,6 +83,19 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 			}
 		}
 	})
+	if !srv.shaperEnabled() {
+		if err := srv.store.Save(); err != nil {
+			return false, err
+		}
+		return added, nil
+	}
+	if !srv.bpfReady() {
+		return false, errEbpfNotLoaded
+	}
+	rv, err := srv.rateVal(down, up)
+	if err != nil {
+		return false, err
+	}
 	if err := srv.syncProfileBPFMaps(cidr, rv); err != nil {
 		_ = srv.store.Update(func(st *store.State) {
 			st.Shaper.Profiles = backupProfiles
@@ -141,7 +150,7 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 		if body.Mask == 0 {
 			body.Mask = 32
 		}
-		if !srv.bpfReady() {
+		if srv.shaperEnabled() && !srv.bpfReady() {
 			writeUnavailable(w, "", errEbpfNotLoaded.Error())
 			return
 		}
@@ -167,11 +176,13 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			writeBadRequest(w, "cidr query required")
 			return
 		}
-		if !srv.bpfReady() {
-			writeUnavailable(w, "", errEbpfNotLoaded.Error())
-			return
+		if srv.shaperEnabled() {
+			if !srv.bpfReady() {
+				writeUnavailable(w, "", errEbpfNotLoaded.Error())
+				return
+			}
+			srv.teardownProfileShaper(cidr)
 		}
-		srv.teardownProfileShaper(cidr)
 		_ = srv.store.Update(func(st *store.State) {
 			var out []store.ProfileEntry
 			for _, p := range st.Shaper.Profiles {
@@ -184,13 +195,15 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 		if !srv.persistState(w) {
 			return
 		}
-		if err := srv.bpf.DeleteProfile(cidr); err != nil {
-			log.Printf("delete profile bpf %s: %v", cidr, err)
+		if srv.shaperEnabled() && srv.bpfReady() {
+			if err := srv.bpf.DeleteProfile(cidr); err != nil {
+				log.Printf("delete profile bpf %s: %v", cidr, err)
+			}
+			if ip, ok := store.ProfileHostIP(cidr); ok {
+				_ = srv.bpf.DeleteHost(ip)
+			}
+			srv.refreshShaperAfterChange()
 		}
-		if ip, ok := store.ProfileHostIP(cidr); ok {
-			_ = srv.bpf.DeleteHost(ip)
-		}
-		srv.refreshShaperAfterChange()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		writeMethodNotAllowed(w)
@@ -226,6 +239,10 @@ func (srv *Server) handleShaperWizard(w http.ResponseWriter, r *http.Request) {
 		body.Mask = 32
 	}
 	backup := captureShaperWizardBackup(srv.store.Get())
+	if srv.shaperEnabled() && !srv.bpfReady() {
+		writeUnavailable(w, "EBPF_NOT_LOADED", errEbpfNotLoaded.Error())
+		return
+	}
 	added, err := srv.upsertShaperProfile(body.CIDR, body.Down, body.Up, body.Mask, body.Device, true, false)
 	if err != nil {
 		if err == errEbpfNotLoaded {
@@ -233,6 +250,10 @@ func (srv *Server) handleShaperWizard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeBadRequest(w, err.Error())
+		return
+	}
+	if !srv.shaperEnabled() {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "added": added, "cidr": body.CIDR, "pending_apply": true})
 		return
 	}
 	if err := srv.reloadNft(); err != nil {

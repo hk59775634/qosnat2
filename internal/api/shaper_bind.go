@@ -97,6 +97,9 @@ func (srv *Server) wireGuardIfaceName(st store.State) string {
 }
 
 func (srv *Server) syncShaperDevices() {
+	if !srv.shaperEnabled() {
+		return
+	}
 	st := srv.store.Get()
 	seen := map[string]struct{}{
 		srv.shaperDefaultDevice(st): {},
@@ -159,7 +162,7 @@ func (srv *Server) syncActiveHostHTBAll() {
 }
 
 func (srv *Server) syncActiveHostHTBWithLimit(batchLimit int) {
-	if srv.hosts == nil || srv.bpf == nil || !srv.bpf.Ready() {
+	if !srv.shaperEnabled() || srv.hosts == nil || srv.bpf == nil || !srv.bpf.Ready() {
 		return
 	}
 	st := srv.store.Get()
@@ -212,7 +215,7 @@ func (srv *Server) syncActiveHostHTBWithLimit(batchLimit int) {
 
 // reattachShaperDataPath 在 setupHTBRoot 重建 HTB 后恢复 u32 mirred 与 BPF（parent 1:）
 func (srv *Server) reattachShaperDataPath() {
-	if srv.bpf == nil || !srv.bpf.Ready() || srv.env.DevLAN == "" {
+	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() || srv.env.DevLAN == "" {
 		return
 	}
 	st := srv.store.Get()
@@ -286,6 +289,7 @@ func (srv *Server) shaperProfilesPayload(list []ProfileListItem) map[string]any 
 		list = []ProfileListItem{}
 	}
 	return map[string]any{
+		"enabled":          st.Shaper.Enabled,
 		"profiles":         list,
 		"bind_device":      srv.shaperDefaultDevice(st),
 		"default_device":   srv.shaperDefaultDevice(st),

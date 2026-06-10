@@ -28,7 +28,7 @@ func (srv *Server) handleShaperTenants(w http.ResponseWriter, r *http.Request) {
 			writeBadRequest(w, err.Error())
 			return
 		}
-		if !srv.bpfReady() {
+		if srv.shaperEnabled() && !srv.bpfReady() {
 			writeUnavailable(w, "", errEbpfNotLoaded.Error())
 			return
 		}
@@ -170,7 +170,9 @@ func (srv *Server) removeTenantProfiles(tenantID string) {
 		}
 	}
 	for _, cidr := range toDel {
-		srv.teardownProfileShaper(cidr)
+		if srv.shaperEnabled() {
+			srv.teardownProfileShaper(cidr)
+		}
 		_ = srv.store.Update(func(st *store.State) {
 			var out []store.ProfileEntry
 			for _, p := range st.Shaper.Profiles {

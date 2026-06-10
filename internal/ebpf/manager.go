@@ -244,6 +244,42 @@ func (m *Manager) flushProfileLpm() error {
 	return iter.Err()
 }
 
+func flushMapIter(del func(interface{}) error, iter *ebpf.MapIterator) error {
+	var kbuf, vbuf []byte
+	for iter.Next(&kbuf, &vbuf) {
+		key := append([]byte(nil), kbuf...)
+		_ = del(key)
+	}
+	return iter.Err()
+}
+
+// FlushRuntimeMaps 清空运行期限速 map（关闭 QoS 时调用；不卸载 BPF 对象）
+func (m *Manager) FlushRuntimeMaps() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.loaded || m.objs == nil {
+		return nil
+	}
+	if err := m.flushProfileLpm(); err != nil {
+		return err
+	}
+	if m.objs.ProfileLpm6 != nil {
+		if err := flushMapIter(m.objs.ProfileLpm6.Delete, m.objs.ProfileLpm6.Iterate()); err != nil {
+			return err
+		}
+	}
+	if err := flushMapIter(m.objs.HostExact.Delete, m.objs.HostExact.Iterate()); err != nil {
+		return err
+	}
+	if err := flushMapIter(m.objs.ActiveHost.Delete, m.objs.ActiveHost.Iterate()); err != nil {
+		return err
+	}
+	if err := flushMapIter(m.objs.ClassidMap.Delete, m.objs.ClassidMap.Iterate()); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ReplayState 启动时把 state 写入 Map
 func (m *Manager) ReplayState(st store.State) error {
 	if err := m.Load(); err != nil {

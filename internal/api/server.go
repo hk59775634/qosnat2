@@ -145,6 +145,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/nat/nat64", srv.requireAuth(srv.handleNat64))
 	m.HandleFunc("/api/v1/nat/dns64", srv.requireAuth(srv.handleDNS64))
 
+	m.HandleFunc("/api/v1/shaper/enabled", srv.requireAuth(srv.handleShaperEnabled))
 	m.HandleFunc("/api/v1/shaper/profiles/order", srv.requireAuth(srv.handleShaperProfilesOrder))
 	m.HandleFunc("/api/v1/shaper/profiles", srv.requireAuth(srv.handleShaperProfiles))
 	m.HandleFunc("/api/v1/shaper/tenants", srv.requireAuth(srv.handleShaperTenants))

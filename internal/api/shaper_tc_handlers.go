@@ -12,6 +12,7 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		st := srv.store.Get()
 		writeJSON(w, http.StatusOK, map[string]any{
+			"enabled":    st.Shaper.Enabled,
 			"leaf":       shaper.NormalizeLeaf(st.Shaper.Leaf),
 			"fq_flows":   st.Shaper.FQFlows,
 			"fq_quantum": st.Shaper.FQQuantum,
@@ -44,7 +45,7 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 		if !srv.persistState(w) {
 			return
 		}
-		if body.Apply && srv.setupComplete() {
+		if body.Apply && srv.setupComplete() && srv.shaperEnabled() {
 			st := srv.store.Get()
 			if err := shaper.SetupP0(shaper.Config{
 				DevLAN:     srv.env.DevLAN,

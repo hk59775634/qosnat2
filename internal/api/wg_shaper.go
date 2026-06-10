@@ -12,6 +12,24 @@ import (
 )
 
 func (srv *Server) setupWGShaper() {
+	if !srv.shaperEnabled() {
+		st := srv.store.Get()
+		for i := range st.VPN.WireGuards {
+			inst := st.VPN.WireGuards[i]
+			iface := strings.TrimSpace(inst.Interface)
+			if iface == "" {
+				iface = "wg0"
+			}
+			if route.LinkExists(iface) {
+				_ = ebpf.ResetIFBMirredOnDevice(iface, nil, false)
+			}
+			if srv.bpf != nil {
+				_ = srv.bpf.DetachTCDevice(iface)
+			}
+			shaper.TeardownDevice(iface)
+		}
+		return
+	}
 	st := srv.store.Get()
 	leaf := st.Shaper.Leaf
 

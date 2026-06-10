@@ -2,6 +2,12 @@ export default {
   profiles: {
     title: 'QoS profiles',
     description: 'Per-subnet HTB caps on LAN with eBPF classification',
+    enableQos: 'Enable QoS traffic shaping',
+    enableQosHint: 'When off, TC/eBPF/ifb shaping is removed; NAT and routing only (saved policies apply after re-enable)',
+    qosDisabled: 'QoS is off: pure NAT mode. Settings below are saved but not applied.',
+    qosEnabledOn: 'QoS enabled and applied',
+    qosEnabledOff: 'QoS disabled; runtime shaping cleared',
+    togglingQos: 'Applying…',
     leafQdisc: 'Leaf qdisc',
     fqFlows: 'fq flows',
     fqQuantum: 'fq quantum',
