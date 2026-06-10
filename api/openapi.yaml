@@ -76,6 +76,46 @@ components:
       properties:
         ok:
           type: boolean
+    DynamicRoutingState:
+      type: object
+      properties:
+        bgp:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            asn: { type: integer, format: int64 }
+            router_id: { type: string }
+            neighbors:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  address: { type: string }
+                  remote_asn: { type: integer, format: int64 }
+                  description: { type: string }
+                  update_source: { type: string }
+                  password: { type: string }
+                  enabled: { type: boolean }
+            networks:
+              type: array
+              items: { type: string }
+            redistribute_connected: { type: boolean }
+        ospf:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            router_id: { type: string }
+            networks:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: { type: string }
+                  prefix: { type: string }
+                  area: { type: string }
+                  enabled: { type: boolean }
+            redistribute_connected: { type: boolean }
     Error:
       type: object
       properties:
@@ -1339,7 +1379,7 @@ paths:
       parameters:
         - name: which
           in: query
-          schema: { type: string, enum: [frr.conf, extra, managed, daemons, include] }
+          schema: { type: string, enum: [frr.conf, extra, managed, dynamic, daemons, include] }
       responses:
         '200':
           description: path + content
@@ -1366,6 +1406,45 @@ paths:
       responses:
         '200':
           description: ok
+
+  /api/v1/frr/dynamic-routing:
+    get:
+      tags: [network]
+      summary: 读取 FRR 动态路由配置与运行状态
+      responses:
+        '200':
+          description: dynamic_routing, rendered_config, runtime_status
+    put:
+      tags: [network]
+      summary: 保存并应用 FRR 动态路由（BGP/OSPF）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dynamic_routing]
+              properties:
+                dynamic_routing:
+                  $ref: '#/components/schemas/DynamicRoutingState'
+      responses:
+        '200':
+          description: ok
+
+  /api/v1/frr/dynamic-routing/apply:
+    post:
+      tags: [network]
+      summary: 从 state 重新应用动态路由
+      responses:
+        '200':
+          description: ok
+
+  /api/v1/frr/dynamic-routing/status:
+    get:
+      tags: [network]
+      summary: FRR BGP/OSPF 运行摘要
+      responses:
+        '200':
+          description: runtime_status
 
   /api/v1/nat/policy-routes:
     get:

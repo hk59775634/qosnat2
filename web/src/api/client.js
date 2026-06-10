@@ -329,6 +329,17 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ which, content }),
       }),
+    dynamicRouting: {
+      get: () => request('/api/v1/frr/dynamic-routing'),
+      put: (dynamicRouting) =>
+        request('/api/v1/frr/dynamic-routing', {
+          method: 'PUT',
+          body: JSON.stringify({ dynamic_routing: dynamicRouting }),
+        }),
+      apply: () =>
+        request('/api/v1/frr/dynamic-routing/apply', { method: 'POST', body: '{}' }),
+      status: () => request('/api/v1/frr/dynamic-routing/status'),
+    },
   },
   get: (path) => request(path),
   post: (path, body) => request(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),

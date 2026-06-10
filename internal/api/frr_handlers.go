@@ -20,6 +20,7 @@ func (srv *Server) handleFRR(w http.ResponseWriter, r *http.Request) {
 			"status":          frr.Status(),
 			"route_backend":   route.NormalizeBackend(st.System.RouteBackend),
 			"boot_on_startup": st.System.FrrBootOnStartup,
+			"dynamic_routing": st.DynamicRouting,
 			"root":            os.Getuid() == 0,
 			"install_job":     getFrrInstallStatus(),
 			"config_files":    frr.EditableConfigKeys(),
@@ -170,7 +171,7 @@ func (srv *Server) handleFRRApply(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, "FRR 未安装")
 		return
 	}
-	res, err := route.ApplyManagedRoutes(st.Routes, route.BackendFRR)
+	res, err := route.ApplyFromState(st)
 	if err != nil {
 		writeInternalError(w, err.Error())
 		return

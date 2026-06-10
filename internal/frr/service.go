@@ -18,6 +18,7 @@ var editableConfigPaths = map[string]string{
 	"frr.conf": FRRConfPath,
 	"extra":    ExtraConfig,
 	"managed":  ManagedRoutes,
+	"dynamic":  DynamicRoutingConfig,
 	"daemons":  DaemonsPath,
 	"include":  IncludeSnippet,
 }

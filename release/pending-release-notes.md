@@ -5,15 +5,19 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+FRR 模式下新增 BGP/OSPF 动态路由结构化配置与 UI，托管静态路由与动态协议分文件管理。
 
 ## 新增
 
-- （无）
+- `state.json` 字段 `dynamic_routing`（BGP 邻居/宣告网段、OSPF 网段/区域）
+- API：`GET/PUT /api/v1/frr/dynamic-routing`、应用与状态查询端点
+- 静态路由页 FRR 区块：BGP/OSPF 表单、保存并应用、vtysh 运行摘要
+- 自动启用 `bgpd`/`ospfd`（写入 `/etc/frr/daemons`）并渲染 `dynamic-routing.conf`
 
 ## 优化
 
-- （无）
+- FRR 回放（托管路由 / 启动 ApplyAll）同步应用动态路由配置
+- FRR include 链增加 dynamic-routing.conf；配置文件编辑器新增「动态路由」标签
 
 ## 修复
 
@@ -25,4 +29,4 @@
 
 ## 其他
 
-- （无）
+- OpenAPI 补充 DynamicRoutingState 与 FRR dynamic-routing 路径文档

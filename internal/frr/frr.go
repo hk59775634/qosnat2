@@ -24,7 +24,7 @@ func Installed() bool {
 }
 
 func EditableConfigKeys() []string {
-	return []string{"frr.conf", "extra", "managed", "daemons", "include"}
+	return []string{"frr.conf", "extra", "managed", "dynamic", "daemons", "include"}
 }
 
 // RenderManaged 从 qosnat2 托管路由生成 staticd/vtysh 配置片段。
@@ -128,15 +128,21 @@ func ensureInclude() error {
 	if err := os.MkdirAll(filepath.Dir(IncludeSnippet), 0755); err != nil {
 		return err
 	}
-	includeLine := "include " + ManagedRoutes + "\n"
+	var lines []string
+	lines = append(lines, "include "+ManagedRoutes)
+	lines = append(lines, "include "+DynamicRoutingConfig)
 	if extra, err := os.ReadFile(ExtraConfig); err == nil && strings.TrimSpace(string(extra)) != "" {
-		includeLine += "include " + ExtraConfig + "\n"
+		lines = append(lines, "include "+ExtraConfig)
+	}
+	includeBody := "! qosnat2 managed FRR includes\n"
+	for _, ln := range lines {
+		includeBody += ln + "\n"
 	}
 	cur, err := os.ReadFile(IncludeSnippet)
-	if err == nil && string(cur) == includeLine {
+	if err == nil && string(cur) == includeBody {
 		return nil
 	}
-	return os.WriteFile(IncludeSnippet, []byte("! qosnat2 managed FRR includes\n"+includeLine), 0644)
+	return os.WriteFile(IncludeSnippet, []byte(includeBody), 0644)
 }
 
 // ReadExtra 读取用户附加 FRR 配置。

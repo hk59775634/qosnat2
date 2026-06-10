@@ -24,6 +24,20 @@ const configTab = ref('frr.conf')
 const configPath = ref('')
 const configContent = ref('')
 const configSaving = ref(false)
+const dynamicTab = ref('bgp')
+const dynamicRouting = ref(defaultDynamicRouting())
+const dynamicStatus = ref({})
+const dynamicNetworksText = ref('')
+const dynamicSaving = ref(false)
+const neighborForm = ref({
+  address: '',
+  remote_asn: '',
+  description: '',
+  update_source: '',
+  password: '',
+  enabled: true,
+})
+const ospfNetworkForm = ref({ prefix: '', area: '0.0.0.0', enabled: true })
 const err = ref('')
 const ok = ref('')
 const form = ref({
@@ -39,8 +53,39 @@ const configTabs = [
   { id: 'frr.conf', labelKey: 'network.routes.frrConfigTabFrr' },
   { id: 'extra', labelKey: 'network.routes.frrConfigTabExtra' },
   { id: 'managed', labelKey: 'network.routes.frrConfigTabManaged' },
+  { id: 'dynamic', labelKey: 'network.routes.frrConfigTabDynamic' },
   { id: 'daemons', labelKey: 'network.routes.frrConfigTabDaemons' },
 ]
+
+function defaultDynamicRouting() {
+  return {
+    bgp: {
+      enabled: false,
+      asn: 0,
+      router_id: '',
+      neighbors: [],
+      networks: [],
+      redistribute_connected: false,
+    },
+    ospf: {
+      enabled: false,
+      router_id: '',
+      networks: [],
+      redistribute_connected: false,
+    },
+  }
+}
+
+function syncDynamicNetworksText() {
+  dynamicNetworksText.value = (dynamicRouting.value.bgp?.networks || []).join('\n')
+}
+
+function applyDynamicNetworksText() {
+  dynamicRouting.value.bgp.networks = dynamicNetworksText.value
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
 
 async function loadFrr() {
   try {
@@ -50,8 +95,25 @@ async function loadFrr() {
     frrStatus.value = f.status || {}
     frrRoot.value = !!f.root
     frrInstallJob.value = f.install_job || null
+    if (f.dynamic_routing) {
+      dynamicRouting.value = {
+        bgp: { ...defaultDynamicRouting().bgp, ...(f.dynamic_routing.bgp || {}) },
+        ospf: { ...defaultDynamicRouting().ospf, ...(f.dynamic_routing.ospf || {}) },
+      }
+      syncDynamicNetworksText()
+    }
   } catch {
     frrStatus.value = {}
+  }
+}
+
+async function loadDynamicStatus() {
+  if (routeBackend.value !== 'frr' || !frrStatus.value.package_installed) return
+  try {
+    const d = await api.frr.dynamicRouting.status()
+    dynamicStatus.value = d.runtime_status || {}
+  } catch {
+    dynamicStatus.value = {}
   }
 }
 
@@ -63,6 +125,7 @@ async function load() {
   devWan.value = d.dev_wan || ''
   if (d.route_backend) routeBackend.value = d.route_backend
   await loadFrr()
+  await loadDynamicStatus()
 }
 
 function stopFrrInstallPoll() {
@@ -124,6 +187,76 @@ async function installFrr() {
     installingFrr.value = false
     err.value = e.message
   }
+}
+
+async function saveDynamicRouting() {
+  err.value = ''
+  ok.value = ''
+  if (!frrStatus.value.package_installed) {
+    err.value = t('network.routes.dynamicNeedFrr')
+    return
+  }
+  dynamicSaving.value = true
+  try {
+    applyDynamicNetworksText()
+    const payload = JSON.parse(JSON.stringify(dynamicRouting.value))
+    if (payload.bgp?.asn) payload.bgp.asn = Number(payload.bgp.asn)
+    for (const n of payload.bgp?.neighbors || []) {
+      if (n.remote_asn) n.remote_asn = Number(n.remote_asn)
+    }
+    const r = await api.frr.dynamicRouting.put(payload)
+    dynamicRouting.value = r.dynamic_routing || payload
+    dynamicStatus.value = r.runtime_status || {}
+    syncDynamicNetworksText()
+    ok.value = t('network.routes.dynamicSaved')
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    dynamicSaving.value = false
+  }
+}
+
+function addBgpNeighbor() {
+  const addr = neighborForm.value.address.trim()
+  const remoteAsn = Number(neighborForm.value.remote_asn)
+  if (!addr || !remoteAsn) return
+  dynamicRouting.value.bgp.neighbors.push({
+    id: `bgp-n-${Date.now()}`,
+    address: addr,
+    remote_asn: remoteAsn,
+    description: neighborForm.value.description.trim(),
+    update_source: neighborForm.value.update_source.trim(),
+    password: neighborForm.value.password,
+    enabled: neighborForm.value.enabled,
+  })
+  neighborForm.value = {
+    address: '',
+    remote_asn: '',
+    description: '',
+    update_source: '',
+    password: '',
+    enabled: true,
+  }
+}
+
+function removeBgpNeighbor(id) {
+  dynamicRouting.value.bgp.neighbors = dynamicRouting.value.bgp.neighbors.filter((n) => n.id !== id)
+}
+
+function addOspfNetwork() {
+  const prefix = ospfNetworkForm.value.prefix.trim()
+  if (!prefix) return
+  dynamicRouting.value.ospf.networks.push({
+    id: `ospf-n-${Date.now()}`,
+    prefix,
+    area: ospfNetworkForm.value.area.trim() || '0.0.0.0',
+    enabled: ospfNetworkForm.value.enabled,
+  })
+  ospfNetworkForm.value = { prefix: '', area: '0.0.0.0', enabled: true }
+}
+
+function removeOspfNetwork(id) {
+  dynamicRouting.value.ospf.networks = dynamicRouting.value.ospf.networks.filter((n) => n.id !== id)
 }
 
 async function saveFrr() {
@@ -381,6 +514,137 @@ onBeforeUnmount(stopFrrInstallPoll)
           <button type="button" class="btn-secondary" @click="openConfigModal">
             {{ t('network.routes.frrEditConfig') }}
           </button>
+        </div>
+
+        <div v-if="frrStatus.package_installed" class="border-t border-slate-200 pt-4 space-y-3">
+          <div>
+            <h4 class="font-medium text-sm">{{ t('network.routes.dynamicRoutingSection') }}</h4>
+            <p class="text-xs text-slate-500 mt-1">{{ t('network.routes.dynamicRoutingHint') }}</p>
+          </div>
+          <div class="flex gap-1">
+            <button
+              type="button"
+              class="text-xs px-3 py-1 rounded"
+              :class="dynamicTab === 'bgp' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100'"
+              @click="dynamicTab = 'bgp'"
+            >
+              {{ t('network.routes.dynamicTabBgp') }}
+            </button>
+            <button
+              type="button"
+              class="text-xs px-3 py-1 rounded"
+              :class="dynamicTab === 'ospf' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100'"
+              @click="dynamicTab = 'ospf'"
+            >
+              {{ t('network.routes.dynamicTabOspf') }}
+            </button>
+          </div>
+
+          <div v-if="dynamicTab === 'bgp'" class="space-y-3 text-sm">
+            <label class="flex items-center gap-2">
+              <input v-model="dynamicRouting.bgp.enabled" type="checkbox" />
+              {{ t('network.routes.dynamicEnabled') }} BGP
+            </label>
+            <div class="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-slate-500">{{ t('network.routes.dynamicAsn') }}</label>
+                <input v-model.number="dynamicRouting.bgp.asn" type="number" class="input-field font-mono" />
+              </div>
+              <div>
+                <label class="text-xs text-slate-500">{{ t('network.routes.dynamicRouterId') }}</label>
+                <input v-model="dynamicRouting.bgp.router_id" class="input-field font-mono" placeholder="1.1.1.1" />
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-slate-500">{{ t('network.routes.dynamicNetworks') }}</label>
+              <textarea v-model="dynamicNetworksText" class="input-field font-mono text-xs min-h-[4rem]" />
+            </div>
+            <label class="flex items-center gap-2">
+              <input v-model="dynamicRouting.bgp.redistribute_connected" type="checkbox" />
+              {{ t('network.routes.dynamicRedistributeConnected') }}
+            </label>
+            <div class="border border-slate-200 rounded p-3 space-y-2">
+              <p class="text-xs font-medium">{{ t('network.routes.dynamicAddNeighbor') }}</p>
+              <div class="grid sm:grid-cols-2 gap-2">
+                <input v-model="neighborForm.address" class="input-field font-mono text-xs" :placeholder="t('network.routes.dynamicNeighbor')" />
+                <input v-model="neighborForm.remote_asn" type="number" class="input-field font-mono text-xs" :placeholder="t('network.routes.dynamicRemoteAsn')" />
+                <input v-model="neighborForm.update_source" class="input-field font-mono text-xs" :placeholder="t('network.routes.dynamicUpdateSource')" />
+                <input v-model="neighborForm.password" type="password" class="input-field font-mono text-xs" :placeholder="t('network.routes.dynamicPassword')" />
+                <input v-model="neighborForm.description" class="input-field text-xs sm:col-span-2" :placeholder="t('network.routes.dynamicDescription')" />
+              </div>
+              <button type="button" class="btn-secondary text-xs" @click="addBgpNeighbor">{{ t('network.routes.dynamicAddNeighbor') }}</button>
+            </div>
+            <table v-if="dynamicRouting.bgp.neighbors?.length" class="data w-full text-xs">
+              <thead>
+                <tr>
+                  <th>{{ t('network.routes.dynamicNeighbor') }}</th>
+                  <th>AS</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="n in dynamicRouting.bgp.neighbors" :key="n.id">
+                  <td class="font-mono">{{ n.address }}</td>
+                  <td>{{ n.remote_asn }}</td>
+                  <td>
+                    <button type="button" class="text-red-600" @click="removeBgpNeighbor(n.id)">{{ t('common.delete') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="text-xs text-slate-400">{{ t('network.routes.dynamicNoNeighbors') }}</p>
+          </div>
+
+          <div v-else class="space-y-3 text-sm">
+            <label class="flex items-center gap-2">
+              <input v-model="dynamicRouting.ospf.enabled" type="checkbox" />
+              {{ t('network.routes.dynamicEnabled') }} OSPF
+            </label>
+            <div>
+              <label class="text-xs text-slate-500">{{ t('network.routes.dynamicRouterId') }}</label>
+              <input v-model="dynamicRouting.ospf.router_id" class="input-field font-mono" placeholder="2.2.2.2" />
+            </div>
+            <label class="flex items-center gap-2">
+              <input v-model="dynamicRouting.ospf.redistribute_connected" type="checkbox" />
+              {{ t('network.routes.dynamicRedistributeConnected') }}
+            </label>
+            <div class="border border-slate-200 rounded p-3 space-y-2">
+              <p class="text-xs font-medium">{{ t('network.routes.dynamicAddNetwork') }}</p>
+              <div class="grid sm:grid-cols-2 gap-2">
+                <input v-model="ospfNetworkForm.prefix" class="input-field font-mono text-xs" :placeholder="t('network.routes.dynamicOspfPrefix')" />
+                <input v-model="ospfNetworkForm.area" class="input-field font-mono text-xs" :placeholder="t('network.routes.dynamicOspfArea')" />
+              </div>
+              <button type="button" class="btn-secondary text-xs" @click="addOspfNetwork">{{ t('network.routes.dynamicAddNetwork') }}</button>
+            </div>
+            <table v-if="dynamicRouting.ospf.networks?.length" class="data w-full text-xs">
+              <thead>
+                <tr>
+                  <th>{{ t('network.routes.dynamicOspfPrefix') }}</th>
+                  <th>{{ t('network.routes.dynamicOspfArea') }}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="n in dynamicRouting.ospf.networks" :key="n.id">
+                  <td class="font-mono">{{ n.prefix }}</td>
+                  <td class="font-mono">{{ n.area || '0.0.0.0' }}</td>
+                  <td>
+                    <button type="button" class="text-red-600" @click="removeOspfNetwork(n.id)">{{ t('common.delete') }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <button type="button" class="btn-primary" :disabled="dynamicSaving" @click="saveDynamicRouting">
+            {{ t('network.routes.dynamicSaveApply') }}
+          </button>
+
+          <div v-if="dynamicStatus.bgp?.summary || dynamicStatus.ospf?.summary" class="text-xs">
+            <p class="font-medium mb-1">{{ t('network.routes.dynamicStatus') }}</p>
+            <pre v-if="dynamicTab === 'bgp' && dynamicStatus.bgp?.summary" class="bg-slate-50 p-2 rounded overflow-x-auto font-mono whitespace-pre-wrap">{{ dynamicStatus.bgp.summary }}</pre>
+            <pre v-if="dynamicTab === 'ospf' && dynamicStatus.ospf?.summary" class="bg-slate-50 p-2 rounded overflow-x-auto font-mono whitespace-pre-wrap">{{ dynamicStatus.ospf.summary }}</pre>
+          </div>
         </div>
       </template>
 

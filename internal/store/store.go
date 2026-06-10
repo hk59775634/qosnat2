@@ -127,8 +127,9 @@ type State struct {
 	AdminUser     string `json:"admin_user,omitempty"`
 	AdminPassHash string `json:"admin_pass_hash,omitempty"`
 	Nat            NatState          `json:"nat"`
-	Routes         []RouteEntry      `json:"routes"`
-	Shaper         ShaperState       `json:"shaper"`
+	Routes          []RouteEntry          `json:"routes"`
+	DynamicRouting  DynamicRoutingState   `json:"dynamic_routing,omitempty"`
+	Shaper          ShaperState           `json:"shaper"`
 	Firewall       FirewallState     `json:"firewall"`
 	System         SystemState       `json:"system"`
 	DHCP           DHCPState         `json:"dhcp"`

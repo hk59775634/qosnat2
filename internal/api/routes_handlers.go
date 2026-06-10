@@ -192,7 +192,7 @@ func (srv *Server) handleRoutesApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st := srv.store.Get()
-	res, err := route.ApplyManagedRoutes(st.Routes, st.System.RouteBackend)
+	res, err := route.ApplyFromState(st)
 	if err != nil {
 		writeInternalError(w, err.Error())
 		return
@@ -256,7 +256,7 @@ func errNeedGwOrDev() error    { return errGwDev{} }
 
 func (srv *Server) applyManagedRoutes() {
 	st := srv.store.Get()
-	if _, err := route.ApplyManagedRoutes(st.Routes, st.System.RouteBackend); err != nil {
+	if _, err := route.ApplyFromState(st); err != nil {
 		log.Printf("routes apply: %v", err)
 	}
 }

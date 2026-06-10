@@ -30,11 +30,19 @@ func countEnabled(routes []store.RouteEntry) int {
 	return n
 }
 
-// ApplyManagedRoutes 按 backend 回放托管路由。
-func ApplyManagedRoutes(routes []store.RouteEntry, backend string) (ApplyResult, error) {
+// ApplyFromState 按 state 回放托管路由与 FRR 动态路由。
+func ApplyFromState(st store.State) (ApplyResult, error) {
+	return ApplyManagedRoutesWithDynamic(st.Routes, st.System.RouteBackend, st.DynamicRouting)
+}
+
+// ApplyManagedRoutesWithDynamic 回放托管路由，FRR 模式下附带动态路由。
+func ApplyManagedRoutesWithDynamic(routes []store.RouteEntry, backend string, dr store.DynamicRoutingState) (ApplyResult, error) {
 	backend = NormalizeBackend(backend)
 	if backend == BackendFRR {
 		if err := frr.ApplyManaged(routes); err != nil {
+			return ApplyResult{Backend: BackendFRR}, err
+		}
+		if err := frr.ApplyDynamic(dr); err != nil {
 			return ApplyResult{Backend: BackendFRR}, err
 		}
 		return ApplyResult{Backend: BackendFRR, Applied: countEnabled(routes)}, nil
