@@ -94,7 +94,7 @@ func (srv *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 		case store.CertTypeACME:
 			var mcPtr *store.ManagedCertificate
 			var err error
-			err = srv.withAcmeHTTP01Port80Open(func() error {
+			err = srv.withAcmeHTTP01Port80Open(body.Domain, func() error {
 				certAcmeMu.Lock()
 				defer certAcmeMu.Unlock()
 				if _, ipErr := acme.NormalizeIP(body.Domain); ipErr == nil {

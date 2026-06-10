@@ -199,9 +199,9 @@ func (srv *Server) handleTLSAcme(w http.ResponseWriter, r *http.Request) {
 	var runErr error
 	switch action {
 	case "obtain":
-		runErr = srv.withAcmeHTTP01Port80Open(func() error { return srv.runACMEObtain() })
+		runErr = srv.withAcmeHTTP01Port80Open("", func() error { return srv.runACMEObtain() })
 	case "renew":
-		runErr = srv.withAcmeHTTP01Port80Open(func() error { return srv.runACMERenew() })
+		runErr = srv.withAcmeHTTP01Port80Open("", func() error { return srv.runACMERenew() })
 	default:
 		writeBadRequest(w, "action must be obtain or renew")
 		return

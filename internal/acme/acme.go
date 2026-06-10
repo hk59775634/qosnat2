@@ -71,7 +71,7 @@ func NormalizeDomain(d string) (string, error) {
 // Obtain 通过 HTTP-01 申请证书（需公网 80 端口可达）
 func Obtain(cfg Config) (*Result, error) {
 	var res *certificate.Resource
-	err := withHTTP01PortOpen(func() error {
+	err := withHTTP01PortOpen(cfg.Domain, func() error {
 		client, domain, err := setupClient(cfg)
 		if err != nil {
 			return err

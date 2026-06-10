@@ -95,11 +95,18 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 }
 
 func (srv *Server) registerAcmeHooks() {
-	acme.SetHTTP01PortHook(func(open bool) error {
+	acme.SetHTTP01PortHook(func(open bool, target string) error {
 		if srv.env.DevWAN == "" {
 			return nil
 		}
-		return srv.setAcmeTempAllowHTTP01(open)
+		if !open {
+			return srv.setAcmeTempAllowHTTP01(false, nil)
+		}
+		ips, err := acme.ResolveHTTP01LocalIPs(target)
+		if err != nil {
+			return err
+		}
+		return srv.setAcmeTempAllowHTTP01(true, ips)
 	})
 }
 

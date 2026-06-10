@@ -100,7 +100,8 @@ func (srv *Server) handleFirewallRulesGet(w http.ResponseWriter, r *http.Request
 			"wireguard_port":    wgPrimary,
 			"wireguard_ports":   vp.WGPorts,
 		},
-		"acme_temp_allow_http01": st.System.AcmeTempAllowHTTP01,
+		"acme_temp_allow_http01":     st.System.AcmeTempAllowHTTP01,
+		"acme_temp_allow_http01_ips": st.System.AcmeTempAllowHTTP01IPs,
 		"rendered":               srv.firewallRendered(),
 	})
 }

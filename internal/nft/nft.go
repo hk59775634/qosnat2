@@ -198,6 +198,21 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        type filter hook input priority filter; policy accept;\n")
 	b.WriteString("        iifname \"lo\" accept\n")
 	b.WriteString("        ct state established,related accept\n")
+	if st.System.AcmeTempAllowHTTP01 {
+		// ACME http-01：须在 WAN 按口 drop 之前放行，且多 IP 时仅开放 DNS 解析到本机的目标地址。
+		ips := st.System.AcmeTempAllowHTTP01IPs
+		if len(ips) == 0 {
+			b.WriteString("        tcp dport 80 accept comment \"qosnat2-acme-http01-open80\"\n")
+		} else {
+			for _, ip := range ips {
+				ip = strings.TrimSpace(ip)
+				if ip == "" {
+					continue
+				}
+				b.WriteString(fmt.Sprintf("        ip daddr %s tcp dport 80 accept comment \"qosnat2-acme-http01\"\n", ip))
+			}
+		}
+	}
 	writeFilterRules(&b, "input", st.Firewall.FilterRules)
 	if cfg.DevLAN != "" {
 		b.WriteString(fmt.Sprintf("        iifname \"%s\" accept\n", cfg.DevLAN))
@@ -209,10 +224,6 @@ func Render(cfg Config, st store.State) (string, error) {
 	// VPN 隧道口：客户端访问隧道网关/DNS（控制面接入仍由 WAN auto 规则处理）。
 	b.WriteString("        iifname \"wg*\" accept comment \"qosnat2-vpn-wg\"\n")
 	b.WriteString("        iifname \"vpns*\" accept comment \"qosnat2-vpn-ocserv\"\n")
-	if st.System.AcmeTempAllowHTTP01 {
-		// ACME http-01 挑战需要公网 80 端口可达；临时放开所有接口 tcp/80 入站。
-		b.WriteString("        tcp dport 80 accept comment \"qosnat2-acme-http01-open80\"\n")
-	}
 	// WAN 管理/VPN 放行 → 用户 input 规则 → WAN 按口丢弃：由 SyncAutoFilterRules 顺序写入 filter_rules。
 	// 除 lo、LAN、ifb0 及已匹配的 WAN 放行项外，其余网卡入站一律丢弃。
 	b.WriteString("        drop comment \"qosnat2-input-default-deny\"\n")

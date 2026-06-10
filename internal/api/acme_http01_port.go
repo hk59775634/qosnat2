@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -10,43 +9,27 @@ import (
 
 var acmeHTTP01PortMu sync.Mutex
 
-// withAcmeHTTP01Port80Open 在执行 HTTP-01 验证期间临时放开 tcp/80 入站。
-// 完成后会自动恢复（reload nftables），并尽量保证关闭动作不因 fn 返回错误而遗漏。
-func (srv *Server) withAcmeHTTP01Port80Open(fn func() error) error {
+// withAcmeHTTP01Port80Open 串行化 ACME HTTP-01（防火墙开放在 acme.HTTP01PortHook 中按 target 解析 IP 执行）。
+func (srv *Server) withAcmeHTTP01Port80Open(_ string, fn func() error) error {
 	if fn == nil {
 		return fmt.Errorf("nil fn")
 	}
-
 	acmeHTTP01PortMu.Lock()
 	defer acmeHTTP01PortMu.Unlock()
-
-	st := srv.store.Get()
-	if st.System.AcmeTempAllowHTTP01 {
-		// 已经打开，避免重复 reload。
-		return fn()
-	}
-
-	if err := srv.setAcmeTempAllowHTTP01(true); err != nil {
-		return err
-	}
-	var fnErr error
-	defer func() {
-		if err := srv.setAcmeTempAllowHTTP01(false); err != nil {
-			log.Printf("acme-http01: restore allow tcp/80 failed: %v", err)
-		}
-	}()
-
-	fnErr = fn()
-	return fnErr
+	return fn()
 }
 
-func (srv *Server) setAcmeTempAllowHTTP01(v bool) error {
+func (srv *Server) setAcmeTempAllowHTTP01(v bool, ips []string) error {
 	_ = srv.store.Update(func(s *store.State) {
 		s.System.AcmeTempAllowHTTP01 = v
+		if v {
+			s.System.AcmeTempAllowHTTP01IPs = append([]string(nil), ips...)
+		} else {
+			s.System.AcmeTempAllowHTTP01IPs = nil
+		}
 	})
 	if err := srv.store.Save(); err != nil {
 		return err
 	}
-	// reload 会替换 inet qosnat 整表，保证 ACME 临时 tcp/80 规则立即生效。
 	return srv.reloadNft()
 }

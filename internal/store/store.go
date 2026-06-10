@@ -97,6 +97,8 @@ type SystemState struct {
 	// AcmeTempAllowHTTP01 在执行 HTTP-01 验证期间临时放开 tcp/80 入站访问。
 	// 该值由服务端在完成 ACME obtain/renew 后会自动恢复，不建议手动修改。
 	AcmeTempAllowHTTP01 bool `json:"acme_temp_allow_http01,omitempty"`
+	// AcmeTempAllowHTTP01IPs HTTP-01 期间放行的本机目标 IPv4（域名 DNS 解析与本机地址交集）。
+	AcmeTempAllowHTTP01IPs []string `json:"acme_temp_allow_http01_ips,omitempty"`
 	// DiagnosticsTerminalEnabled 为 true 时允许 Web Terminal（默认 false，等同 root shell）。
 	DiagnosticsTerminalEnabled bool `json:"diagnostics_terminal_enabled,omitempty"`
 	// RouteBackend 托管路由下发方式：kernel（ip -batch）| frr（staticd/zebra）。

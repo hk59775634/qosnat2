@@ -128,6 +128,32 @@ func TestRenderAcmeOpen80(t *testing.T) {
 	}
 }
 
+func TestRenderAcmeOpen80BeforeWanDrop(t *testing.T) {
+	st := store.DefaultState()
+	st.System.AcmeTempAllowHTTP01 = true
+	st.System.AcmeTempAllowHTTP01IPs = []string{"203.0.113.10", "203.0.113.20"}
+	st.Network.WanLinks = []store.WanLink{
+		{ID: "wan2", Device: "ens20", Enabled: true},
+	}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18", AdminPort: "8080"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := strings.Split(body, "chain input {")[1]
+	input = strings.Split(input, "    }\n}")[0]
+	wanDrop := strings.Index(input, `iifname "ens18" drop`)
+	acme := strings.Index(input, `ip daddr 203.0.113.10 tcp dport 80 accept`)
+	if wanDrop < 0 || acme < 0 {
+		t.Fatalf("missing wan drop or acme rule in input chain:\n%s", input)
+	}
+	if acme > wanDrop {
+		t.Fatalf("acme rule must be before wan drop (multi-WAN http-01):\n%s", input)
+	}
+	if !strings.Contains(input, `ip daddr 203.0.113.20 tcp dport 80 accept`) {
+		t.Fatalf("missing second acme IP rule:\n%s", input)
+	}
+}
+
 func TestRenderNPTv6(t *testing.T) {
 	st := store.DefaultState()
 	st.Nat.Nptv6Enabled = true

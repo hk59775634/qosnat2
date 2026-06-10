@@ -61,7 +61,7 @@ func ObtainIP(cfg Config, ip string) (*Result, error) {
 		return nil, fmt.Errorf("ACME 邮箱必填（Let's Encrypt 账户）")
 	}
 	var res *certificate.Resource
-	err = withHTTP01PortOpen(func() error {
+	err = withHTTP01PortOpen(ip, func() error {
 		// LE IP 证书（profile shortlived）要求 IP 仅出现在 SAN，不能写入 CSR Common Name。
 		client, err := newClient(email, cfg.Staging, true)
 		if err != nil {

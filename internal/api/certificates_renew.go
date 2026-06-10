@@ -48,6 +48,13 @@ func (srv *Server) recordCertRenewSuccess(id string, renewed *store.ManagedCerti
 
 type renewApplyMode int
 
+func managedCertHTTP01Target(mc store.ManagedCertificate) string {
+	if len(mc.Domains) > 0 {
+		return mc.Domains[0]
+	}
+	return mc.Name
+}
+
 const (
 	renewApplyNone renewApplyMode = iota
 	renewApplyLibrary
@@ -71,7 +78,8 @@ func (srv *Server) executeManagedCertRenew(id string, mode renewApplyMode) error
 	}
 	var renewed *store.ManagedCertificate
 	var err error
-	err = srv.withAcmeHTTP01Port80Open(func() error {
+	target := managedCertHTTP01Target(prev)
+	err = srv.withAcmeHTTP01Port80Open(target, func() error {
 		certAcmeMu.Lock()
 		defer certAcmeMu.Unlock()
 		renewed, err = certs.RenewACME(prev)

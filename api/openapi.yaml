@@ -246,6 +246,10 @@ components:
         alias_names: { type: array, items: { type: string } }
         vpn: { type: object }
         acme_temp_allow_http01: { type: boolean }
+        acme_temp_allow_http01_ips:
+          type: array
+          items: { type: string }
+          description: HTTP-01 期间临时放行的本机目标 IPv4（域名 DNS 与本机地址交集）
         rendered: { type: string, description: 完整 inet qosnat ruleset 文本预览 }
     NatIPv4State:
       type: object
