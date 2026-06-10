@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061003",
+      "tag": "v2026061003",
+      "published_at": "2026-06-10T08:44:13Z",
+      "summary": "新增每内网源 IP 的 NAT 出站 conntrack 会话上限，自动覆盖 LAN、QoS 网段、ocserv/WG 隧道地址。"
+    },
+    {
       "id": "2026061002",
       "tag": "v2026061002",
       "published_at": "2026-06-10T04:49:05Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060906",
       "published_at": "2026-06-09T18:04:40Z",
       "summary": "ocserv 组管理支持可选是否写入 select-group 列表，未选中时仅生成 config-per-group 配置文件。"
-    },
-    {
-      "id": "2026060905",
-      "tag": "v2026060905",
-      "published_at": "2026-06-09T17:44:39Z",
-      "summary": "修复 RADIUS 未启用 groupconfig 时组 API 仍拒绝编辑的问题。"
     }
   ]
 }
