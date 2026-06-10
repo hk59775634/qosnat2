@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061004",
+      "tag": "v2026061004",
+      "published_at": "2026-06-10T17:18:20Z",
+      "summary": "新增 QoS 总开关：关闭后彻底清除运行中 TC/eBPF/ifb 整形，可作为纯 NAT/路由控制器使用。"
+    },
+    {
       "id": "2026061003",
       "tag": "v2026061003",
       "published_at": "2026-06-10T08:44:13Z",
@@ -25,12 +31,6 @@
       "tag": "v2026060907",
       "published_at": "2026-06-09T18:25:18Z",
       "summary": "优化 ocserv 组管理添加/编辑表单的排版与列表展示。"
-    },
-    {
-      "id": "2026060906",
-      "tag": "v2026060906",
-      "published_at": "2026-06-09T18:04:40Z",
-      "summary": "ocserv 组管理支持可选是否写入 select-group 列表，未选中时仅生成 config-per-group 配置文件。"
     }
   ]
 }
