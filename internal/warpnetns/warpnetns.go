@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -28,7 +29,10 @@ const (
 	warpCLI   = "/usr/bin/warp-cli"
 )
 
-var warpOpInFlight int32
+var (
+	warpOpInFlight int32
+	netnsOpMu      sync.Mutex
+)
 
 // BeginOp 标记 WARP 连接/断开/恢复正在进行；此期间 Reconcile 不得重置 netns。
 func BeginOp() {
@@ -110,27 +114,73 @@ func netnsPinValid() bool {
 }
 
 // forceRemoveNetnsPin 强制拆除 netns 挂载点（损坏 pin / 只读空文件时 ip netns delete 可能无效）。
-func forceRemoveNetnsPin() {
+// 返回 true 表示 pin 已不存在。
+func forceRemoveNetnsPin() bool {
 	if !netnsExists() {
-		return
+		return true
 	}
+	killAllWarpProcs()
 	killProcsInNamedNetns()
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 6; i++ {
 		_, _ = run("ip", "netns", "delete", NetnsName)
 		if !netnsExists() {
-			return
+			return true
+		}
+		_, _ = run("ip", "netns", "del", NetnsName)
+		if !netnsExists() {
+			return true
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
 	pin := netnsPinPath()
-	_ = os.Chmod(pin, 0600)
-	_, _ = run("umount", "-l", pin)
+	_ = os.Chmod(pin, 0644)
+	if netnsPinMounted() {
+		_, _ = run("umount", "-l", pin)
+		_, _ = run("umount", "-f", pin)
+	}
 	_ = os.Remove(pin)
 	if netnsExists() {
-		_, _ = run("umount", "-f", pin)
-		_ = os.Chmod(pin, 0600)
-		_ = os.Remove(pin)
+		_, _ = run("rm", "-f", pin)
 	}
+	return !netnsExists()
+}
+
+func netnsPinMounted() bool {
+	if !netnsExists() {
+		return false
+	}
+	out, err := run("findmnt", "-n", netnsPinPath())
+	return err == nil && strings.TrimSpace(string(out)) != ""
+}
+
+func killAllWarpProcs() {
+	StopHostWarpSvc()
+	_, _ = run("bash", "-lc", "pkill -9 -x warp-svc 2>/dev/null; pkill -9 -x warp-cli 2>/dev/null; true")
+	time.Sleep(200 * time.Millisecond)
+}
+
+// RepairStaleNetnsIfNeeded 移除损坏的 netns pin（Peer netns reference is invalid / File exists）。
+func RepairStaleNetnsIfNeeded() bool {
+	netnsOpMu.Lock()
+	defer netnsOpMu.Unlock()
+	return repairStaleNetnsIfNeededLocked()
+}
+
+func repairStaleNetnsIfNeededLocked() bool {
+	if !netnsExists() {
+		return true
+	}
+	if netnsExecUsable() {
+		return true
+	}
+	forceDeleteLink(VethHost)
+	forceDeleteLink(VethNS)
+	ok := forceRemoveNetnsPin()
+	if !ok && netnsExists() {
+		forceDeleteLink(VethHost)
+		ok = forceRemoveNetnsPin()
+	}
+	return ok || !netnsExists()
 }
 
 // clearStaleNetnsPin 移除损坏或不可 exec 的 netns pin，避免 ip netns add 报 File exists。
@@ -203,17 +253,17 @@ func needsNetnsReset() bool {
 
 // PrepareForConnect 连接前强制完整清理并重建 netns/veth（避免孤儿 qwp0 残留）。
 func PrepareForConnect() error {
-	if netnsExists() && !netnsExecUsable() {
-		forceRemoveNetnsPin()
-	}
+	netnsOpMu.Lock()
+	defer netnsOpMu.Unlock()
+	repairStaleNetnsIfNeededLocked()
 	RestoreHostResolv()
 	ensureNetnsResolvFile()
-	scrubWarpStack()
+	scrubWarpStackLocked()
 	uplink := mainUplinkDev()
 	if uplink == "" {
 		return fmt.Errorf("cannot detect main WAN device for warp netns uplink")
 	}
-	return Ensure(uplink)
+	return ensureNetnsVeth(uplink)
 }
 
 // ScrubAfterFailedConnect 连接失败后清理，便于 UI 再次点击连接。
@@ -232,21 +282,28 @@ func clearConnectedState() {
 
 // ResetBroken 对外暴露的损坏 netns 强制清理（断开/重连失败时调用）。
 func ResetBroken() {
-	scrubWarpStack()
+	netnsOpMu.Lock()
+	defer netnsOpMu.Unlock()
+	scrubWarpStackLocked()
 }
 
 // scrubWarpStack 无条件拆除 WARP netns/veth/进程，恢复干净初始状态。
 func scrubWarpStack() {
+	netnsOpMu.Lock()
+	defer netnsOpMu.Unlock()
+	scrubWarpStackLocked()
+}
+
+func scrubWarpStackLocked() {
 	st := loadState()
 	uplink := strings.TrimSpace(st.UplinkDev)
 	if uplink == "" {
 		uplink = mainUplinkDev()
 	}
-	StopHostWarpSvc()
-	_, _ = run("bash", "-lc", "pkill -9 -x warp-svc 2>/dev/null; pkill -9 -x warp-cli 2>/dev/null; true")
-	time.Sleep(200 * time.Millisecond)
-	// 损坏 netns 时先删 veth，否则 ip netns 子系统全局报错且无法 exec。
+	killAllWarpProcs()
+	// 损坏 netns 时先拆 pin 再删 veth，避免 Peer netns reference is invalid 阻塞清理。
 	if !netnsUsable() {
+		forceRemoveNetnsPin()
 		forceDeleteLink(VethHost)
 		forceDeleteLink(VethNS)
 		clearStaleNetnsPin()
@@ -276,14 +333,12 @@ func forceDeleteNetns() {
 	for i := 0; i < 5; i++ {
 		forceDeleteLink(VethHost)
 		forceDeleteLink(VethNS)
-		if _, err := run("ip", "netns", "delete", NetnsName); err == nil {
+		if forceRemoveNetnsPin() {
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	forceRemoveNetnsPin()
-	forceDeleteLink(VethHost)
-	forceDeleteLink(VethNS)
 }
 
 func killProcsInNamedNetns() {
@@ -470,6 +525,8 @@ func mainUplinkDev() string {
 
 // Ensure 创建 netns、veth，并为 netns 提供经主 WAN 的 NAT 出口（供 WARP 建连）。
 func Ensure(uplink string) error {
+	netnsOpMu.Lock()
+	defer netnsOpMu.Unlock()
 	if uplink == "" {
 		uplink = mainUplinkDev()
 	}
@@ -479,29 +536,40 @@ func Ensure(uplink string) error {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		if needsNetnsReset() || (netnsExists() && !netnsUsable()) {
-			forceResetNetns()
+			scrubWarpStackLocked()
 		}
 		lastErr = ensureNetnsVeth(uplink)
 		if lastErr == nil {
 			return nil
 		}
-		forceResetNetns()
+		scrubWarpStackLocked()
 	}
 	return lastErr
 }
 
 func recreateNetnsPin() error {
-	forceRemoveNetnsPin()
+	if netnsExists() && netnsExecUsable() {
+		return nil
+	}
+	if !forceRemoveNetnsPin() && netnsExists() {
+		forceDeleteLink(VethHost)
+		forceDeleteLink(VethNS)
+		if !forceRemoveNetnsPin() && netnsExists() {
+			return fmt.Errorf("stale netns pin %s could not be removed", netnsPinPath())
+		}
+	}
 	out, err := run("ip", "netns", "add", NetnsName)
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if strings.Contains(msg, "File exists") || strings.Contains(err.Error(), "exists") {
-			forceRemoveNetnsPin()
+			forceDeleteLink(VethHost)
+			if !forceRemoveNetnsPin() && netnsExists() {
+				return fmt.Errorf("stale netns pin %s could not be removed", netnsPinPath())
+			}
 			out, err = run("ip", "netns", "add", NetnsName)
 			msg = strings.TrimSpace(string(out))
 		}
 		if err != nil {
-			forceRemoveNetnsPin()
 			return fmt.Errorf("ip netns add: %s %w", msg, err)
 		}
 	}
@@ -719,9 +787,15 @@ func forceDeleteLink(name string) {
 	if _, err := run("ip", "link", "del", name); err == nil {
 		return
 	}
+	if !netnsUsable() {
+		forceRemoveNetnsPin()
+	}
 	// 对端 netns 已损坏时，先移入 init netns 再删。
 	_, _ = run("ip", "link", "set", name, "netns", "1")
-	_, _ = run("ip", "link", "del", name)
+	if _, err := run("ip", "link", "del", name); err == nil {
+		return
+	}
+	_, _ = run("ip", "link", "del", name, "type", "veth")
 }
 
 func deleteLink(name string) {

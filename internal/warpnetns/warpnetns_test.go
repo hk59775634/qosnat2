@@ -11,3 +11,18 @@ func TestNeedsNetnsResetOrphanHostVeth(t *testing.T) {
 		t.Skip("netns exists in test env")
 	}
 }
+
+func TestNetnsPinPath(t *testing.T) {
+	if got := netnsPinPath(); got != "/var/run/netns/"+NetnsName {
+		t.Fatalf("netnsPinPath() = %q", got)
+	}
+}
+
+func TestRepairStaleNetnsIfNeededNoPin(t *testing.T) {
+	if netnsExists() {
+		t.Skip("netns pin exists on host")
+	}
+	if !RepairStaleNetnsIfNeeded() {
+		t.Fatal("expected true when pin absent")
+	}
+}

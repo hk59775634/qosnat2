@@ -46,6 +46,9 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 	}
 	// 轻量校准：勿在 status 轮询时调用 Reconcile()（会 StopHostWarpSvc / clearConnectedState）。
 	warpnetns.EnsureHostNATOnly()
+	if !warpnetns.OpActive() && warpnetns.NetnsExists() && !warpnetns.NetnsHealthy() {
+		warpnetns.RepairStaleNetnsIfNeeded()
+	}
 	installed := commandExists("warp-cli")
 	netnsHealthy := warpnetns.NetnsHealthy()
 	service := warpnetns.ServiceRunning()

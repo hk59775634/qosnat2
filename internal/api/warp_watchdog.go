@@ -40,6 +40,7 @@ func (srv *Server) warpWatchdogTick() {
 		return
 	}
 	if !warpnetns.OpActive() && warpnetns.NeedsReset() && !warpnetns.IsConnected() {
+		warpnetns.RepairStaleNetnsIfNeeded()
 		warpnetns.ResetBroken()
 	}
 	warpnetns.EnsureHostNATOnly()
