@@ -232,11 +232,34 @@ func (m *Manager) Status() map[string]any {
 		st["maps"] = []string{mapProfile, mapHost, mapThrottle, mapTokenBucket}
 		st["obj"] = m.edtObjectPath()
 	}
-	if m.loaded && m.objs != nil {
+	if m.loaded && m.edtObjs != nil {
+		st["profile_lpm_entries"] = m.edtObjs.ProfileLpm.MaxEntries()
+		st["host_exact_entries"] = m.edtObjs.HostExact.MaxEntries()
+	} else if m.loaded && m.objs != nil {
 		st["profile_lpm_entries"] = m.objs.ProfileLpm.MaxEntries()
 		st["host_exact_entries"] = m.objs.HostExact.MaxEntries()
 	}
 	return st
+}
+
+func (m *Manager) profileLpmMap() *ebpf.Map {
+	if m.edtObjs != nil {
+		return m.edtObjs.ProfileLpm
+	}
+	if m.objs != nil {
+		return m.objs.ProfileLpm
+	}
+	return nil
+}
+
+func (m *Manager) hostExactMap() *ebpf.Map {
+	if m.edtObjs != nil {
+		return m.edtObjs.HostExact
+	}
+	if m.objs != nil {
+		return m.objs.HostExact
+	}
+	return nil
 }
 
 func rateFromProfile(down, up string) (RateVal, error) {
@@ -469,6 +492,12 @@ func (m *Manager) DeleteHost(ip string) error {
 	}
 	key := make([]byte, 4)
 	binary.BigEndian.PutUint32(key, k)
+	if m.edtObjs != nil {
+		return m.edtObjs.HostExact.Delete(key)
+	}
+	if m.objs == nil {
+		return errors.New("ebpf not loaded")
+	}
 	_ = m.objs.ClassidMap.Delete(key)
 	_ = m.objs.ActiveHost.Delete(key)
 	return m.objs.HostExact.Delete(key)
@@ -489,6 +518,12 @@ func (m *Manager) ListActive() ([]ActiveEntry, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if !m.loaded {
+		return nil, errors.New("ebpf not loaded")
+	}
+	if m.edtObjs != nil {
+		return nil, nil
+	}
+	if m.objs == nil {
 		return nil, errors.New("ebpf not loaded")
 	}
 	var out []ActiveEntry
@@ -539,8 +574,12 @@ func (m *Manager) ListProfiles() ([]ProfileEntry, error) {
 	if !m.loaded {
 		return nil, errors.New("ebpf not loaded")
 	}
+	profileLpm := m.profileLpmMap()
+	if profileLpm == nil {
+		return nil, errors.New("ebpf not loaded")
+	}
 	var out []ProfileEntry
-	iter := m.objs.ProfileLpm.Iterate()
+	iter := profileLpm.Iterate()
 	var kbuf, vbuf []byte
 	for iter.Next(&kbuf, &vbuf) {
 		if len(kbuf) < 8 || len(vbuf) < 16 {
@@ -565,8 +604,12 @@ func (m *Manager) ListHosts() ([]HostEntry, error) {
 	if !m.loaded {
 		return nil, errors.New("ebpf not loaded")
 	}
+	hostExact := m.hostExactMap()
+	if hostExact == nil {
+		return nil, errors.New("ebpf not loaded")
+	}
 	var out []HostEntry
-	iter := m.objs.HostExact.Iterate()
+	iter := hostExact.Iterate()
 	var kbuf, vbuf []byte
 	for iter.Next(&kbuf, &vbuf) {
 		if len(kbuf) < 4 || len(vbuf) < 16 {
@@ -585,6 +628,12 @@ func (m *Manager) PurgeActive(ip string) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if !m.loaded {
+		return errors.New("ebpf not loaded")
+	}
+	if m.edtObjs != nil {
+		return nil
+	}
+	if m.objs == nil {
 		return errors.New("ebpf not loaded")
 	}
 	k, err := IPToHostKey(ip)
@@ -622,13 +671,18 @@ func ipv4PrefixAddr(addr uint32, prefix int) uint32 {
 func (m *Manager) lookupRatesLocked(hostKey uint32) (down, up uint64, ok bool) {
 	key := make([]byte, 4)
 	binary.BigEndian.PutUint32(key, hostKey)
+	hostExact := m.hostExactMap()
+	profileLpm := m.profileLpmMap()
+	if hostExact == nil || profileLpm == nil {
+		return 0, 0, false
+	}
 	var rv []byte
-	if err := m.objs.HostExact.Lookup(key, &rv); err == nil && len(rv) >= 16 {
+	if err := hostExact.Lookup(key, &rv); err == nil && len(rv) >= 16 {
 		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
 	}
 	for prefix := 32; prefix >= 0; prefix-- {
 		lpmKey := LPMKey{Prefixlen: uint32(prefix), Addr: ipv4PrefixAddr(hostKey, prefix)}.Marshal()
-		if err := m.objs.ProfileLpm.Lookup(lpmKey, &rv); err == nil && len(rv) >= 16 {
+		if err := profileLpm.Lookup(lpmKey, &rv); err == nil && len(rv) >= 16 {
 			return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
 		}
 	}
@@ -640,6 +694,12 @@ func (m *Manager) EachClassid(fn func(ip string, minor uint32) error) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if !m.loaded {
+		return errors.New("ebpf not loaded")
+	}
+	if m.edtObjs != nil {
+		return nil
+	}
+	if m.objs == nil {
 		return errors.New("ebpf not loaded")
 	}
 	iter := m.objs.ClassidMap.Iterate()

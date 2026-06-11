@@ -42,13 +42,7 @@ func SetupEDTDevice(dev string, fqFlows, fqQuantum int) error {
 		return fmt.Errorf("interface %s not found", dev)
 	}
 	_ = exec.Command("tc", "qdisc", "del", "dev", dev, "root").Run()
-	args := []string{"tc", "qdisc", "add", "dev", dev, "root", "fq", "codel"}
-	if fqFlows > 0 {
-		args = append(args, "flows", strconv.Itoa(fqFlows))
-	}
-	if fqQuantum > 0 {
-		args = append(args, "quantum", strconv.Itoa(fqQuantum))
-	}
+	args := edtRootFQArgs(dev, fqFlows, fqQuantum)
 	if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
 		msg := strings.TrimSpace(string(out))
 		if !strings.Contains(msg, "File exists") {
@@ -56,6 +50,18 @@ func SetupEDTDevice(dev string, fqFlows, fqQuantum int) error {
 		}
 	}
 	return ensureClsact(dev)
+}
+
+// edtRootFQArgs 构建 root fq qdisc 参数（EDT 需 plain fq，非 fq_codel）
+func edtRootFQArgs(dev string, fqFlows, fqQuantum int) []string {
+	args := []string{"tc", "qdisc", "add", "dev", dev, "root", "fq"}
+	if fqFlows > 0 {
+		args = append(args, "flows", strconv.Itoa(fqFlows))
+	}
+	if fqQuantum > 0 {
+		args = append(args, "quantum", strconv.Itoa(fqQuantum))
+	}
+	return args
 }
 
 // TeardownEDT 清理 LAN 上 EDT 拓扑（不删 ifb0，兼容从 HTB 切换）
