@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061104",
+      "tag": "v2026061104",
+      "published_at": "2026-06-11T17:26:10Z",
+      "summary": "默认 QoS 数据面切换为 EDT + per-IP token bucket，去掉 IFB/HTB/ringbuf 路径。"
+    },
+    {
       "id": "2026061103",
       "tag": "v2026061103",
       "published_at": "2026-06-11T08:05:30Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061005",
       "published_at": "2026-06-10T18:05:17Z",
       "summary": "FRR 模式下新增 BGP/OSPF 动态路由结构化配置与 UI，托管静态路由与动态协议分文件管理。"
-    },
-    {
-      "id": "2026061004",
-      "tag": "v2026061004",
-      "published_at": "2026-06-10T17:18:20Z",
-      "summary": "新增 QoS 总开关：关闭后彻底清除运行中 TC/eBPF/ifb 整形，可作为纯 NAT/路由控制器使用。"
     }
   ]
 }
