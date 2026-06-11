@@ -48,6 +48,7 @@ func (srv *Server) handleFRR(w http.ResponseWriter, r *http.Request) {
 			writeForbidden(w, "", "FRR 设置需要 root 运行 qosnatd")
 			return
 		}
+		prevBackend := route.NormalizeBackend(srv.store.Get().System.RouteBackend)
 		_ = srv.store.Update(func(st *store.State) {
 			if body.RouteBackend != nil {
 				st.System.RouteBackend = route.NormalizeBackend(*body.RouteBackend)
@@ -68,6 +69,12 @@ func (srv *Server) handleFRR(w http.ResponseWriter, r *http.Request) {
 		st := srv.store.Get()
 		if body.BootOnStartup != nil && frr.PackageInstalled() {
 			if err := frr.SetBootEnabled(st.System.FrrBootOnStartup); err != nil {
+				writeInternalError(w, err.Error())
+				return
+			}
+		}
+		if body.RouteBackend != nil && prevBackend != route.NormalizeBackend(st.System.RouteBackend) {
+			if _, err := route.ApplyFromState(st); err != nil {
 				writeInternalError(w, err.Error())
 				return
 			}

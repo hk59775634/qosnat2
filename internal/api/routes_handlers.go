@@ -39,6 +39,15 @@ func (srv *Server) handleRoutesGet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (srv *Server) routeBackend() string {
+	return route.NormalizeBackend(srv.store.Get().System.RouteBackend)
+}
+
+func (srv *Server) applyManagedRoutesErr() error {
+	_, err := route.ApplyFromState(srv.store.Get())
+	return err
+}
+
 func (srv *Server) handleRoutesPost(w http.ResponseWriter, r *http.Request) {
 	var body store.RouteEntry
 	if err := readJSON(r, &body); err != nil {
@@ -50,15 +59,29 @@ func (srv *Server) handleRoutesPost(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, err.Error())
 		return
 	}
-	if err := route.Apply(entry); err != nil {
-		writeInternalError(w, err.Error())
-		return
-	}
-	_ = srv.store.Update(func(st *store.State) {
-		st.Routes = append(st.Routes, entry)
-	})
-	if !srv.persistState(w) {
-		return
+	if srv.routeBackend() == route.BackendFRR {
+		_ = srv.store.Update(func(st *store.State) {
+			st.Routes = append(st.Routes, entry)
+		})
+		if !srv.persistState(w) {
+			return
+		}
+		if err := srv.applyManagedRoutesErr(); err != nil {
+			srv.removeRouteByID(entry.ID)
+			writeInternalError(w, err.Error())
+			return
+		}
+	} else {
+		if err := route.Apply(entry); err != nil {
+			writeInternalError(w, err.Error())
+			return
+		}
+		_ = srv.store.Update(func(st *store.State) {
+			st.Routes = append(st.Routes, entry)
+		})
+		if !srv.persistState(w) {
+			return
+		}
 	}
 	st := srv.store.Get()
 	writeJSON(w, http.StatusOK, store.EnrichRouteEntry(entry, st))
@@ -98,6 +121,41 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 		}
 		if store.IsAutoManagedRoute(old) {
 			writeForbidden(w, "ROUTE_AUTO_MANAGED", "此路由由多 WAN 或策略出站自动同步，请在「多 WAN」页面修改；本页不可编辑")
+			return
+		}
+		if srv.routeBackend() == route.BackendFRR {
+			prev, err := store.CloneState(srv.store.Get())
+			if err != nil {
+				writeInternalError(w, err.Error())
+				return
+			}
+			updated := false
+			_ = srv.store.Update(func(st *store.State) {
+				for i, e := range st.Routes {
+					if e.ID == id {
+						st.Routes[i] = entry
+						updated = true
+						break
+					}
+				}
+			})
+			if !updated {
+				writeNotFound(w, "not found")
+				return
+			}
+			if err := srv.store.Save(); err != nil {
+				writeInternalError(w, err.Error())
+				return
+			}
+			if err := srv.applyManagedRoutesErr(); err != nil {
+				srv.store.ReplaceState(prev)
+				_ = srv.store.Save()
+				_ = srv.applyManagedRoutesErr()
+				writeInternalError(w, err.Error())
+				return
+			}
+			st := srv.store.Get()
+			writeJSON(w, http.StatusOK, store.EnrichRouteEntry(entry, st))
 			return
 		}
 		prev, err := store.CloneState(srv.store.Get())
@@ -176,14 +234,38 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 			writeForbidden(w, "ROUTE_AUTO_MANAGED", "此路由由多 WAN 或策略出站自动同步，请在「多 WAN」页面删除对应链路或出站策略；本页不可删除")
 			return
 		}
-		_ = route.Delete(old)
-		if !srv.persistState(w) {
-			return
+		if srv.routeBackend() == route.BackendFRR {
+			if !srv.persistState(w) {
+				return
+			}
+			_ = route.Delete(old)
+			if err := srv.applyManagedRoutesErr(); err != nil {
+				writeInternalError(w, err.Error())
+				return
+			}
+		} else {
+			_ = route.Delete(old)
+			if !srv.persistState(w) {
+				return
+			}
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		writeMethodNotAllowed(w)
 	}
+}
+
+func (srv *Server) removeRouteByID(id string) {
+	_ = srv.store.Update(func(st *store.State) {
+		var out []store.RouteEntry
+		for _, r := range st.Routes {
+			if r.ID != id {
+				out = append(out, r)
+			}
+		}
+		st.Routes = out
+	})
+	_ = srv.store.Save()
 }
 
 func (srv *Server) handleRoutesApply(w http.ResponseWriter, r *http.Request) {
@@ -255,8 +337,7 @@ func (errGwDev) Error() string { return "non-default route requires gateway or d
 func errNeedGwOrDev() error    { return errGwDev{} }
 
 func (srv *Server) applyManagedRoutes() {
-	st := srv.store.Get()
-	if _, err := route.ApplyFromState(st); err != nil {
+	if err := srv.applyManagedRoutesErr(); err != nil {
 		log.Printf("routes apply: %v", err)
 	}
 }

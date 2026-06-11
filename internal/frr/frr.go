@@ -98,7 +98,19 @@ func singleVTYLine(dest, gw, dev string, _ int, tableSuffix string) (string, err
 	return line, nil
 }
 
-// ApplyManaged 写入托管路由并 reload FRR（zebra 批量 netlink，较逐条 ip 更平滑）。
+// extractIPRouteLines 从托管配置或 vtysh 脚本中提取 ip route 行。
+func extractIPRouteLines(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ip route ") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// ApplyManaged 写入托管路由并 reload FRR（先撤销旧托管项再写入，避免残留）。
 func ApplyManaged(routes []store.RouteEntry) error {
 	body, err := RenderManaged(routes)
 	if err != nil {
@@ -107,14 +119,29 @@ func ApplyManaged(routes []store.RouteEntry) error {
 	if err := os.MkdirAll(Dir, 0755); err != nil {
 		return err
 	}
+	prev, _ := os.ReadFile(ManagedRoutes)
+	prevLines := extractIPRouteLines(string(prev))
+	newLines := extractIPRouteLines(body)
+	var script strings.Builder
+	script.WriteString("configure terminal\n")
+	for _, ln := range prevLines {
+		script.WriteString("no ")
+		script.WriteString(ln)
+		script.WriteByte('\n')
+	}
+	for _, ln := range newLines {
+		script.WriteString(ln)
+		script.WriteByte('\n')
+	}
+	script.WriteString("end\nwrite memory\n")
 	if err := os.WriteFile(ManagedRoutes, []byte(body), 0644); err != nil {
 		return err
 	}
 	if err := ensureInclude(); err != nil {
 		return err
 	}
-	script := strings.TrimSpace(body) + "\nwrite memory\n"
-	if err := os.WriteFile(ApplyVTYSHScript, []byte(script), 0600); err != nil {
+	scriptBody := script.String()
+	if err := os.WriteFile(ApplyVTYSHScript, []byte(scriptBody), 0600); err != nil {
 		return err
 	}
 	out, err := exec.Command("vtysh", "-f", ApplyVTYSHScript).CombinedOutput()
