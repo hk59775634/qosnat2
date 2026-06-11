@@ -17,12 +17,12 @@ import (
 )
 
 const (
-	PinDir      = "/sys/fs/bpf/qosnat2"
-	defaultObj  = "/usr/lib/qosnat2/classify.bpf.o"
-	mapProfile  = "profile_lpm"
-	mapHost     = "host_exact"
-	mapActive   = "active_host"
-	mapClassID  = "classid_map"
+	PinDir     = "/sys/fs/bpf/qosnat2"
+	defaultObj = "/usr/lib/qosnat2/classify.bpf.o"
+	mapProfile = "profile_lpm"
+	mapHost    = "host_exact"
+	mapActive  = "active_host"
+	mapClassID = "classid_map"
 )
 
 type bpfObjects struct {
@@ -39,7 +39,9 @@ type bpfObjects struct {
 // Manager cilium/ebpf 生命周期与 Map CRUD + TC attach（P2）
 type Manager struct {
 	mu          sync.RWMutex
+	mode        string // store.ShaperModeEDT | ShaperModeHTB
 	objs        *bpfObjects
+	edtObjs     *edtBpfObjects
 	objPath     string
 	attachedDev string
 	attached    map[string]struct{}
@@ -51,28 +53,10 @@ func New() *Manager {
 	if p == "" {
 		p = defaultObj
 	}
-	return &Manager{objPath: p, attached: map[string]struct{}{}}
+	return &Manager{objPath: p, attached: map[string]struct{}{}, mode: store.ShaperModeEDT}
 }
 
-func (m *Manager) loadCollectionSpec() (*ebpf.CollectionSpec, error) {
-	if p := os.Getenv("BPF_OBJ"); p != "" {
-		return ebpf.LoadCollectionSpec(p)
-	}
-	if webassets.Enabled() && len(webassets.BPF) > 0 {
-		return ebpf.LoadCollectionSpecFromReader(bytes.NewReader(webassets.BPF))
-	}
-	if _, err := os.Stat(m.objPath); err != nil {
-		return nil, fmt.Errorf("bpf object %s: %w (run: make bpf && deploy, or use release build)", m.objPath, err)
-	}
-	return ebpf.LoadCollectionSpec(m.objPath)
-}
-
-func (m *Manager) Load() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.loaded {
-		return nil
-	}
+func (m *Manager) loadHTB() error {
 	if err := netif.EnsureIFBUp(); err != nil {
 		return err
 	}
@@ -100,8 +84,34 @@ func (m *Manager) Load() error {
 		return err
 	}
 	m.objs = &objs
+	m.edtObjs = nil
 	m.loaded = true
 	return nil
+}
+
+func (m *Manager) Load() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.loaded {
+		return nil
+	}
+	if m.mode == store.ShaperModeHTB {
+		return m.loadHTB()
+	}
+	return m.loadEDT()
+}
+
+func (m *Manager) loadCollectionSpec() (*ebpf.CollectionSpec, error) {
+	if p := os.Getenv("BPF_OBJ"); p != "" {
+		return ebpf.LoadCollectionSpec(p)
+	}
+	if webassets.Enabled() && len(webassets.BPF) > 0 {
+		return ebpf.LoadCollectionSpecFromReader(bytes.NewReader(webassets.BPF))
+	}
+	if _, err := os.Stat(m.objPath); err != nil {
+		return nil, fmt.Errorf("bpf object %s: %w (run: make bpf && deploy, or use release build)", m.objPath, err)
+	}
+	return ebpf.LoadCollectionSpec(m.objPath)
 }
 
 // loadPinnedMapReplacements 复用已 pin 的 map，使 TC 程序与 Go 更新同一套 map
@@ -183,6 +193,10 @@ func (m *Manager) Close() error {
 		m.objs.close()
 		m.objs = nil
 	}
+	if m.edtObjs != nil {
+		m.edtObjs.close()
+		m.edtObjs = nil
+	}
 	m.loaded = false
 	return nil
 }
@@ -205,13 +219,18 @@ func (m *Manager) Status() map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	st := map[string]any{
-		"pin_dir":  PinDir,
-		"phase":    "P5",
-		"attached":     m.attachedDev,
+		"pin_dir":       PinDir,
+		"phase":         "P5",
+		"mode":          m.mode,
+		"attached":      m.attachedDev,
 		"attached_devs": m.attachedList(),
-		"obj":      m.objPath,
-		"loaded":   m.loaded,
-		"maps":     []string{mapProfile, mapHost, mapActive, mapClassID},
+		"obj":           m.objPath,
+		"loaded":        m.loaded,
+		"maps":          []string{mapProfile, mapHost, mapActive, mapClassID},
+	}
+	if m.loaded && m.edtObjs != nil {
+		st["maps"] = []string{mapProfile, mapHost, mapThrottle, mapTokenBucket}
+		st["obj"] = m.edtObjectPath()
 	}
 	if m.loaded && m.objs != nil {
 		st["profile_lpm_entries"] = m.objs.ProfileLpm.MaxEntries()
@@ -233,6 +252,9 @@ func rateFromProfile(down, up string) (RateVal, error) {
 }
 
 func (m *Manager) flushProfileLpm() error {
+	if m.edtObjs != nil {
+		return m.flushProfileLpmEDT()
+	}
 	if !m.loaded || m.objs == nil {
 		return nil
 	}
@@ -257,7 +279,13 @@ func flushMapIter(del func(interface{}) error, iter *ebpf.MapIterator) error {
 func (m *Manager) FlushRuntimeMaps() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !m.loaded || m.objs == nil {
+	if !m.loaded {
+		return nil
+	}
+	if m.edtObjs != nil {
+		return m.flushEDTRuntimeMaps()
+	}
+	if m.objs == nil {
 		return nil
 	}
 	if err := m.flushProfileLpm(); err != nil {
@@ -316,6 +344,23 @@ func (m *Manager) UpdateProfile(cidr string, rv RateVal) error {
 	if !m.loaded {
 		return errors.New("ebpf not loaded")
 	}
+	if m.edtObjs != nil {
+		v4, _, err := profileMapForCIDR(cidr)
+		if err != nil {
+			return err
+		}
+		if !v4 {
+			return fmt.Errorf("edt mode: ipv6 profile not supported")
+		}
+		k, err := IPToLPMKey(cidr)
+		if err != nil {
+			return err
+		}
+		return m.edtObjs.ProfileLpm.Put(k.Marshal(), rv.Marshal())
+	}
+	if m.objs == nil {
+		return errors.New("ebpf not loaded")
+	}
 	v4, v6, err := profileMapForCIDR(cidr)
 	if err != nil {
 		return err
@@ -341,6 +386,16 @@ func (m *Manager) DeleteProfile(cidr string) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if !m.loaded {
+		return errors.New("ebpf not loaded")
+	}
+	if m.edtObjs != nil {
+		k, err := IPToLPMKey(cidr)
+		if err != nil {
+			return err
+		}
+		return m.edtObjs.ProfileLpm.Delete(k.Marshal())
+	}
+	if m.objs == nil {
 		return errors.New("ebpf not loaded")
 	}
 	v4, v6, err := profileMapForCIDR(cidr)
@@ -370,14 +425,20 @@ func (m *Manager) UpdateHost(ip string, rv RateVal) error {
 	if !m.loaded {
 		return errors.New("ebpf not loaded")
 	}
+	k, err := IPToHostKey(ip)
+	if err != nil {
+		return err
+	}
+	if m.edtObjs != nil {
+		return m.edtObjs.HostExact.Put(k, rv.Marshal())
+	}
+	if m.objs == nil {
+		return errors.New("ebpf not loaded")
+	}
 	if rv.ClassMinor == 0 {
 		if minor, err := classMinorForIP(ip); err == nil {
 			rv.ClassMinor = minor
 		}
-	}
-	k, err := IPToHostKey(ip)
-	if err != nil {
-		return err
 	}
 	key := make([]byte, 4)
 	binary.BigEndian.PutUint32(key, k)

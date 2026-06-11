@@ -19,6 +19,7 @@ web/dist/
 # release embed 暂存（由 scripts/build-release.sh 生成）
 internal/webassets/static/
 internal/webassets/classify.bpf.o
+internal/webassets/rate_edt.bpf.o
 dist/
 
 # Legacy reference trees (not built)

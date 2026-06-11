@@ -98,12 +98,20 @@ func (srv *Server) purgeOrphanShaperHosts() {
 	})
 }
 
-// rebuildShaperDataPlane 增删 profile 后重建 HTB 根 + BPF map + mirred/u32（与 UI「重建根 qdisc」一致）
+// rebuildShaperDataPlane 增删 profile 后重建 qdisc + BPF map（HTB 含 mirred；EDT 无 IFB）
 func (srv *Server) rebuildShaperDataPlane() {
 	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() || srv.env.DevLAN == "" {
 		return
 	}
 	st := srv.store.Get()
+	if srv.usesEDTShaper(st) {
+		if err := srv.replayAllProfileBPFMaps(st); err != nil {
+			log.Printf("rebuild edt bpf maps: %v", err)
+		}
+		srv.purgeLegacyHostExact(st)
+		srv.syncShaperDevicesEDT(st)
+		return
+	}
 	if srv.hosts != nil {
 		srv.hosts.ResetKnown()
 	}

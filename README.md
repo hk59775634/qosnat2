@@ -99,7 +99,7 @@ curl -ksSL https://raw.githubusercontent.com/hk59775634/qosnat2/main/scripts/ins
 在 **System → General → 版本管理** 中可查看当前版本、**更新说明**并切换 release tag。  
 切换流程：下载对应版本二进制 → 覆盖 `/usr/local/bin/qosnatd` → 自动重启服务。
 
-**发布更新说明**：每次发版前须编辑 [`release/pending-release-notes.md`](release/pending-release-notes.md)，详见 [`release/RELEASE.md`](release/RELEASE.md)。
+**发布更新说明**：每次发版前须编辑 [`release/pending-release-notes.md`](release/pending-release-notes.md)。通用流程见 **[发布规则.md](发布规则.md)**；qosnat2 补充见 [`release/RELEASE.md`](release/RELEASE.md)。
 
 ## 一键卸载
 

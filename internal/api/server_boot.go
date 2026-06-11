@@ -58,6 +58,10 @@ func (srv *Server) applyShaperP0(st store.State) {
 	if srv.env.DevLAN == "" {
 		return
 	}
+	if srv.usesEDTShaper(st) {
+		srv.applyShaperP0EDT(st)
+		return
+	}
 	if err := shaper.SetupP0(shaper.Config{
 		DevLAN:     srv.env.DevLAN,
 		Leaf:       st.Shaper.Leaf,
@@ -138,6 +142,11 @@ func (srv *Server) applyEBPF(st store.State) {
 	if srv.bpf == nil {
 		return
 	}
+	srv.ensureBPFMode(st)
+	if srv.usesEDTShaper(st) {
+		srv.applyEBPFEDT(st)
+		return
+	}
 	if !srv.bpf.Ready() {
 		if err := srv.bpf.Load(); err != nil {
 			log.Printf("ebpf load: %v", err)
@@ -162,9 +171,12 @@ func (srv *Server) shaperMirredCIDRs(st store.State) []string {
 	return store.CollectMirredCIDRs(st.Shaper)
 }
 
-// StartBackground ringbuf + 空闲 GC
+// StartBackground ringbuf + 空闲 GC（HTB 模式；EDT 无 ringbuf）
 func (srv *Server) StartBackground() {
 	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() || srv.ringCancel != nil {
+		return
+	}
+	if srv.usesEDTShaper(srv.store.Get()) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())

@@ -44,6 +44,18 @@ func (srv *Server) normalizeProfileDevice(device string) (string, error) {
 
 func (srv *Server) ensureShaperDevice(dev string) {
 	st := srv.store.Get()
+	if srv.usesEDTShaper(st) {
+		if dev == "" {
+			dev = srv.shaperDefaultDevice(st)
+		}
+		if err := shaper.SetupEDTDevice(dev, st.Shaper.FQFlows, st.Shaper.FQQuantum); err != nil {
+			return
+		}
+		if srv.bpf != nil && srv.bpf.Ready() {
+			_ = srv.bpf.AttachTCDeviceEDT(dev)
+		}
+		return
+	}
 	leaf := st.Shaper.Leaf
 	if dev == "" {
 		dev = srv.shaperDefaultDevice(st)
@@ -101,6 +113,10 @@ func (srv *Server) syncShaperDevices() {
 		return
 	}
 	st := srv.store.Get()
+	if srv.usesEDTShaper(st) {
+		srv.syncShaperDevicesEDT(st)
+		return
+	}
 	seen := map[string]struct{}{
 		srv.shaperDefaultDevice(st): {},
 	}
@@ -166,6 +182,9 @@ func (srv *Server) syncActiveHostHTBWithLimit(batchLimit int) {
 		return
 	}
 	st := srv.store.Get()
+	if srv.usesEDTShaper(st) {
+		return
+	}
 	seen := map[string]struct{}{}
 	ensured := 0
 	tryEnsure := func(ip string, down, up uint64, minor uint32) {
@@ -219,6 +238,9 @@ func (srv *Server) reattachShaperDataPath() {
 		return
 	}
 	st := srv.store.Get()
+	if srv.usesEDTShaper(st) {
+		return
+	}
 	if err := srv.bpf.AttachTC(srv.env.DevLAN); err != nil {
 		log.Printf("reattach AttachTC %s: %v", srv.env.DevLAN, err)
 		return
@@ -290,6 +312,7 @@ func (srv *Server) shaperProfilesPayload(list []ProfileListItem) map[string]any 
 	}
 	return map[string]any{
 		"enabled":          st.Shaper.Enabled,
+		"mode":             store.EffectiveShaperMode(st.Shaper),
 		"profiles":         list,
 		"bind_device":      srv.shaperDefaultDevice(st),
 		"default_device":   srv.shaperDefaultDevice(st),

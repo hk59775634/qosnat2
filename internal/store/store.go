@@ -26,6 +26,7 @@ type HostRate struct {
 // ShaperState 流量整形持久化（P1 起同步 BPF Map）
 type ShaperState struct {
 	Enabled         bool                   `json:"enabled"` // false = 纯 NAT，不加载 TC/eBPF 整形
+	Mode            string                 `json:"mode,omitempty"` // edt（默认）| htb（旧 IFB+HTB）
 	Device          string                 `json:"device,omitempty"` // 默认绑定网卡，空则 DEV_LAN
 	PolicyCIDR      string                 `json:"policy_cidr"`
 	DefaultProfile  RateProfile            `json:"default_profile"`
@@ -155,6 +156,7 @@ func DefaultState() State {
 		Nat:    DefaultNat(),
 		Routes: []RouteEntry{},
 		Shaper: ShaperState{
+			Mode:       ShaperModeEDT,
 			PolicyCIDR: "10.0.0.0/8",
 			DefaultProfile: RateProfile{
 				HostMask: 32,

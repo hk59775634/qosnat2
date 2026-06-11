@@ -51,8 +51,12 @@ func (srv *Server) shaperRuntimeDevices(st store.State) []string {
 
 // teardownShaperRuntime 卸载运行中的 TC/eBPF 整形，保留 state 中策略配置供再次启用。
 func (srv *Server) teardownShaperRuntime() {
-	srv.stopShaperBackground()
 	st := srv.store.Get()
+	if srv.usesEDTShaper(st) {
+		srv.teardownShaperRuntimeEDT(st)
+		return
+	}
+	srv.stopShaperBackground()
 	devLAN := srv.env.DevLAN
 
 	if devLAN != "" {

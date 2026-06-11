@@ -9,9 +9,12 @@ import "embed"
 //go:embed static/*
 var Static embed.FS
 
-// BPF classify.bpf.o（由 build-release.sh 复制到本目录）。
+// BPF classify.bpf.o（HTB 旧模式）与 rate_edt.bpf.o（EDT 默认）
 //
 //go:embed classify.bpf.o
 var BPF []byte
+
+//go:embed rate_edt.bpf.o
+var BPFEDT []byte
 
 func Enabled() bool { return true }

@@ -57,6 +57,16 @@ func InstallReleaseBinary(versionID, binPath, route string) error {
 			return fmt.Errorf("install bpf: %w", err)
 		}
 	}
+	edtBPF := filepath.Join(tmp, "lib", "rate_edt.bpf.o")
+	if _, err := os.Stat(edtBPF); err == nil {
+		destDir := "/usr/lib/qosnat2"
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			return err
+		}
+		if err := replaceFileAtomic(edtBPF, filepath.Join(destDir, "rate_edt.bpf.o"), 0644); err != nil {
+			return fmt.Errorf("install rate_edt bpf: %w", err)
+		}
+	}
 	if !dnsmasq.SupportsChnroutes() {
 		prebuilt := filepath.Join(tmp, dnsmasq.ReleaseTarDnsmasqRel)
 		if _, err := os.Stat(prebuilt); err == nil {

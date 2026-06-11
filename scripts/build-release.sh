@@ -36,9 +36,9 @@ if [[ ! -f "${ROOT}/web/dist/index.html" ]]; then
 fi
 
 # --- BPF ---
-if [[ ! -f "${ROOT}/bpf/classify.bpf.o" ]]; then
+if [[ ! -f "${ROOT}/bpf/classify.bpf.o" || ! -f "${ROOT}/bpf/rate_edt.bpf.o" ]]; then
   need clang
-  log "编译 classify.bpf.o..."
+  log "编译 BPF 对象..."
   (cd "${ROOT}/bpf" && make)
 fi
 
@@ -48,6 +48,7 @@ rm -rf "${ASSETS}/static"
 mkdir -p "${ASSETS}/static"
 rsync -a --delete "${ROOT}/web/dist/" "${ASSETS}/static/"
 cp -f "${ROOT}/bpf/classify.bpf.o" "${ASSETS}/classify.bpf.o"
+cp -f "${ROOT}/bpf/rate_edt.bpf.o" "${ASSETS}/rate_edt.bpf.o"
 
 # --- Go release 二进制 ---
 log "编译 release qosnatd (${GOOS}/${GOARCH})..."
@@ -64,6 +65,7 @@ mkdir -p "${OUT_DIR}"
 # 可选：同时安装 BPF 到系统路径（release 已内嵌，仅作兼容）
 install -d "${OUT_DIR}/lib"
 cp -f "${ASSETS}/classify.bpf.o" "${OUT_DIR}/lib/classify.bpf.o"
+cp -f "${ASSETS}/rate_edt.bpf.o" "${OUT_DIR}/lib/rate_edt.bpf.o"
 
 # --- dnsmasq-chnroutes（Ubuntu 24.04 amd64 预编译，目标机免编译）---
 BUILD_DNSMASQ="${BUILD_DNSMASQ:-1}"
@@ -76,7 +78,7 @@ else
 fi
 
 TARBALL="${OUT_DIR}/qosnat2-linux-amd64.tar.gz"
-TAR_ITEMS=("$(basename "${BINARY}")" lib/classify.bpf.o)
+TAR_ITEMS=("$(basename "${BINARY}")" lib/classify.bpf.o lib/rate_edt.bpf.o)
 if [[ -f "${OUT_DIR}/lib/dnsmasq-chnroutes" ]]; then
   TAR_ITEMS+=("lib/dnsmasq-chnroutes")
 fi

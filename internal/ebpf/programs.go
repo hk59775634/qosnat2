@@ -58,5 +58,8 @@ func (m *Manager) Reload(devLAN string) error {
 	if err := m.Load(); err != nil {
 		return err
 	}
+	if m.UsesEDT() {
+		return m.AttachTCEDT(devLAN)
+	}
 	return m.AttachTC(devLAN)
 }

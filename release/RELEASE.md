@@ -1,5 +1,7 @@
 # qosnat2 发布策略
 
+> **跨项目通用规则**见仓库根目录 **[发布规则.md](../发布规则.md)**（版本号、更新说明、CI、禁止事项、新项目接入）。本文仅补充 qosnat2 专属内容。
+
 ## 版本号
 
 - 格式：`YYYYMMDD` + 当日 2 位序号（01–99），如 `2026053111`
@@ -38,7 +40,8 @@ CI 步骤：
 ## Release 包内容（Ubuntu 24.04 amd64）
 
 - `qosnatd-linux-amd64` — 控制面（内嵌 Web + BPF）
-- `lib/classify.bpf.o` — eBPF 分类器
+- `lib/classify.bpf.o` — eBPF 分类器（HTB 旧模式）
+- `lib/rate_edt.bpf.o` — eBPF EDT 限速（默认模式）
 - `lib/dnsmasq-chnroutes` — 预编译 chnroutes 补丁版 dnsmasq（目标机免编译；版本切换/一键安装时自动部署到 `/usr/local/lib/qosnat2` 与 `/usr/sbin/dnsmasq`）
 
 ## 发布后

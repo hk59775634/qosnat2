@@ -5,15 +5,19 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+默认 QoS 数据面切换为 EDT + per-IP token bucket，去掉 IFB/HTB/ringbuf 路径。
 
 ## 新增
 
-- （无）
+- QoS 数据面 **EDT 模式**（`shaper.mode` 默认 `edt`）：下行 EDT + fq，上行 ingress token bucket，内核 map 首包即 per-IP 限速
+- BPF 对象 `rate_edt.bpf.o`；Release 包含 `lib/rate_edt.bpf.o`
+- ocserv `vpns*` 隧道设备自动挂接 EDT 整形
+- 文档 `docs/QOS-DATAPLANE-RFC.md`
 
 ## 优化
 
-- （无）
+- 去掉 EDT 路径上的 IFB mirred、ringbuf、HTB 类异步创建，缓解万人 VPN 突发时共享兜底队列与 ifb 丢包
+- `shaper.mode: "htb"` 保留旧 IFB+HTB 路径供兼容回退
 
 ## 修复
 
@@ -25,4 +29,4 @@
 
 ## 其他
 
-- （无）
+- 升级后默认使用 EDT；若需保持旧 IFB+HTB 行为，在 `state.json` 设置 `"mode": "htb"` 并重启
