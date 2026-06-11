@@ -84,6 +84,7 @@ const menu = computed(() => [
       { path: '/system/general', label: t('nav.general') },
       { path: '/system/certificates', label: t('nav.certificates') },
       { path: '/system/advanced', label: t('nav.advanced') },
+      { path: '/system/snmp', label: t('nav.snmp') },
       { path: '/system/terminal', label: t('nav.terminal') },
       { path: '/system/api-keys', label: t('nav.apiKeys') },
       { path: '/system/audit', label: t('nav.audit') },

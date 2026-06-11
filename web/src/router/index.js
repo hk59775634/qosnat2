@@ -47,6 +47,7 @@ const routes = [
       { path: 'system/general', name: 'system-general', component: () => import('@/views/system/General.vue') },
       { path: 'system/certificates', name: 'system-certificates', component: () => import('@/views/system/Certificates.vue'), meta: { pageWidth: 'full' } },
       { path: 'system/advanced', name: 'system-advanced', component: () => import('@/views/system/Advanced.vue'), meta: { pageWidth: 'full' } },
+      { path: 'system/snmp', name: 'system-snmp', component: () => import('@/views/system/Snmp.vue'), meta: { pageWidth: 'full' } },
       {
         path: 'system/terminal',
         name: 'system-terminal',

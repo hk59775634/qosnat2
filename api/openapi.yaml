@@ -212,6 +212,20 @@ components:
                 items: { type: string }
                 description: 覆盖默认 DNS（DHCP option 6）
               comment: { type: string }
+    SNMPState:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        port: { type: integer, default: 161 }
+        listen_localhost_only: { type: boolean }
+        sys_location: { type: string }
+        sys_contact: { type: string }
+        sys_name: { type: string }
+        ro_community: { type: string, description: SNMPv2c 只读 community }
+        allowed_networks:
+          type: array
+          items: { type: string }
+          description: 允许查询的源 CIDR 列表
     RouteEntry:
       type: object
       properties:
@@ -1264,6 +1278,54 @@ paths:
       responses:
         '200':
           description: ok + active
+
+  /api/v1/snmp:
+    get:
+      tags: [system]
+      summary: SNMP 配置与 snmpd 状态
+      responses:
+        '200':
+          description: config + status + rendered
+    put:
+      tags: [system]
+      summary: 保存 SNMP 配置（不立即应用）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SNMPState'
+      responses:
+        '200':
+          description: OK
+  /api/v1/snmp/apply:
+    post:
+      tags: [system]
+      summary: 生成 snmpd.conf 并启动/停止 snmpd
+      responses:
+        '200':
+          description: ok + active
+  /api/v1/snmp/service:
+    post:
+      tags: [system]
+      summary: snmpd systemd 操作 start|stop|restart
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [start, stop, restart] }
+      responses:
+        '200':
+          description: ok
+  /api/v1/snmp/install:
+    post:
+      tags: [system]
+      summary: apt 安装 snmpd（需 root）
+      responses:
+        '200':
+          description: ok
 
   /api/v1/routes:
     get:

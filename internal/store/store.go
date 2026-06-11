@@ -133,6 +133,7 @@ type State struct {
 	Firewall       FirewallState     `json:"firewall"`
 	System         SystemState       `json:"system"`
 	DHCP           DHCPState         `json:"dhcp"`
+	SNMP           SNMPState         `json:"snmp,omitempty"`
 	Network        NetworkState      `json:"network"`
 	VPN            VPNState          `json:"vpn"`
 	APIKeys        []APIKey             `json:"api_keys"`
@@ -172,6 +173,7 @@ func DefaultState() State {
 			Sysctl: map[string]string{},
 		},
 		DHCP:    DefaultDHCP(),
+		SNMP:    DefaultSNMP(),
 		Network: NetworkState{Ifaces: []IfaceConfig{}, VLANs: []VLANIface{}, WanLinks: []WanLink{}, EgressPolicies: []EgressPolicy{}},
 		VPN: VPNState{
 			WireGuards: []WireGuardInstance{

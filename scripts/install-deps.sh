@@ -33,6 +33,7 @@ QOSNAT_APT_PACKAGES=(
 QOSNAT_APT_PACKAGES_OPTIONAL=(
   jool-tools
   frr
+  snmpd
 )
 
 qosnat_apt_install_packages() {

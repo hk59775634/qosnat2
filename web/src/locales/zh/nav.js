@@ -32,6 +32,7 @@ export default {
   general: '常规设置',
   certificates: '证书管理',
   advanced: '高级设置',
+  snmp: 'SNMP',
   apiKeys: 'API 密钥',
   audit: '审计日志',
   apiDocs: 'API 文档',

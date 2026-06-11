@@ -315,6 +315,14 @@ export const api = {
       request('/api/v1/dhcp/dnsmasq/install-chnroutes', { method: 'POST', body: '{}' }),
     installChnroutesDnsmasqStatus: () => request('/api/v1/dhcp/dnsmasq/install-chnroutes/status'),
   },
+  snmp: {
+    get: () => request('/api/v1/snmp'),
+    put: (body) => request('/api/v1/snmp', { method: 'PUT', body: JSON.stringify(body) }),
+    apply: () => request('/api/v1/snmp/apply', { method: 'POST', body: '{}' }),
+    install: () => request('/api/v1/snmp/install', { method: 'POST', body: '{}' }),
+    service: (action) =>
+      request('/api/v1/snmp/service', { method: 'POST', body: JSON.stringify({ action }) }),
+  },
   frr: {
     get: () => request('/api/v1/frr'),
     put: (body) => request('/api/v1/frr', { method: 'PUT', body: JSON.stringify(body) }),

@@ -32,6 +32,7 @@ export default {
   general: 'General',
   certificates: 'Certificates',
   advanced: 'Advanced',
+  snmp: 'SNMP',
   apiKeys: 'API keys',
   audit: 'Audit log',
   apiDocs: 'API / OpenAPI',
