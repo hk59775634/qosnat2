@@ -192,9 +192,8 @@ func ApplyDynamic(dr store.DynamicRoutingState) error {
 	if err := os.WriteFile(dynamicApplyScript, []byte(script), 0600); err != nil {
 		return err
 	}
-	out, err := exec.Command("vtysh", "-f", dynamicApplyScript).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("vtysh dynamic apply: %s %w", strings.TrimSpace(string(out)), err)
+	if err := runVTYSH(script); err != nil {
+		return fmt.Errorf("vtysh dynamic apply: %w", err)
 	}
 	return nil
 }

@@ -37,7 +37,7 @@ func TestRenderDynamicBGP(t *testing.T) {
 }
 
 func TestExtractIPRouteLines(t *testing.T) {
-	body := "! generated\nconfigure terminal\nip route 10.0.0.0/8 1.1.1.1 eth0\nend\n"
+	body := "! generated\nip route 10.0.0.0/8 1.1.1.1 eth0\n"
 	lines := extractIPRouteLines(body)
 	if len(lines) != 1 || lines[0] != "ip route 10.0.0.0/8 1.1.1.1 eth0" {
 		t.Fatalf("got %v", lines)

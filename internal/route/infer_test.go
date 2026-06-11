@@ -18,17 +18,13 @@ func TestInferRouteDevicesPreservesExplicitDevice(t *testing.T) {
 	}
 }
 
-func TestInferRouteDevicesGatewayOnly(t *testing.T) {
-	dev := InferDeviceForGateway("127.0.0.1")
-	if dev == "" {
-		t.Skip("ip route get unavailable")
-	}
+func TestInferRouteDevicesGatewayOnlySkipsLo(t *testing.T) {
 	r := InferRouteDevices(store.RouteEntry{
 		Dest:    "203.0.113.5/32",
 		Gateway: "127.0.0.1",
 	})
-	if r.Device == "" {
-		t.Fatalf("expected inferred device for gateway 127.0.0.1, got empty")
+	if r.Device == "lo" {
+		t.Fatalf("must not infer lo as egress device, got %q", r.Device)
 	}
 }
 

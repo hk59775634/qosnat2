@@ -26,7 +26,12 @@ func InferDeviceForGateway(gateway string) string {
 	if err := json.Unmarshal(out, &rows); err != nil || len(rows) == 0 {
 		return ""
 	}
-	return strings.TrimSpace(rows[0].Dev)
+	dev := strings.TrimSpace(rows[0].Dev)
+	// 本地/环回解析不应作为静态路由出接口（仅填网关时内核与 FRR 均可省略 dev）。
+	if dev == "" || dev == "lo" {
+		return ""
+	}
+	return dev
 }
 
 // InferRouteDevices 为缺少 device 的网关/nexthop 补全出接口（不修改原 slice 外的共享状态）。
