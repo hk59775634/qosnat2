@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061102",
+      "tag": "v2026061102",
+      "published_at": "2026-06-11T07:06:21Z",
+      "summary": "修复 FRR vtysh 应用失败与静态路由误推断 lo 出接口的问题。"
+    },
+    {
       "id": "2026061101",
       "tag": "v2026061101",
       "published_at": "2026-06-11T06:22:31Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061003",
       "published_at": "2026-06-10T08:44:13Z",
       "summary": "新增每内网源 IP 的 NAT 出站 conntrack 会话上限，自动覆盖 LAN、QoS 网段、ocserv/WG 隧道地址。"
-    },
-    {
-      "id": "2026061002",
-      "tag": "v2026061002",
-      "published_at": "2026-06-10T04:49:05Z",
-      "summary": "修复多 WAN 下 ACME HTTP-01 未正确开放 80 端口的问题，并按域名解析 IP 定向放行。"
     }
   ]
 }
