@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复 EDT 模式启用 QoS 时 fq qdisc 安装失败与 ListHosts 空指针崩溃。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -17,8 +17,7 @@
 
 ## 修复
 
-- `SetupEDTDevice` 误用 `tc fq codel`，改为 plain `fq`（EDT 数据面要求）
-- EDT 模式下 `ListHosts`/`ListProfiles`/`ListActive`/`DeleteHost`/`PurgeActive`/`EachClassid`/`lookupRatesLocked` 访问 HTB map 导致 panic
+- （无）
 
 ## 删除
 
@@ -26,4 +25,4 @@
 
 ## 其他
 
-- 升级后请确认 `/usr/lib/qosnat2/rate_edt.bpf.o` 存在（版本切换会自动安装）
+- （无）
