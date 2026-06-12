@@ -10,7 +10,6 @@ func TestCaptureShaperWizardBackup(t *testing.T) {
 	st := store.State{}
 	st.Shaper.Profiles = []store.ProfileEntry{{CIDR: "10.0.0.0/8", Down: "8mbit"}}
 	st.Shaper.PolicyCIDR = "192.168.1.0/24"
-	st.Shaper.DefaultProfile = store.RateProfile{Down: "1mbit", Up: "1mbit"}
 	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8"}
 
 	b := captureShaperWizardBackup(st)

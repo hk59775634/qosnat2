@@ -36,7 +36,7 @@ func (srv *Server) rateVal(down, up string) (ebpf.RateVal, error) {
 	return ebpf.RateVal{DownBPS: d, UpBPS: u}, nil
 }
 
-// upsertShaperProfile 写入 BPF/state；wizard 额外同步 policy_routes 与默认 policy_cidr
+// upsertShaperProfile 写入 BPF/state；wizard 额外同步 policy_routes
 // refresh=false 时由调用方批量结束后统一 refreshShaperAfterChange
 func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device string, wizard bool, refresh bool) (added bool, err error) {
 	dev, err := srv.normalizeProfileDevice(device)
@@ -50,7 +50,6 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 	stBefore := srv.store.Get()
 	backupProfiles := append([]store.ProfileEntry(nil), stBefore.Shaper.Profiles...)
 	backupPolicyCIDR := stBefore.Shaper.PolicyCIDR
-	backupDefault := stBefore.Shaper.DefaultProfile
 	backupRoutes := append([]string(nil), stBefore.Nat.IPv4.PolicyRoutes...)
 	_ = srv.store.Update(func(st *store.State) {
 		existed := false
@@ -65,7 +64,6 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 		if wizard {
 			if st.Shaper.PolicyCIDR == "" {
 				st.Shaper.PolicyCIDR = cidr
-				st.Shaper.DefaultProfile = store.RateProfile{Down: down, Up: up, HostMask: mask}
 			}
 			hasRoute := false
 			for _, c := range st.Nat.IPv4.PolicyRoutes {
@@ -96,7 +94,6 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 		_ = srv.store.Update(func(st *store.State) {
 			st.Shaper.Profiles = backupProfiles
 			st.Shaper.PolicyCIDR = backupPolicyCIDR
-			st.Shaper.DefaultProfile = backupDefault
 			if wizard {
 				st.Nat.IPv4.PolicyRoutes = backupRoutes
 			}

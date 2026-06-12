@@ -12,8 +12,8 @@ func TestShaperImpliesEnabled(t *testing.T) {
 	if !ShaperImpliesEnabled(ShaperState{Profiles: []ProfileEntry{{CIDR: "10.0.0.0/8"}}}) {
 		t.Fatal("profiles should imply enabled")
 	}
-	if !ShaperImpliesEnabled(ShaperState{DefaultProfile: RateProfile{Down: "8mbit", Up: "8mbit"}}) {
-		t.Fatal("default rate should imply enabled")
+	if ShaperImpliesEnabled(ShaperState{DefaultProfile: RateProfile{Down: "8mbit", Up: "8mbit"}}) {
+		t.Fatal("default_profile alone must not imply enabled")
 	}
 }
 

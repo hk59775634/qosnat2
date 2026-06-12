@@ -293,15 +293,6 @@ func (m *Manager) ReplayState(st store.State) error {
 	if err := m.flushProfileLpm(); err != nil {
 		return err
 	}
-	if store.ReplayPolicyCIDRToBPF(st.Shaper) {
-		rv, err := rateFromProfile(st.Shaper.DefaultProfile.Down, st.Shaper.DefaultProfile.Up)
-		if err != nil {
-			return err
-		}
-		if err := m.UpdateProfile(st.Shaper.PolicyCIDR, rv); err != nil {
-			return err
-		}
-	}
 	for _, p := range store.SortProfilesByID(st.Shaper.Profiles) {
 		rv, err := rateFromProfile(p.Down, p.Up)
 		if err != nil {

@@ -10,9 +10,6 @@ func ShaperImpliesEnabled(sh ShaperState) bool {
 	if len(sh.Tenants) > 0 {
 		return true
 	}
-	if !RateProfileUnlimited(sh.DefaultProfile) {
-		return true
-	}
 	return false
 }
 

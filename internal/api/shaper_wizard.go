@@ -5,18 +5,16 @@ import (
 )
 
 type shaperWizardBackup struct {
-	profiles       []store.ProfileEntry
-	policyCIDR     string
-	defaultProfile store.RateProfile
-	policyRoutes   []string
+	profiles     []store.ProfileEntry
+	policyCIDR   string
+	policyRoutes []string
 }
 
 func captureShaperWizardBackup(st store.State) shaperWizardBackup {
 	return shaperWizardBackup{
-		profiles:       append([]store.ProfileEntry(nil), st.Shaper.Profiles...),
-		policyCIDR:     st.Shaper.PolicyCIDR,
-		defaultProfile: st.Shaper.DefaultProfile,
-		policyRoutes:   append([]string(nil), st.Nat.IPv4.PolicyRoutes...),
+		profiles:     append([]store.ProfileEntry(nil), st.Shaper.Profiles...),
+		policyCIDR:   st.Shaper.PolicyCIDR,
+		policyRoutes: append([]string(nil), st.Nat.IPv4.PolicyRoutes...),
 	}
 }
 
@@ -24,7 +22,6 @@ func (srv *Server) revertShaperWizard(b shaperWizardBackup, addedCIDR string) er
 	_ = srv.store.Update(func(st *store.State) {
 		st.Shaper.Profiles = append([]store.ProfileEntry(nil), b.profiles...)
 		st.Shaper.PolicyCIDR = b.policyCIDR
-		st.Shaper.DefaultProfile = b.defaultProfile
 		st.Nat.IPv4.PolicyRoutes = append([]string(nil), b.policyRoutes...)
 	})
 	if addedCIDR != "" && srv.bpfReady() {

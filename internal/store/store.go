@@ -29,7 +29,7 @@ type ShaperState struct {
 	Mode            string                 `json:"mode,omitempty"` // 省略即 EDT；旧 htb 在加载时自动清除
 	Device          string                 `json:"device,omitempty"` // 默认绑定网卡，空则 DEV_LAN
 	PolicyCIDR      string                 `json:"policy_cidr"`
-	DefaultProfile  RateProfile            `json:"default_profile"`
+	DefaultProfile  RateProfile            `json:"default_profile,omitempty"` // 已废弃速率字段；QoS 仅以 profiles 为准
 	Profiles        []ProfileEntry         `json:"profiles"`
 	Tenants         []TenantEntry          `json:"tenants,omitempty"`
 	Hosts           map[string]HostRate    `json:"hosts,omitempty"` // 已废弃，启动时迁入 profiles
@@ -256,6 +256,7 @@ func (s *Store) applyStateJSON(b []byte) error {
 		}
 	}
 	prevShaperMode := strings.TrimSpace(disk.State.Shaper.Mode)
+	hadDefaultRates := !RateProfileUnlimited(disk.State.Shaper.DefaultProfile)
 	s.State = disk.State
 	MigrateNatFromLegacy(&s.State, disk.Legacy)
 	if rawShaper, ok := raw["shaper"]; ok {
@@ -271,6 +272,16 @@ func (s *Store) applyStateJSON(b []byte) error {
 		} else {
 			_ = os.WriteFile(s.path+".bak", out, 0600)
 			log.Printf("state: cleared legacy shaper.mode %q (EDT default)", prevShaperMode)
+		}
+	} else if hadDefaultRates && RateProfileUnlimited(s.State.Shaper.DefaultProfile) {
+		out, err := json.MarshalIndent(s.State, "", "  ")
+		if err != nil {
+			log.Printf("state: marshal default_profile migration: %v", err)
+		} else if err := WriteFileAtomic(s.path, out, 0600); err != nil {
+			log.Printf("state: persist default_profile migration: %v", err)
+		} else {
+			_ = os.WriteFile(s.path+".bak", out, 0600)
+			log.Printf("state: cleared legacy shaper.default_profile rates (profiles-only QoS)")
 		}
 	}
 	return nil
@@ -347,6 +358,7 @@ func (s *Store) ensureDefaultsLocked() {
 		s.State.Shaper.Hosts = map[string]HostRate{}
 	}
 	MigrateLegacyShaperMode(&s.State.Shaper)
+	MigrateStripDefaultProfileRates(&s.State.Shaper)
 	if s.State.Shaper.Leaf == "" {
 		s.State.Shaper.Leaf = "fq_codel"
 	}

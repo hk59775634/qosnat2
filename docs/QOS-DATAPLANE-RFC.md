@@ -34,7 +34,7 @@
 
 省略 `mode` 即 EDT。从旧版升级时若 `state.json` 含 `"mode": "htb"`，加载后自动清除该字段。
 
-**profiles 为空时**：即使 state 中仍有 `policy_cidr` / `default_profile`（如向导遗留的 8mbit），也 **不会** 写入 BPF，等同于「已开 QoS 但未配置策略、不限速」。添加至少一条 profile 后，`policy_cidr` + `default_profile` 才作为该网段内未单独配置的 IP 之默认速率。
+**QoS 限速仅以 `profiles` 列表为准**；`default_profile` 不再参与 BPF。`policy_cidr` 仅用于 NAT/路由语义，不写入限速 map。
 
 ## BPF 对象
 
