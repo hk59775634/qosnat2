@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061205",
+      "tag": "v2026061205",
+      "published_at": "2026-06-12T16:20:27Z",
+      "summary": "EDT QoS 审计项全量修复：API/UI 对齐、WG/OCServ 重建路径、移除 HTB 遗留误导配置。"
+    },
+    {
       "id": "2026061204",
       "tag": "v2026061204",
       "published_at": "2026-06-12T12:13:17Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061201",
       "published_at": "2026-06-12T03:23:12Z",
       "summary": "EDT 模式不再创建 ifb0，并修复 ACME 后台与 SNMP WAN 防火墙自动放行。"
-    },
-    {
-      "id": "2026061105",
-      "tag": "v2026061105",
-      "published_at": "2026-06-11T17:54:44Z",
-      "summary": "修复 EDT 模式启用 QoS 时 fq qdisc 安装失败与 ListHosts 空指针崩溃。"
     }
   ]
 }
