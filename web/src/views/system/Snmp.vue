@@ -8,16 +8,17 @@ const { t } = useI18n()
 const cfg = ref({
   enabled: false,
   port: 161,
-  listen_localhost_only: true,
+  listen_localhost_only: false,
   sys_location: '',
   sys_contact: '',
   sys_name: '',
   ro_community: '',
-  allowed_networks: ['127.0.0.1/32'],
+  allowed_networks: [],
 })
 const status = ref({})
+const monitoring = ref(null)
 const rendered = ref('')
-const allowedText = ref('127.0.0.1/32')
+const allowedText = ref('')
 const snmpRoot = ref(false)
 const err = ref('')
 const ok = ref('')
@@ -45,6 +46,7 @@ async function load() {
   const d = await api.snmp.get()
   cfg.value = { ...cfg.value, ...(d.config || {}) }
   status.value = d.status || {}
+  monitoring.value = d.monitoring || null
   rendered.value = d.rendered || ''
   snmpRoot.value = !!d.root
   syncAllowedText()
@@ -146,12 +148,7 @@ onMounted(load)
         <div>
           <label class="text-xs text-slate-500">{{ t('system.snmp.port') }}</label>
           <input v-model.number="cfg.port" type="number" class="input-field font-mono" min="1" max="65535" />
-        </div>
-        <div class="flex items-end">
-          <label class="flex items-center gap-2 text-sm">
-            <input v-model="cfg.listen_localhost_only" type="checkbox" />
-            {{ t('system.snmp.localhostOnly') }}
-          </label>
+          <p class="text-xs text-slate-500 mt-1">{{ t('system.snmp.listenHint') }}</p>
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('system.snmp.roCommunity') }}</label>
@@ -179,6 +176,29 @@ onMounted(load)
           <p class="text-xs text-slate-500 mt-1">{{ t('system.snmp.allowedNetworksHint') }}</p>
         </div>
       </div>
+
+      <div v-if="monitoring?.dev_lan || monitoring?.dev_wan" class="rounded border border-slate-100 bg-slate-50/80 p-3 text-sm space-y-2">
+        <h3 class="font-medium text-slate-800">{{ t('system.snmp.monitoringTitle') }}</h3>
+        <p class="text-xs text-slate-600">{{ t('system.snmp.monitoringHint') }}</p>
+        <dl class="grid sm:grid-cols-2 gap-2 text-xs font-mono">
+          <div v-if="monitoring.dev_lan">
+            <dt class="text-slate-500">LAN</dt>
+            <dd>{{ monitoring.dev_lan }} · ifIndex {{ monitoring.lan_ifindex || '—' }}</dd>
+            <dd v-if="monitoring.lan_ifindex && monitoring.oid_templates" class="text-slate-600 mt-1 break-all">
+              RX {{ monitoring.oid_templates.if_hc_in_octets?.replace('{ifIndex}', monitoring.lan_ifindex) }}
+            </dd>
+          </div>
+          <div v-if="monitoring.dev_wan">
+            <dt class="text-slate-500">WAN</dt>
+            <dd>{{ monitoring.dev_wan }} · ifIndex {{ monitoring.wan_ifindex || '—' }}</dd>
+            <dd v-if="monitoring.wan_ifindex && monitoring.oid_templates" class="text-slate-600 mt-1 break-all">
+              RX {{ monitoring.oid_templates.if_hc_in_octets?.replace('{ifIndex}', monitoring.wan_ifindex) }}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      <p class="text-xs text-slate-500">{{ t('system.snmp.serviceHint') }}</p>
 
       <div class="flex flex-wrap gap-2">
         <button type="button" class="btn-secondary" :disabled="saving" @click="save">{{ t('common.save') }}</button>

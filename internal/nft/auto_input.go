@@ -17,7 +17,7 @@ func AutoInputFromState(st store.State) store.AutoInputVPN {
 	if err := store.NormalizeSNMP(&cfg); err != nil {
 		return ai
 	}
-	if cfg.Enabled && !cfg.ListenLocalhostOnly {
+	if cfg.Enabled {
 		ai.SNMPEnabled = true
 		ai.SNMPPort = cfg.Port
 		if ai.SNMPPort <= 0 {

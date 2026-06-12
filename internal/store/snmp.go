@@ -19,9 +19,8 @@ type SNMPState struct {
 
 func DefaultSNMP() SNMPState {
 	return SNMPState{
-		Port:                161,
-		ListenLocalhostOnly: true,
-		AllowedNetworks:     []string{"127.0.0.1/32"},
+		Port:            161,
+		AllowedNetworks: []string{},
 	}
 }
 
@@ -55,6 +54,7 @@ func NormalizeSNMP(s *SNMPState) error {
 	if s.Port > 65535 {
 		return fmt.Errorf("port out of range")
 	}
+	s.ListenLocalhostOnly = false
 	if !s.Enabled {
 		return nil
 	}
@@ -65,11 +65,7 @@ func NormalizeSNMP(s *SNMPState) error {
 		return fmt.Errorf("ro_community contains invalid characters")
 	}
 	if len(s.AllowedNetworks) == 0 {
-		if s.ListenLocalhostOnly {
-			s.AllowedNetworks = []string{"127.0.0.1/32"}
-		} else {
-			return fmt.Errorf("allowed_networks required when not localhost-only")
-		}
+		return fmt.Errorf("allowed_networks required when snmp enabled")
 	}
 	var nets []string
 	for _, cidr := range s.AllowedNetworks {

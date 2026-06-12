@@ -217,7 +217,7 @@ components:
       properties:
         enabled: { type: boolean }
         port: { type: integer, default: 161 }
-        listen_localhost_only: { type: boolean }
+        listen_localhost_only: { type: boolean, description: '已废弃，始终监听 0.0.0.0' }
         sys_location: { type: string }
         sys_contact: { type: string }
         sys_name: { type: string }

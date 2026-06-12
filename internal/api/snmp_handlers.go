@@ -20,10 +20,11 @@ func (srv *Server) handleSNMP(w http.ResponseWriter, r *http.Request) {
 			rendered = snmpd.RenderConf(cfg)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"config":   cfg,
-			"status":   snmpd.ShowStatus(),
-			"rendered": rendered,
-			"root":     os.Getuid() == 0,
+			"config":     cfg,
+			"status":     snmpd.ShowStatus(),
+			"rendered":   rendered,
+			"root":       os.Getuid() == 0,
+			"monitoring": snmpd.MonitoringHintsFor(srv.env.DevLAN, srv.env.DevWAN),
 		})
 	case http.MethodPut:
 		var body store.SNMPState
@@ -106,7 +107,13 @@ func (srv *Server) handleSNMPService(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := strings.TrimSpace(strings.ToLower(body.Action))
-	if err := snmpd.ServiceAction(action); err != nil {
+	st := srv.store.Get()
+	cfg := st.SNMP
+	if err := store.NormalizeSNMP(&cfg); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	if err := snmpd.ServiceAction(action, cfg); err != nil {
 		writeInternalError(w, err.Error())
 		return
 	}

@@ -5,19 +5,20 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+SNMP 监听 0.0.0.0:161 并开放 IF-MIB，支持 NMS 远程采集 WAN/LAN 接口流量。
 
 ## 新增
 
-- （无）
+- SNMP GET 返回 LAN/WAN ifIndex 与 ifHCIn/OutOctets OID 模板（配置页展示）
 
 ## 优化
 
-- （无）
+- snmpd 启用时 `agentAddress udp:0.0.0.0:161`；启用后 WAN 防火墙按 allowed_networks 自动放行 UDP
+- 服务启动/重启先应用 qosnat2 配置，避免 systemd 使用未托管的默认 snmpd.conf
 
 ## 修复
 
-- （无）
+- systemonly 视图补充 IF-MIB（.1.3.6.1.2.1.2 / .31），监控系统可发现接口流量
 
 ## 删除
 
@@ -25,4 +26,4 @@
 
 ## 其他
 
-- （无）
+- 启用 SNMP 时必须填写 allowed_networks（rocommunity 源网段 ACL）
