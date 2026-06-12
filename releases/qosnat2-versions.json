@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061207",
+      "tag": "v2026061207",
+      "published_at": "2026-06-12T17:05:24Z",
+      "summary": "SNMP 监听 0.0.0.0:161 并开放 IF-MIB，支持 NMS 远程采集 WAN/LAN 接口流量。"
+    },
+    {
       "id": "2026061206",
       "tag": "v2026061206",
       "published_at": "2026-06-12T16:43:48Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061203",
       "published_at": "2026-06-12T12:08:03Z",
       "summary": "开启 QoS 且未添加 profile 时不再隐式写入 policy_cidr 限速；medium 档默认开启 WAN RPS。"
-    },
-    {
-      "id": "2026061202",
-      "tag": "v2026061202",
-      "published_at": "2026-06-12T09:23:15Z",
-      "summary": "彻底移除 HTB/IFB 旧数据面，仅保留 EDT；升级时自动清除 state.json 中的 legacy `shaper.mode`。"
     }
   ]
 }
