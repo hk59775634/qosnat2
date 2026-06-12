@@ -49,7 +49,7 @@ func Recommend(h HostInfo) Result {
 		r.TxQueueLenLAN = 2500
 		r.TxQueueLenWAN = 2500
 		r.RpsLAN = true
-		r.RpsWAN = false
+		r.RpsWAN = true // NAT 转发下行经 WAN 收包，须与 LAN 同样启用 RPS
 		r.QoS = QoSParams{Leaf: "fq_codel", IdleTimeoutSec: 300}
 		r.Sysctl = mediumSysctl(h, budget)
 	default:
