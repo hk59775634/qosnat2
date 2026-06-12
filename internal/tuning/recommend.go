@@ -9,8 +9,8 @@ import (
 
 // QoSParams 与 QoS/NAT 数据面相关的应用层参数（存 state.shaper / system）
 type QoSParams struct {
-	Leaf           string `json:"leaf"`
-	IdleTimeoutSec int    `json:"idle_timeout_sec"`
+	FQFlows   int `json:"fq_flows"`
+	FQQuantum int `json:"fq_quantum"`
 }
 
 // Result 推荐调优结果
@@ -42,7 +42,7 @@ func Recommend(h HostInfo) Result {
 		r.TxQueueLenWAN = 1000
 		r.RpsLAN = false
 		r.RpsWAN = false
-		r.QoS = QoSParams{Leaf: "fq_codel", IdleTimeoutSec: 180}
+		r.QoS = QoSParams{FQFlows: 0, FQQuantum: 0}
 		r.Sysctl = lowSysctl(h, budget)
 	case TierMedium:
 		r.PerfPreset = true
@@ -50,7 +50,7 @@ func Recommend(h HostInfo) Result {
 		r.TxQueueLenWAN = 2500
 		r.RpsLAN = true
 		r.RpsWAN = true // NAT 转发下行经 WAN 收包，须与 LAN 同样启用 RPS
-		r.QoS = QoSParams{Leaf: "fq_codel", IdleTimeoutSec: 300}
+		r.QoS = QoSParams{FQFlows: 0, FQQuantum: 0}
 		r.Sysctl = mediumSysctl(h, budget)
 	default:
 		r.PerfPreset = true
@@ -58,7 +58,7 @@ func Recommend(h HostInfo) Result {
 		r.TxQueueLenWAN = 5000
 		r.RpsLAN = true
 		r.RpsWAN = true
-		r.QoS = QoSParams{Leaf: "fq_codel", IdleTimeoutSec: 300}
+		r.QoS = QoSParams{FQFlows: 16384, FQQuantum: 0}
 		r.Sysctl = highSysctl(h, budget)
 	}
 	return r
@@ -178,11 +178,11 @@ func ApplyResult(st *store.State, rec Result, onlyIfEmpty bool) bool {
 		st.System.RpsLAN = rec.RpsLAN
 		st.System.RpsWAN = rec.RpsWAN
 	}
-	if rec.QoS.Leaf != "" {
-		st.Shaper.Leaf = rec.QoS.Leaf
+	if rec.QoS.FQFlows >= 0 {
+		st.Shaper.FQFlows = rec.QoS.FQFlows
 	}
-	if rec.QoS.IdleTimeoutSec > 0 {
-		st.Shaper.IdleTimeoutSec = rec.QoS.IdleTimeoutSec
+	if rec.QoS.FQQuantum >= 0 {
+		st.Shaper.FQQuantum = rec.QoS.FQQuantum
 	}
 	st.System.TuningAutoApplied = true
 	st.System.TuningTier = string(rec.Tier)

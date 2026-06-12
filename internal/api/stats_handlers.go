@@ -3,12 +3,10 @@ package api
 import (
 	"net/http"
 	"sort"
-	"time"
 
 	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/stats"
-	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 func (srv *Server) collector() *stats.Collector {
@@ -47,10 +45,11 @@ func (srv *Server) handleStatsDashboard(w http.ResponseWriter, r *http.Request) 
 		"system":          sys,
 		"ebpf":            srv.bpfStatus(),
 		"shaper": map[string]any{
-			"enabled":          st.Shaper.Enabled,
-			"policy_cidr":      st.Shaper.PolicyCIDR,
-			"idle_timeout_sec": st.Shaper.IdleTimeoutSec,
-			"profile_rules":    len(st.Shaper.Profiles),
+			"enabled":       st.Shaper.Enabled,
+			"policy_cidr":   st.Shaper.PolicyCIDR,
+			"profile_rules": len(st.Shaper.Profiles),
+			"fq_flows":      st.Shaper.FQFlows,
+			"fq_quantum":    st.Shaper.FQQuantum,
 		},
 		"mark_policy": mark,
 		"interfaces": map[string]any{
@@ -82,7 +81,7 @@ func topActive(list []ebpf.ActiveEntry, n int) []topHost {
 	}
 	var s []scored
 	for _, a := range list {
-		s = append(s, scored{a, a.BytesDown + a.BytesUp})
+		s = append(s, scored{a, a.ActivityDown + a.ActivityUp})
 	}
 	sort.Slice(s, func(i, j int) bool { return s[i].total > s[j].total })
 	if len(s) > n {
@@ -92,23 +91,11 @@ func topActive(list []ebpf.ActiveEntry, n int) []topHost {
 	for _, e := range s {
 		out = append(out, topHost{
 			IP:        e.IP,
-			BytesDown: e.BytesDown,
-			BytesUp:   e.BytesUp,
-			DownMbps:  float64(e.BytesDown) * 8 / 1e6,
-			UpMbps:    float64(e.BytesUp) * 8 / 1e6,
+			BytesDown: e.ActivityDown,
+			BytesUp:   e.ActivityUp,
+			DownMbps:  float64(e.ActivityDown) * 8 / 1e6,
+			UpMbps:    float64(e.ActivityUp) * 8 / 1e6,
 		})
 	}
 	return out
-}
-
-func (srv *Server) gcKeepProfiles() map[string]bool {
-	return store.ProfileHost32IPs(srv.store.Get().Shaper.Profiles)
-}
-
-func (srv *Server) idleTimeout() time.Duration {
-	sec := srv.store.Get().Shaper.IdleTimeoutSec
-	if sec <= 0 {
-		sec = 300
-	}
-	return time.Duration(sec) * time.Second
 }

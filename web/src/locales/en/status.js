@@ -7,9 +7,11 @@ export default {
   },
   active: {
     title: 'Active per-IP shaping',
-    description: 'Live HTB leaves from eBPF classification',
+    description: 'Live Per-IP EDT shaping from eBPF maps',
     downCfg: 'Down config',
     upCfg: 'Up config',
+    activityDown: 'Down activity',
+    activityUp: 'Up activity',
     noEntries: 'No active entries',
   },
   ebpf: {

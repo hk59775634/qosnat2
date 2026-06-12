@@ -7,9 +7,11 @@ export default {
   },
   active: {
     title: '活跃主机（按 IP）',
-    description: 'eBPF 分类后的 HTB 叶子队列',
+    description: 'eBPF Per-IP EDT 限速活跃主机',
     downCfg: '下行配置',
     upCfg: '上行配置',
+    activityDown: '下行活动',
+    activityUp: '上行活动',
     noEntries: '无活跃条目',
   },
   ebpf: {

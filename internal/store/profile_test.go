@@ -45,6 +45,21 @@ func TestMigrateProfilePriorityToID(t *testing.T) {
 	}
 }
 
+func TestProfileCIDROverlaps(t *testing.T) {
+	profiles := []ProfileEntry{
+		{CIDR: "10.0.0.0/16"},
+	}
+	if !ProfileCIDROverlaps(profiles, "10.0.1.0/24", "") {
+		t.Fatal("expected overlap with parent prefix")
+	}
+	self := []ProfileEntry{{CIDR: "10.0.1.0/24"}}
+	if ProfileCIDROverlaps(self, "10.0.1.0/24", "10.0.1.0/24") {
+		t.Fatal("skipCIDR should exclude self on update")
+	}
+	if ProfileCIDROverlaps(profiles, "192.168.0.0/24", "") {
+		t.Fatal("disjoint CIDRs should not overlap")
+	}
+}
 func TestSortProfilesByID(t *testing.T) {
 	in := []ProfileEntry{
 		{CIDR: "10.0.0.0/8", ID: 20},

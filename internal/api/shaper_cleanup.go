@@ -16,23 +16,6 @@ func (srv *Server) teardownProfileShaper(cidr string) {
 	}
 }
 
-func (srv *Server) purgeHostsInCIDR(cidr string) {
-	if srv.bpf == nil || !srv.bpf.Ready() {
-		return
-	}
-	purgeIP := func(ip string) {
-		if !store.IPInCIDR(ip, cidr) {
-			return
-		}
-		_ = srv.bpf.DeleteHost(ip)
-	}
-	if list, err := srv.bpf.ListHosts(); err == nil {
-		for _, h := range list {
-			purgeIP(h.IP)
-		}
-	}
-}
-
 func (srv *Server) rebuildShaperDataPlane() {
 	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() || srv.env.DevLAN == "" {
 		return
@@ -43,6 +26,8 @@ func (srv *Server) rebuildShaperDataPlane() {
 	}
 	srv.purgeLegacyHostExact(st)
 	srv.syncShaperDevices(st)
+	srv.applyWGShapers(st)
+	srv.setupOCServShaper(st)
 }
 
 func (srv *Server) replayAllProfileBPFMaps(st store.State) error {

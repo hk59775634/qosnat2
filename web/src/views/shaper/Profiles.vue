@@ -19,7 +19,6 @@ const err = ref('')
 const ok = ref('')
 const dragIdx = ref(null)
 const savingOrder = ref(false)
-const tcLeaf = ref('fq_codel')
 const tcFlows = ref(0)
 const tcQuantum = ref(0)
 const tcSaving = ref(false)
@@ -35,7 +34,6 @@ async function load() {
   devLan.value = d.dev_lan || ''
   devWan.value = d.dev_wan || ''
   attached.value = d.attached_devices || []
-  tcLeaf.value = d.leaf || 'fq_codel'
   tcFlows.value = d.fq_flows || 0
   tcQuantum.value = d.fq_quantum || 0
 }
@@ -62,7 +60,6 @@ async function saveTC() {
   err.value = ''
   try {
     await api.shaper.tc.put({
-      leaf: tcLeaf.value,
       fq_flows: tcFlows.value,
       fq_quantum: tcQuantum.value,
       apply: true,
@@ -163,13 +160,7 @@ onMounted(load)
         :attached="attached"
       />
       <div class="border-t border-slate-100 pt-2 flex flex-wrap gap-2 items-end">
-        <div class="min-w-[7rem]">
-          <label class="text-xs text-slate-500">{{ t('shaper.profiles.leafQdisc') }}</label>
-          <select v-model="tcLeaf" class="input-field mt-0.5">
-            <option value="fq_codel">fq_codel</option>
-            <option value="cake">cake</option>
-          </select>
-        </div>
+        <p class="text-xs text-slate-500 w-full">{{ t('shaper.profiles.rootFqHint') }}</p>
         <div>
           <label class="text-xs text-slate-500" :title="t('shaper.profiles.fqFlowsTitle')">{{ t('shaper.profiles.fqFlows') }}</label>
           <input v-model.number="tcFlows" type="number" min="0" class="input-field mt-0.5 w-20" />

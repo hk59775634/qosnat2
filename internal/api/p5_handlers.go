@@ -51,9 +51,6 @@ func (srv *Server) handleEbpfReload(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err.Error())
 		return
 	}
-	st := srv.store.Get()
-	_ = srv.bpf.ReplayState(st)
-	srv.syncShaperDevices(st)
 	srv.rebuildShaperDataPlane()
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

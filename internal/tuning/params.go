@@ -16,12 +16,12 @@ type AppParam struct {
 // AppCatalog 应用层 QoS/NAT 参数列表
 var AppCatalog = []AppParam{
 	{
-		Key: "shaper.leaf", Category: "QoS 整形", Description: "HTB 叶子队列调度器（下行/IFB 根）",
-		Type: "select", Options: []string{"fq_codel", "cake"},
+		Key: "shaper.fq_flows", Category: "QoS 整形", Description: "根 fq 流表大小（0=内核默认 1024；大规模建议 16384）",
+		Type: "number", Min: 0, Max: 65536,
 	},
 	{
-		Key: "shaper.idle_timeout_sec", Category: "QoS 整形", Description: "Per-IP 动态队列空闲回收时间（秒）",
-		Type: "number", Min: 30, Max: 3600,
+		Key: "shaper.fq_quantum", Category: "QoS 整形", Description: "根 fq quantum 字节数（0=内核默认）",
+		Type: "number", Min: 0, Max: 65536,
 	},
 	{
 		Key: "system.txqueuelen_lan", Category: "网卡", Description: "LAN 发送队列长度（0=应用默认 5000）",
@@ -48,28 +48,14 @@ var AppCatalog = []AppParam{
 // AppValues 从 state 读出当前应用层参数
 func AppValues(st store.State) map[string]any {
 	return map[string]any{
-		"shaper.leaf":               leafOrDefault(st.Shaper.Leaf),
-		"shaper.idle_timeout_sec":   idleOrDefault(st.Shaper.IdleTimeoutSec),
-		"system.txqueuelen_lan":     st.System.TxQueueLenLAN,
-		"system.txqueuelen_wan":     st.System.TxQueueLenWAN,
-		"system.rps_lan":            st.System.RpsLAN,
-		"system.rps_wan":            st.System.RpsWAN,
-		"system.perf_preset":        st.System.PerfPreset,
+		"shaper.fq_flows":         st.Shaper.FQFlows,
+		"shaper.fq_quantum":       st.Shaper.FQQuantum,
+		"system.txqueuelen_lan":   st.System.TxQueueLenLAN,
+		"system.txqueuelen_wan":   st.System.TxQueueLenWAN,
+		"system.rps_lan":          st.System.RpsLAN,
+		"system.rps_wan":          st.System.RpsWAN,
+		"system.perf_preset":      st.System.PerfPreset,
 	}
-}
-
-func leafOrDefault(s string) string {
-	if s == "" {
-		return "fq_codel"
-	}
-	return s
-}
-
-func idleOrDefault(n int) int {
-	if n <= 0 {
-		return 300
-	}
-	return n
 }
 
 // ApplyAppValues 解析 PUT 中的 app 字段
@@ -77,11 +63,11 @@ func ApplyAppValues(st *store.State, app map[string]any) {
 	if app == nil {
 		return
 	}
-	if v, ok := app["shaper.leaf"].(string); ok && v != "" {
-		st.Shaper.Leaf = v
+	if v, ok := app["shaper.fq_flows"].(float64); ok && v >= 0 {
+		st.Shaper.FQFlows = int(v)
 	}
-	if v, ok := app["shaper.idle_timeout_sec"].(float64); ok {
-		st.Shaper.IdleTimeoutSec = int(v)
+	if v, ok := app["shaper.fq_quantum"].(float64); ok && v >= 0 {
+		st.Shaper.FQQuantum = int(v)
 	}
 	if v, ok := app["system.txqueuelen_lan"].(float64); ok {
 		st.System.TxQueueLenLAN = int(v)

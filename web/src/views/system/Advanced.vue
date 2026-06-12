@@ -145,8 +145,8 @@ function fillRecommendedToForm() {
   const rec = data.value.recommended
   overrides.value = { ...(rec.sysctl || {}) }
   appValues.value = {
-    'shaper.leaf': rec.qos?.leaf || 'fq_codel',
-    'shaper.idle_timeout_sec': rec.qos?.idle_timeout_sec ?? 300,
+    'shaper.fq_flows': rec.qos?.fq_flows ?? 0,
+    'shaper.fq_quantum': rec.qos?.fq_quantum ?? 0,
     'system.txqueuelen_lan': rec.txqueuelen_lan ?? 0,
     'system.txqueuelen_wan': rec.txqueuelen_wan ?? 0,
     'system.rps_lan': !!rec.rps_lan,

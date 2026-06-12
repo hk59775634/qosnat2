@@ -13,7 +13,30 @@ func (srv *Server) shaperEnabled() bool {
 	return srv.store.Get().Shaper.Enabled
 }
 
-func (srv *Server) shaperRuntimeDevices(st store.State) []string {
+// shaperAttachDevices QoS attach 目标：LAN、profile 绑定网卡（不含 WG/ocserv，由专用路径处理）。
+func (srv *Server) shaperAttachDevices(st store.State) []string {
+	seen := map[string]struct{}{}
+	add := func(d string) {
+		d = strings.TrimSpace(d)
+		if d == "" || !route.LinkExists(d) {
+			return
+		}
+		seen[d] = struct{}{}
+	}
+	add(srv.env.DevLAN)
+	add(srv.shaperDefaultDevice(st))
+	for _, p := range st.Shaper.Profiles {
+		add(srv.profileDevice(p, st))
+	}
+	out := make([]string, 0, len(seen))
+	for d := range seen {
+		out = append(out, d)
+	}
+	return out
+}
+
+// shaperAllManagedDevices teardown/清理：含全部 WG 与 ocserv tun（无论 enable 状态）。
+func (srv *Server) shaperAllManagedDevices(st store.State) []string {
 	seen := map[string]struct{}{}
 	add := func(d string) {
 		d = strings.TrimSpace(d)
@@ -34,6 +57,13 @@ func (srv *Server) shaperRuntimeDevices(st store.State) []string {
 		}
 		add(iface)
 	}
+	prefix := strings.TrimSpace(st.VPN.OCServ.Device)
+	if prefix == "" {
+		prefix = "vpns"
+	}
+	for _, dev := range listTunDevices(prefix) {
+		add(dev)
+	}
 	out := make([]string, 0, len(seen))
 	for d := range seen {
 		out = append(out, d)
@@ -45,7 +75,7 @@ func (srv *Server) teardownShaperRuntime() {
 	st := srv.store.Get()
 	devLAN := srv.env.DevLAN
 	srv.removeLegacyIFBPath(st)
-	for _, dev := range srv.shaperRuntimeDevices(st) {
+	for _, dev := range srv.shaperAllManagedDevices(st) {
 		if srv.bpf != nil {
 			_ = srv.bpf.DetachTCDevice(dev)
 		}
@@ -100,7 +130,7 @@ func (srv *Server) applyEBPF(st store.State) {
 }
 
 func (srv *Server) syncShaperDevices(st store.State) {
-	for _, dev := range srv.shaperRuntimeDevices(st) {
+	for _, dev := range srv.shaperAttachDevices(st) {
 		if err := shaper.SetupEDTDevice(dev, st.Shaper.FQFlows, st.Shaper.FQQuantum); err != nil {
 			log.Printf("edt device %s: %v", dev, err)
 			continue

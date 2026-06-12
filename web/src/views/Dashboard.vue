@@ -304,8 +304,10 @@ onUnmounted(() => clearInterval(timer))
         <dl class="grid grid-cols-2 gap-2 text-sm">
           <dt class="text-slate-500">{{ t('dashboard.policyCidrs') }}</dt>
           <dd class="font-mono text-right">{{ data?.shaper?.policy_cidr || '—' }}</dd>
-          <dt class="text-slate-500">{{ t('dashboard.idleTimeout') }}</dt>
-          <dd class="font-mono text-right">{{ data?.shaper?.idle_timeout_sec ?? '—' }}s</dd>
+          <dt class="text-slate-500">{{ t('dashboard.profileRules') }}</dt>
+          <dd class="font-mono text-right">{{ data?.shaper?.profile_rules ?? '—' }}</dd>
+          <dt class="text-slate-500">{{ t('dashboard.fqFlows') }}</dt>
+          <dd class="font-mono text-right">{{ data?.shaper?.fq_flows ?? '—' }}</dd>
           <dt class="text-slate-500">{{ t('dashboard.ebpfMap') }}</dt>
           <dd class="text-right">{{ data?.ebpf?.loaded ? t('dashboard.ebpfLoaded') : '—' }}</dd>
         </dl>

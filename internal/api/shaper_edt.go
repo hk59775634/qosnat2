@@ -43,7 +43,7 @@ func (srv *Server) syncAllWGPeerRates() {
 }
 
 func (srv *Server) syncWGPeerRates(st store.State, inst store.WireGuardInstance) {
-	if srv.bpf == nil || !srv.bpf.Ready() {
+	if !inst.Enabled || srv.bpf == nil || !srv.bpf.Ready() {
 		return
 	}
 	for _, p := range inst.Peers {
@@ -51,9 +51,7 @@ func (srv *Server) syncWGPeerRates(st store.State, inst store.WireGuardInstance)
 		if ip == "" {
 			continue
 		}
-		cidr := store.Host32ProfileCIDR(ip)
 		if !peerRateEnabled(p) {
-			_ = srv.bpf.DeleteProfile(cidr)
 			_ = srv.bpf.DeleteHost(ip)
 			continue
 		}
@@ -63,29 +61,29 @@ func (srv *Server) syncWGPeerRates(st store.State, inst store.WireGuardInstance)
 			log.Printf("wg peer rate %s: %v", ip, err)
 			continue
 		}
-		if err := srv.bpf.UpdateProfile(cidr, rv); err != nil {
-			log.Printf("wg bpf profile %s: %v", cidr, err)
-			continue
-		}
 		if err := srv.bpf.UpdateHost(ip, rv); err != nil {
 			log.Printf("wg bpf host %s: %v", ip, err)
 		}
-		_ = srv.store.Update(func(s *store.State) {
-			srv.assignProfileOnAdd(s, cidr, down, up, 32, strings.TrimSpace(inst.Interface))
-		})
 	}
-	_ = srv.persistStateOrLog("sync wg peer rates")
 }
 
 func (srv *Server) setupOCServShaper(st store.State) {
-	if !st.VPN.OCServ.Enabled || srv.bpf == nil || !srv.bpf.Ready() {
-		return
-	}
 	prefix := strings.TrimSpace(st.VPN.OCServ.Device)
 	if prefix == "" {
 		prefix = "vpns"
 	}
-	for _, dev := range listTunDevices(prefix) {
+	devs := listTunDevices(prefix)
+	if srv.bpf == nil || !srv.bpf.Ready() {
+		return
+	}
+	if !st.VPN.OCServ.Enabled {
+		for _, dev := range devs {
+			_ = srv.bpf.DetachTCDevice(dev)
+			shaper.TeardownDevice(dev)
+		}
+		return
+	}
+	for _, dev := range devs {
 		if err := shaper.SetupEDTDevice(dev, st.Shaper.FQFlows, st.Shaper.FQQuantum); err != nil {
 			log.Printf("edt ocserv %s: %v", dev, err)
 			continue
@@ -117,7 +115,7 @@ func listTunDevices(prefix string) []string {
 
 // removeLegacyIFBPath 清除 HTB/IFB 遗留；须在 EDT BPF attach 之前调用。
 func (srv *Server) removeLegacyIFBPath(st store.State) {
-	for _, dev := range srv.shaperRuntimeDevices(st) {
+	for _, dev := range srv.shaperAllManagedDevices(st) {
 		_ = exec.Command("tc", "filter", "del", "dev", dev, "ingress").Run()
 	}
 	shaper.TeardownDevice(netif.IFBDev)

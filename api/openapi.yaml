@@ -665,13 +665,13 @@ components:
     ShaperTC:
       type: object
       properties:
-        leaf: { type: string, enum: [fq_codel, cake, fq] }
+        enabled: { type: boolean }
+        root_qdisc: { type: string, enum: [fq] }
         fq_flows: { type: integer }
         fq_quantum: { type: integer }
     ShaperTCPut:
       type: object
       properties:
-        leaf: { type: string, enum: [fq_codel, cake, fq] }
         fq_flows: { type: integer }
         fq_quantum: { type: integer }
         apply: { type: boolean, description: true 时重建 TC 数据面 }
@@ -1997,7 +1997,7 @@ paths:
   /api/v1/shaper/active:
     get:
       tags: [shaper]
-      summary: 遍历 eBPF active_host 表（活动主机限速状态）
+      summary: 遍历 eBPF 活跃 Per-IP 限速状态
       responses:
         '200':
           content:
@@ -2008,11 +2008,10 @@ paths:
                   type: object
                   properties:
                     ip: { type: string }
-                    down_bps: { type: integer }
-                    up_bps: { type: integer }
-                    bytes_down: { type: integer }
-                    bytes_up: { type: integer }
-                    class_minor: { type: integer }
+                    down_bps: { type: integer, format: int64 }
+                    up_bps: { type: integer, format: int64 }
+                    activity_down: { type: integer, format: int64 }
+                    activity_up: { type: integer, format: int64 }
 
   /api/v1/stats/dashboard:
     get:
@@ -2113,7 +2112,7 @@ paths:
                 apply_recommended: { type: boolean, description: true 时按当前 CPU/内存重算推荐并写入 }
                 app:
                   type: object
-                  description: shaper.leaf、idle_timeout、txqueuelen、rps 等
+                  description: shaper.fq_flows、fq_quantum、txqueuelen、rps 等
       responses:
         '200':
           content:
@@ -3357,7 +3356,7 @@ paths:
   /api/v1/shaper/tc:
     get:
       tags: [shaper]
-      summary: HTB 叶子队列类型与 fq 参数
+      summary: EDT 根 fq 参数
       responses:
         '200':
           content:
@@ -3366,7 +3365,7 @@ paths:
                 $ref: '#/components/schemas/ShaperTC'
     put:
       tags: [shaper]
-      summary: 更新叶子队列；apply=true 时重建 TC
+      summary: 更新 fq 参数；apply=true 时重建 TC
       requestBody:
         content:
           application/json:

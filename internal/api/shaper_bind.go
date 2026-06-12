@@ -90,7 +90,7 @@ func (srv *Server) shaperProfilesPayload(list []ProfileListItem) map[string]any 
 		"default_device":   srv.shaperDefaultDevice(st),
 		"dev_lan":          srv.env.DevLAN,
 		"dev_wan":          srv.env.DevWAN,
-		"leaf":             st.Shaper.Leaf,
+		"root_qdisc":       "fq",
 		"fq_flows":         st.Shaper.FQFlows,
 		"fq_quantum":       st.Shaper.FQQuantum,
 		"interfaces":       ifaces,

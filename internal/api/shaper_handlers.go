@@ -48,6 +48,16 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 	}
 	// 必须先更新内存 state 再装 TC/BPF；BPF 失败则不持久化。
 	stBefore := srv.store.Get()
+	skipOverlap := ""
+	for _, p := range stBefore.Shaper.Profiles {
+		if p.CIDR == cidr {
+			skipOverlap = cidr
+			break
+		}
+	}
+	if store.ProfileCIDROverlaps(stBefore.Shaper.Profiles, cidr, skipOverlap) {
+		return false, errProfileCIDROverlap
+	}
 	backupProfiles := append([]store.ProfileEntry(nil), stBefore.Shaper.Profiles...)
 	backupPolicyCIDR := stBefore.Shaper.PolicyCIDR
 	backupRoutes := append([]string(nil), stBefore.Nat.IPv4.PolicyRoutes...)

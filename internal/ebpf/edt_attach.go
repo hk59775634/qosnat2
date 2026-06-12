@@ -40,6 +40,7 @@ func (m *Manager) AttachTC(dev string) error {
 		return err
 	}
 	if err := m.attachFilter(dev, "egress", egressPin); err != nil {
+		_ = exec.Command("tc", "filter", "del", "dev", dev, "ingress").Run()
 		return err
 	}
 	if m.attached == nil {

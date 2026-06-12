@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 
-	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -12,29 +11,22 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		st := srv.store.Get()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"enabled":    st.Shaper.Enabled,
-			"leaf":       shaper.NormalizeLeaf(st.Shaper.Leaf),
-			"fq_flows":   st.Shaper.FQFlows,
-			"fq_quantum": st.Shaper.FQQuantum,
+			"enabled":     st.Shaper.Enabled,
+			"root_qdisc":  "fq",
+			"fq_flows":    st.Shaper.FQFlows,
+			"fq_quantum":  st.Shaper.FQQuantum,
 		})
 	case http.MethodPut:
 		var body struct {
-			Leaf      string `json:"leaf"`
-			FQFlows   int    `json:"fq_flows"`
-			FQQuantum int    `json:"fq_quantum"`
-			Apply     bool   `json:"apply"`
+			FQFlows   int  `json:"fq_flows"`
+			FQQuantum int  `json:"fq_quantum"`
+			Apply     bool `json:"apply"`
 		}
 		if err := readJSON(r, &body); err != nil {
 			writeBadJSON(w)
 			return
 		}
-		if !shaper.AllowedLeafInput(body.Leaf) {
-			writeBadRequest(w, "invalid leaf (fq_codel or cake)")
-			return
-		}
-		leaf := shaper.NormalizeLeaf(body.Leaf)
 		_ = srv.store.Update(func(st *store.State) {
-			st.Shaper.Leaf = leaf
 			if body.FQFlows >= 0 {
 				st.Shaper.FQFlows = body.FQFlows
 			}
@@ -49,12 +41,14 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 			st := srv.store.Get()
 			srv.applyShaperP0(st)
 			srv.syncShaperDevices(st)
+			srv.applyWGShapers(st)
+			srv.setupOCServShaper(st)
 		}
-		srv.auditLog(r, "shaper.tc", leaf)
+		srv.auditLog(r, "shaper.tc", "fq")
 		st := srv.store.Get()
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":         true,
-			"leaf":       st.Shaper.Leaf,
+			"root_qdisc": "fq",
 			"fq_flows":   st.Shaper.FQFlows,
 			"fq_quantum": st.Shaper.FQQuantum,
 		})

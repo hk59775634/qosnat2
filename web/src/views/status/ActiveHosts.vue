@@ -34,24 +34,22 @@ onUnmounted(() => clearInterval(timer))
         <thead>
           <tr>
             <th>IP</th>
-            <th>class</th>
             <th>{{ t('status.active.downCfg') }}</th>
             <th>{{ t('status.active.upCfg') }}</th>
-            <th>bytes↓</th>
-            <th>bytes↑</th>
+            <th>{{ t('status.active.activityDown') }}</th>
+            <th>{{ t('status.active.activityUp') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="a in list" :key="a.ip">
             <td class="font-mono">{{ a.ip }}</td>
-            <td>1:{{ (a.class_minor || 0).toString(16) }}</td>
             <td>{{ bpsLabel(a.down_bps) }}</td>
             <td>{{ bpsLabel(a.up_bps) }}</td>
-            <td>{{ a.bytes_down }}</td>
-            <td>{{ a.bytes_up }}</td>
+            <td>{{ bpsLabel(a.activity_down) }}</td>
+            <td>{{ bpsLabel(a.activity_up) }}</td>
           </tr>
           <tr v-if="!list.length">
-            <td colspan="6" class="text-center text-slate-400 py-6">{{ t('status.active.noEntries') }}</td>
+            <td colspan="5" class="text-center text-slate-400 py-6">{{ t('status.active.noEntries') }}</td>
           </tr>
         </tbody>
       </table>
