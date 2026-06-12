@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061206",
+      "tag": "v2026061206",
+      "published_at": "2026-06-12T16:43:48Z",
+      "summary": "RSS/多队列诊断合并至接口页，侧边栏移除独立入口；旧 URL 自动跳转并展开诊断区。"
+    },
+    {
       "id": "2026061205",
       "tag": "v2026061205",
       "published_at": "2026-06-12T16:20:27Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061202",
       "published_at": "2026-06-12T09:23:15Z",
       "summary": "彻底移除 HTB/IFB 旧数据面，仅保留 EDT；升级时自动清除 state.json 中的 legacy `shaper.mode`。"
-    },
-    {
-      "id": "2026061201",
-      "tag": "v2026061201",
-      "published_at": "2026-06-12T03:23:12Z",
-      "summary": "EDT 模式不再创建 ifb0，并修复 ACME 后台与 SNMP WAN 防火墙自动放行。"
     }
   ]
 }
