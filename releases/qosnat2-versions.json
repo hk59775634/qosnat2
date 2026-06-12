@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061202",
+      "tag": "v2026061202",
+      "published_at": "2026-06-12T09:23:15Z",
+      "summary": "彻底移除 HTB/IFB 旧数据面，仅保留 EDT；升级时自动清除 state.json 中的 legacy `shaper.mode`。"
+    },
+    {
       "id": "2026061201",
       "tag": "v2026061201",
       "published_at": "2026-06-12T03:23:12Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061103",
       "published_at": "2026-06-11T08:05:30Z",
       "summary": "新增 SNMP（snmpd）配置 UI 与 API，支持 SNMPv2c 只读 community 与源网段 ACL。"
-    },
-    {
-      "id": "2026061102",
-      "tag": "v2026061102",
-      "published_at": "2026-06-11T07:06:21Z",
-      "summary": "修复 FRR vtysh 应用失败与静态路由误推断 lo 出接口的问题。"
     }
   ]
 }
