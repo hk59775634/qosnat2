@@ -348,7 +348,14 @@ export default {
   },
   queues: {
     title: '接口 / RSS 队列',
+    diagTitle: 'RSS / 多队列诊断',
+    diagHint: '硬件队列与 IRQ 计数（5 秒刷新）；队列数通常固定，关注中断速率与 softnet 丢弃',
     channel: '通道',
-    count: '计数',
+    count: '累计计数',
+    irqRate: '中断/s',
+    softnetProcessed: '已处理',
+    softnetDropped: '丢弃',
+    softnetTimeSqueeze: '挤压',
+    rpsHint: 'RPS 多核收包分担请在',
   },
 }

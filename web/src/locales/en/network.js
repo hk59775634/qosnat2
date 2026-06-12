@@ -348,7 +348,14 @@ export default {
   },
   queues: {
     title: 'Interfaces / RSS queues',
+    diagTitle: 'RSS / multi-queue diagnostics',
+    diagHint: 'Hardware queues and IRQ counters (5s refresh); channel counts are usually static—watch IRQ rate and softnet drops',
     channel: 'Channel',
-    count: 'Count',
+    count: 'Total count',
+    irqRate: 'IRQ/s',
+    softnetProcessed: 'processed',
+    softnetDropped: 'dropped',
+    softnetTimeSqueeze: 'time_squeeze',
+    rpsHint: 'Configure RPS under',
   },
 }

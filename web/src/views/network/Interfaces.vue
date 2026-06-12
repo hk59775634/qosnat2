@@ -1,13 +1,18 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/api/client'
 
 const { t } = useI18n()
+const route = useRoute()
 import PageHeader from '@/components/PageHeader.vue'
 import DashboardWidget from '@/components/DashboardWidget.vue'
 import ProgressBar from '@/components/ProgressBar.vue'
 import TrafficSparkline from '@/components/TrafficSparkline.vue'
+import IfaceRssDiagnostics from '@/components/IfaceRssDiagnostics.vue'
+
+const rssDiagExpanded = computed(() => route.query.diag === 'rss')
 
 const devLan = ref('')
 const devWan = ref('')
@@ -503,6 +508,8 @@ onUnmounted(() => {
       </div>
     </DashboardWidget>
 
+    <IfaceRssDiagnostics :default-expanded="rssDiagExpanded" />
+
     <div class="grid lg:grid-cols-2 gap-4">
       <DashboardWidget id="iface-links-lan" :title="t('network.interfaces.linksLanTitle')">
         <ul class="text-sm space-y-2">
@@ -519,9 +526,6 @@ onUnmounted(() => {
           </li>
           <li>
             <router-link to="/shaper/profiles" class="text-blue-600 hover:underline">{{ t('nav.qosProfiles') }}</router-link>
-          </li>
-          <li>
-            <router-link to="/network/queues" class="text-blue-600 hover:underline">{{ t('nav.rssQueues') }}</router-link>
           </li>
         </ul>
       </DashboardWidget>

@@ -41,7 +41,6 @@ const menu = computed(() => [
       { path: '/network/vlans', label: t('nav.vlans') },
       { path: '/network/vxlan', label: t('nav.vxlan') },
       { path: '/network/wan-links', label: t('nav.wanLinks') },
-      { path: '/network/queues', label: t('nav.rssQueues') },
     ],
   },
   {
