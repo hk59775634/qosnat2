@@ -4,8 +4,6 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
-
-	"github.com/hk59775634/qosnat2/internal/shaper"
 )
 
 const defaultAdminUser = "admin"
@@ -60,10 +58,4 @@ func (srv *Server) reloadEnv() {
 	srv.env.AdminPort = EnvOr("ADMIN_PORT", srv.env.AdminPort)
 	srv.env.DevLAN = lan
 	srv.env.DevWAN = wan
-	shaperLAN := srv.env.DevLAN
-	if shaperLAN == "" {
-		shaperLAN = "lo"
-	}
-	st := srv.store.Get()
-	srv.hosts = shaper.NewHostShaper(shaperLAN, st.Shaper.Leaf)
 }

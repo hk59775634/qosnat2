@@ -2,21 +2,17 @@ package store
 
 import "strings"
 
-const (
-	ShaperModeHTB = "htb" // 旧版 IFB + HTB + ringbuf
-	ShaperModeEDT = "edt" // Per-IP EDT + token bucket（默认）
-)
+const ShaperModeEDT = "edt"
 
-// EffectiveShaperMode 返回数据面模式；空或未识别时默认 edt。
-func EffectiveShaperMode(sh ShaperState) string {
-	switch strings.ToLower(strings.TrimSpace(sh.Mode)) {
-	case ShaperModeHTB:
-		return ShaperModeHTB
-	default:
-		return ShaperModeEDT
+// MigrateLegacyShaperMode 升级旧 state：htb 等非 edt 值一律清除（省略 mode 即 EDT）。
+func MigrateLegacyShaperMode(sh *ShaperState) {
+	if sh == nil {
+		return
 	}
-}
-
-func (sh ShaperState) UsesEDT() bool {
-	return EffectiveShaperMode(sh) == ShaperModeEDT
+	mode := strings.ToLower(strings.TrimSpace(sh.Mode))
+	if mode == "" || mode == ShaperModeEDT {
+		sh.Mode = ""
+		return
+	}
+	sh.Mode = ""
 }

@@ -34,7 +34,6 @@ func runApplyState() {
 		log.Fatalf("load state: %v", err)
 	}
 	bpfM := ebpf.New()
-	bpfM.SetMode(store.EffectiveShaperMode(st.Get().Shaper))
 	if err := bpfM.Load(); err != nil {
 		log.Printf("ebpf load: %v", err)
 	}
@@ -62,9 +61,8 @@ func runServer() {
 		log.Printf("init state file: %v", err)
 	}
 	bpfM := ebpf.New()
-	bpfM.SetMode(store.EffectiveShaperMode(st.Get().Shaper))
 	if err := bpfM.Load(); err != nil {
-		log.Printf("ebpf load (P1): %v — 请确认已 make bpf 且 /usr/lib/qosnat2/classify.bpf.o 存在", err)
+		log.Printf("ebpf load (P1): %v — 请确认已 make bpf 且 /usr/lib/qosnat2/rate_edt.bpf.o 存在", err)
 	} else {
 		defer bpfM.Close()
 	}

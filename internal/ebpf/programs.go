@@ -41,7 +41,7 @@ func tcFilterLine(dev, dir string) string {
 	}
 	lines := strings.Split(string(out), "\n")
 	for _, l := range lines {
-		if strings.Contains(l, "bpf") || strings.Contains(l, "classify") {
+		if strings.Contains(l, "bpf") || strings.Contains(l, "rate_limit") {
 			return strings.TrimSpace(l)
 		}
 	}
@@ -51,15 +51,12 @@ func tcFilterLine(dev, dir string) string {
 	return ""
 }
 
-// Reload 维护窗口：Detach → Close → Load → Attach（调用方负责 ReplayState）
+// Reload 维护窗口：Detach → Close → Load → Attach
 func (m *Manager) Reload(devLAN string) error {
 	_ = m.DetachTC()
 	_ = m.Close()
 	if err := m.Load(); err != nil {
 		return err
-	}
-	if m.UsesEDT() {
-		return m.AttachTCEDT(devLAN)
 	}
 	return m.AttachTC(devLAN)
 }

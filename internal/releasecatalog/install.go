@@ -46,17 +46,6 @@ func InstallReleaseBinary(versionID, binPath, route string) error {
 	if err := replaceFileAtomic(bin, binPath, 0755); err != nil {
 		return fmt.Errorf("install binary: %w", err)
 	}
-	bpf := filepath.Join(tmp, "lib", "classify.bpf.o")
-	if _, err := os.Stat(bpf); err == nil {
-		destDir := "/usr/lib/qosnat2"
-		if err := os.MkdirAll(destDir, 0755); err != nil {
-			return err
-		}
-		bpfDest := filepath.Join(destDir, "classify.bpf.o")
-		if err := replaceFileAtomic(bpf, bpfDest, 0644); err != nil {
-			return fmt.Errorf("install bpf: %w", err)
-		}
-	}
 	edtBPF := filepath.Join(tmp, "lib", "rate_edt.bpf.o")
 	if _, err := os.Stat(edtBPF); err == nil {
 		destDir := "/usr/lib/qosnat2"

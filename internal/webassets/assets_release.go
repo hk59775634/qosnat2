@@ -9,11 +9,8 @@ import "embed"
 //go:embed static/*
 var Static embed.FS
 
-// BPF classify.bpf.o（HTB 旧模式）与 rate_edt.bpf.o（EDT 默认）
+// BPFEDT rate_edt.bpf.o（EDT 数据面）
 //
-//go:embed classify.bpf.o
-var BPF []byte
-
 //go:embed rate_edt.bpf.o
 var BPFEDT []byte
 

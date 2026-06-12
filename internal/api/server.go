@@ -16,7 +16,6 @@ import (
 	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/ocserv/usertraffic"
 	"github.com/hk59775634/qosnat2/internal/releasecatalog"
-	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/stats"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/webassets"
@@ -44,10 +43,8 @@ type Server struct {
 	store                *store.Store
 	sessions             *sessionStore
 	bpf                  *ebpf.Manager
-	hosts                *shaper.HostShaper
 	metrics              *stats.Collector
 	pcap                 *capture.Manager
-	ringCancel           context.CancelFunc
 	metricsCancel        context.CancelFunc
 	ocservTrafficCancel  context.CancelFunc
 	wgTrafficCancel      context.CancelFunc
@@ -85,7 +82,6 @@ func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
 		store:               st,
 		bpf:                 bpfM,
 		sessions:            newSessionStore(env.SessionFile),
-		hosts:               shaper.NewHostShaper(shaperDevLAN(env.DevLAN), st.Get().Shaper.Leaf),
 		loginLim:            newLoginLimiter(),
 		versionSwitchGrants: newVersionSwitchGrants(),
 	}
@@ -564,9 +560,3 @@ func LoadEnv() Env {
 	}
 }
 
-func shaperDevLAN(dev string) string {
-	if dev == "" {
-		return "lo"
-	}
-	return dev
-}

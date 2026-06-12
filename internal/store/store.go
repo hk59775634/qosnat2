@@ -26,7 +26,7 @@ type HostRate struct {
 // ShaperState 流量整形持久化（P1 起同步 BPF Map）
 type ShaperState struct {
 	Enabled         bool                   `json:"enabled"` // false = 纯 NAT，不加载 TC/eBPF 整形
-	Mode            string                 `json:"mode,omitempty"` // edt（默认）| htb（旧 IFB+HTB）
+	Mode            string                 `json:"mode,omitempty"` // 省略即 EDT；旧 htb 在加载时自动清除
 	Device          string                 `json:"device,omitempty"` // 默认绑定网卡，空则 DEV_LAN
 	PolicyCIDR      string                 `json:"policy_cidr"`
 	DefaultProfile  RateProfile            `json:"default_profile"`
@@ -156,7 +156,6 @@ func DefaultState() State {
 		Nat:    DefaultNat(),
 		Routes: []RouteEntry{},
 		Shaper: ShaperState{
-			Mode:       ShaperModeEDT,
 			PolicyCIDR: "10.0.0.0/8",
 			DefaultProfile: RateProfile{
 				HostMask: 32,
@@ -256,12 +255,24 @@ func (s *Store) applyStateJSON(b []byte) error {
 			}
 		}
 	}
+	prevShaperMode := strings.TrimSpace(disk.State.Shaper.Mode)
 	s.State = disk.State
 	MigrateNatFromLegacy(&s.State, disk.Legacy)
 	if rawShaper, ok := raw["shaper"]; ok {
 		MigrateShaperEnabled(rawShaper, &s.State.Shaper)
 	}
 	s.ensureDefaultsLocked()
+	if prevShaperMode != "" && strings.TrimSpace(s.State.Shaper.Mode) == "" {
+		out, err := json.MarshalIndent(s.State, "", "  ")
+		if err != nil {
+			log.Printf("state: marshal shaper mode migration: %v", err)
+		} else if err := WriteFileAtomic(s.path, out, 0600); err != nil {
+			log.Printf("state: persist shaper mode migration: %v", err)
+		} else {
+			_ = os.WriteFile(s.path+".bak", out, 0600)
+			log.Printf("state: cleared legacy shaper.mode %q (EDT default)", prevShaperMode)
+		}
+	}
 	return nil
 }
 
@@ -335,6 +346,7 @@ func (s *Store) ensureDefaultsLocked() {
 	if s.State.Shaper.Hosts == nil {
 		s.State.Shaper.Hosts = map[string]HostRate{}
 	}
+	MigrateLegacyShaperMode(&s.State.Shaper)
 	if s.State.Shaper.Leaf == "" {
 		s.State.Shaper.Leaf = "fq_codel"
 	}

@@ -11,148 +11,28 @@ import (
 	"sync"
 
 	"github.com/cilium/ebpf"
-	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/webassets"
 )
 
 const (
-	PinDir     = "/sys/fs/bpf/qosnat2"
-	defaultObj = "/usr/lib/qosnat2/classify.bpf.o"
-	mapProfile = "profile_lpm"
-	mapHost    = "host_exact"
-	mapActive  = "active_host"
-	mapClassID = "classid_map"
+	PinDir            = "/sys/fs/bpf/qosnat2"
+	defaultObj        = "/usr/lib/qosnat2/rate_edt.bpf.o"
+	mapProfile        = "profile_lpm"
+	mapHost           = "host_exact"
+	mapThrottle       = "throttle"
+	mapTokenBucket    = "token_bucket"
+	progIngress       = "rate_limit_ingress"
+	progEgress        = "rate_limit_egress"
 )
 
 type bpfObjects struct {
-	ProfileLpm  *ebpf.Map `ebpf:"profile_lpm"`
-	ProfileLpm6 *ebpf.Map `ebpf:"profile_lpm6"`
-	HostExact   *ebpf.Map `ebpf:"host_exact"`
-	ActiveHost *ebpf.Map `ebpf:"active_host"`
-	ClassidMap *ebpf.Map `ebpf:"classid_map"`
-	Events     *ebpf.Map `ebpf:"events"`
-	Ingress    *ebpf.Program `ebpf:"classify_ingress"`
-	Egress     *ebpf.Program `ebpf:"classify_egress"`
-}
-
-// Manager cilium/ebpf 生命周期与 Map CRUD + TC attach（P2）
-type Manager struct {
-	mu          sync.RWMutex
-	mode        string // store.ShaperModeEDT | ShaperModeHTB
-	objs        *bpfObjects
-	edtObjs     *edtBpfObjects
-	objPath     string
-	attachedDev string
-	attached    map[string]struct{}
-	loaded      bool
-}
-
-func New() *Manager {
-	p := os.Getenv("BPF_OBJ")
-	if p == "" {
-		p = defaultObj
-	}
-	return &Manager{objPath: p, attached: map[string]struct{}{}, mode: store.ShaperModeEDT}
-}
-
-func (m *Manager) loadHTB() error {
-	if err := netif.EnsureIFBUp(); err != nil {
-		return err
-	}
-	spec, err := m.loadCollectionSpec()
-	if err != nil {
-		return err
-	}
-	if err := m.rewriteIFBIndex(spec); err != nil {
-		return err
-	}
-	opts := &ebpf.CollectionOptions{MapReplacements: loadPinnedMapReplacements(spec)}
-	var objs bpfObjects
-	if err := spec.LoadAndAssign(&objs, opts); err != nil {
-		return err
-	}
-	for _, pm := range opts.MapReplacements {
-		pm.Close()
-	}
-	if err := m.pinAll(&objs); err != nil {
-		objs.close()
-		return err
-	}
-	if err := m.pinPrograms(&objs); err != nil {
-		objs.close()
-		return err
-	}
-	m.objs = &objs
-	m.edtObjs = nil
-	m.loaded = true
-	return nil
-}
-
-func (m *Manager) Load() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.loaded {
-		return nil
-	}
-	if m.mode == store.ShaperModeHTB {
-		return m.loadHTB()
-	}
-	return m.loadEDT()
-}
-
-func (m *Manager) loadCollectionSpec() (*ebpf.CollectionSpec, error) {
-	if p := os.Getenv("BPF_OBJ"); p != "" {
-		return ebpf.LoadCollectionSpec(p)
-	}
-	if webassets.Enabled() && len(webassets.BPF) > 0 {
-		return ebpf.LoadCollectionSpecFromReader(bytes.NewReader(webassets.BPF))
-	}
-	if _, err := os.Stat(m.objPath); err != nil {
-		return nil, fmt.Errorf("bpf object %s: %w (run: make bpf && deploy, or use release build)", m.objPath, err)
-	}
-	return ebpf.LoadCollectionSpec(m.objPath)
-}
-
-// loadPinnedMapReplacements 复用已 pin 的 map，使 TC 程序与 Go 更新同一套 map
-func loadPinnedMapReplacements(spec *ebpf.CollectionSpec) map[string]*ebpf.Map {
-	reps := make(map[string]*ebpf.Map)
-	for name := range spec.Maps {
-		path := filepath.Join(PinDir, name)
-		pm, err := ebpf.LoadPinnedMap(path, nil)
-		if err != nil {
-			continue
-		}
-		reps[name] = pm
-	}
-	return reps
-}
-
-func (m *Manager) pinAll(objs *bpfObjects) error {
-	if err := os.MkdirAll(PinDir, 0755); err != nil {
-		return err
-	}
-	pins := []struct {
-		name string
-		pin  func(string) error
-	}{
-		{mapProfile, objs.ProfileLpm.Pin},
-		{mapProfile6, objs.ProfileLpm6.Pin},
-		{mapHost, objs.HostExact.Pin},
-		{mapActive, objs.ActiveHost.Pin},
-		{mapClassID, objs.ClassidMap.Pin},
-	}
-	for _, p := range pins {
-		path := filepath.Join(PinDir, p.name)
-		if _, err := os.Stat(path); err == nil {
-			continue
-		}
-		_ = os.Remove(path)
-		if err := p.pin(path); err != nil {
-			return fmt.Errorf("pin %s: %w", p.name, err)
-		}
-	}
-	return nil
+	ProfileLpm  *ebpf.Map     `ebpf:"profile_lpm"`
+	HostExact   *ebpf.Map     `ebpf:"host_exact"`
+	Throttle    *ebpf.Map     `ebpf:"throttle"`
+	TokenBucket *ebpf.Map     `ebpf:"token_bucket"`
+	Ingress     *ebpf.Program `ebpf:"rate_limit_ingress"`
+	Egress      *ebpf.Program `ebpf:"rate_limit_egress"`
 }
 
 func (o *bpfObjects) close() {
@@ -168,21 +48,141 @@ func (o *bpfObjects) close() {
 	if o.ProfileLpm != nil {
 		o.ProfileLpm.Close()
 	}
-	if o.ProfileLpm6 != nil {
-		o.ProfileLpm6.Close()
-	}
 	if o.HostExact != nil {
 		o.HostExact.Close()
 	}
-	if o.ActiveHost != nil {
-		o.ActiveHost.Close()
+	if o.Throttle != nil {
+		o.Throttle.Close()
 	}
-	if o.ClassidMap != nil {
-		o.ClassidMap.Close()
+	if o.TokenBucket != nil {
+		o.TokenBucket.Close()
 	}
-	if o.Events != nil {
-		o.Events.Close()
+}
+
+// Manager EDT BPF 生命周期、map CRUD 与 TC attach。
+type Manager struct {
+	mu          sync.RWMutex
+	objs        *bpfObjects
+	objPath     string
+	attachedDev string
+	attached    map[string]struct{}
+	loaded      bool
+}
+
+func New() *Manager {
+	p := os.Getenv("BPF_EDT_OBJ")
+	if p == "" {
+		if p2 := os.Getenv("BPF_OBJ"); p2 != "" {
+			p = p2
+		} else {
+			p = defaultObj
+		}
 	}
+	return &Manager{objPath: p, attached: map[string]struct{}{}}
+}
+
+func (m *Manager) Load() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.loaded {
+		return nil
+	}
+	spec, err := m.loadCollectionSpec()
+	if err != nil {
+		return err
+	}
+	opts := &ebpf.CollectionOptions{MapReplacements: loadPinnedMapReplacements(spec)}
+	var objs bpfObjects
+	if err := spec.LoadAndAssign(&objs, opts); err != nil {
+		return err
+	}
+	for _, pm := range opts.MapReplacements {
+		pm.Close()
+	}
+	if err := m.pinMaps(&objs); err != nil {
+		objs.close()
+		return err
+	}
+	if err := m.pinPrograms(&objs); err != nil {
+		objs.close()
+		return err
+	}
+	m.objs = &objs
+	m.loaded = true
+	return nil
+}
+
+func (m *Manager) loadCollectionSpec() (*ebpf.CollectionSpec, error) {
+	if p := os.Getenv("BPF_EDT_OBJ"); p != "" {
+		return ebpf.LoadCollectionSpec(p)
+	}
+	if webassets.Enabled() && len(webassets.BPFEDT) > 0 {
+		return ebpf.LoadCollectionSpecFromReader(bytes.NewReader(webassets.BPFEDT))
+	}
+	if _, err := os.Stat(m.objPath); err != nil {
+		return nil, fmt.Errorf("bpf object %s: %w (run: make bpf -C bpf)", m.objPath, err)
+	}
+	return ebpf.LoadCollectionSpec(m.objPath)
+}
+
+func loadPinnedMapReplacements(spec *ebpf.CollectionSpec) map[string]*ebpf.Map {
+	reps := make(map[string]*ebpf.Map)
+	for _, name := range []string{mapProfile, mapHost, mapThrottle, mapTokenBucket} {
+		if _, ok := spec.Maps[name]; !ok {
+			continue
+		}
+		path := filepath.Join(PinDir, name)
+		pm, err := ebpf.LoadPinnedMap(path, nil)
+		if err != nil {
+			continue
+		}
+		reps[name] = pm
+	}
+	return reps
+}
+
+func (m *Manager) pinMaps(objs *bpfObjects) error {
+	if err := os.MkdirAll(PinDir, 0755); err != nil {
+		return err
+	}
+	pins := []struct {
+		name string
+		pin  func(string) error
+	}{
+		{mapProfile, objs.ProfileLpm.Pin},
+		{mapHost, objs.HostExact.Pin},
+		{mapThrottle, objs.Throttle.Pin},
+		{mapTokenBucket, objs.TokenBucket.Pin},
+	}
+	for _, p := range pins {
+		path := filepath.Join(PinDir, p.name)
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		_ = os.Remove(path)
+		if err := p.pin(path); err != nil {
+			return fmt.Errorf("pin %s: %w", p.name, err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) pinPrograms(objs *bpfObjects) error {
+	progs := []struct {
+		name string
+		prog *ebpf.Program
+	}{
+		{progIngress, objs.Ingress},
+		{progEgress, objs.Egress},
+	}
+	for _, p := range progs {
+		path := filepath.Join(PinDir, p.name)
+		_ = os.Remove(path)
+		if err := p.prog.Pin(path); err != nil {
+			return fmt.Errorf("pin %s: %w", p.name, err)
+		}
+	}
+	return nil
 }
 
 func (m *Manager) Close() error {
@@ -192,10 +192,6 @@ func (m *Manager) Close() error {
 	if m.objs != nil {
 		m.objs.close()
 		m.objs = nil
-	}
-	if m.edtObjs != nil {
-		m.edtObjs.close()
-		m.edtObjs = nil
 	}
 	m.loaded = false
 	return nil
@@ -220,46 +216,18 @@ func (m *Manager) Status() map[string]any {
 	defer m.mu.RUnlock()
 	st := map[string]any{
 		"pin_dir":       PinDir,
-		"phase":         "P5",
-		"mode":          m.mode,
+		"phase":         "edt",
 		"attached":      m.attachedDev,
 		"attached_devs": m.attachedList(),
 		"obj":           m.objPath,
 		"loaded":        m.loaded,
-		"maps":          []string{mapProfile, mapHost, mapActive, mapClassID},
+		"maps":          []string{mapProfile, mapHost, mapThrottle, mapTokenBucket},
 	}
-	if m.loaded && m.edtObjs != nil {
-		st["maps"] = []string{mapProfile, mapHost, mapThrottle, mapTokenBucket}
-		st["obj"] = m.edtObjectPath()
-	}
-	if m.loaded && m.edtObjs != nil {
-		st["profile_lpm_entries"] = m.edtObjs.ProfileLpm.MaxEntries()
-		st["host_exact_entries"] = m.edtObjs.HostExact.MaxEntries()
-	} else if m.loaded && m.objs != nil {
+	if m.loaded && m.objs != nil {
 		st["profile_lpm_entries"] = m.objs.ProfileLpm.MaxEntries()
 		st["host_exact_entries"] = m.objs.HostExact.MaxEntries()
 	}
 	return st
-}
-
-func (m *Manager) profileLpmMap() *ebpf.Map {
-	if m.edtObjs != nil {
-		return m.edtObjs.ProfileLpm
-	}
-	if m.objs != nil {
-		return m.objs.ProfileLpm
-	}
-	return nil
-}
-
-func (m *Manager) hostExactMap() *ebpf.Map {
-	if m.edtObjs != nil {
-		return m.edtObjs.HostExact
-	}
-	if m.objs != nil {
-		return m.objs.HostExact
-	}
-	return nil
 }
 
 func rateFromProfile(down, up string) (RateVal, error) {
@@ -274,10 +242,16 @@ func rateFromProfile(down, up string) (RateVal, error) {
 	return RateVal{DownBPS: d, UpBPS: u}, nil
 }
 
-func (m *Manager) flushProfileLpm() error {
-	if m.edtObjs != nil {
-		return m.flushProfileLpmEDT()
+func flushMapIter(del func(interface{}) error, iter *ebpf.MapIterator) error {
+	var kbuf, vbuf []byte
+	for iter.Next(&kbuf, &vbuf) {
+		key := append([]byte(nil), kbuf...)
+		_ = del(key)
 	}
+	return iter.Err()
+}
+
+func (m *Manager) flushProfileLpm() error {
 	if !m.loaded || m.objs == nil {
 		return nil
 	}
@@ -289,49 +263,29 @@ func (m *Manager) flushProfileLpm() error {
 	return iter.Err()
 }
 
-func flushMapIter(del func(interface{}) error, iter *ebpf.MapIterator) error {
-	var kbuf, vbuf []byte
-	for iter.Next(&kbuf, &vbuf) {
-		key := append([]byte(nil), kbuf...)
-		_ = del(key)
-	}
-	return iter.Err()
-}
-
-// FlushRuntimeMaps 清空运行期限速 map（关闭 QoS 时调用；不卸载 BPF 对象）
+// FlushRuntimeMaps 清空运行期限速 map（关闭 QoS 时调用）。
 func (m *Manager) FlushRuntimeMaps() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !m.loaded {
-		return nil
-	}
-	if m.edtObjs != nil {
-		return m.flushEDTRuntimeMaps()
-	}
-	if m.objs == nil {
+	if !m.loaded || m.objs == nil {
 		return nil
 	}
 	if err := m.flushProfileLpm(); err != nil {
 		return err
 	}
-	if m.objs.ProfileLpm6 != nil {
-		if err := flushMapIter(m.objs.ProfileLpm6.Delete, m.objs.ProfileLpm6.Iterate()); err != nil {
-			return err
-		}
-	}
 	if err := flushMapIter(m.objs.HostExact.Delete, m.objs.HostExact.Iterate()); err != nil {
 		return err
 	}
-	if err := flushMapIter(m.objs.ActiveHost.Delete, m.objs.ActiveHost.Iterate()); err != nil {
+	if err := flushMapIter(m.objs.Throttle.Delete, m.objs.Throttle.Iterate()); err != nil {
 		return err
 	}
-	if err := flushMapIter(m.objs.ClassidMap.Delete, m.objs.ClassidMap.Iterate()); err != nil {
+	if err := flushMapIter(m.objs.TokenBucket.Delete, m.objs.TokenBucket.Iterate()); err != nil {
 		return err
 	}
 	return nil
 }
 
-// ReplayState 启动时把 state 写入 Map
+// ReplayState 启动时把 state 写入 map。
 func (m *Manager) ReplayState(st store.State) error {
 	if err := m.Load(); err != nil {
 		return err
@@ -339,7 +293,6 @@ func (m *Manager) ReplayState(st store.State) error {
 	if err := m.flushProfileLpm(); err != nil {
 		return err
 	}
-	// 默认 profile：未配置速率时不写入 LPM（内网不限速）
 	if st.Shaper.PolicyCIDR != "" && !store.RateProfileUnlimited(st.Shaper.DefaultProfile) {
 		rv, err := rateFromProfile(st.Shaper.DefaultProfile.Down, st.Shaper.DefaultProfile.Up)
 		if err != nil {
@@ -364,126 +317,55 @@ func (m *Manager) ReplayState(st store.State) error {
 func (m *Manager) UpdateProfile(cidr string, rv RateVal) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.loaded {
+	if !m.loaded || m.objs == nil {
 		return errors.New("ebpf not loaded")
 	}
-	if m.edtObjs != nil {
-		v4, _, err := profileMapForCIDR(cidr)
-		if err != nil {
-			return err
-		}
-		if !v4 {
-			return fmt.Errorf("edt mode: ipv6 profile not supported")
-		}
-		k, err := IPToLPMKey(cidr)
-		if err != nil {
-			return err
-		}
-		return m.edtObjs.ProfileLpm.Put(k.Marshal(), rv.Marshal())
-	}
-	if m.objs == nil {
-		return errors.New("ebpf not loaded")
-	}
-	v4, v6, err := profileMapForCIDR(cidr)
+	v4, _, err := profileMapForCIDR(cidr)
 	if err != nil {
 		return err
 	}
-	if v4 {
-		k, err := IPToLPMKey(cidr)
-		if err != nil {
-			return err
-		}
-		return m.objs.ProfileLpm.Put(k.Marshal(), rv.Marshal())
+	if !v4 {
+		return fmt.Errorf("ipv6 profile not supported in edt mode")
 	}
-	if v6 && m.objs.ProfileLpm6 != nil {
-		k, err := IPToLPMKeyV6(cidr)
-		if err != nil {
-			return err
-		}
-		return m.objs.ProfileLpm6.Put(k.Marshal(), rv.Marshal())
+	k, err := IPToLPMKey(cidr)
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("ipv6 profile_lpm6 map not available (rebuild bpf: make bpf)")
+	return m.objs.ProfileLpm.Put(k.Marshal(), rv.Marshal())
 }
 
 func (m *Manager) DeleteProfile(cidr string) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.loaded {
+	if !m.loaded || m.objs == nil {
 		return errors.New("ebpf not loaded")
 	}
-	if m.edtObjs != nil {
-		k, err := IPToLPMKey(cidr)
-		if err != nil {
-			return err
-		}
-		return m.edtObjs.ProfileLpm.Delete(k.Marshal())
-	}
-	if m.objs == nil {
-		return errors.New("ebpf not loaded")
-	}
-	v4, v6, err := profileMapForCIDR(cidr)
+	k, err := IPToLPMKey(cidr)
 	if err != nil {
 		return err
 	}
-	if v4 {
-		k, err := IPToLPMKey(cidr)
-		if err != nil {
-			return err
-		}
-		return m.objs.ProfileLpm.Delete(k.Marshal())
-	}
-	if v6 && m.objs.ProfileLpm6 != nil {
-		k, err := IPToLPMKeyV6(cidr)
-		if err != nil {
-			return err
-		}
-		return m.objs.ProfileLpm6.Delete(k.Marshal())
-	}
-	return nil
+	return m.objs.ProfileLpm.Delete(k.Marshal())
 }
 
 func (m *Manager) UpdateHost(ip string, rv RateVal) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.loaded {
+	if !m.loaded || m.objs == nil {
 		return errors.New("ebpf not loaded")
 	}
 	k, err := IPToHostKey(ip)
 	if err != nil {
 		return err
-	}
-	if m.edtObjs != nil {
-		return m.edtObjs.HostExact.Put(k, rv.Marshal())
-	}
-	if m.objs == nil {
-		return errors.New("ebpf not loaded")
-	}
-	if rv.ClassMinor == 0 {
-		if minor, err := classMinorForIP(ip); err == nil {
-			rv.ClassMinor = minor
-		}
 	}
 	key := make([]byte, 4)
 	binary.BigEndian.PutUint32(key, k)
 	return m.objs.HostExact.Put(key, rv.Marshal())
 }
 
-func classMinorForIP(ip string) (uint32, error) {
-	k, err := IPToHostKey(ip)
-	if err != nil {
-		return 0, err
-	}
-	m := 0x100 | (k & 0xffff)
-	if m == 1 {
-		m++
-	}
-	return m, nil
-}
-
 func (m *Manager) DeleteHost(ip string) error {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.loaded {
+	if !m.loaded || m.objs == nil {
 		return errors.New("ebpf not loaded")
 	}
 	k, err := IPToHostKey(ip)
@@ -492,94 +374,31 @@ func (m *Manager) DeleteHost(ip string) error {
 	}
 	key := make([]byte, 4)
 	binary.BigEndian.PutUint32(key, k)
-	if m.edtObjs != nil {
-		return m.edtObjs.HostExact.Delete(key)
-	}
-	if m.objs == nil {
-		return errors.New("ebpf not loaded")
-	}
-	_ = m.objs.ClassidMap.Delete(key)
-	_ = m.objs.ActiveHost.Delete(key)
 	return m.objs.HostExact.Delete(key)
 }
 
-// ActiveEntry 活跃主机（Iterate active_host）
-type ActiveEntry struct {
-	IP         string `json:"ip"`
-	DownBPS    uint64 `json:"down_bps"`
-	UpBPS      uint64 `json:"up_bps"`
-	ClassMinor uint32 `json:"class_minor"`
-	BytesDown  uint64 `json:"bytes_down"`
-	BytesUp    uint64 `json:"bytes_up"`
-	LastSeenNS uint64 `json:"last_seen_ns"`
-}
-
-func (m *Manager) ListActive() ([]ActiveEntry, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if !m.loaded {
-		return nil, errors.New("ebpf not loaded")
-	}
-	if m.edtObjs != nil {
-		return nil, nil
-	}
-	if m.objs == nil {
-		return nil, errors.New("ebpf not loaded")
-	}
-	var out []ActiveEntry
-	iter := m.objs.ActiveHost.Iterate()
-	var kbuf, vbuf []byte
-	for iter.Next(&kbuf, &vbuf) {
-		if len(kbuf) < 4 || len(vbuf) < 32 {
-			continue
-		}
-		ipBE := binary.BigEndian.Uint32(kbuf[0:4])
-		act := struct {
-			bytesDown, bytesUp, lastSeen uint64
-			classMinor, flags            uint32
-		}{}
-		act.bytesDown = binary.LittleEndian.Uint64(vbuf[0:8])
-		act.bytesUp = binary.LittleEndian.Uint64(vbuf[8:16])
-		act.lastSeen = binary.LittleEndian.Uint64(vbuf[16:24])
-		act.classMinor = binary.LittleEndian.Uint32(vbuf[24:28])
-		ip := HostKeyToIP(ipBE)
-		down, up, _ := m.lookupRatesLocked(ipBE)
-		out = append(out, ActiveEntry{
-			IP: ip, DownBPS: down, UpBPS: up,
-			ClassMinor: act.classMinor, BytesDown: act.bytesDown,
-			BytesUp: act.bytesUp, LastSeenNS: act.lastSeen,
-		})
-	}
-	return out, iter.Err()
-}
-
-
 // ProfileEntry API 列表项
 type ProfileEntry struct {
-	CIDR     string `json:"cidr"`
-	DownBPS  uint64 `json:"down_bps"`
-	UpBPS    uint64 `json:"up_bps"`
+	CIDR    string `json:"cidr"`
+	DownBPS uint64 `json:"down_bps"`
+	UpBPS   uint64 `json:"up_bps"`
 }
 
 // HostEntry API 列表项
 type HostEntry struct {
-	IP       string `json:"ip"`
-	DownBPS  uint64 `json:"down_bps"`
-	UpBPS    uint64 `json:"up_bps"`
+	IP      string `json:"ip"`
+	DownBPS uint64 `json:"down_bps"`
+	UpBPS   uint64 `json:"up_bps"`
 }
 
 func (m *Manager) ListProfiles() ([]ProfileEntry, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.loaded {
-		return nil, errors.New("ebpf not loaded")
-	}
-	profileLpm := m.profileLpmMap()
-	if profileLpm == nil {
+	if !m.loaded || m.objs == nil {
 		return nil, errors.New("ebpf not loaded")
 	}
 	var out []ProfileEntry
-	iter := profileLpm.Iterate()
+	iter := m.objs.ProfileLpm.Iterate()
 	var kbuf, vbuf []byte
 	for iter.Next(&kbuf, &vbuf) {
 		if len(kbuf) < 8 || len(vbuf) < 16 {
@@ -601,15 +420,11 @@ func (m *Manager) ListProfiles() ([]ProfileEntry, error) {
 func (m *Manager) ListHosts() ([]HostEntry, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.loaded {
-		return nil, errors.New("ebpf not loaded")
-	}
-	hostExact := m.hostExactMap()
-	if hostExact == nil {
+	if !m.loaded || m.objs == nil {
 		return nil, errors.New("ebpf not loaded")
 	}
 	var out []HostEntry
-	iter := hostExact.Iterate()
+	iter := m.objs.HostExact.Iterate()
 	var kbuf, vbuf []byte
 	for iter.Next(&kbuf, &vbuf) {
 		if len(kbuf) < 4 || len(vbuf) < 16 {
@@ -623,34 +438,11 @@ func (m *Manager) ListHosts() ([]HostEntry, error) {
 	return out, iter.Err()
 }
 
-// PurgeActive 仅删除 active_host/classid_map（保留 host_exact 配置）
-func (m *Manager) PurgeActive(ip string) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if !m.loaded {
-		return errors.New("ebpf not loaded")
-	}
-	if m.edtObjs != nil {
-		return nil
-	}
-	if m.objs == nil {
-		return errors.New("ebpf not loaded")
-	}
-	k, err := IPToHostKey(ip)
-	if err != nil {
-		return err
-	}
-	key := make([]byte, 4)
-	binary.BigEndian.PutUint32(key, k)
-	_ = m.objs.ClassidMap.Delete(key)
-	return m.objs.ActiveHost.Delete(key)
-}
-
-// LookupRates 查 host_exact 再 profile_lpm（最长前缀，与 BPF trie 一致）
+// LookupRates 查 host_exact 再 profile_lpm（最长前缀）。
 func (m *Manager) LookupRates(ip string) (down, up uint64, ok bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if !m.loaded {
+	if !m.loaded || m.objs == nil {
 		return 0, 0, false
 	}
 	k, err := IPToHostKey(ip)
@@ -671,51 +463,15 @@ func ipv4PrefixAddr(addr uint32, prefix int) uint32 {
 func (m *Manager) lookupRatesLocked(hostKey uint32) (down, up uint64, ok bool) {
 	key := make([]byte, 4)
 	binary.BigEndian.PutUint32(key, hostKey)
-	hostExact := m.hostExactMap()
-	profileLpm := m.profileLpmMap()
-	if hostExact == nil || profileLpm == nil {
-		return 0, 0, false
-	}
 	var rv []byte
-	if err := hostExact.Lookup(key, &rv); err == nil && len(rv) >= 16 {
+	if err := m.objs.HostExact.Lookup(key, &rv); err == nil && len(rv) >= 16 {
 		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
 	}
 	for prefix := 32; prefix >= 0; prefix-- {
 		lpmKey := LPMKey{Prefixlen: uint32(prefix), Addr: ipv4PrefixAddr(hostKey, prefix)}.Marshal()
-		if err := profileLpm.Lookup(lpmKey, &rv); err == nil && len(rv) >= 16 {
+		if err := m.objs.ProfileLpm.Lookup(lpmKey, &rv); err == nil && len(rv) >= 16 {
 			return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
 		}
 	}
 	return 0, 0, false
-}
-
-// EachClassid 遍历 classid_map 中已分类主机
-func (m *Manager) EachClassid(fn func(ip string, minor uint32) error) error {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if !m.loaded {
-		return errors.New("ebpf not loaded")
-	}
-	if m.edtObjs != nil {
-		return nil
-	}
-	if m.objs == nil {
-		return errors.New("ebpf not loaded")
-	}
-	iter := m.objs.ClassidMap.Iterate()
-	var kbuf, vbuf []byte
-	for iter.Next(&kbuf, &vbuf) {
-		if len(kbuf) < 4 {
-			continue
-		}
-		ipBE := binary.BigEndian.Uint32(kbuf[0:4])
-		minor := uint32(0)
-		if len(vbuf) >= 4 {
-			minor = binary.LittleEndian.Uint32(vbuf[0:4])
-		}
-		if err := fn(HostKeyToIP(ipBE), minor); err != nil {
-			return err
-		}
-	}
-	return iter.Err()
 }

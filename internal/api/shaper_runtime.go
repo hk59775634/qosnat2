@@ -4,7 +4,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -12,13 +11,6 @@ import (
 
 func (srv *Server) shaperEnabled() bool {
 	return srv.store.Get().Shaper.Enabled
-}
-
-func (srv *Server) stopShaperBackground() {
-	if srv.ringCancel != nil {
-		srv.ringCancel()
-		srv.ringCancel = nil
-	}
 }
 
 func (srv *Server) shaperRuntimeDevices(st store.State) []string {
@@ -49,51 +41,74 @@ func (srv *Server) shaperRuntimeDevices(st store.State) []string {
 	return out
 }
 
-// teardownShaperRuntime 卸载运行中的 TC/eBPF 整形，保留 state 中策略配置供再次启用。
 func (srv *Server) teardownShaperRuntime() {
 	st := srv.store.Get()
-	if srv.usesEDTShaper(st) {
-		srv.teardownShaperRuntimeEDT(st)
-		return
-	}
-	srv.stopShaperBackground()
 	devLAN := srv.env.DevLAN
-
-	if devLAN != "" {
-		if err := ebpf.ResetIFBMirred(devLAN, nil); err != nil {
-			log.Printf("teardown ifb mirred %s: %v", devLAN, err)
-		}
-		ebpf.RemoveLANIngressBPF(devLAN)
-	}
-
-	if srv.bpf != nil && srv.bpf.Ready() {
-		for _, dev := range srv.shaperRuntimeDevices(st) {
-			if dev == devLAN {
-				continue
-			}
-			if err := ebpf.ResetIFBMirredOnDevice(dev, nil, false); err != nil {
-				log.Printf("teardown mirred %s: %v", dev, err)
-			}
+	srv.removeLegacyIFBPath(st)
+	for _, dev := range srv.shaperRuntimeDevices(st) {
+		if srv.bpf != nil {
 			_ = srv.bpf.DetachTCDevice(dev)
-			shaper.TeardownDevice(dev)
 		}
-		if err := srv.bpf.DetachTC(); err != nil {
-			log.Printf("teardown bpf detach: %v", err)
-		}
-		if err := srv.bpf.FlushRuntimeMaps(); err != nil {
-			log.Printf("teardown bpf flush maps: %v", err)
-		}
+		shaper.TeardownDevice(dev)
 	}
-
-	if srv.hosts != nil {
-		srv.hosts.ResetKnown()
+	if srv.bpf != nil && srv.bpf.Ready() {
+		_ = srv.bpf.DetachTC()
+		_ = srv.bpf.FlushRuntimeMaps()
 	}
-	shaper.Teardown(devLAN)
+	shaper.TeardownEDT(devLAN)
 }
 
-// applyShaperRuntime 从 state 启用 QoS 数据面（SetupP0 + eBPF + mirred）。
 func (srv *Server) applyShaperRuntime() {
 	st := srv.store.Get()
 	srv.applyShaperP0(st)
 	srv.applyEBPF(st)
+}
+
+func (srv *Server) applyShaperP0(st store.State) {
+	if srv.env.DevLAN == "" {
+		return
+	}
+	if err := shaper.SetupEDT(shaper.EDTConfig{
+		DevLAN:     srv.env.DevLAN,
+		FQFlows:    st.Shaper.FQFlows,
+		FQQuantum:  st.Shaper.FQQuantum,
+		TxQueueLen: st.System.TxQueueLenLAN,
+	}); err != nil {
+		log.Printf("edt shaper setup (non-fatal): %v", err)
+	}
+}
+
+func (srv *Server) applyEBPF(st store.State) {
+	if srv.bpf == nil {
+		return
+	}
+	srv.removeLegacyIFBPath(st)
+	if !srv.bpf.Ready() {
+		if err := srv.bpf.Load(); err != nil {
+			log.Printf("edt ebpf load: %v", err)
+			return
+		}
+		log.Printf("edt ebpf loaded")
+	}
+	if err := srv.bpf.ReplayState(st); err != nil {
+		log.Printf("edt ebpf replay: %v", err)
+	}
+	srv.purgeLegacyHostExact(st)
+	srv.syncShaperDevices(st)
+	srv.applyWGShapers(st)
+	srv.setupOCServShaper(st)
+}
+
+func (srv *Server) syncShaperDevices(st store.State) {
+	for _, dev := range srv.shaperRuntimeDevices(st) {
+		if err := shaper.SetupEDTDevice(dev, st.Shaper.FQFlows, st.Shaper.FQQuantum); err != nil {
+			log.Printf("edt device %s: %v", dev, err)
+			continue
+		}
+		if srv.bpf != nil && srv.bpf.Ready() {
+			if err := srv.bpf.AttachTCDevice(dev); err != nil {
+				log.Printf("edt attach %s: %v", dev, err)
+			}
+		}
+	}
 }

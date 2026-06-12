@@ -1,15 +1,12 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/route"
-	"github.com/hk59775634/qosnat2/internal/shaper"
-	"github.com/hk59775634/qosnat2/internal/store"
 )
 
 // ApplyAll 启动/回放：sysctl → nft(NAT) → tc → 路由（未完成引导时跳过）
@@ -52,25 +49,6 @@ func (srv *Server) ApplyAll() error {
 		srv.applyEBPF(st)
 	}
 	return nil
-}
-
-func (srv *Server) applyShaperP0(st store.State) {
-	if srv.env.DevLAN == "" {
-		return
-	}
-	if srv.usesEDTShaper(st) {
-		srv.applyShaperP0EDT(st)
-		return
-	}
-	if err := shaper.SetupP0(shaper.Config{
-		DevLAN:     srv.env.DevLAN,
-		Leaf:       st.Shaper.Leaf,
-		FQFlows:    st.Shaper.FQFlows,
-		FQQuantum:  st.Shaper.FQQuantum,
-		TxQueueLen: st.System.TxQueueLenLAN,
-	}); err != nil {
-		log.Printf("shaper setup (non-fatal): %v", err)
-	}
 }
 
 func (srv *Server) applyManagedRoutesWithRetry() {
@@ -137,80 +115,9 @@ func (srv *Server) bootApplyRetryLoop() {
 	log.Printf("apply on start: background retries exhausted")
 }
 
-// applyEBPF 在 TC 拓扑就绪后加载/附加 eBPF（引导完成或 apply-state 时调用）
-func (srv *Server) applyEBPF(st store.State) {
-	if srv.bpf == nil {
-		return
-	}
-	srv.ensureBPFMode(st)
-	if srv.usesEDTShaper(st) {
-		srv.applyEBPFEDT(st)
-		return
-	}
-	if !srv.bpf.Ready() {
-		if err := srv.bpf.Load(); err != nil {
-			log.Printf("ebpf load: %v", err)
-			return
-		}
-		log.Printf("ebpf loaded after TC/ifb0 ready")
-	}
-	if err := srv.bpf.ReplayState(st); err != nil {
-		log.Printf("ebpf replay: %v", err)
-	}
-	srv.purgeLegacyHostExact(st)
-	srv.syncShaperDevices()
-	srv.replayProfileHosts()
-	srv.reattachShaperDataPath()
-	srv.replayProfileSubnets()
-	srv.syncActiveHostHTB()
-	srv.StartBackground()
-	srv.setupWGShaper()
-}
-
-func (srv *Server) shaperMirredCIDRs(st store.State) []string {
-	return store.CollectMirredCIDRs(st.Shaper)
-}
-
-// StartBackground 启动常驻后台任务；HTB 模式额外启 ringbuf + HTB GC。
+// StartBackground 启动 ACME/证书等常驻后台任务。
 func (srv *Server) StartBackground() {
 	srv.startServiceBackground()
-	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() || srv.ringCancel != nil {
-		return
-	}
-	if srv.usesEDTShaper(srv.store.Get()) {
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	srv.ringCancel = cancel
-	if err := srv.bpf.StartRingbuf(ctx, srv.hosts); err != nil {
-		log.Printf("ringbuf: %v", err)
-		cancel()
-		srv.ringCancel = nil
-		return
-	}
-	gc := &shaper.GCRunner{
-		Hosts:   srv.hosts,
-		BPF:     srv.bpf,
-		Timeout: srv.idleTimeout(),
-		KeepVIP: srv.gcKeepProfiles,
-	}
-	interval := srv.idleTimeout() / 2
-	if interval < time.Minute {
-		interval = time.Minute
-	}
-	go shaper.StartLoop(ctx.Done(), interval, gc)
-	go func() {
-		t := time.NewTicker(30 * time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				srv.syncActiveHostHTB()
-			}
-		}
-	}()
 }
 
 func (srv *Server) startServiceBackground() {

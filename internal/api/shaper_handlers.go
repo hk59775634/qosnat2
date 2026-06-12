@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/ebpf"
-	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -20,9 +19,6 @@ func (srv *Server) syncProfileBPFMaps(cidr string, rv ebpf.RateVal) error {
 		return err
 	}
 	if ip, ok := store.ProfileHostIP(cidr); ok {
-		if minor, err := shaper.MinorForIP(ip); err == nil {
-			rv.ClassMinor = minor
-		}
 		return srv.bpf.UpdateHost(ip, rv)
 	}
 	return nil
@@ -40,7 +36,7 @@ func (srv *Server) rateVal(down, up string) (ebpf.RateVal, error) {
 	return ebpf.RateVal{DownBPS: d, UpBPS: u}, nil
 }
 
-// upsertShaperProfile 写入 BPF/HTB/state；wizard 额外同步 policy_routes 与默认 policy_cidr
+// upsertShaperProfile 写入 BPF/state；wizard 额外同步 policy_routes 与默认 policy_cidr
 // refresh=false 时由调用方批量结束后统一 refreshShaperAfterChange
 func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device string, wizard bool, refresh bool) (added bool, err error) {
 	dev, err := srv.normalizeProfileDevice(device)
@@ -163,13 +159,7 @@ func (srv *Server) handleShaperProfiles(w http.ResponseWriter, r *http.Request) 
 			writeBadRequest(w, err.Error())
 			return
 		}
-		st := srv.store.Get()
-		cidrs := srv.shaperMirredCIDRs(st)
-		resp := map[string]any{"ok": true, "added": added, "cidr": body.CIDR, "mirred_cidrs": cidrs}
-		if vErr := srv.verifyUploadPath(cidrs); vErr != nil {
-			resp["upload_path_warning"] = vErr.Error()
-		}
-		writeJSON(w, http.StatusOK, resp)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "added": added, "cidr": body.CIDR})
 	case http.MethodDelete:
 		cidr := r.URL.Query().Get("cidr")
 		if cidr == "" {
@@ -269,13 +259,7 @@ func (srv *Server) handleShaperWizard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	srv.refreshShaperAfterChange()
-	st := srv.store.Get()
-	cidrs := srv.shaperMirredCIDRs(st)
-	resp := map[string]any{"ok": true, "added": added, "cidr": body.CIDR, "mirred_cidrs": cidrs}
-	if vErr := srv.verifyUploadPath(cidrs); vErr != nil {
-		resp["upload_path_warning"] = vErr.Error()
-	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "added": added, "cidr": body.CIDR})
 }
 
 func (srv *Server) handleShaperActive(w http.ResponseWriter, r *http.Request) {

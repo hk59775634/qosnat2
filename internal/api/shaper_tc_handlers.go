@@ -47,24 +47,8 @@ func (srv *Server) handleShaperTC(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.Apply && srv.setupComplete() && srv.shaperEnabled() {
 			st := srv.store.Get()
-			if srv.usesEDTShaper(st) {
-				srv.applyShaperP0EDT(st)
-				srv.syncShaperDevicesEDT(st)
-			} else {
-				if err := shaper.SetupP0(shaper.Config{
-					DevLAN:     srv.env.DevLAN,
-					Leaf:       st.Shaper.Leaf,
-					FQFlows:    st.Shaper.FQFlows,
-					FQQuantum:  st.Shaper.FQQuantum,
-					TxQueueLen: st.System.TxQueueLenLAN,
-				}); err != nil {
-					writeInternalError(w, err.Error())
-					return
-				}
-				srv.syncShaperDevices()
-				srv.replayProfileHosts()
-				srv.reattachShaperDataPath()
-			}
+			srv.applyShaperP0(st)
+			srv.syncShaperDevices(st)
 		}
 		srv.auditLog(r, "shaper.tc", leaf)
 		st := srv.store.Get()

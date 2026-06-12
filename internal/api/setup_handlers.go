@@ -243,9 +243,8 @@ func (srv *Server) setupPrepareTC() error {
 		return nil
 	}
 	st := srv.store.Get()
-	return shaper.SetupP0(shaper.Config{
+	return shaper.SetupEDT(shaper.EDTConfig{
 		DevLAN:     srv.env.DevLAN,
-		Leaf:       st.Shaper.Leaf,
 		FQFlows:    st.Shaper.FQFlows,
 		FQQuantum:  st.Shaper.FQQuantum,
 		TxQueueLen: st.System.TxQueueLenLAN,

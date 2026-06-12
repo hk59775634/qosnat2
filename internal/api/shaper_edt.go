@@ -5,80 +5,13 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/hk59775634/qosnat2/internal/ebpf"
 	"github.com/hk59775634/qosnat2/internal/netif"
-	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
+	"github.com/hk59775634/qosnat2/internal/wg"
 )
 
-func (srv *Server) usesEDTShaper(st store.State) bool {
-	return st.Shaper.UsesEDT()
-}
-
-func (srv *Server) ensureBPFMode(st store.State) {
-	if srv.bpf == nil {
-		return
-	}
-	mode := store.EffectiveShaperMode(st.Shaper)
-	if srv.bpf.Ready() && srv.bpf.Mode() != mode {
-		srv.teardownShaperRuntime()
-		_ = srv.bpf.Close()
-	}
-	srv.bpf.SetMode(mode)
-}
-
-func (srv *Server) applyShaperP0EDT(st store.State) {
-	if srv.env.DevLAN == "" {
-		return
-	}
-	if err := shaper.SetupEDT(shaper.EDTConfig{
-		DevLAN:     srv.env.DevLAN,
-		FQFlows:    st.Shaper.FQFlows,
-		FQQuantum:  st.Shaper.FQQuantum,
-		TxQueueLen: st.System.TxQueueLenLAN,
-	}); err != nil {
-		log.Printf("edt shaper setup (non-fatal): %v", err)
-	}
-}
-
-func (srv *Server) applyEBPFEDT(st store.State) {
-	if srv.bpf == nil {
-		return
-	}
-	srv.ensureBPFMode(st)
-	srv.removeLegacyIFBPath(st)
-	if !srv.bpf.Ready() {
-		if err := srv.bpf.Load(); err != nil {
-			log.Printf("edt ebpf load: %v", err)
-			return
-		}
-		log.Printf("edt ebpf loaded")
-	}
-	if err := srv.bpf.ReplayState(st); err != nil {
-		log.Printf("edt ebpf replay: %v", err)
-	}
-	srv.purgeLegacyHostExact(st)
-	srv.syncShaperDevicesEDT(st)
-	srv.setupWGShaperEDT(st)
-	srv.setupOCServShaperEDT(st)
-}
-
-func (srv *Server) syncShaperDevicesEDT(st store.State) {
-	for _, dev := range srv.shaperRuntimeDevices(st) {
-		if err := shaper.SetupEDTDevice(dev, st.Shaper.FQFlows, st.Shaper.FQQuantum); err != nil {
-			log.Printf("edt device %s: %v", dev, err)
-			continue
-		}
-		if srv.bpf != nil && srv.bpf.Ready() {
-			if err := srv.bpf.AttachTCDeviceEDT(dev); err != nil {
-				log.Printf("edt attach %s: %v", dev, err)
-			}
-		}
-	}
-}
-
-func (srv *Server) setupWGShaperEDT(st store.State) {
+func (srv *Server) applyWGShapers(st store.State) {
 	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() {
 		return
 	}
@@ -88,9 +21,6 @@ func (srv *Server) setupWGShaperEDT(st store.State) {
 			iface = "wg0"
 		}
 		if !inst.Enabled {
-			if route.LinkExists(iface) {
-				_ = ebpf.ResetIFBMirredOnDevice(iface, nil, false)
-			}
 			_ = srv.bpf.DetachTCDevice(iface)
 			continue
 		}
@@ -98,21 +28,57 @@ func (srv *Server) setupWGShaperEDT(st store.State) {
 			log.Printf("edt wg device %s: %v", iface, err)
 			continue
 		}
-		if err := srv.bpf.AttachTCDeviceEDT(iface); err != nil {
+		if err := srv.bpf.AttachTCDevice(iface); err != nil {
 			log.Printf("edt wg attach %s: %v", iface, err)
 		}
-		srv.syncWGPeerRatesEDT(st, inst)
+		srv.syncWGPeerRates(st, inst)
 	}
 }
 
-func (srv *Server) syncWGPeerRatesEDT(st store.State, inst store.WireGuardInstance) {
-	_ = st
-	_ = inst
-	srv.syncWGPeerRates()
+func (srv *Server) syncAllWGPeerRates() {
+	st := srv.store.Get()
+	for _, inst := range st.VPN.WireGuards {
+		srv.syncWGPeerRates(st, inst)
+	}
 }
 
-func (srv *Server) setupOCServShaperEDT(st store.State) {
-	if !st.VPN.OCServ.Enabled {
+func (srv *Server) syncWGPeerRates(st store.State, inst store.WireGuardInstance) {
+	if srv.bpf == nil || !srv.bpf.Ready() {
+		return
+	}
+	for _, p := range inst.Peers {
+		ip := wg.PeerRateShapeIP(inst, p)
+		if ip == "" {
+			continue
+		}
+		cidr := store.Host32ProfileCIDR(ip)
+		if !peerRateEnabled(p) {
+			_ = srv.bpf.DeleteProfile(cidr)
+			_ = srv.bpf.DeleteHost(ip)
+			continue
+		}
+		down, up := peerRateStrings(p)
+		rv, err := srv.rateVal(down, up)
+		if err != nil {
+			log.Printf("wg peer rate %s: %v", ip, err)
+			continue
+		}
+		if err := srv.bpf.UpdateProfile(cidr, rv); err != nil {
+			log.Printf("wg bpf profile %s: %v", cidr, err)
+			continue
+		}
+		if err := srv.bpf.UpdateHost(ip, rv); err != nil {
+			log.Printf("wg bpf host %s: %v", ip, err)
+		}
+		_ = srv.store.Update(func(s *store.State) {
+			srv.assignProfileOnAdd(s, cidr, down, up, 32, strings.TrimSpace(inst.Interface))
+		})
+	}
+	_ = srv.persistStateOrLog("sync wg peer rates")
+}
+
+func (srv *Server) setupOCServShaper(st store.State) {
+	if !st.VPN.OCServ.Enabled || srv.bpf == nil || !srv.bpf.Ready() {
 		return
 	}
 	prefix := strings.TrimSpace(st.VPN.OCServ.Device)
@@ -124,10 +90,8 @@ func (srv *Server) setupOCServShaperEDT(st store.State) {
 			log.Printf("edt ocserv %s: %v", dev, err)
 			continue
 		}
-		if srv.bpf != nil && srv.bpf.Ready() {
-			if err := srv.bpf.AttachTCDeviceEDT(dev); err != nil {
-				log.Printf("edt ocserv attach %s: %v", dev, err)
-			}
+		if err := srv.bpf.AttachTCDevice(dev); err != nil {
+			log.Printf("edt ocserv attach %s: %v", dev, err)
 		}
 	}
 }
@@ -151,40 +115,11 @@ func listTunDevices(prefix string) []string {
 	return devs
 }
 
-func (srv *Server) teardownShaperRuntimeEDT(st store.State) {
-	srv.stopShaperBackground()
-	devLAN := srv.env.DevLAN
-	srv.removeLegacyIFBPath(st)
-	for _, dev := range srv.shaperRuntimeDevices(st) {
-		if srv.bpf != nil {
-			_ = srv.bpf.DetachTCDevice(dev)
-		}
-		shaper.TeardownDevice(dev)
-	}
-	if srv.bpf != nil && srv.bpf.Ready() {
-		_ = srv.bpf.DetachTC()
-		_ = srv.bpf.FlushRuntimeMaps()
-	}
-	shaper.TeardownEDT(devLAN)
-}
-
-// removeLegacyIFBPath 清除 HTB/IFB 遗留（mirred、ifb0）；须在 EDT BPF attach 之前调用。
+// removeLegacyIFBPath 清除 HTB/IFB 遗留；须在 EDT BPF attach 之前调用。
 func (srv *Server) removeLegacyIFBPath(st store.State) {
-	devLAN := srv.env.DevLAN
-	if devLAN != "" {
-		if err := ebpf.ResetIFBMirred(devLAN, nil); err != nil {
-			log.Printf("edt clear mirred %s: %v", devLAN, err)
-		}
-		ebpf.RemoveLANIngressBPF(devLAN)
-	}
 	for _, dev := range srv.shaperRuntimeDevices(st) {
-		if dev == devLAN {
-			continue
-		}
-		if err := ebpf.ResetIFBMirredOnDevice(dev, nil, false); err != nil {
-			log.Printf("edt clear mirred %s: %v", dev, err)
-		}
+		_ = exec.Command("tc", "filter", "del", "dev", dev, "ingress").Run()
 	}
-	shaper.TeardownDevice(shaper.IFBDev)
+	shaper.TeardownDevice(netif.IFBDev)
 	netif.RemoveIFB()
 }

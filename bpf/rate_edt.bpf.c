@@ -55,10 +55,14 @@ static __always_inline struct rate_val *lookup_rate_v4(__u32 addr_be)
 	return bpf_map_lookup_elem(&profile_lpm, &key);
 }
 
+// aggregate_id fq 流标识：对完整 IPv4 做混合，降低碰撞。
 static __always_inline __u32 aggregate_id(__u32 ip_be, __u8 dir)
 {
-	__u32 id = (bpf_ntohl(ip_be) & 0xffff) | ((__u32)dir << 16);
-	return id ? id : 1;
+	__u32 host = bpf_ntohl(ip_be);
+	__u32 mix = (host & 0xffff) ^ (host >> 16);
+	mix = (mix * 0x9e3779b1U) ^ ((__u32)dir << 24);
+	__u32 id = (mix % 65534U) + 1U;
+	return id;
 }
 
 static __always_inline int parse_ipv4_addrs(struct __sk_buff *skb, __u32 l3_off,

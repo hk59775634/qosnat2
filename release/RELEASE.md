@@ -40,8 +40,7 @@ CI 步骤：
 ## Release 包内容（Ubuntu 24.04 amd64）
 
 - `qosnatd-linux-amd64` — 控制面（内嵌 Web + BPF）
-- `lib/classify.bpf.o` — eBPF 分类器（HTB 旧模式）
-- `lib/rate_edt.bpf.o` — eBPF EDT 限速（默认模式）
+- `lib/rate_edt.bpf.o` — eBPF EDT 限速（唯一数据面）
 - `lib/dnsmasq-chnroutes` — 预编译 chnroutes 补丁版 dnsmasq（目标机免编译；版本切换/一键安装时自动部署到 `/usr/local/lib/qosnat2` 与 `/usr/sbin/dnsmasq`）
 
 ## 发布后

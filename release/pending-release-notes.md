@@ -5,24 +5,28 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+彻底移除 HTB/IFB 旧数据面，仅保留 EDT；升级时自动清除 state.json 中的 legacy `shaper.mode`。
 
 ## 新增
 
-- （无）
+- EDT 仪表盘 `ListActive` 基于 `throttle` / `token_bucket` LRU map 枚举活跃主机
 
 ## 优化
 
-- （无）
+- Release 包仅含 `rate_edt.bpf.o`，不再打包 `classify.bpf.o`
+- WireGuard peer 限速同步改为纯 BPF 路径（`syncAllWGPeerRates`）
 
 ## 修复
 
-- （无）
+- 修复 `wg_shaper` 递归调用与 peer 限速未写入 BPF 的问题
+- 修复 `aggregate_id` 仅用 IP 低 16 位导致 fq 流碰撞
+- 加载 state 时若含 `mode: "htb"` 或 `"edt"`，自动清除并写回磁盘
 
 ## 删除
 
-- （无）
+- 移除 HTB、IFB mirred、ringbuf、`classify.bpf` 及全部 `mode:htb` 运行时代码路径
+- 移除 `HostShaper`、TC classid 同步与 upload path 校验等 HTB 专用 API
 
 ## 其他
 
-- （无）
+- 升级后重启 `qosnatd`；`ifb0` 会在 EDT 应用时自动清理

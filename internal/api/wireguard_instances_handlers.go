@@ -386,7 +386,7 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 		if !srv.persistState(w) {
 			return
 		}
-		srv.syncWGPeerRates()
+		srv.syncAllWGPeerRates()
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodDelete:
 		name := r.URL.Query().Get("name")
