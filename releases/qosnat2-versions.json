@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061203",
+      "tag": "v2026061203",
+      "published_at": "2026-06-12T12:08:03Z",
+      "summary": "开启 QoS 且未添加 profile 时不再隐式写入 policy_cidr 限速；medium 档默认开启 WAN RPS。"
+    },
+    {
       "id": "2026061202",
       "tag": "v2026061202",
       "published_at": "2026-06-12T09:23:15Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061104",
       "published_at": "2026-06-11T17:26:10Z",
       "summary": "默认 QoS 数据面切换为 EDT + per-IP token bucket，去掉 IFB/HTB/ringbuf 路径。"
-    },
-    {
-      "id": "2026061103",
-      "tag": "v2026061103",
-      "published_at": "2026-06-11T08:05:30Z",
-      "summary": "新增 SNMP（snmpd）配置 UI 与 API，支持 SNMPv2c 只读 community 与源网段 ACL。"
     }
   ]
 }
