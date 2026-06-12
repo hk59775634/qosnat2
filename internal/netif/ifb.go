@@ -37,3 +37,13 @@ func EnsureIFBTuned(qlen int) error {
 	}
 	return SetTxQueueLen(IFBDev, EffectiveTxQLen(qlen))
 }
+
+// RemoveIFB 删除 ifb0（EDT 模式或 QoS 关闭后清理 HTB 遗留）
+func RemoveIFB() {
+	if !LinkExists(IFBDev) {
+		return
+	}
+	_ = exec.Command("tc", "qdisc", "del", "dev", IFBDev, "root").Run()
+	_ = exec.Command("tc", "qdisc", "del", "dev", IFBDev, "ingress").Run()
+	_ = exec.Command("ip", "link", "del", IFBDev).Run()
+}

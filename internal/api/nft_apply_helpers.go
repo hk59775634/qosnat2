@@ -23,18 +23,12 @@ func cloneAliases(aliases []store.AliasSet) []store.AliasSet {
 }
 
 func (srv *Server) syncedFirewallState(st store.State) store.State {
-	vp := nft.VPNFirewallFromState(st)
 	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
 	rules, _ := store.SyncAutoFilterRules(
 		st.Firewall.FilterRules,
 		wanDevs,
 		srv.env.AdminPort,
-		store.AutoInputVPN{
-			OCServEnabled: vp.OCServEnabled,
-			OCServTCP:     vp.OCServTCP,
-			OCServUDP:     vp.OCServUDP,
-			WGPorts:       vp.WGPorts,
-		},
+		nft.AutoInputFromState(st),
 		st.Firewall.WanPortForwards,
 		srv.env.DevLAN,
 		nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN),

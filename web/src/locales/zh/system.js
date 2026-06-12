@@ -173,7 +173,7 @@ export default {
     sysContact: 'sysContact',
     allowedNetworks: '允许查询的源网段（每行一个 CIDR）',
     allowedNetworksPh: '127.0.0.1/32\n192.168.1.0/24',
-    allowedNetworksHint: '启用且非仅本机时必须填写；默认仅 localhost。',
+    allowedNetworksHint: '启用且非仅本机时必须填写；默认仅 localhost。保存/应用后将在各 WAN 口自动放行 UDP 端口（源网段匹配）。',
     saveApply: '保存并应用',
     saved: 'SNMP 配置已保存',
     applied: 'SNMP 已应用',

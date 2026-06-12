@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/ebpf"
+	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/shaper"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -46,6 +47,7 @@ func (srv *Server) applyEBPFEDT(st store.State) {
 		return
 	}
 	srv.ensureBPFMode(st)
+	srv.removeLegacyIFBPath(st)
 	if !srv.bpf.Ready() {
 		if err := srv.bpf.Load(); err != nil {
 			log.Printf("edt ebpf load: %v", err)
@@ -152,6 +154,7 @@ func listTunDevices(prefix string) []string {
 func (srv *Server) teardownShaperRuntimeEDT(st store.State) {
 	srv.stopShaperBackground()
 	devLAN := srv.env.DevLAN
+	srv.removeLegacyIFBPath(st)
 	for _, dev := range srv.shaperRuntimeDevices(st) {
 		if srv.bpf != nil {
 			_ = srv.bpf.DetachTCDevice(dev)
@@ -163,4 +166,25 @@ func (srv *Server) teardownShaperRuntimeEDT(st store.State) {
 		_ = srv.bpf.FlushRuntimeMaps()
 	}
 	shaper.TeardownEDT(devLAN)
+}
+
+// removeLegacyIFBPath 清除 HTB/IFB 遗留（mirred、ifb0）；须在 EDT BPF attach 之前调用。
+func (srv *Server) removeLegacyIFBPath(st store.State) {
+	devLAN := srv.env.DevLAN
+	if devLAN != "" {
+		if err := ebpf.ResetIFBMirred(devLAN, nil); err != nil {
+			log.Printf("edt clear mirred %s: %v", devLAN, err)
+		}
+		ebpf.RemoveLANIngressBPF(devLAN)
+	}
+	for _, dev := range srv.shaperRuntimeDevices(st) {
+		if dev == devLAN {
+			continue
+		}
+		if err := ebpf.ResetIFBMirredOnDevice(dev, nil, false); err != nil {
+			log.Printf("edt clear mirred %s: %v", dev, err)
+		}
+	}
+	shaper.TeardownDevice(shaper.IFBDev)
+	netif.RemoveIFB()
 }

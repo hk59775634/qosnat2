@@ -35,11 +35,18 @@ func (srv *Server) handleSNMP(w http.ResponseWriter, r *http.Request) {
 			writeBadRequest(w, err.Error())
 			return
 		}
+		prev := srv.store.Get().SNMP
 		_ = srv.store.Update(func(st *store.State) {
 			st.SNMP = body
 		})
 		if !srv.persistState(w) {
 			return
+		}
+		if store.SNMPFirewallChanged(prev, body) {
+			if warn := srv.tryReloadNft(); warn != "" {
+				writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nft_warning": warn})
+				return
+			}
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
@@ -64,6 +71,15 @@ func (srv *Server) handleSNMPApply(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := snmpd.Apply(cfg); err != nil {
 		writeInternalError(w, err.Error())
+		return
+	}
+	if warn := srv.tryReloadNft(); warn != "" {
+		srv.auditLog(r, "snmp.apply", "")
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":          true,
+			"active":      snmpd.ShowStatus().Active,
+			"nft_warning": warn,
+		})
 		return
 	}
 	srv.auditLog(r, "snmp.apply", "")

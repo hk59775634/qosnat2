@@ -51,12 +51,7 @@ func Render(cfg Config, st store.State) (string, error) {
 		st.Firewall.FilterRules,
 		wanInputDevs,
 		cfg.AdminPort,
-		store.AutoInputVPN{
-			OCServEnabled: cfg.VPN.OCServEnabled,
-			OCServTCP:     cfg.VPN.OCServTCP,
-			OCServUDP:     cfg.VPN.OCServUDP,
-			WGPorts:       cfg.VPN.WGPorts,
-		},
+		AutoInputFromState(st),
 		st.Firewall.WanPortForwards,
 		cfg.DevLAN,
 		HairpinAddrResolver(cfg.DevLAN, cfg.DevWAN),

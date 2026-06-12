@@ -19,15 +19,9 @@ func (srv *Server) persistAutoFirewallRules() {
 // syncAutoFirewallRules 同步 WAN 入站与端口转发关联的受管防火墙规则（写入 state，不单独 Save）。
 func (srv *Server) syncAutoFirewallRules() {
 	st := srv.store.Get()
-	vp := nft.VPNFirewallFromState(st)
 	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
 	_ = srv.store.Update(func(s *store.State) {
-		synced, _ := store.SyncAutoFilterRules(s.Firewall.FilterRules, wanDevs, srv.env.AdminPort, store.AutoInputVPN{
-			OCServEnabled: vp.OCServEnabled,
-			OCServTCP:     vp.OCServTCP,
-			OCServUDP:     vp.OCServUDP,
-			WGPorts:       vp.WGPorts,
-		}, s.Firewall.WanPortForwards, srv.env.DevLAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN))
+		synced, _ := store.SyncAutoFilterRules(s.Firewall.FilterRules, wanDevs, srv.env.AdminPort, nft.AutoInputFromState(st), s.Firewall.WanPortForwards, srv.env.DevLAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN))
 		s.Firewall.FilterRules = synced
 	})
 }

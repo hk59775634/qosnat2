@@ -67,6 +67,7 @@ type Server struct {
 	lastNatStackDHCP     store.DHCPState
 	dataplaneMetrics     dataplaneMetrics
 	warpWatchCancel      context.CancelFunc
+	serviceBackgroundOnce sync.Once
 }
 
 func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {

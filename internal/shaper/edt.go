@@ -64,7 +64,7 @@ func edtRootFQArgs(dev string, fqFlows, fqQuantum int) []string {
 	return args
 }
 
-// TeardownEDT 清理 LAN 上 EDT 拓扑（不删 ifb0，兼容从 HTB 切换）
+// TeardownEDT 清理 LAN 上 EDT 拓扑
 func TeardownEDT(devLAN string) {
 	if devLAN != "" {
 		TeardownDevice(devLAN)

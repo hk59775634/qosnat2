@@ -172,7 +172,7 @@ export default {
     sysContact: 'sysContact',
     allowedNetworks: 'Allowed source networks (one CIDR per line)',
     allowedNetworksPh: '127.0.0.1/32\n192.168.1.0/24',
-    allowedNetworksHint: 'Required when enabled and not localhost-only; defaults to localhost.',
+    allowedNetworksHint: 'Required when enabled and not localhost-only; defaults to localhost. Save/apply adds WAN UDP accept rules per allowed source CIDR.',
     saveApply: 'Save & apply',
     saved: 'SNMP settings saved',
     applied: 'SNMP applied',

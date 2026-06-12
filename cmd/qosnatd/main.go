@@ -6,7 +6,6 @@ import (
 
 	"github.com/hk59775634/qosnat2/internal/api"
 	"github.com/hk59775634/qosnat2/internal/ebpf"
-	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -34,8 +33,8 @@ func runApplyState() {
 	if err := st.Load(); err != nil {
 		log.Fatalf("load state: %v", err)
 	}
-	_ = netif.EnsureIFBUp()
 	bpfM := ebpf.New()
+	bpfM.SetMode(store.EffectiveShaperMode(st.Get().Shaper))
 	if err := bpfM.Load(); err != nil {
 		log.Printf("ebpf load: %v", err)
 	}
@@ -62,8 +61,8 @@ func runServer() {
 	if err := st.Save(); err != nil {
 		log.Printf("init state file: %v", err)
 	}
-	_ = netif.EnsureIFBUp()
 	bpfM := ebpf.New()
+	bpfM.SetMode(store.EffectiveShaperMode(st.Get().Shaper))
 	if err := bpfM.Load(); err != nil {
 		log.Printf("ebpf load (P1): %v — 请确认已 make bpf 且 /usr/lib/qosnat2/classify.bpf.o 存在", err)
 	} else {

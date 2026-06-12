@@ -171,8 +171,9 @@ func (srv *Server) shaperMirredCIDRs(st store.State) []string {
 	return store.CollectMirredCIDRs(st.Shaper)
 }
 
-// StartBackground ringbuf + 空闲 GC（HTB 模式；EDT 无 ringbuf）
+// StartBackground 启动常驻后台任务；HTB 模式额外启 ringbuf + HTB GC。
 func (srv *Server) StartBackground() {
+	srv.startServiceBackground()
 	if !srv.shaperEnabled() || srv.bpf == nil || !srv.bpf.Ready() || srv.ringCancel != nil {
 		return
 	}
@@ -198,8 +199,6 @@ func (srv *Server) StartBackground() {
 		interval = time.Minute
 	}
 	go shaper.StartLoop(ctx.Done(), interval, gc)
-	srv.startACMEBackground()
-	srv.startManagedCertsBackground()
 	go func() {
 		t := time.NewTicker(30 * time.Second)
 		defer t.Stop()
@@ -212,4 +211,11 @@ func (srv *Server) StartBackground() {
 			}
 		}
 	}()
+}
+
+func (srv *Server) startServiceBackground() {
+	srv.serviceBackgroundOnce.Do(func() {
+		srv.startACMEBackground()
+		srv.startManagedCertsBackground()
+	})
 }

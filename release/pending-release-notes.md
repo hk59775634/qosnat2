@@ -5,19 +5,22 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+EDT 模式不再创建 ifb0，并修复 ACME 后台与 SNMP WAN 防火墙自动放行。
 
 ## 新增
 
-- （无）
+- SNMP 非本机监听时，各 WAN 口自动生成 UDP 161（可配置端口）入站 accept 规则（源网段匹配 `allowed_networks`）
 
 ## 优化
 
-- （无）
+- EDT 启用/卸载时清除 HTB 遗留 mirred 并删除 ifb0
+- 启动时按 `shaper.mode` 加载对应 BPF 对象，不再无条件创建 ifb0
+- ACME/证书续期后台与 HTB ringbuf 解耦，EDT 或 QoS 关闭时也能自动续期
 
 ## 修复
 
-- （无）
+- EDT 模式下 tuning 不再对不存在的 ifb0 设置 txqueuelen
+- SNMP 保存/应用后自动 reload nft，使 WAN 防火墙规则即时生效
 
 ## 删除
 
@@ -25,4 +28,4 @@
 
 ## 其他
 
-- （无）
+- HTB 旧模式（`mode: "htb"`）仍按需创建 ifb0；EDT 为默认

@@ -25,7 +25,22 @@ func DefaultSNMP() SNMPState {
 	}
 }
 
-// NormalizeSNMP 校验并补全 SNMP 配置。
+// SNMPFirewallChanged 判断 SNMP 变更是否影响 WAN 防火墙自动规则。
+func SNMPFirewallChanged(a, b SNMPState) bool {
+	if a.Enabled != b.Enabled || a.ListenLocalhostOnly != b.ListenLocalhostOnly || a.Port != b.Port {
+		return true
+	}
+	if len(a.AllowedNetworks) != len(b.AllowedNetworks) {
+		return true
+	}
+	for i := range a.AllowedNetworks {
+		if a.AllowedNetworks[i] != b.AllowedNetworks[i] {
+			return true
+		}
+	}
+	return false
+}
+
 func NormalizeSNMP(s *SNMPState) error {
 	if s == nil {
 		return fmt.Errorf("snmp config nil")

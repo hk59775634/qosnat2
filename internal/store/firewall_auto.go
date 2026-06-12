@@ -13,6 +13,7 @@ const (
 	autoIDInputHairpinFwd   = "auto-input-hairpin-fwd"
 	autoIDInputOcservTCP    = "auto-input-ocserv-tcp"
 	autoIDInputOcservUDP    = "auto-input-ocserv-udp"
+	autoIDInputSNMPPrefix   = "auto-input-snmp"
 	autoIDInputWanDrop      = "auto-input-wan-drop"
 )
 
@@ -22,6 +23,10 @@ type AutoInputVPN struct {
 	OCServTCP     int
 	OCServUDP     int
 	WGPorts       []int
+	// SNMP：启用且非仅本机监听时，在 WAN 放行 UDP 端口（源地址受 allowed_networks 约束）。
+	SNMPEnabled         bool
+	SNMPPort            int
+	SNMPAllowedNetworks []string
 }
 
 // IsAutoManagedRule 平台自动同步的受管规则（不可编辑/删除/排序）。
@@ -143,6 +148,37 @@ func BuildAutoInputRules(wanDevs []string, adminPort string, vpn AutoInputVPN) [
 				Enabled: true,
 				System:  true,
 			})
+		}
+		if vpn.SNMPEnabled {
+			port := vpn.SNMPPort
+			if port <= 0 {
+				port = 161
+			}
+			nets := vpn.SNMPAllowedNetworks
+			if len(nets) == 0 {
+				nets = []string{"0.0.0.0/0"}
+			}
+			for i, cidr := range nets {
+				cidr = strings.TrimSpace(cidr)
+				if cidr == "" || cidr == "127.0.0.1/32" {
+					continue
+				}
+				r := FilterRule{
+					ID:      fmt.Sprintf("%s-%d-%s-%d", autoIDInputSNMPPrefix, port, sfx, i),
+					Chain:   "input",
+					Action:  "accept",
+					Iif:     wan,
+					Proto:   "udp",
+					DstPort: port,
+					Comment: fmt.Sprintf("SNMP UDP/%d %s（自动）", port, wan),
+					Enabled: true,
+					System:  true,
+				}
+				if !IsAnyCIDR(cidr) {
+					r.SrcAddr = cidr
+				}
+				out = append(out, r)
+			}
 		}
 		out = append(out, FilterRule{
 			ID: autoIDInputWanDrop + "-" + sfx, Chain: "input", Action: "drop",

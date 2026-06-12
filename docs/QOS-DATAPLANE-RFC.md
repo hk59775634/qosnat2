@@ -8,6 +8,7 @@
 
 - Per-IP 8M/15M 语义：首包即生效，不依赖 userspace 建 HTB 类
 - 去掉 IFB mirred 双跳，避免万人共享兜底队列
+- **EDT 模式不创建 ifb0**；从 HTB 升级时自动清除 mirred 并删除 ifb0
 - 突发大量 VPN 用户时不崩溃
 
 ## 数据路径
@@ -57,8 +58,8 @@ go test ./internal/store/ ./internal/shaper/ ./internal/ebpf/ ...
 ## 迁移
 
 1. 现有生产若需 **保持旧行为**：在 `state.json` 写 `"mode": "htb"`
-2. 默认升级至 edt 后：关闭 QoS 再开启，或 `systemctl restart qosnatd`，使 TC 拓扑重建
-3. 验证：`bpftool map dump pinned /sys/fs/bpf/qosnat2/throttle | head`；`tc qdisc show dev ens19` 应为 `fq` 而非 `htb`
+2. 默认升级至 edt 后：关闭 QoS 再开启，或 `systemctl restart qosnatd`，使 TC 拓扑重建；**ifb0 会被自动删除**
+3. 验证：`bpftool map dump pinned /sys/fs/bpf/qosnat2/throttle | head`；`tc qdisc show dev ens19` 应为 `fq` 而非 `htb`；`ip link show ifb0` 应不存在
 
 ## 验收
 

@@ -50,6 +50,24 @@ func TestSyncAutoFilterRulesInputOrder(t *testing.T) {
 	}
 }
 
+func TestBuildAutoInputRulesSNMP(t *testing.T) {
+	rules := BuildAutoInputRules([]string{"wan0"}, "8080", AutoInputVPN{
+		SNMPEnabled:         true,
+		SNMPPort:            161,
+		SNMPAllowedNetworks: []string{"10.0.0.0/8"},
+	})
+	found := false
+	for _, r := range rules {
+		if r.ID == "auto-input-snmp-161-wan0-0" && r.Proto == "udp" && r.DstPort == 161 && r.SrcAddr == "10.0.0.0/8" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing snmp auto rule: %v", rules)
+	}
+}
+
 func TestBuildAutoInputRulesAdminPort(t *testing.T) {
 	rules := BuildAutoInputRules([]string{"wan0"}, "9090", AutoInputVPN{})
 	if len(rules) < 2 {
