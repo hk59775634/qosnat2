@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061204",
+      "tag": "v2026061204",
+      "published_at": "2026-06-12T12:13:17Z",
+      "summary": "QoS 限速完全以用户配置的 profiles 为准，移除 default_profile 隐式限速。"
+    },
+    {
       "id": "2026061203",
       "tag": "v2026061203",
       "published_at": "2026-06-12T12:08:03Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061105",
       "published_at": "2026-06-11T17:54:44Z",
       "summary": "修复 EDT 模式启用 QoS 时 fq qdisc 安装失败与 ListHosts 空指针崩溃。"
-    },
-    {
-      "id": "2026061104",
-      "tag": "v2026061104",
-      "published_at": "2026-06-11T17:26:10Z",
-      "summary": "默认 QoS 数据面切换为 EDT + per-IP token bucket，去掉 IFB/HTB/ringbuf 路径。"
     }
   ]
 }
