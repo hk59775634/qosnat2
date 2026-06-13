@@ -112,5 +112,13 @@ export default {
     ipvsadmOk: 'ipvsadm ready',
     ipvsadmMissing: 'ipvsadm not installed',
     backends: 'Backends',
+    ocservClusterTitle: 'OpenConnect cluster',
+    ocservClusterHint:
+      'Load-balance TCP and UDP (DTLS) on a WAN VIP across internal ocserv nodes. In NAT mode each RS default gateway must be this gateway; do not run local OCServ on the same port.',
+    ocservNodes: 'Internal ocserv nodes (one IP per line)',
+    ocservNodesPh: '10.0.0.10\n10.0.0.11',
+    addOcservCluster: 'Add OCServ cluster',
+    ocservAdded: 'OCServ cluster added and applied',
+    localOcservWarn: 'Local OCServ is enabled on a conflicting port; disable it or use another port first.',
   },
 }

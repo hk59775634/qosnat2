@@ -20,11 +20,12 @@ type LVSVirtualServer struct {
 	ID             string          `json:"id"`
 	VIP            string          `json:"vip"`
 	Port           int             `json:"port"`
-	Protocol       string          `json:"protocol"` // tcp | udp
+	Protocol       string          `json:"protocol"` // tcp | udp | tcp_udp
 	Scheduler      string          `json:"scheduler,omitempty"`
 	PersistenceSec int             `json:"persistence_sec,omitempty"`
 	AutoVIP        bool            `json:"auto_vip,omitempty"`
 	WANDevice      string          `json:"wan_device,omitempty"`
+	Service        string          `json:"service,omitempty"` // ocserv | ""
 	RealServers    []LVSRealServer `json:"real_servers"`
 	Comment        string          `json:"comment,omitempty"`
 }
@@ -103,9 +104,16 @@ func normalizeLVSVirtualServer(v *LVSVirtualServer, defaultWAN string) error {
 		v.Protocol = "tcp"
 	case "udp":
 		v.Protocol = "udp"
+	case "tcp_udp", "tcp+udp", "both":
+		v.Protocol = "tcp_udp"
 	default:
-		return fmt.Errorf("protocol must be tcp or udp")
+		return fmt.Errorf("protocol must be tcp, udp, or tcp_udp")
 	}
+	svc := strings.ToLower(strings.TrimSpace(v.Service))
+	if svc != "" && svc != "ocserv" {
+		return fmt.Errorf("unsupported service: %s", v.Service)
+	}
+	v.Service = svc
 	sched := strings.ToLower(strings.TrimSpace(v.Scheduler))
 	if sched == "" {
 		sched = "rr"
@@ -163,6 +171,100 @@ func lvsVSKey(v LVSVirtualServer) string {
 	return v.Protocol + "://" + v.VIP + ":" + fmt.Sprintf("%d", v.Port)
 }
 
+// LVSProtos 展开 tcp_udp（与 ForwardProtos 语义一致）。
+func LVSProtos(proto string) []string {
+	return ForwardProtos(proto)
+}
+
+// BuildLVSOCServCluster 生成 OpenConnect 集群虚拟服务（TCP+UDP 同端口，默认会话保持）。
+func BuildLVSOCServCluster(vip string, port int, nodes []string, defaultWAN string, autoVIP bool, persistenceSec int, scheduler string) (LVSVirtualServer, error) {
+	vip = strings.TrimSpace(vip)
+	if vip == "" {
+		return LVSVirtualServer{}, fmt.Errorf("vip required")
+	}
+	if port <= 0 {
+		port = 443
+	}
+	if persistenceSec <= 0 {
+		persistenceSec = 3600
+	}
+	if strings.TrimSpace(scheduler) == "" {
+		scheduler = "sh"
+	}
+	var rs []LVSRealServer
+	for _, n := range nodes {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		rs = append(rs, LVSRealServer{IP: n, Port: port, Weight: 1})
+	}
+	vs := LVSVirtualServer{
+		VIP:            vip,
+		Port:           port,
+		Protocol:       "tcp_udp",
+		Service:        "ocserv",
+		Scheduler:      scheduler,
+		PersistenceSec: persistenceSec,
+		AutoVIP:        autoVIP,
+		WANDevice:      defaultWAN,
+		RealServers:    rs,
+		Comment:        "OpenConnect cluster",
+	}
+	if err := normalizeLVSVirtualServer(&vs, defaultWAN); err != nil {
+		return LVSVirtualServer{}, err
+	}
+	return vs, nil
+}
+
+// LVSOCServClusterHint 供 UI 预填 OCServ 集群参数。
+type LVSOCServClusterHint struct {
+	DefaultPort           int `json:"default_port"`
+	DefaultPersistenceSec int `json:"default_persistence_sec"`
+	DefaultScheduler      string `json:"default_scheduler"`
+}
+
+func LVSOCServClusterHintFromState(st State) LVSOCServClusterHint {
+	port := 443
+	if st.VPN.OCServ.TCPPort > 0 {
+		port = st.VPN.OCServ.TCPPort
+	}
+	return LVSOCServClusterHint{
+		DefaultPort:           port,
+		DefaultPersistenceSec: 3600,
+		DefaultScheduler:      "sh",
+	}
+}
+
+// LVSOCServConflictsLocal 本机已启用 OCServ 且与 LVS 虚拟服务端口冲突。
+func LVSOCServConflictsLocal(vs LVSVirtualServer, o OCServState) bool {
+	if !o.Enabled {
+		return false
+	}
+	tcp, udp := 443, 443
+	if o.TCPPort > 0 {
+		tcp = o.TCPPort
+	}
+	if o.UDPPort > 0 {
+		udp = o.UDPPort
+	} else {
+		udp = tcp
+	}
+	for _, proto := range LVSProtos(vs.Protocol) {
+		switch proto {
+		case "tcp":
+			if vs.Port == tcp {
+				return true
+			}
+		case "udp":
+			if vs.Port == udp {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // NewLVSID 生成虚拟服务 ID。
 func NewLVSID() string {
 	var b [8]byte
@@ -210,7 +312,14 @@ func LVSVSConflictsForward(vs LVSVirtualServer, forwards []WanPortForward) bool 
 			continue
 		}
 		for _, proto := range ForwardProtos(f.Proto) {
-			if proto != vs.Protocol {
+			match := false
+			for _, vp := range LVSProtos(vs.Protocol) {
+				if vp == proto {
+					match = true
+					break
+				}
+			}
+			if !match {
 				continue
 			}
 			if f.DstPort != vs.Port {
@@ -225,4 +334,23 @@ func LVSVSConflictsForward(vs LVSVirtualServer, forwards []WanPortForward) bool 
 		}
 	}
 	return false
+}
+
+// CollectLVSInputEndpoints 汇总启用 LVS 时需在 WAN input 放行的 VIP:port。
+func CollectLVSInputEndpoints(l LVSState) []AutoInputLVSEndpoint {
+	if !l.Enabled {
+		return nil
+	}
+	var out []AutoInputLVSEndpoint
+	for _, vs := range l.VirtualServers {
+		for _, proto := range LVSProtos(vs.Protocol) {
+			out = append(out, AutoInputLVSEndpoint{
+				VSID:  vs.ID,
+				VIP:   vs.VIP,
+				Port:  vs.Port,
+				Proto: proto,
+			})
+		}
+	}
+	return out
 }

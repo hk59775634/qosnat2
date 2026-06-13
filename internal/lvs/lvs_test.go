@@ -10,3 +10,15 @@ func TestForwardFlag(t *testing.T) {
 		t.Fatal("dr should use -g")
 	}
 }
+
+func TestIpvsProtoFlag(t *testing.T) {
+	if ipvsProtoFlag("tcp") != "t" {
+		t.Fatal("tcp")
+	}
+	if ipvsProtoFlag("udp") != "u" {
+		t.Fatal("udp")
+	}
+	if ipvsProtoFlag("TCP") != "t" {
+		t.Fatal("TCP")
+	}
+}

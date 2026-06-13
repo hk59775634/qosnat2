@@ -8,6 +8,8 @@ const { t } = useI18n()
 const cfg = ref({ enabled: false, mode: 'nat', virtual_servers: [] })
 const status = ref({})
 const devWan = ref('')
+const ocservHint = ref({ default_port: 443, default_persistence_sec: 3600, default_scheduler: 'sh' })
+const warnings = ref([])
 const err = ref('')
 const ok = ref('')
 const installing = ref(false)
@@ -24,6 +26,15 @@ const form = ref({
   comment: '',
 })
 
+const ocservForm = ref({
+  vip: '',
+  port: 443,
+  persistence_sec: 3600,
+  scheduler: 'sh',
+  auto_vip: true,
+})
+const ocservNodesText = ref('10.0.0.10\n10.0.0.11')
+
 function parseRealServers(text, defaultPort) {
   return text
     .split(/[\n,]+/)
@@ -36,11 +47,23 @@ function parseRealServers(text, defaultPort) {
     })
 }
 
+function parseNodeIPs(text) {
+  return text
+    .split(/[\n,]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
 async function load() {
   const d = await api.lvs.get()
   cfg.value = { ...cfg.value, ...(d.config || {}) }
   status.value = d.status || {}
   devWan.value = d.dev_wan || ''
+  ocservHint.value = { ...ocservHint.value, ...(d.ocserv_hint || {}) }
+  warnings.value = d.warnings || []
+  ocservForm.value.port = ocservHint.value.default_port || 443
+  ocservForm.value.persistence_sec = ocservHint.value.default_persistence_sec || 3600
+  ocservForm.value.scheduler = ocservHint.value.default_scheduler || 'sh'
 }
 
 async function installIpvsadm() {
@@ -93,6 +116,26 @@ async function addVS() {
   }
 }
 
+async function addOcservCluster() {
+  err.value = ''
+  ok.value = ''
+  try {
+    const nodes = parseNodeIPs(ocservNodesText.value)
+    if (!nodes.length) {
+      err.value = t('nat.lvs.needRealServers')
+      return
+    }
+    await api.lvs.addOcservCluster({
+      ...ocservForm.value,
+      nodes,
+    })
+    ok.value = t('nat.lvs.ocservAdded')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
 async function removeVS(id) {
   if (!confirm(t('nat.lvs.confirmDelete'))) return
   err.value = ''
@@ -104,12 +147,21 @@ async function removeVS(id) {
   }
 }
 
+function protocolLabel(vs) {
+  if (vs.service === 'ocserv' || vs.protocol === 'tcp_udp') return 'TCP + UDP'
+  return vs.protocol
+}
+
 onMounted(load)
 </script>
 
 <template>
   <div class="page-stack">
     <PageHeader :title="t('nat.lvs.title')" :description="t('nat.lvs.description')" :ok="ok" :err="err" />
+
+    <div v-for="(w, i) in warnings" :key="i" class="card card-body text-xs text-amber-800 bg-amber-50">
+      {{ t('nat.lvs.localOcservWarn') }} {{ w }}
+    </div>
 
     <div class="card card-body space-y-3 text-sm">
       <div class="flex flex-wrap items-center gap-2 text-xs">
@@ -145,6 +197,40 @@ onMounted(load)
       </div>
     </div>
 
+    <div class="card card-body space-y-3 text-sm">
+      <h3 class="font-medium">{{ t('nat.lvs.ocservClusterTitle') }}</h3>
+      <p class="text-xs text-slate-600">{{ t('nat.lvs.ocservClusterHint') }}</p>
+      <form class="grid md:grid-cols-2 lg:grid-cols-4 gap-3 items-end" @submit.prevent="addOcservCluster">
+        <div>
+          <label class="text-xs text-slate-500">VIP</label>
+          <input v-model="ocservForm.vip" class="input-field font-mono mt-0.5" placeholder="203.0.113.10" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('nat.lvs.port') }}</label>
+          <input v-model.number="ocservForm.port" type="number" min="1" max="65535" class="input-field mt-0.5" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('nat.lvs.persistence') }}</label>
+          <input v-model.number="ocservForm.persistence_sec" type="number" min="0" class="input-field mt-0.5" />
+        </div>
+        <div class="md:col-span-2">
+          <label class="text-xs text-slate-500">{{ t('nat.lvs.ocservNodes') }}</label>
+          <textarea
+            v-model="ocservNodesText"
+            class="input-field font-mono text-xs min-h-[4rem] mt-0.5"
+            :placeholder="t('nat.lvs.ocservNodesPh')"
+          />
+        </div>
+        <div class="flex flex-col gap-2">
+          <label class="flex items-center gap-2 text-xs">
+            <input v-model="ocservForm.auto_vip" type="checkbox" />
+            {{ t('nat.lvs.autoVip') }}
+          </label>
+          <button type="submit" class="btn-secondary">{{ t('nat.lvs.addOcservCluster') }}</button>
+        </div>
+      </form>
+    </div>
+
     <form class="card card-body grid md:grid-cols-2 lg:grid-cols-4 gap-3 items-end text-sm" @submit.prevent="addVS">
       <div>
         <label class="text-xs text-slate-500">VIP</label>
@@ -159,6 +245,7 @@ onMounted(load)
         <select v-model="form.protocol" class="input-field mt-0.5">
           <option value="tcp">TCP</option>
           <option value="udp">UDP</option>
+          <option value="tcp_udp">TCP + UDP</option>
         </select>
       </div>
       <div>
@@ -203,7 +290,10 @@ onMounted(load)
           <tr v-for="vs in cfg.virtual_servers || []" :key="vs.id">
             <td class="font-mono">{{ vs.vip }}</td>
             <td>{{ vs.port }}</td>
-            <td>{{ vs.protocol }}</td>
+            <td>
+              {{ protocolLabel(vs) }}
+              <span v-if="vs.service === 'ocserv'" class="text-xs text-slate-500"> (OCServ)</span>
+            </td>
             <td>{{ vs.scheduler }}</td>
             <td class="font-mono text-xs">
               <span v-for="(rs, i) in vs.real_servers" :key="i">

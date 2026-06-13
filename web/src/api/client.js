@@ -330,6 +330,8 @@ export const api = {
     install: () => request('/api/v1/lvs/install', { method: 'POST', body: '{}' }),
     addVirtualServer: (body) =>
       request('/api/v1/lvs/virtual-servers', { method: 'POST', body: JSON.stringify(body) }),
+    addOcservCluster: (body) =>
+      request('/api/v1/lvs/ocserv-cluster', { method: 'POST', body: JSON.stringify(body) }),
     delVirtualServer: (id) =>
       request(`/api/v1/lvs/virtual-servers?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },

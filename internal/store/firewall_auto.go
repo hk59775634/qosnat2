@@ -13,6 +13,7 @@ const (
 	autoIDInputHairpinFwd   = "auto-input-hairpin-fwd"
 	autoIDInputOcservTCP    = "auto-input-ocserv-tcp"
 	autoIDInputOcservUDP    = "auto-input-ocserv-udp"
+	autoIDInputLVSPrefix    = "auto-input-lvs"
 	autoIDInputSNMPPrefix   = "auto-input-snmp"
 	autoIDInputWanDrop      = "auto-input-wan-drop"
 )
@@ -27,6 +28,16 @@ type AutoInputVPN struct {
 	SNMPEnabled         bool
 	SNMPPort            int
 	SNMPAllowedNetworks []string
+	// LVS VIP 入站放行（DstAddr=VIP）。
+	LVSEndpoints []AutoInputLVSEndpoint
+}
+
+// AutoInputLVSEndpoint WAN input 链需放行的 LVS 虚拟服务（单协议）。
+type AutoInputLVSEndpoint struct {
+	VSID  string
+	VIP   string
+	Port  int
+	Proto string
 }
 
 // IsAutoManagedRule 平台自动同步的受管规则（不可编辑/删除/排序）。
@@ -179,6 +190,27 @@ func BuildAutoInputRules(wanDevs []string, adminPort string, vpn AutoInputVPN) [
 				}
 				out = append(out, r)
 			}
+		}
+		for _, ep := range vpn.LVSEndpoints {
+			if ep.Port <= 0 || strings.TrimSpace(ep.VIP) == "" || strings.TrimSpace(ep.Proto) == "" {
+				continue
+			}
+			id := strings.TrimSpace(ep.VSID)
+			if id == "" {
+				id = "vs"
+			}
+			out = append(out, FilterRule{
+				ID:      fmt.Sprintf("%s-%s-%s-%s", autoIDInputLVSPrefix, id, ep.Proto, sfx),
+				Chain:   "input",
+				Action:  "accept",
+				Iif:     wan,
+				Proto:   ep.Proto,
+				DstAddr: ep.VIP + "/32",
+				DstPort: ep.Port,
+				Comment: fmt.Sprintf("LVS VIP %s %s/%d %s（自动）", ep.VIP, strings.ToUpper(ep.Proto), ep.Port, wan),
+				Enabled: true,
+				System:  true,
+			})
 		}
 		out = append(out, FilterRule{
 			ID: autoIDInputWanDrop + "-" + sfx, Chain: "input", Action: "drop",

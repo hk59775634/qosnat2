@@ -112,5 +112,13 @@ export default {
     ipvsadmOk: 'ipvsadm 已就绪',
     ipvsadmMissing: '未安装 ipvsadm',
     backends: '后端',
+    ocservClusterTitle: 'OpenConnect 集群',
+    ocservClusterHint:
+      '在 WAN VIP 上同时负载均衡 TCP 与 UDP（DTLS），后端为内网多台 ocserv。NAT 模式下各 RS 默认网关须指向本机；请勿与本机 OCServ 同端口并存。',
+    ocservNodes: '内网 ocserv 节点（每行一个 IP）',
+    ocservNodesPh: '10.0.0.10\n10.0.0.11',
+    addOcservCluster: '添加 OCServ 集群',
+    ocservAdded: 'OCServ 集群已添加并应用',
+    localOcservWarn: '本机 OCServ 已启用且端口冲突，请先关闭本机 OCServ 或改用其他端口。',
   },
 }

@@ -15,13 +15,24 @@ func (srv *Server) handleLVS(w http.ResponseWriter, r *http.Request) {
 		st := srv.store.Get()
 		cfg := st.LVS
 		_ = store.NormalizeLVS(&cfg, srv.env.DevWAN)
+		var warnings []string
+		if st.VPN.OCServ.Enabled {
+			for _, vs := range cfg.VirtualServers {
+				if vs.Service == "ocserv" && store.LVSOCServConflictsLocal(vs, st.VPN.OCServ) {
+					warnings = append(warnings, "local ocserv enabled on same port as LVS ocserv cluster; disable local ocserv or use a different port")
+					break
+				}
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"config":   cfg,
-			"status":   lvs.ShowStatus(),
-			"dev_wan":  srv.env.DevWAN,
-			"dev_lan":  srv.env.DevLAN,
-			"root":     os.Getuid() == 0,
-			"ipvsadm":  lvs.ShowStatus().Installed,
+			"config":       cfg,
+			"status":       lvs.ShowStatus(),
+			"dev_wan":      srv.env.DevWAN,
+			"dev_lan":      srv.env.DevLAN,
+			"root":         os.Getuid() == 0,
+			"ipvsadm":      lvs.ShowStatus().Installed,
+			"ocserv_hint":  store.LVSOCServClusterHintFromState(st),
+			"warnings":     warnings,
 		})
 	case http.MethodPut:
 		var body store.LVSState
@@ -67,7 +78,7 @@ func (srv *Server) handleLVSApply(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, err.Error())
 		return
 	}
-	if err := srv.applyLVS(cfg); err != nil {
+	if err := srv.applyLVSFromStore(); err != nil {
 		writeInternalError(w, err.Error())
 		return
 	}
@@ -177,9 +188,79 @@ func (srv *Server) applyLVSFromStore() error {
 		return nil
 	}
 	st := srv.store.Get()
-	return srv.applyLVS(st.LVS)
+	if err := srv.applyLVS(st.LVS); err != nil {
+		return err
+	}
+	srv.persistAutoFirewallRules()
+	srv.tryReloadNft()
+	return nil
 }
 
 func (srv *Server) applyLVS(cfg store.LVSState) error {
 	return lvs.Apply(lvs.Config{DevWAN: srv.env.DevWAN, State: cfg})
+}
+
+type lvsOCServClusterRequest struct {
+	VIP            string   `json:"vip"`
+	Port           int      `json:"port,omitempty"`
+	Nodes          []string `json:"nodes"`
+	PersistenceSec int      `json:"persistence_sec,omitempty"`
+	Scheduler      string   `json:"scheduler,omitempty"`
+	AutoVIP        bool     `json:"auto_vip"`
+	Comment        string   `json:"comment,omitempty"`
+}
+
+func (srv *Server) handleLVSOCServCluster(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var body lvsOCServClusterRequest
+	if err := readJSON(r, &body); err != nil {
+		writeBadJSON(w)
+		return
+	}
+	if len(body.Nodes) == 0 {
+		writeBadRequest(w, "nodes required")
+		return
+	}
+	vs, err := store.BuildLVSOCServCluster(body.VIP, body.Port, body.Nodes, srv.env.DevWAN, body.AutoVIP, body.PersistenceSec, body.Scheduler)
+	if err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	if c := strings.TrimSpace(body.Comment); c != "" {
+		vs.Comment = c
+	}
+	st := srv.store.Get()
+	if store.LVSVSConflictsForward(vs, st.Firewall.WanPortForwards) {
+		writeBadRequest(w, "conflicts with WAN port forward on same vip:port")
+		return
+	}
+	if store.LVSOCServConflictsLocal(vs, st.VPN.OCServ) {
+		writeBadRequest(w, "local ocserv is enabled on the same port; disable local ocserv first")
+		return
+	}
+	for _, existing := range st.LVS.VirtualServers {
+		if existing.VIP == vs.VIP && existing.Port == vs.Port && existing.Protocol == "tcp_udp" {
+			writeBadRequest(w, "ocserv cluster already exists for this vip:port")
+			return
+		}
+	}
+	_ = srv.store.Update(func(st *store.State) {
+		st.LVS.VirtualServers = append(st.LVS.VirtualServers, vs)
+		st.LVS.Enabled = true
+		if st.LVS.Mode == "" {
+			st.LVS.Mode = "nat"
+		}
+	})
+	if !srv.persistState(w) {
+		return
+	}
+	if err := srv.applyLVSFromStore(); err != nil {
+		writeApplyError(w, err)
+		return
+	}
+	srv.auditLog(r, "lvs.ocserv_cluster", vs.VIP)
+	writeJSON(w, http.StatusOK, vs)
 }

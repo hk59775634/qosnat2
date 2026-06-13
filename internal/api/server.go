@@ -144,6 +144,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/nat/static-mappings", srv.requireAuth(srv.handleStaticMappings))
 	m.HandleFunc("/api/v1/nat/prefix-mappings", srv.requireAuth(srv.handlePrefixMappings))
 	m.HandleFunc("/api/v1/nat/wan-forwards", srv.requireAuth(srv.handleWanForwards))
+	m.HandleFunc("/api/v1/lvs/ocserv-cluster", srv.requireAuth(srv.handleLVSOCServCluster))
 	m.HandleFunc("/api/v1/lvs/install", srv.requireAuth(srv.handleLVSInstall))
 	m.HandleFunc("/api/v1/lvs/apply", srv.requireAuth(srv.handleLVSApply))
 	m.HandleFunc("/api/v1/lvs/virtual-servers", srv.requireAuth(srv.handleLVSVirtualServers))

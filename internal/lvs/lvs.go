@@ -76,8 +76,10 @@ func Apply(cfg Config) error {
 		return err
 	}
 	for _, vs := range st.VirtualServers {
-		if err := addVirtualServer(vs, st.Mode); err != nil {
-			return err
+		for _, proto := range store.LVSProtos(vs.Protocol) {
+			if err := addVirtualServerProto(vs, proto, st.Mode); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -130,21 +132,31 @@ func clearRules() error {
 	return nil
 }
 
-func addVirtualServer(vs store.LVSVirtualServer, mode string) error {
+func ipvsProtoFlag(proto string) string {
+	switch strings.ToLower(strings.TrimSpace(proto)) {
+	case "udp":
+		return "u"
+	default:
+		return "t"
+	}
+}
+
+func addVirtualServerProto(vs store.LVSVirtualServer, proto, mode string) error {
 	fwd := forwardFlag(mode)
 	service := fmt.Sprintf("%s:%d", vs.VIP, vs.Port)
-	args := []string{"-A", "-" + strings.ToLower(vs.Protocol)[0:1], service, "-s", vs.Scheduler}
+	flag := ipvsProtoFlag(proto)
+	args := []string{"-A", "-" + flag, service, "-s", vs.Scheduler}
 	if vs.PersistenceSec > 0 {
 		args = append(args, "-p", fmt.Sprintf("%d", vs.PersistenceSec))
 	}
 	if out, err := exec.Command("ipvsadm", args...).CombinedOutput(); err != nil {
-		return fmt.Errorf("ipvsadm add vs %s: %s %w", service, strings.TrimSpace(string(out)), err)
+		return fmt.Errorf("ipvsadm add vs %s %s: %s %w", proto, service, strings.TrimSpace(string(out)), err)
 	}
 	for _, rs := range vs.RealServers {
 		backend := fmt.Sprintf("%s:%d", rs.IP, rs.Port)
-		rargs := []string{"-a", "-" + strings.ToLower(vs.Protocol)[0:1], service, "-r", backend, fwd, "-w", fmt.Sprintf("%d", rs.Weight)}
+		rargs := []string{"-a", "-" + flag, service, "-r", backend, fwd, "-w", fmt.Sprintf("%d", rs.Weight)}
 		if out, err := exec.Command("ipvsadm", rargs...).CombinedOutput(); err != nil {
-			return fmt.Errorf("ipvsadm add rs %s: %s %w", backend, strings.TrimSpace(string(out)), err)
+			return fmt.Errorf("ipvsadm add rs %s %s: %s %w", proto, backend, strings.TrimSpace(string(out)), err)
 		}
 	}
 	return nil

@@ -1354,6 +1354,13 @@ paths:
       responses:
         '200':
           description: ok
+  /api/v1/lvs/ocserv-cluster:
+    post:
+      tags: [nat]
+      summary: 添加 OpenConnect 集群（TCP+UDP 同 VIP:port，内网多台 ocserv）
+      responses:
+        '200':
+          description: created ocserv cluster virtual server
   /api/v1/lvs/virtual-servers:
     post:
       tags: [nat]

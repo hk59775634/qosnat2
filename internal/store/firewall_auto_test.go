@@ -68,6 +68,27 @@ func TestBuildAutoInputRulesSNMP(t *testing.T) {
 	}
 }
 
+func TestBuildAutoInputRulesLVS(t *testing.T) {
+	rules := BuildAutoInputRules([]string{"wan0"}, "8080", AutoInputVPN{
+		LVSEndpoints: []AutoInputLVSEndpoint{
+			{VSID: "lvs-1", VIP: "203.0.113.10", Port: 443, Proto: "tcp"},
+			{VSID: "lvs-1", VIP: "203.0.113.10", Port: 443, Proto: "udp"},
+		},
+	})
+	var tcp, udp bool
+	for _, r := range rules {
+		if r.ID == "auto-input-lvs-lvs-1-tcp-wan0" && r.DstAddr == "203.0.113.10/32" && r.DstPort == 443 {
+			tcp = true
+		}
+		if r.ID == "auto-input-lvs-lvs-1-udp-wan0" && r.Proto == "udp" {
+			udp = true
+		}
+	}
+	if !tcp || !udp {
+		t.Fatalf("missing lvs rules tcp=%v udp=%v rules=%v", tcp, udp, rules)
+	}
+}
+
 func TestBuildAutoInputRulesAdminPort(t *testing.T) {
 	rules := BuildAutoInputRules([]string{"wan0"}, "9090", AutoInputVPN{})
 	if len(rules) < 2 {
