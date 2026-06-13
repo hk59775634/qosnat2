@@ -5,19 +5,20 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+修复 LVS 在内核 6.8 上 modprobe 失败：移除已废弃的 ip_vs_nat 依赖，并解决 systemd 沙箱阻止加载模块的问题。
 
 ## 新增
 
-- （无）
+- LVS 安装时自动写入 `/etc/modules-load.d/qosnat2-ipvs.conf`，必要时 apt 安装 `linux-modules-extra`
 
 ## 优化
 
-- （无）
+- modprobe 前先检查 `/proc/modules`，已加载则跳过
 
 ## 修复
 
-- （无）
+- NAT 模式不再加载不存在的 `ip_vs_nat`（6.x 内核 NAT 仅需 `ip_vs`）
+- `qosnatd.service` 移除 `ProtectKernelModules=yes`，避免进程内 modprobe 报 Module not found
 
 ## 删除
 
@@ -25,4 +26,4 @@
 
 ## 其他
 
-- （无）
+- 新部署脚本会在安装时预置 `modules-load.d` 开机加载 ip_vs

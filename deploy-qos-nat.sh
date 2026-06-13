@@ -262,6 +262,7 @@ EOF
 }
 
 install_systemd() {
+  echo "ip_vs" > /etc/modules-load.d/qosnat2-ipvs.conf
   cat > /etc/systemd/system/qosnatd.service <<EOF
 [Unit]
 Description=qosnat2 Web control plane (REST + static UI)
@@ -277,7 +278,6 @@ RestartSec=3
 # 控制面需 root 写 TC/nft/sysctl；仅启用不影响数据面的轻量加固
 PrivateTmp=yes
 ProtectHome=read-only
-ProtectKernelModules=yes
 ProtectControlGroups=yes
 LimitNOFILE=65535
 

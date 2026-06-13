@@ -2,12 +2,15 @@ package lvs
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
+
+const modulesLoadPath = "/etc/modules-load.d/qosnat2-ipvs.conf"
 
 // Config 运行时参数。
 type Config struct {
@@ -86,20 +89,82 @@ func Apply(cfg Config) error {
 }
 
 func ensureModules(mode string) error {
-	mods := []string{"ip_vs"}
-	switch mode {
-	case "nat":
-		mods = append(mods, "ip_vs_nat")
-	case "dr":
-		mods = append(mods, "ip_vs_rr")
+	if err := ensureIPVSModule(); err != nil {
+		return err
 	}
-	for _, m := range mods {
-		if out, err := exec.Command("modprobe", m).CombinedOutput(); err != nil {
-			msg := strings.TrimSpace(string(out))
-			return fmt.Errorf("modprobe %s: %s %w", m, msg, err)
-		}
+	// 6.x 内核无独立 ip_vs_nat；NAT (-m) 由 ip_vs + nf_nat 完成。
+	if mode == "dr" {
+		_ = modprobeModule("ip_vs_rr")
 	}
 	return nil
+}
+
+func moduleLoaded(name string) bool {
+	data, err := os.ReadFile("/proc/modules")
+	if err != nil {
+		return false
+	}
+	prefix := name + " "
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func modprobeModule(name string) error {
+	if moduleLoaded(name) {
+		return nil
+	}
+	out, err := exec.Command("modprobe", name).CombinedOutput()
+	if err == nil || moduleLoaded(name) {
+		return nil
+	}
+	msg := strings.TrimSpace(string(out))
+	return fmt.Errorf("modprobe %s: %s %w", name, msg, err)
+}
+
+func ensureIPVSModule() error {
+	if moduleLoaded("ip_vs") {
+		return nil
+	}
+	if err := modprobeModule("ip_vs"); err == nil {
+		return nil
+	}
+	if err := EnsureKernelModules(); err != nil {
+		return err
+	}
+	return modprobeModule("ip_vs")
+}
+
+// EnsureKernelModules 写入 modules-load.d，并在缺少 ip_vs 时安装 linux-modules-extra。
+func EnsureKernelModules() error {
+	if err := os.WriteFile(modulesLoadPath, []byte("ip_vs\n"), 0644); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("write %s: %w", modulesLoadPath, err)
+	}
+	if moduleAvailable("ip_vs") {
+		return nil
+	}
+	kver, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		return fmt.Errorf("uname -r: %w", err)
+	}
+	pkg := "linux-modules-extra-" + strings.TrimSpace(string(kver))
+	out, err := exec.Command("apt-get", "install", "-y", "-qq", pkg).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("apt install %s (ip_vs kernel module): %s %w", pkg, strings.TrimSpace(string(out)), err)
+	}
+	_ = exec.Command("depmod", "-a").Run()
+	return nil
+}
+
+func moduleAvailable(name string) bool {
+	if moduleLoaded(name) {
+		return true
+	}
+	err := exec.Command("modinfo", name).Run()
+	return err == nil
 }
 
 func ensureVIP(dev, vip string) error {
@@ -169,8 +234,14 @@ func forwardFlag(mode string) string {
 	return "-m"
 }
 
-// Install apt 安装 ipvsadm。
+// Install apt 安装 ipvsadm 与 IPVS 内核模块依赖。
 func Install() error {
+	if err := EnsureKernelModules(); err != nil {
+		return err
+	}
+	if err := modprobeModule("ip_vs"); err != nil {
+		return err
+	}
 	if installed() {
 		return nil
 	}

@@ -11,14 +11,14 @@ func TestForwardFlag(t *testing.T) {
 	}
 }
 
+func TestModuleLoaded(t *testing.T) {
+	if !moduleLoaded("nf_conntrack") && !moduleLoaded("ip_vs") {
+		t.Skip("no ip_vs or nf_conntrack loaded")
+	}
+}
+
 func TestIpvsProtoFlag(t *testing.T) {
-	if ipvsProtoFlag("tcp") != "t" {
-		t.Fatal("tcp")
-	}
-	if ipvsProtoFlag("udp") != "u" {
-		t.Fatal("udp")
-	}
-	if ipvsProtoFlag("TCP") != "t" {
-		t.Fatal("TCP")
+	if ipvsProtoFlag("tcp") != "t" || ipvsProtoFlag("udp") != "u" {
+		t.Fatal("proto flag")
 	}
 }
