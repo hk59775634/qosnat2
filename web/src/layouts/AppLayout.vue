@@ -49,6 +49,7 @@ const menu = computed(() => [
       { path: '/nat/outbound', label: t('nav.outboundNat') },
       { path: '/nat/ipv6', label: t('nav.ipv6Nat') },
       { path: '/nat/forwards', label: t('nav.portForwards') },
+      { path: '/nat/lvs', label: t('nav.lvs') },
       { path: '/firewall/rules', label: t('nav.firewallRules') },
       { path: '/firewall/aliases', label: t('nav.aliases') },
     ],

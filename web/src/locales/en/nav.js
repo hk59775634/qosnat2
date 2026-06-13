@@ -13,6 +13,7 @@ export default {
   outboundNat: 'Outbound NAT',
   ipv6Nat: 'IPv6 translation',
   portForwards: 'Port forwards',
+  lvs: 'LVS load balancing',
   firewallRules: 'Firewall rules',
   aliases: 'Aliases',
   traffic: 'Traffic',

@@ -323,6 +323,16 @@ export const api = {
     service: (action) =>
       request('/api/v1/snmp/service', { method: 'POST', body: JSON.stringify({ action }) }),
   },
+  lvs: {
+    get: () => request('/api/v1/lvs'),
+    put: (body) => request('/api/v1/lvs', { method: 'PUT', body: JSON.stringify(body) }),
+    apply: () => request('/api/v1/lvs/apply', { method: 'POST', body: '{}' }),
+    install: () => request('/api/v1/lvs/install', { method: 'POST', body: '{}' }),
+    addVirtualServer: (body) =>
+      request('/api/v1/lvs/virtual-servers', { method: 'POST', body: JSON.stringify(body) }),
+    delVirtualServer: (id) =>
+      request(`/api/v1/lvs/virtual-servers?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
   frr: {
     get: () => request('/api/v1/frr'),
     put: (body) => request('/api/v1/frr', { method: 'PUT', body: JSON.stringify(body) }),

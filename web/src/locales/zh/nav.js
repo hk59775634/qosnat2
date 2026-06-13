@@ -13,6 +13,7 @@ export default {
   outboundNat: '出站 NAT',
   ipv6Nat: 'IPv6 翻译',
   portForwards: '端口转发',
+  lvs: 'LVS 负载均衡',
   firewallRules: '防火墙规则',
   aliases: '别名',
   traffic: '流量控制',

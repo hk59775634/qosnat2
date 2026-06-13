@@ -48,6 +48,9 @@ func (srv *Server) ApplyAll() error {
 	if srv.shaperEnabled() {
 		srv.applyEBPF(st)
 	}
+	if err := srv.applyLVSFromStore(); err != nil {
+		log.Printf("lvs apply: %v", err)
+	}
 	return nil
 }
 

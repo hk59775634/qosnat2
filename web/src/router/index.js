@@ -16,6 +16,7 @@ const routes = [
       { path: 'nat/outbound', name: 'nat-outbound', component: () => import('@/views/nat/Outbound.vue'), meta: { pageWidth: 'full' } },
       { path: 'nat/ipv6', name: 'nat-ipv6', component: () => import('@/views/nat/IPv6.vue'), meta: { pageWidth: 'full' } },
       { path: 'nat/forwards', name: 'nat-forwards', component: () => import('@/views/nat/PortForwards.vue'), meta: { pageWidth: 'full' } },
+      { path: 'nat/lvs', name: 'nat-lvs', component: () => import('@/views/nat/Lvs.vue'), meta: { pageWidth: 'full' } },
       { path: 'firewall/rules', name: 'firewall-rules', component: () => import('@/views/security/FirewallRules.vue'), meta: { pageWidth: 'full' } },
       { path: 'firewall/aliases', name: 'firewall-aliases', component: () => import('@/views/security/Aliases.vue'), meta: { pageWidth: 'full' } },
       { path: 'shaper/wizard', redirect: { name: 'shaper-profiles' } },

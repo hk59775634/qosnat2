@@ -135,6 +135,7 @@ type State struct {
 	System         SystemState       `json:"system"`
 	DHCP           DHCPState         `json:"dhcp"`
 	SNMP           SNMPState         `json:"snmp,omitempty"`
+	LVS            LVSState          `json:"lvs,omitempty"`
 	Network        NetworkState      `json:"network"`
 	VPN            VPNState          `json:"vpn"`
 	APIKeys        []APIKey             `json:"api_keys"`
@@ -175,6 +176,7 @@ func DefaultState() State {
 		},
 		DHCP:    DefaultDHCP(),
 		SNMP:    DefaultSNMP(),
+		LVS:     DefaultLVS(),
 		Network: NetworkState{Ifaces: []IfaceConfig{}, VLANs: []VLANIface{}, WanLinks: []WanLink{}, EgressPolicies: []EgressPolicy{}},
 		VPN: VPNState{
 			WireGuards: []WireGuardInstance{
@@ -427,6 +429,7 @@ func (s *Store) ensureDefaultsLocked() {
 		s.State.Network.EgressPolicies = []EgressPolicy{}
 	}
 	MigrateWanForwards(&s.State.Firewall.WanPortForwards)
+	MigrateLVS(&s.State.LVS)
 	MigrateLegacyWireGuardToInstances(&s.State.VPN)
 	if s.State.VPN.WireGuards == nil {
 		s.State.VPN.WireGuards = []WireGuardInstance{}

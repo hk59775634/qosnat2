@@ -1327,6 +1327,47 @@ paths:
         '200':
           description: ok
 
+  /api/v1/lvs:
+    get:
+      tags: [nat]
+      summary: LVS / IPVS 配置与状态
+      responses:
+        '200':
+          description: config + ipvsadm status + monitoring hints
+    put:
+      tags: [nat]
+      summary: 保存 LVS 配置（不立即应用）
+      responses:
+        '200':
+          description: ok
+  /api/v1/lvs/apply:
+    post:
+      tags: [nat]
+      summary: 应用 IPVS 规则（ipvsadm）
+      responses:
+        '200':
+          description: ok
+  /api/v1/lvs/install:
+    post:
+      tags: [nat]
+      summary: apt 安装 ipvsadm
+      responses:
+        '200':
+          description: ok
+  /api/v1/lvs/virtual-servers:
+    post:
+      tags: [nat]
+      summary: 添加虚拟服务并应用
+      responses:
+        '200':
+          description: created virtual server
+    delete:
+      tags: [nat]
+      summary: 删除虚拟服务（query id）
+      responses:
+        '200':
+          description: ok
+
   /api/v1/routes:
     get:
       tags: [network]
