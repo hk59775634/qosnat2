@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061302",
+      "tag": "v2026061302",
+      "published_at": "2026-06-13T17:42:51Z",
+      "summary": "LVS 支持 UDP 与 TCP+UDP 协议，新增 OpenConnect 内网多节点集群一键配置及 VIP 防火墙自动放行。"
+    },
+    {
       "id": "2026061301",
       "tag": "v2026061301",
       "published_at": "2026-06-13T17:08:46Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061205",
       "published_at": "2026-06-12T16:20:27Z",
       "summary": "EDT QoS 审计项全量修复：API/UI 对齐、WG/OCServ 重建路径、移除 HTB 遗留误导配置。"
-    },
-    {
-      "id": "2026061204",
-      "tag": "v2026061204",
-      "published_at": "2026-06-12T12:13:17Z",
-      "summary": "QoS 限速完全以用户配置的 profiles 为准，移除 default_profile 隐式限速。"
     }
   ]
 }
