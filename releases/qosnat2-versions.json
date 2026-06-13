@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061301",
+      "tag": "v2026061301",
+      "published_at": "2026-06-13T17:08:46Z",
+      "summary": "新增 LVS（IPVS）四层负载均衡：虚拟服务 VIP → Real Server，支持 NAT/DR 模式。"
+    },
+    {
       "id": "2026061207",
       "tag": "v2026061207",
       "published_at": "2026-06-12T17:05:24Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061204",
       "published_at": "2026-06-12T12:13:17Z",
       "summary": "QoS 限速完全以用户配置的 profiles 为准，移除 default_profile 隐式限速。"
-    },
-    {
-      "id": "2026061203",
-      "tag": "v2026061203",
-      "published_at": "2026-06-12T12:08:03Z",
-      "summary": "开启 QoS 且未添加 profile 时不再隐式写入 policy_cidr 限速；medium 档默认开启 WAN RPS。"
     }
   ]
 }

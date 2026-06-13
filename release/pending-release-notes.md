@@ -5,18 +5,15 @@
 
 ## 概要
 
-新增 LVS（IPVS）四层负载均衡：虚拟服务 VIP → Real Server，支持 NAT/DR 模式。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- `state.json` 字段 `lvs`：虚拟服务、调度算法、会话保持、Real Server 权重
-- API：`/api/v1/lvs`、apply、install、virtual-servers CRUD
-- Web：**安全 / NAT → LVS 负载均衡** 配置页（安装 ipvsadm、添加 VS/RS、保存并应用）
-- 启动回放时自动 apply IPVS；可选 Auto VIP 绑定 WAN/32
+- （无）
 
 ## 优化
 
-- 添加 VS 时检测与 WAN 端口转发 VIP:port 冲突
+- （无）
 
 ## 修复
 
@@ -28,4 +25,4 @@
 
 ## 其他
 
-- NAT 模式：Real Server 默认网关需指向本机；DR 模式需 RS 侧 lo 绑 VIP 与 ARP 配置
+- （无）
