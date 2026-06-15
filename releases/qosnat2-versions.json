@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061505",
+      "tag": "v2026061505",
+      "published_at": "2026-06-15T07:21:17Z",
+      "summary": "修复 LVS 安装 ipvsadm 时因缺少 linux-modules-extra 导致 modprobe ip_vs 失败的问题。"
+    },
+    {
       "id": "2026061504",
       "tag": "v2026061504",
       "published_at": "2026-06-15T06:33:44Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061501",
       "published_at": "2026-06-15T02:37:19Z",
       "summary": "出站 NAT 增加总开关（关闭即纯三层）；并修复 Web 登录后 session 401、策略网段默认回填等问题。"
-    },
-    {
-      "id": "2026061303",
-      "tag": "v2026061303",
-      "published_at": "2026-06-13T18:01:38Z",
-      "summary": "修复 LVS 在内核 6.8 上 modprobe 失败：移除已废弃的 ip_vs_nat 依赖，并解决 systemd 沙箱阻止加载模块的问题。"
     }
   ]
 }

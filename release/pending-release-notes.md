@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复 LVS 安装 ipvsadm 时因缺少 linux-modules-extra 导致 modprobe ip_vs 失败的问题。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -13,12 +13,11 @@
 
 ## 优化
 
-- 按当前运行内核检查 ip_vs.ko 是否存在，再决定是否 apt 安装 linux-modules-extra
+- （无）
 
 ## 修复
 
-- 安装 ipvsadm 前自动 apt update 并安装 linux-modules-extra-$(uname -r)，安装后校验模块文件
-- modprobe 失败时提示需安装的包名及内核升级后可能需要重启
+- （无）
 
 ## 删除
 
