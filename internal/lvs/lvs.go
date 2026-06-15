@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/route"
@@ -146,7 +147,37 @@ func ensureIPVSModule() error {
 	if err := EnsureKernelModules(); err != nil {
 		return err
 	}
-	return modprobeModule("ip_vs")
+	if err := modprobeModule("ip_vs"); err != nil {
+		kver := runningKernel()
+		return fmt.Errorf("%w; if kernel was upgraded recently, install linux-modules-extra-%s and reboot", err, kver)
+	}
+	return nil
+}
+
+func runningKernel() string {
+	out, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// kernelModuleFileExists 检查当前运行内核的模块树中是否存在 .ko/.ko.zst（比 modinfo 更可靠）。
+func kernelModuleFileExists(name string) bool {
+	kver := runningKernel()
+	if kver == "" {
+		return false
+	}
+	base := filepath.Join("/lib/modules", kver)
+	for _, rel := range []string{
+		filepath.Join("kernel", "net", "netfilter", "ipvs", name+".ko"),
+		filepath.Join("kernel", "net", "netfilter", "ipvs", name+".ko.zst"),
+	} {
+		if _, err := os.Stat(filepath.Join(base, rel)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // EnsureKernelModules 写入 modules-load.d，并在缺少 ip_vs 时安装 linux-modules-extra。
@@ -154,19 +185,24 @@ func EnsureKernelModules() error {
 	if err := os.WriteFile(modulesLoadPath, []byte("ip_vs\n"), 0644); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("write %s: %w", modulesLoadPath, err)
 	}
-	if moduleAvailable("ip_vs") {
+	if moduleLoaded("ip_vs") || kernelModuleFileExists("ip_vs") {
 		return nil
 	}
-	kver, err := exec.Command("uname", "-r").Output()
-	if err != nil {
-		return fmt.Errorf("uname -r: %w", err)
+	kver := runningKernel()
+	if kver == "" {
+		return fmt.Errorf("uname -r failed")
 	}
-	pkg := "linux-modules-extra-" + strings.TrimSpace(string(kver))
+	pkg := "linux-modules-extra-" + kver
+	_ = exec.Command("apt-get", "update", "-qq").Run()
 	out, err := exec.Command("apt-get", "install", "-y", "-qq", pkg).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("apt install %s (ip_vs kernel module): %s %w", pkg, strings.TrimSpace(string(out)), err)
+		msg := strings.TrimSpace(string(out))
+		return fmt.Errorf("kernel module ip_vs missing for %s: run apt install %s: %s %w", kver, pkg, msg, err)
 	}
-	_ = exec.Command("depmod", "-a").Run()
+	_ = exec.Command("depmod", "-a", kver).Run()
+	if !kernelModuleFileExists("ip_vs") {
+		return fmt.Errorf("ip_vs still missing after installing %s; reboot if the running kernel was recently upgraded", pkg)
+	}
 	return nil
 }
 
@@ -174,8 +210,7 @@ func moduleAvailable(name string) bool {
 	if moduleLoaded(name) {
 		return true
 	}
-	err := exec.Command("modinfo", name).Run()
-	return err == nil
+	return kernelModuleFileExists(name)
 }
 
 func ensureVIP(dev, vip string) error {
@@ -250,7 +285,7 @@ func Install() error {
 	if err := EnsureKernelModules(); err != nil {
 		return err
 	}
-	if err := modprobeModule("ip_vs"); err != nil {
+	if err := ensureIPVSModule(); err != nil {
 		return err
 	}
 	if installed() {
