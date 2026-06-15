@@ -149,6 +149,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/lvs/ocserv-cluster", srv.requireAuth(srv.handleLVSOCServCluster))
 	m.HandleFunc("/api/v1/lvs/install", srv.requireAuth(srv.handleLVSInstall))
 	m.HandleFunc("/api/v1/lvs/apply", srv.requireAuth(srv.handleLVSApply))
+	m.HandleFunc("/api/v1/lvs/virtual-servers/real-servers", srv.requireAuth(srv.handleLVSRealServers))
 	m.HandleFunc("/api/v1/lvs/virtual-servers", srv.requireAuth(srv.handleLVSVirtualServers))
 	m.HandleFunc("/api/v1/lvs", srv.requireAuth(srv.handleLVS))
 	m.HandleFunc("/api/v1/nat", srv.requireAuth(srv.handleNatSummary))

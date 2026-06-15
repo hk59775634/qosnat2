@@ -5,11 +5,12 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+LVS 支持为已有虚拟服务追加或移除 Real Server，无需删除重建。
 
 ## 新增
 
-- （无）
+- API `POST/DELETE /api/v1/lvs/virtual-servers/real-servers`：向指定虚拟服务添加/删除后端 RS（支持批量 `real_servers`），保存后自动应用 IPVS 并同步防火墙。
+- Web「LVS 负载均衡」列表每行可直接添加 RS、删除单个 RS（至少保留一个）。
 
 ## 优化
 

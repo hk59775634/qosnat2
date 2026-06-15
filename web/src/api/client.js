@@ -371,6 +371,13 @@ export const api = {
     install: () => request('/api/v1/lvs/install', { method: 'POST', body: '{}' }),
     addVirtualServer: (body) =>
       request('/api/v1/lvs/virtual-servers', { method: 'POST', body: JSON.stringify(body) }),
+    addRealServer: (body) =>
+      request('/api/v1/lvs/virtual-servers/real-servers', { method: 'POST', body: JSON.stringify(body) }),
+    delRealServer: (vsId, ip, port) => {
+      let q = `vs_id=${encodeURIComponent(vsId)}&ip=${encodeURIComponent(ip)}`
+      if (port) q += `&port=${encodeURIComponent(port)}`
+      return request(`/api/v1/lvs/virtual-servers/real-servers?${q}`, { method: 'DELETE' })
+    },
     addOcservCluster: (body) =>
       request('/api/v1/lvs/ocserv-cluster', { method: 'POST', body: JSON.stringify(body) }),
     delVirtualServer: (id) =>

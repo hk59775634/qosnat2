@@ -71,6 +71,47 @@ func TestBuildLVSOCServCluster(t *testing.T) {
 	}
 }
 
+func TestAddLVSRealServer(t *testing.T) {
+	l := LVSState{
+		VirtualServers: []LVSVirtualServer{{
+			ID: "lvs-1", VIP: "203.0.113.10", Port: 443, Protocol: "tcp",
+			RealServers: []LVSRealServer{{IP: "10.0.0.10", Port: 443}},
+		}},
+	}
+	vs, err := AddLVSRealServer(&l, "lvs-1", LVSRealServer{IP: "10.0.0.11"}, "eth0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vs.RealServers) != 2 {
+		t.Fatalf("rs=%d", len(vs.RealServers))
+	}
+	if _, err := AddLVSRealServer(&l, "lvs-1", LVSRealServer{IP: "10.0.0.11"}, "eth0"); err == nil {
+		t.Fatal("expected duplicate error")
+	}
+}
+
+func TestRemoveLVSRealServer(t *testing.T) {
+	l := LVSState{
+		VirtualServers: []LVSVirtualServer{{
+			ID: "lvs-1", VIP: "203.0.113.10", Port: 443, Protocol: "tcp",
+			RealServers: []LVSRealServer{
+				{IP: "10.0.0.10", Port: 443},
+				{IP: "10.0.0.11", Port: 443},
+			},
+		}},
+	}
+	vs, err := RemoveLVSRealServer(&l, "lvs-1", "10.0.0.11", 0, "eth0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vs.RealServers) != 1 || vs.RealServers[0].IP != "10.0.0.10" {
+		t.Fatalf("vs=%+v", vs.RealServers)
+	}
+	if _, err := RemoveLVSRealServer(&l, "lvs-1", "10.0.0.10", 0, "eth0"); err == nil {
+		t.Fatal("expected last rs error")
+	}
+}
+
 func TestCollectLVSInputEndpoints(t *testing.T) {
 	eps := CollectLVSInputEndpoints(LVSState{
 		Enabled: true,

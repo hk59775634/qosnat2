@@ -34,6 +34,19 @@ const ocservForm = ref({
   auto_vip: true,
 })
 const ocservNodesText = ref('10.0.0.10\n10.0.0.11')
+const rsAddDraft = ref({})
+
+function rsDraftKey(vsId) {
+  return vsId || ''
+}
+
+function getRsDraft(vsId) {
+  return rsAddDraft.value[rsDraftKey(vsId)] || ''
+}
+
+function setRsDraft(vsId, val) {
+  rsAddDraft.value = { ...rsAddDraft.value, [rsDraftKey(vsId)]: val }
+}
 
 function parseRealServers(text, defaultPort) {
   return text
@@ -130,6 +143,45 @@ async function addOcservCluster() {
       nodes,
     })
     ok.value = t('nat.lvs.ocservAdded')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+async function addRsToVS(vs) {
+  err.value = ''
+  ok.value = ''
+  const line = getRsDraft(vs.id).trim()
+  if (!line) {
+    err.value = t('nat.lvs.needRealServers')
+    return
+  }
+  const parsed = parseRealServers(line, vs.port)
+  if (!parsed.length) {
+    err.value = t('nat.lvs.needRealServers')
+    return
+  }
+  try {
+    await api.lvs.addRealServer({ vs_id: vs.id, real_servers: parsed })
+    setRsDraft(vs.id, '')
+    ok.value = t('nat.lvs.rsAdded')
+    await load()
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+async function removeRs(vs, rs) {
+  if ((vs.real_servers || []).length <= 1) {
+    err.value = t('nat.lvs.cannotRemoveLastRs')
+    return
+  }
+  if (!confirm(t('nat.lvs.confirmRemoveRs'))) return
+  err.value = ''
+  try {
+    await api.lvs.delRealServer(vs.id, rs.ip, rs.port)
+    ok.value = t('nat.lvs.rsRemoved')
     await load()
   } catch (e) {
     err.value = e.message
@@ -296,10 +348,32 @@ onMounted(load)
               <span v-if="vs.service === 'ocserv'" class="text-xs text-slate-500"> (OCServ)</span>
             </td>
             <td>{{ vs.scheduler }}</td>
-            <td class="font-mono text-xs">
-              <span v-for="(rs, i) in vs.real_servers" :key="i">
-                {{ rs.ip }}:{{ rs.port }}<span v-if="i + 1 < vs.real_servers.length">, </span>
-              </span>
+            <td class="font-mono text-xs align-top">
+              <ul class="space-y-1 mb-2">
+                <li v-for="(rs, i) in vs.real_servers" :key="i" class="flex items-center justify-between gap-2">
+                  <span>{{ rs.ip }}:{{ rs.port }}</span>
+                  <button
+                    type="button"
+                    class="text-red-600 text-xs shrink-0"
+                    :disabled="(vs.real_servers || []).length <= 1"
+                    @click="removeRs(vs, rs)"
+                  >
+                    {{ t('common.delete') }}
+                  </button>
+                </li>
+              </ul>
+              <div class="flex gap-1">
+                <input
+                  :value="getRsDraft(vs.id)"
+                  class="input-field font-mono text-xs flex-1 min-w-0"
+                  :placeholder="t('nat.lvs.addRsPh')"
+                  @input="setRsDraft(vs.id, $event.target.value)"
+                  @keyup.enter="addRsToVS(vs)"
+                />
+                <button type="button" class="btn-secondary text-xs shrink-0" @click="addRsToVS(vs)">
+                  {{ t('nat.lvs.addRs') }}
+                </button>
+              </div>
             </td>
             <td class="text-right">
               <button type="button" class="btn-danger" @click="removeVS(vs.id)">{{ t('common.delete') }}</button>

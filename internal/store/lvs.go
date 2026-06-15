@@ -295,6 +295,75 @@ func LVSOCServConflictsLocal(vs LVSVirtualServer, o OCServState) bool {
 	return false
 }
 
+// RemoveLVSRealServer 从指定虚拟服务移除 Real Server（至少保留一个）。
+func RemoveLVSRealServer(l *LVSState, vsID, ip string, port int, defaultWAN string) (LVSVirtualServer, error) {
+	if l == nil {
+		return LVSVirtualServer{}, fmt.Errorf("lvs config nil")
+	}
+	vsID = strings.TrimSpace(vsID)
+	ip = strings.TrimSpace(ip)
+	for i := range l.VirtualServers {
+		if l.VirtualServers[i].ID != vsID {
+			continue
+		}
+		vs := &l.VirtualServers[i]
+		if len(vs.RealServers) <= 1 {
+			return LVSVirtualServer{}, fmt.Errorf("cannot remove last real server")
+		}
+		var kept []LVSRealServer
+		found := false
+		for _, rs := range vs.RealServers {
+			if rs.IP != ip {
+				kept = append(kept, rs)
+				continue
+			}
+			if port > 0 && rs.Port != port {
+				kept = append(kept, rs)
+				continue
+			}
+			found = true
+		}
+		if !found {
+			return LVSVirtualServer{}, fmt.Errorf("real server not found")
+		}
+		vs.RealServers = kept
+		if err := normalizeLVSVirtualServer(vs, defaultWAN); err != nil {
+			return LVSVirtualServer{}, err
+		}
+		return *vs, nil
+	}
+	return LVSVirtualServer{}, fmt.Errorf("virtual server not found")
+}
+
+// AddLVSRealServer 向已有虚拟服务追加 Real Server。
+func AddLVSRealServer(l *LVSState, vsID string, rs LVSRealServer, defaultWAN string) (LVSVirtualServer, error) {
+	if l == nil {
+		return LVSVirtualServer{}, fmt.Errorf("lvs config nil")
+	}
+	vsID = strings.TrimSpace(vsID)
+	for i := range l.VirtualServers {
+		if l.VirtualServers[i].ID != vsID {
+			continue
+		}
+		vs := &l.VirtualServers[i]
+		if err := normalizeLVSRealServer(&rs, vs.Port); err != nil {
+			return LVSVirtualServer{}, err
+		}
+		for _, existing := range vs.RealServers {
+			if existing.IP == rs.IP && existing.Port == rs.Port {
+				return LVSVirtualServer{}, fmt.Errorf("real server %s:%d already exists", rs.IP, rs.Port)
+			}
+		}
+		vs.RealServers = append(vs.RealServers, rs)
+		if err := normalizeLVSVirtualServer(vs, defaultWAN); err != nil {
+			vs.RealServers = vs.RealServers[:len(vs.RealServers)-1]
+			return LVSVirtualServer{}, err
+		}
+		return *vs, nil
+	}
+	return LVSVirtualServer{}, fmt.Errorf("virtual server not found")
+}
+
 // NewLVSID 生成虚拟服务 ID。
 func NewLVSID() string {
 	var b [8]byte

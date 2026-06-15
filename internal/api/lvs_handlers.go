@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -178,6 +179,99 @@ func (srv *Server) handleLVSVirtualServers(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	default:
+		writeMethodNotAllowed(w)
+	}
+}
+
+func (srv *Server) handleLVSRealServers(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		var body struct {
+			VSID        string                `json:"vs_id"`
+			IP          string                `json:"ip,omitempty"`
+			Port        int                   `json:"port,omitempty"`
+			Weight      int                   `json:"weight,omitempty"`
+			RealServers []store.LVSRealServer `json:"real_servers,omitempty"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			writeBadJSON(w)
+			return
+		}
+		body.VSID = strings.TrimSpace(body.VSID)
+		toAdd := body.RealServers
+		if len(toAdd) == 0 {
+			if body.VSID == "" || strings.TrimSpace(body.IP) == "" {
+				writeBadRequest(w, "vs_id and ip (or real_servers) required")
+				return
+			}
+			toAdd = []store.LVSRealServer{{IP: body.IP, Port: body.Port, Weight: body.Weight}}
+		}
+		if body.VSID == "" {
+			writeBadRequest(w, "vs_id required")
+			return
+		}
+		var updated store.LVSVirtualServer
+		var opErr error
+		_ = srv.store.Update(func(st *store.State) {
+			for _, rs := range toAdd {
+				updated, opErr = store.AddLVSRealServer(&st.LVS, body.VSID, rs, srv.env.DevWAN)
+				if opErr != nil {
+					return
+				}
+			}
+		})
+		if opErr != nil {
+			if strings.Contains(opErr.Error(), "not found") {
+				writeNotFound(w, opErr.Error())
+				return
+			}
+			writeBadRequest(w, opErr.Error())
+			return
+		}
+		if !srv.persistState(w) {
+			return
+		}
+		if err := srv.applyLVSFromStore(); err != nil {
+			writeApplyError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
+	case http.MethodDelete:
+		vsID := strings.TrimSpace(r.URL.Query().Get("vs_id"))
+		ip := strings.TrimSpace(r.URL.Query().Get("ip"))
+		if vsID == "" || ip == "" {
+			writeBadRequest(w, "vs_id and ip query required")
+			return
+		}
+		port := 0
+		if ps := strings.TrimSpace(r.URL.Query().Get("port")); ps != "" {
+			if _, err := fmt.Sscanf(ps, "%d", &port); err != nil {
+				writeBadRequest(w, "invalid port")
+				return
+			}
+		}
+		var updated store.LVSVirtualServer
+		var addErr error
+		_ = srv.store.Update(func(st *store.State) {
+			updated, addErr = store.RemoveLVSRealServer(&st.LVS, vsID, ip, port, srv.env.DevWAN)
+		})
+		if addErr != nil {
+			if strings.Contains(addErr.Error(), "not found") {
+				writeNotFound(w, addErr.Error())
+				return
+			}
+			writeBadRequest(w, addErr.Error())
+			return
+		}
+		if !srv.persistState(w) {
+			return
+		}
+		if err := srv.applyLVSFromStore(); err != nil {
+			writeApplyError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
 	default:
 		writeMethodNotAllowed(w)
 	}

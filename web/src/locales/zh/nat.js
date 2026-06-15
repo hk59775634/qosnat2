@@ -116,6 +116,12 @@ export default {
     ipvsadmOk: 'ipvsadm 已就绪',
     ipvsadmMissing: '未安装 ipvsadm',
     backends: '后端',
+    addRs: '添加 RS',
+    addRsPh: '192.168.1.10 或 ip:port',
+    rsAdded: 'Real Server 已添加并应用',
+    rsRemoved: 'Real Server 已移除',
+    confirmRemoveRs: '移除此 Real Server？',
+    cannotRemoveLastRs: '至少保留一个 Real Server',
     ocservClusterTitle: 'OpenConnect 集群',
     ocservClusterHint:
       '在 WAN VIP 上负载均衡 TCP 与 UDP（DTLS）。TCP 使用会话保持（默认 3600s）；UDP 仅 sh 同源调度、不单独 persistence，避免与 TCP 认证会话割裂。NAT 模式下各 RS 默认网关须指向本机；防火墙会自动同步 input(VIP) 与 forward(RS) 规则。',

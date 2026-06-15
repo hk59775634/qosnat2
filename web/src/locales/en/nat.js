@@ -116,6 +116,12 @@ export default {
     ipvsadmOk: 'ipvsadm ready',
     ipvsadmMissing: 'ipvsadm not installed',
     backends: 'Backends',
+    addRs: 'Add RS',
+    addRsPh: '192.168.1.10 or ip:port',
+    rsAdded: 'Real server added and applied',
+    rsRemoved: 'Real server removed',
+    confirmRemoveRs: 'Remove this real server?',
+    cannotRemoveLastRs: 'At least one real server is required',
     ocservClusterTitle: 'OpenConnect cluster',
     ocservClusterHint:
       'Load-balance TCP and UDP (DTLS) on a WAN VIP. TCP uses persistence (default 3600s); UDP uses source-hash only without separate persistence to avoid auth split from TCP. In NAT mode each RS default gateway must be this gateway; firewall auto-syncs input (VIP) and forward (RS) rules.',
