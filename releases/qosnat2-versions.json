@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061504",
+      "tag": "v2026061504",
+      "published_at": "2026-06-15T06:33:44Z",
+      "summary": "LVS 支持 Director / Real Server 角色切换，RS 模式可通过 Web 自动配置 lo VIP、ARP 抑制与 LAN 防火墙放行。"
+    },
+    {
       "id": "2026061503",
       "tag": "v2026061503",
       "published_at": "2026-06-15T05:28:24Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061303",
       "published_at": "2026-06-13T18:01:38Z",
       "summary": "修复 LVS 在内核 6.8 上 modprobe 失败：移除已废弃的 ip_vs_nat 依赖，并解决 systemd 沙箱阻止加载模块的问题。"
-    },
-    {
-      "id": "2026061302",
-      "tag": "v2026061302",
-      "published_at": "2026-06-13T17:42:51Z",
-      "summary": "LVS 支持 UDP 与 TCP+UDP 协议，新增 OpenConnect 内网多节点集群一键配置及 VIP 防火墙自动放行。"
     }
   ]
 }
