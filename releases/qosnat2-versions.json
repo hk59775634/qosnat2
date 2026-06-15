@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061502",
+      "tag": "v2026061502",
+      "published_at": "2026-06-15T03:52:02Z",
+      "summary": "修复多 WAN 出站口与 LAN 同网卡时，内网源地址无法上网的 forward 防火墙遗漏。"
+    },
+    {
       "id": "2026061501",
       "tag": "v2026061501",
       "published_at": "2026-06-15T02:37:19Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061301",
       "published_at": "2026-06-13T17:08:46Z",
       "summary": "新增 LVS（IPVS）四层负载均衡：虚拟服务 VIP → Real Server，支持 NAT/DR 模式。"
-    },
-    {
-      "id": "2026061207",
-      "tag": "v2026061207",
-      "published_at": "2026-06-12T17:05:24Z",
-      "summary": "SNMP 监听 0.0.0.0:161 并开放 IF-MIB，支持 NMS 远程采集 WAN/LAN 接口流量。"
     }
   ]
 }
