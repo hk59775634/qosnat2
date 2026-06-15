@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061503",
+      "tag": "v2026061503",
+      "published_at": "2026-06-15T05:28:24Z",
+      "summary": "LVS 支持为已有虚拟服务追加或移除 Real Server，无需删除重建。"
+    },
+    {
       "id": "2026061502",
       "tag": "v2026061502",
       "published_at": "2026-06-15T03:52:02Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061302",
       "published_at": "2026-06-13T17:42:51Z",
       "summary": "LVS 支持 UDP 与 TCP+UDP 协议，新增 OpenConnect 内网多节点集群一键配置及 VIP 防火墙自动放行。"
-    },
-    {
-      "id": "2026061301",
-      "tag": "v2026061301",
-      "published_at": "2026-06-13T17:08:46Z",
-      "summary": "新增 LVS（IPVS）四层负载均衡：虚拟服务 VIP → Real Server，支持 NAT/DR 模式。"
     }
   ]
 }
