@@ -125,6 +125,7 @@ func Render(cfg Config, st store.State) (string, error) {
 			b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevLAN, dev))
 			b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", dev, cfg.DevLAN))
 		}
+		writeEgressSameIfaceForward(&b, cfg.DevLAN, egress)
 		// 非对称回程：公网源直达 LAN 内网段丢弃（仅 NAT 开启时）
 		if natOn {
 			allPolicyCIDRs := append(append([]string{}, routes...), egressCIDRs...)
@@ -240,6 +241,27 @@ func writeIPv4PostroutingNAT(b *strings.Builder, cfg Config, st store.State, rou
 	}
 	writeWanForwardHairpinSNAT(b, cfg, forwards)
 	b.WriteString(fmt.Sprintf("        oifname \"%s\" masquerade\n", cfg.DevWAN))
+}
+
+// writeEgressSameIfaceForward LAN 与 WanLink 同口时，转发路径为 iif=oif=LAN，需显式放行出站策略匹配流量。
+func writeEgressSameIfaceForward(b *strings.Builder, devLAN string, egress []store.ResolvedEgress) {
+	devLAN = strings.TrimSpace(devLAN)
+	if devLAN == "" {
+		return
+	}
+	for _, e := range egress {
+		if e.Device != devLAN {
+			continue
+		}
+		match := store.EgressSNATMatchClause(e.Policy)
+		if match == "" {
+			continue
+		}
+		b.WriteString(fmt.Sprintf(
+			"        iifname \"%s\" oifname \"%s\" %s accept comment \"qosnat2-egress-same-iface\"\n",
+			devLAN, e.Device, match,
+		))
+	}
 }
 
 // CheckRuleset 语法检查 ruleset（不写盘、不加载）。

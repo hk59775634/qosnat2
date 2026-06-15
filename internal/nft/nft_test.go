@@ -41,6 +41,24 @@ func TestRenderNatDisabled(t *testing.T) {
 	}
 }
 
+func TestRenderEgressSameIfaceForward(t *testing.T) {
+	st := store.DefaultState()
+	st.Network.WanLinks = []store.WanLink{
+		{ID: "wan2", Device: "ens19", Gateway: "100.64.0.1", Enabled: true},
+	}
+	st.Network.EgressPolicies = []store.EgressPolicy{
+		{ID: "eg-1", SrcCIDR: "192.168.104.0/24", WanLinkID: "wan2", SNATIP: "100.64.0.103", Enabled: true},
+	}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens20"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `iifname "ens19" oifname "ens19" ip saddr 192.168.104.0/24 accept comment "qosnat2-egress-same-iface"`
+	if !strings.Contains(body, want) {
+		t.Fatalf("missing same-iface forward rule in:\n%s", body)
+	}
+}
+
 func TestRenderPureL3EmptyPolicyRoutes(t *testing.T) {
 	st := store.DefaultState()
 	st.Nat.IPv4.PolicyRoutes = []string{}
