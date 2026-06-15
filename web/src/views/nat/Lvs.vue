@@ -200,6 +200,7 @@ onMounted(load)
     <div class="card card-body space-y-3 text-sm">
       <h3 class="font-medium">{{ t('nat.lvs.ocservClusterTitle') }}</h3>
       <p class="text-xs text-slate-600">{{ t('nat.lvs.ocservClusterHint') }}</p>
+      <p class="text-xs text-amber-800 bg-amber-50 p-2 rounded">{{ t('nat.lvs.ocservProxyProtoHint') }}</p>
       <form class="grid md:grid-cols-2 lg:grid-cols-4 gap-3 items-end" @submit.prevent="addOcservCluster">
         <div>
           <label class="text-xs text-slate-500">VIP</label>

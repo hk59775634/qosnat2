@@ -30,7 +30,9 @@ func (srv *Server) syncedFirewallState(st store.State) store.State {
 		srv.env.AdminPort,
 		nft.AutoInputFromState(st),
 		st.Firewall.WanPortForwards,
+		st.LVS,
 		srv.env.DevLAN,
+		srv.env.DevWAN,
 		nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN),
 	)
 	st.Firewall.FilterRules = rules

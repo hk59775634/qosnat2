@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,8 +19,9 @@ func writeSessionFile(path string, data []byte) error {
 }
 
 const (
-	sessionCookie = "qosnat_sess"
-	sessionTTL    = 30 * 24 * time.Hour
+	sessionCookie  = "qosnat_sess"
+	sessionHeader  = "X-Qosnat-Session"
+	sessionTTL     = 30 * 24 * time.Hour
 )
 
 type sessionStore struct {
@@ -40,7 +42,34 @@ func (s *sessionStore) load() error {
 		}
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return json.Unmarshal(b, &s.sessions)
+}
+
+func (s *sessionStore) valid(tok string) bool {
+	if tok == "" {
+		return false
+	}
+	s.mu.Lock()
+	ok := s.validLocked(tok)
+	s.mu.Unlock()
+	if ok {
+		return true
+	}
+	if err := s.load(); err != nil {
+		log.Printf("session reload: %v", err)
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.validLocked(tok)
+}
+
+func (s *sessionStore) validLocked(tok string) bool {
+	s.pruneLocked()
+	exp, ok := s.sessions[tok]
+	return ok && time.Now().Before(exp)
 }
 
 func (s *sessionStore) saveLocked() error {
@@ -73,14 +102,6 @@ func (s *sessionStore) create() (string, error) {
 	return tok, s.saveLocked()
 }
 
-func (s *sessionStore) valid(tok string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pruneLocked()
-	exp, ok := s.sessions[tok]
-	return ok && time.Now().Before(exp)
-}
-
 func (s *sessionStore) delete(tok string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -88,15 +109,26 @@ func (s *sessionStore) delete(tok string) {
 	_ = s.saveLocked()
 }
 
+func sessionTokenFromRequest(r *http.Request) string {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		if v := strings.TrimSpace(c.Value); v != "" {
+			return v
+		}
+	}
+	if h := strings.TrimSpace(r.Header.Get(sessionHeader)); h != "" {
+		return h
+	}
+	if h := strings.TrimSpace(r.Header.Get("Authorization")); len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
+		return strings.TrimSpace(h[7:])
+	}
+	return ""
+}
+
 func (srv *Server) requestAuthorized(r *http.Request) bool {
 	if srv.checkAPIKey(r) {
 		return true
 	}
-	c, err := r.Cookie(sessionCookie)
-	if err != nil {
-		return false
-	}
-	return srv.sessions.valid(c.Value)
+	return srv.sessions.valid(sessionTokenFromRequest(r))
 }
 
 func (srv *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {

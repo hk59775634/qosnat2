@@ -19,10 +19,20 @@ const (
 
 // NatIPv4State IPv4 出站 SNAT / 策略路由
 type NatIPv4State struct {
+	// Enabled 出站 IPv4 NAT 总开关；nil/省略视为 true（兼容旧 state）。
+	Enabled        *bool             `json:"enabled,omitempty"`
 	PolicyRoutes   []string          `json:"policy_routes"`
 	SharedIPs      []string          `json:"shared_ips"`
 	StaticMappings map[string]string `json:"static_mappings"`
 	PrefixMappings map[string]string `json:"prefix_mappings"`
+}
+
+// NatIPv4Enabled 是否应用 IPv4 出站 NAT（策略网段、共享 IP、1:1、masquerade 等）。
+func NatIPv4Enabled(n NatIPv4State) bool {
+	if n.Enabled == nil {
+		return true
+	}
+	return *n.Enabled
 }
 
 // Nptv6Rule RFC 6296 无状态前缀映射
@@ -57,9 +67,11 @@ type NatState struct {
 
 // DefaultNat 默认 NAT 配置
 func DefaultNat() NatState {
+	enabled := true
 	return NatState{
 		IPv4: NatIPv4State{
-			PolicyRoutes:   []string{"10.0.0.0/8"},
+			Enabled:        &enabled,
+			PolicyRoutes:   []string{},
 			SharedIPs:      nil,
 			StaticMappings: map[string]string{},
 			PrefixMappings: map[string]string{},
@@ -105,9 +117,7 @@ func ensureNatDefaults(n *NatState) {
 	if n.IPv4.PolicyRoutes == nil {
 		n.IPv4.PolicyRoutes = []string{}
 	}
-	if len(n.IPv4.PolicyRoutes) == 0 && len(def.IPv4.PolicyRoutes) > 0 {
-		n.IPv4.PolicyRoutes = append([]string(nil), def.IPv4.PolicyRoutes...)
-	}
+	// 允许空 policy_routes（纯三层 / 仅 oif masquerade）；勿再回填默认 10.0.0.0/8。
 	if n.IPv4.SharedIPs == nil {
 		n.IPv4.SharedIPs = []string{}
 	}

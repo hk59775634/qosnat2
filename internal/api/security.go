@@ -54,7 +54,7 @@ func (srv *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, tok 
 		c.Secure = true
 		c.SameSite = http.SameSiteStrictMode
 	} else {
-		c.SameSite = http.SameSiteStrictMode
+		c.SameSite = http.SameSiteLaxMode
 	}
 	http.SetCookie(w, c)
 }

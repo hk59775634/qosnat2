@@ -20,13 +20,15 @@ const prefixInner = ref('')
 const prefixOuter = ref('')
 const msg = ref('')
 const err = ref('')
+const natEnabled = ref(true)
 
 async function load() {
-  const [r, s, st, px] = await Promise.all([
+  const [r, s, st, px, ipv4] = await Promise.all([
     api.policyRoutes.list(),
     api.sharedIPs.list(),
     api.staticMappings.list(),
     api.prefixMappings.list(),
+    api.nat.ipv4.get(),
   ])
   routes.value = r || []
   shared.value = s?.ips || []
@@ -35,6 +37,20 @@ async function load() {
   wanDevice.value = s?.wan_device || ''
   staticMap.value = st || {}
   prefixMap.value = px || {}
+  natEnabled.value = ipv4?.enabled !== false
+}
+
+async function saveNatEnabled() {
+  err.value = ''
+  msg.value = ''
+  try {
+    await api.nat.ipv4.put({ enabled: natEnabled.value })
+    msg.value = t('common.saved')
+    await load()
+  } catch (e) {
+    err.value = e.message
+    await load()
+  }
 }
 
 async function addRoute() {
@@ -115,6 +131,22 @@ onMounted(load)
   <div class="page-stack">
     <PageHeader :title="t('nat.outbound.title')" :description="t('nat.outbound.description')" :err="err" />
     <p v-if="msg" class="text-green-700 text-sm mb-2">{{ msg }}</p>
+
+    <section class="card p-4 mb-6">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-lg font-semibold">{{ t('nat.outbound.masterSwitch') }}</h2>
+          <p class="text-sm text-slate-600 mt-1">{{ t('nat.outbound.masterSwitchHint') }}</p>
+        </div>
+        <label class="inline-flex items-center gap-2 cursor-pointer">
+          <input v-model="natEnabled" type="checkbox" class="rounded" @change="saveNatEnabled" />
+          <span>{{ t('nat.outbound.enabled') }}</span>
+        </label>
+      </div>
+      <p v-if="!natEnabled" class="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded px-3 py-2 mt-3">
+        {{ t('nat.outbound.pureL3Active') }}
+      </p>
+    </section>
 
     <div class="grid lg:grid-cols-2 gap-6">
       <section class="card p-4">

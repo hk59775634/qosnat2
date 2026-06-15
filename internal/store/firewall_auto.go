@@ -373,8 +373,9 @@ func BuildAutoHairpinInputRules(wanDevs []string, adminPort string, vpn AutoInpu
 // SyncAutoFilterRules 合并用户规则与自动规则。
 // forward：用户 → 端口转发 WAN→LAN → 端口转发回流 LAN→LAN。
 // input：公网 IP 环回 → 自动放行(admin/VPN) → 用户 → 自动 WAN 丢弃。
-func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, devLAN string, resolver HairpinAddrResolver) ([]FilterRule, bool) {
+func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, lvs LVSState, devLAN, defaultWAN string, resolver HairpinAddrResolver) ([]FilterRule, bool) {
 	desiredFwd := BuildAutoForwardFilterRules(forwards, devLAN)
+	desiredLVSFwd := BuildAutoLVSForwardFilterRules(lvs, devLAN, defaultWAN)
 	desiredHairpinFwd := BuildAutoHairpinForwardFilterRules(forwards, devLAN, resolver.IsLocalIP)
 	hairpinInput := BuildAutoHairpinInputRules(wanDevs, adminPort, vpn, forwards, devLAN, resolver)
 	autoInputAccept, autoInputDrop := splitAutoInputByDrop(BuildAutoInputRules(wanDevs, adminPort, vpn))
@@ -389,9 +390,10 @@ func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string,
 			userFwd = append(userFwd, r)
 		}
 	}
-	merged := append(append(append(append(append(append(
+	merged := append(append(append(append(append(append(append(
 		append([]FilterRule{}, userFwd...),
 		desiredFwd...),
+		desiredLVSFwd...),
 		desiredHairpinFwd...),
 		hairpinInput...),
 		autoInputAccept...),

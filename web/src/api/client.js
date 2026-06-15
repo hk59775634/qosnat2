@@ -1,13 +1,44 @@
 import { isApplyFailure, setApplyAlert } from '@/composables/useApplyAlert'
 
 const base = ''
+const sessionStorageKey = 'qosnat_sess'
+
+function readStoredSessionToken() {
+  try {
+    return sessionStorage.getItem(sessionStorageKey) || ''
+  } catch {
+    return ''
+  }
+}
+
+function storeSessionToken(tok) {
+  if (!tok) return
+  try {
+    sessionStorage.setItem(sessionStorageKey, tok)
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearStoredSessionToken() {
+  try {
+    sessionStorage.removeItem(sessionStorageKey)
+  } catch {
+    /* ignore */
+  }
+}
 
 export async function request(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) }
+  const tok = readStoredSessionToken()
+  if (tok) {
+    headers['X-Qosnat-Session'] = tok
+  }
   let res
   try {
     res = await fetch(`${base}${path}`, {
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      headers,
       ...opts,
     })
   } catch (e) {
@@ -38,6 +69,9 @@ export async function request(path, opts = {}) {
     }
     throw err
   }
+  if (data?.session_token) {
+    storeSessionToken(data.session_token)
+  }
   return data
 }
 
@@ -52,7 +86,10 @@ export const api = {
   login: (user, pass) =>
     request('/api/v1/login', { method: 'POST', body: JSON.stringify({ user, pass }) }),
   session: () => request('/api/v1/session'),
-  logout: () => request('/api/v1/logout', { method: 'POST' }),
+  logout: () => {
+    clearStoredSessionToken()
+    return request('/api/v1/logout', { method: 'POST' })
+  },
 
   dashboard: () => request('/api/v1/stats/dashboard'),
   metrics: {
@@ -90,6 +127,10 @@ export const api = {
   },
   nat: {
     summary: () => request('/api/v1/nat'),
+    ipv4: {
+      get: () => request('/api/v1/nat/ipv4'),
+      put: (body) => request('/api/v1/nat/ipv4', { method: 'PUT', body: JSON.stringify(body) }),
+    },
     nptv6: {
       get: () => request('/api/v1/nat/nptv6'),
       put: (body) => request('/api/v1/nat/nptv6', { method: 'PUT', body: JSON.stringify(body) }),

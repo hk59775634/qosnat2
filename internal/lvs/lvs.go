@@ -211,8 +211,8 @@ func addVirtualServerProto(vs store.LVSVirtualServer, proto, mode string) error 
 	service := fmt.Sprintf("%s:%d", vs.VIP, vs.Port)
 	flag := ipvsProtoFlag(proto)
 	args := []string{"-A", "-" + flag, service, "-s", vs.Scheduler}
-	if vs.PersistenceSec > 0 {
-		args = append(args, "-p", fmt.Sprintf("%d", vs.PersistenceSec))
+	if p := store.LVSPersistenceSec(vs, proto); p > 0 {
+		args = append(args, "-p", fmt.Sprintf("%d", p))
 	}
 	if out, err := exec.Command("ipvsadm", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("ipvsadm add vs %s %s: %s %w", proto, service, strings.TrimSpace(string(out)), err)

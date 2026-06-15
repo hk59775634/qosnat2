@@ -2,6 +2,10 @@ export default {
   outbound: {
     title: 'Outbound NAT',
     description: 'Policy routing CIDRs, shared SNAT pool, 1:1 and prefix mappings',
+    masterSwitch: 'Outbound NAT master switch',
+    masterSwitchHint: 'When off, traffic is pure L3 with no IPv4 outbound SNAT/masquerade. Settings are kept and apply when re-enabled.',
+    enabled: 'Enable outbound NAT',
+    pureL3Active: 'Pure L3 mode: policy CIDRs, shared IPs, 1:1/prefix mappings, and WAN masquerade are not applied to the firewall.',
     policyCidrs: 'Policy-route CIDRs',
     sharedPool: 'Shared public IP pool',
     static1to1: '1:1 static SNAT',
@@ -13,7 +17,7 @@ export default {
     innerPlaceholder: 'Inner IP/CIDR',
     outerPlaceholder: 'Public IP',
     addMapping: 'Add mapping',
-    noPolicy: 'No policy CIDRs',
+    noPolicy: 'No policy CIDRs (with NAT on and no CIDRs, WAN masquerade applies; turn off the master switch above for pure L3)',
     noShared: 'No shared IPs',
     noStatic: 'No static mappings',
     noPrefix: 'No prefix mappings',
@@ -114,7 +118,9 @@ export default {
     backends: 'Backends',
     ocservClusterTitle: 'OpenConnect cluster',
     ocservClusterHint:
-      'Load-balance TCP and UDP (DTLS) on a WAN VIP across internal ocserv nodes. In NAT mode each RS default gateway must be this gateway; do not run local OCServ on the same port.',
+      'Load-balance TCP and UDP (DTLS) on a WAN VIP. TCP uses persistence (default 3600s); UDP uses source-hash only without separate persistence to avoid auth split from TCP. In NAT mode each RS default gateway must be this gateway; firewall auto-syncs input (VIP) and forward (RS) rules.',
+    ocservProxyProtoHint:
+      'Plain LVS does not send PROXY protocol to RS; do not enable listen-proxy-proto on backend ocserv unless HAProxy (or similar) between LVS and ocserv sends PROXY v1/v2.',
     ocservNodes: 'Internal ocserv nodes (one IP per line)',
     ocservNodesPh: '10.0.0.10\n10.0.0.11',
     addOcservCluster: 'Add OCServ cluster',

@@ -115,9 +115,6 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, "session error")
 		return
 	}
-	if len(body.PolicyRoutes) == 0 {
-		body.PolicyRoutes = []string{"10.0.0.0/8"}
-	}
 	for i, cidr := range body.PolicyRoutes {
 		if err := store.ValidateCIDR(cidr); err != nil {
 			writeBadRequest(w, "policy_routes: "+err.Error())
@@ -149,6 +146,9 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 			st.System.Hostname = body.Hostname
 		}
 		st.Shaper.PolicyCIDR = body.PolicyRoutes[0]
+		if len(body.PolicyRoutes) == 0 {
+			st.Shaper.PolicyCIDR = ""
+		}
 		if body.DevLAN != "" {
 			st.DHCP.Interface = body.DevLAN
 			if body.EnableDHCP {
@@ -208,7 +208,7 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		srv.setSessionCookie(w, r, tok)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ok":             dataplaneOK,
 		"setup_complete": dataplaneOK,
 		"dev_lan":        body.DevLAN,
@@ -220,7 +220,12 @@ func (srv *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 			ips, _ := nft.ResolveSharedIPs(nft.Config{DevLAN: body.DevLAN, DevWAN: body.DevWAN}, srv.store.Get())
 			return len(ips) == 0
 		}(),
-	})
+	}
+	if err == nil && dataplaneOK {
+		resp["session_token"] = tok
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func enableDataplaneOneshot() error {

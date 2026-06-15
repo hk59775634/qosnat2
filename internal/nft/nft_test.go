@@ -10,6 +10,53 @@ import (
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
+func TestRenderNatDisabled(t *testing.T) {
+	st := store.DefaultState()
+	disabled := false
+	st.Nat.IPv4.Enabled = &disabled
+	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8"}
+	st.Nat.IPv4.SharedIPs = []string{"203.0.113.10"}
+	st.Nat.IPv4.StaticMappings = map[string]string{"10.0.0.1": "203.0.113.20"}
+	st.Network.EgressPolicies = []store.EgressPolicy{
+		{ID: "eg-1", CIDR: "10.250.0.0/24", WanLinkID: "wan-us", SNATIP: "100.64.0.249", Enabled: true},
+	}
+	st.Network.WanLinks = []store.WanLink{
+		{ID: "wan-us", Device: "ens20", Gateway: "100.64.0.1", Enabled: true},
+	}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := strings.Split(body, "chain postrouting {")[1]
+	post = strings.Split(post, "    chain forward {")[0]
+	for _, bad := range []string{"masquerade", " snat ", "numgen inc"} {
+		if strings.Contains(post, bad) {
+			t.Fatalf("NAT disabled must not emit %q in postrouting:\n%s", bad, post)
+		}
+	}
+	fwd := strings.Split(body, "chain forward {")[1]
+	fwd = strings.Split(fwd, "    }\n\n")[0]
+	if strings.Contains(fwd, `ip daddr 10.0.0.0/8 ip saddr != 10.0.0.0/8 drop`) {
+		t.Fatal("asymmetric drop must be skipped when NAT disabled")
+	}
+}
+
+func TestRenderPureL3EmptyPolicyRoutes(t *testing.T) {
+	st := store.DefaultState()
+	st.Nat.IPv4.PolicyRoutes = []string{}
+	st.Shaper.PolicyCIDR = "10.0.0.0/8"
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, `ip saddr 10.0.0.0/8 oifname "ens18"`) {
+		t.Fatal("empty policy_routes must not SNAT 10.0.0.0/8 from shaper fallback")
+	}
+	if !strings.Contains(body, `oifname "ens18" masquerade`) {
+		t.Fatal("missing catch-all WAN masquerade for pure L3")
+	}
+}
+
 func TestRenderSNATAndFilter(t *testing.T) {
 	st := store.DefaultState()
 	st.Firewall.FilterRules = []store.FilterRule{{

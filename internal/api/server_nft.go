@@ -21,7 +21,7 @@ func (srv *Server) syncAutoFirewallRules() {
 	st := srv.store.Get()
 	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
 	_ = srv.store.Update(func(s *store.State) {
-		synced, _ := store.SyncAutoFilterRules(s.Firewall.FilterRules, wanDevs, srv.env.AdminPort, nft.AutoInputFromState(st), s.Firewall.WanPortForwards, srv.env.DevLAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN))
+		synced, _ := store.SyncAutoFilterRules(s.Firewall.FilterRules, wanDevs, srv.env.AdminPort, nft.AutoInputFromState(st), s.Firewall.WanPortForwards, st.LVS, srv.env.DevLAN, srv.env.DevWAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN))
 		s.Firewall.FilterRules = synced
 	})
 }

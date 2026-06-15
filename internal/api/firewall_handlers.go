@@ -35,7 +35,7 @@ func (srv *Server) handleFirewallRulesGet(w http.ResponseWriter, r *http.Request
 	}
 	vp := nft.VPNFirewallFromState(st)
 	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
-	if synced, ok := store.SyncAutoFilterRules(applied, wanDevs, srv.env.AdminPort, nft.AutoInputFromState(st), st.Firewall.WanPortForwards, srv.env.DevLAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN)); ok {
+	if synced, ok := store.SyncAutoFilterRules(applied, wanDevs, srv.env.AdminPort, nft.AutoInputFromState(st), st.Firewall.WanPortForwards, st.LVS, srv.env.DevLAN, srv.env.DevWAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN)); ok {
 		applied = synced
 		needSave = true
 	}

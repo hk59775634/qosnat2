@@ -5,19 +5,22 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+出站 NAT 增加总开关（关闭即纯三层）；并修复 Web 登录后 session 401、策略网段默认回填等问题。
 
 ## 新增
 
-- （无）
+- 出站 NAT 总开关（`nat.ipv4.enabled`）：关闭时不写入策略网段 SNAT、共享 IP、1:1/网段映射、出站策略 SNAT 及 WAN masquerade；入站端口转发 DNAT 不受影响。
+- API `GET/PUT /api/v1/nat/ipv4` 与 Web「出站 NAT」页顶部开关，切换后自动保存并重载 nftables。
 
 ## 优化
 
-- （无）
+- 关闭出站 NAT 时跳过非对称回程 drop 规则，避免纯三层场景误拦合法转发。
+- LVS OpenConnect 集群：UDP 默认不启用 persistence，并同步 forward 防火墙放行 VIP↔Real Server。
 
 ## 修复
 
-- （无）
+- Web 在 HTTP 管理面下登录后 `/api/v1/session` 401：登录响应返回 `session_token`，前端以 `X-Qosnat-Session` 回退携带会话。
+- 出站 NAT 策略网段不再自动回填 `10.0.0.0/8`；空列表时不再从 shaper 兜底 SNAT 该网段。
 
 ## 删除
 
@@ -25,4 +28,4 @@
 
 ## 其他
 
-- （无）
+- 旧 state 未含 `nat.ipv4.enabled` 时默认视为开启，兼容已有部署。

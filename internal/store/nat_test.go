@@ -67,6 +67,25 @@ func TestMigrateNatFromLegacyPartial(t *testing.T) {
 	}
 }
 
+func TestEnsureNatDefaultsAllowsEmptyPolicyRoutes(t *testing.T) {
+	n := NatState{IPv4: NatIPv4State{PolicyRoutes: []string{}}}
+	ensureNatDefaults(&n)
+	if len(n.IPv4.PolicyRoutes) != 0 {
+		t.Fatalf("want empty policy routes, got %v", n.IPv4.PolicyRoutes)
+	}
+}
+
+func TestEnsureNatDefaultsNilPolicyRoutes(t *testing.T) {
+	n := NatState{IPv4: NatIPv4State{}}
+	ensureNatDefaults(&n)
+	if n.IPv4.PolicyRoutes == nil {
+		t.Fatal("nil slice should become empty slice")
+	}
+	if len(n.IPv4.PolicyRoutes) != 0 {
+		t.Fatalf("want empty, got %v", n.IPv4.PolicyRoutes)
+	}
+}
+
 func TestValidateNptv6Rule(t *testing.T) {
 	if err := ValidateNptv6Rule(Nptv6Rule{
 		InternalPrefix: "fd00::/48",

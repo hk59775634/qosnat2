@@ -8,6 +8,10 @@ func CloneNatIPv4(n NatIPv4State) NatIPv4State {
 		StaticMappings: make(map[string]string, len(n.StaticMappings)),
 		PrefixMappings: make(map[string]string, len(n.PrefixMappings)),
 	}
+	if n.Enabled != nil {
+		v := *n.Enabled
+		out.Enabled = &v
+	}
 	for k, v := range n.StaticMappings {
 		out.StaticMappings[k] = v
 	}

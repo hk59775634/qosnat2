@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -140,6 +141,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/routes/", srv.requireAuth(srv.handleRoutesItem))
 	m.HandleFunc("/api/v1/routes", srv.requireAuth(srv.handleRoutes))
 	m.HandleFunc("/api/v1/nat/policy-routes", srv.requireAuth(srv.handlePolicyRoutes))
+	m.HandleFunc("/api/v1/nat/ipv4", srv.requireAuth(srv.handleNatIPv4))
 	m.HandleFunc("/api/v1/nat/shared-ips", srv.requireAuth(srv.handleSharedIPs))
 	m.HandleFunc("/api/v1/nat/static-mappings", srv.requireAuth(srv.handleStaticMappings))
 	m.HandleFunc("/api/v1/nat/prefix-mappings", srv.requireAuth(srv.handlePrefixMappings))
@@ -352,8 +354,16 @@ func (srv *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, "session error")
 		return
 	}
+	srv.writeLoginResponse(w, r, tok)
+}
+
+func (srv *Server) writeLoginResponse(w http.ResponseWriter, r *http.Request, tok string) {
 	srv.setSessionCookie(w, r, tok)
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":            true,
+		"session_token": tok,
+	})
 }
 
 func (srv *Server) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -369,8 +379,8 @@ func (srv *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(sessionCookie); err == nil {
-		srv.sessions.delete(c.Value)
+	if tok := sessionTokenFromRequest(r); tok != "" {
+		srv.sessions.delete(tok)
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -378,11 +388,9 @@ func (srv *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) serveOpenAPI(w http.ResponseWriter, r *http.Request) {
 	if srv.setupComplete() {
-		if !srv.checkAPIKey(r) {
-			if c, err := r.Cookie(sessionCookie); err != nil || !srv.sessions.valid(c.Value) {
-				writeUnauthorized(w, "unauthorized")
-				return
-			}
+		if !srv.requestAuthorized(r) {
+			writeUnauthorized(w, "unauthorized")
+			return
 		}
 	}
 	path := srv.env.OpenAPIPath
@@ -456,7 +464,9 @@ func isDir(p string) bool {
 
 // Listen 启动 HTTP/HTTPS（支持运行中切换模式，无需重启进程）
 func (srv *Server) Listen() error {
-	_ = srv.sessions.load()
+	if err := srv.sessions.load(); err != nil {
+		log.Printf("load sessions: %v", err)
+	}
 	srv.startMetricsSampler()
 	srv.startOCServTrafficSampler()
 	srv.startWireGuardTrafficSampler()

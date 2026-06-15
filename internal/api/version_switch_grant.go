@@ -1,7 +1,6 @@
 package api
 
 import (
-	"net/http"
 	"sync"
 	"time"
 )
@@ -52,12 +51,4 @@ func (g *versionSwitchGrants) consume(sessionToken string) bool {
 	}
 	delete(g.until, sessionToken)
 	return true
-}
-
-func sessionTokenFromRequest(r *http.Request) string {
-	c, err := r.Cookie(sessionCookie)
-	if err != nil {
-		return ""
-	}
-	return c.Value
 }

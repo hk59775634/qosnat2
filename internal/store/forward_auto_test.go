@@ -81,7 +81,7 @@ func TestSyncAutoFilterRulesRemovesStaleForwardRules(t *testing.T) {
 		ID: "fwd-new", Interface: "wan0", Proto: "tcp", DstPort: 80,
 		RedirectIP: "10.0.0.2", RedirectPort: 8080,
 	}}
-	merged, changed := SyncAutoFilterRules([]FilterRule{user, stale}, []string{"wan0"}, "8080", AutoInputVPN{}, fwd, "lan0", HairpinAddrResolver{})
+	merged, changed := SyncAutoFilterRules([]FilterRule{user, stale}, []string{"wan0"}, "8080", AutoInputVPN{}, fwd, LVSState{}, "lan0", "wan0", HairpinAddrResolver{})
 	if !changed {
 		t.Fatal("expected change")
 	}

@@ -23,7 +23,9 @@ type LVSVirtualServer struct {
 	Protocol       string          `json:"protocol"` // tcp | udp | tcp_udp
 	Scheduler      string          `json:"scheduler,omitempty"`
 	PersistenceSec int             `json:"persistence_sec,omitempty"`
-	AutoVIP        bool            `json:"auto_vip,omitempty"`
+	// PersistenceUDPSec UDP 虚拟服务会话保持（秒）；0=OCServ 集群默认不在 UDP 上单独 persistence。
+	PersistenceUDPSec int `json:"persistence_udp_sec,omitempty"`
+	AutoVIP           bool            `json:"auto_vip,omitempty"`
 	WANDevice      string          `json:"wan_device,omitempty"`
 	Service        string          `json:"service,omitempty"` // ocserv | ""
 	RealServers    []LVSRealServer `json:"real_servers"`
@@ -125,6 +127,9 @@ func normalizeLVSVirtualServer(v *LVSVirtualServer, defaultWAN string) error {
 	if v.PersistenceSec < 0 {
 		return fmt.Errorf("persistence_sec invalid")
 	}
+	if v.PersistenceUDPSec < 0 {
+		return fmt.Errorf("persistence_udp_sec invalid")
+	}
 	dev := strings.TrimSpace(v.WANDevice)
 	if dev == "" {
 		dev = strings.TrimSpace(defaultWAN)
@@ -176,7 +181,25 @@ func LVSProtos(proto string) []string {
 	return ForwardProtos(proto)
 }
 
-// BuildLVSOCServCluster 生成 OpenConnect 集群虚拟服务（TCP+UDP 同端口，默认会话保持）。
+// LVSPersistenceSec 返回某协议 ipvsadm -p 秒数；0 表示不启用 persistence。
+func LVSPersistenceSec(vs LVSVirtualServer, proto string) int {
+	proto = strings.ToLower(strings.TrimSpace(proto))
+	if proto == "udp" {
+		if vs.PersistenceUDPSec > 0 {
+			return vs.PersistenceUDPSec
+		}
+		// OpenConnect：UDP(DTLS) 不与 TCP 共用 persistence 表项，避免认证割裂；靠 sh 同源选 RS。
+		if vs.Service == "ocserv" {
+			return 0
+		}
+	}
+	if vs.PersistenceSec > 0 {
+		return vs.PersistenceSec
+	}
+	return 0
+}
+
+// BuildLVSOCServCluster 生成 OpenConnect 集群虚拟服务（TCP 会话保持 + UDP 仅 sh，不单独 persistence）。
 func BuildLVSOCServCluster(vip string, port int, nodes []string, defaultWAN string, autoVIP bool, persistenceSec int, scheduler string) (LVSVirtualServer, error) {
 	vip = strings.TrimSpace(vip)
 	if vip == "" {
@@ -219,9 +242,13 @@ func BuildLVSOCServCluster(vip string, port int, nodes []string, defaultWAN stri
 
 // LVSOCServClusterHint 供 UI 预填 OCServ 集群参数。
 type LVSOCServClusterHint struct {
-	DefaultPort           int `json:"default_port"`
-	DefaultPersistenceSec int `json:"default_persistence_sec"`
-	DefaultScheduler      string `json:"default_scheduler"`
+	DefaultPort              int    `json:"default_port"`
+	DefaultPersistenceSec    int    `json:"default_persistence_sec"`
+	DefaultUDPPersistenceSec int    `json:"default_udp_persistence_sec"`
+	DefaultScheduler         string `json:"default_scheduler"`
+	// ProxyProtoOnRS：纯 IPVS 不向 RS 发送 PROXY 头；RS 上 listen-proxy-proto 需 HAProxy 等，LVS 后直接开会失败。
+	ProxyProtoOnRS bool   `json:"proxy_proto_on_rs"`
+	ProxyProtoNote string `json:"proxy_proto_note,omitempty"`
 }
 
 func LVSOCServClusterHintFromState(st State) LVSOCServClusterHint {
@@ -230,9 +257,12 @@ func LVSOCServClusterHintFromState(st State) LVSOCServClusterHint {
 		port = st.VPN.OCServ.TCPPort
 	}
 	return LVSOCServClusterHint{
-		DefaultPort:           port,
-		DefaultPersistenceSec: 3600,
-		DefaultScheduler:      "sh",
+		DefaultPort:              port,
+		DefaultPersistenceSec:    3600,
+		DefaultUDPPersistenceSec: 0,
+		DefaultScheduler:         "sh",
+		ProxyProtoOnRS:           false,
+		ProxyProtoNote:           "Plain LVS does not send PROXY protocol; do not enable listen-proxy-proto on RS unless HAProxy emits PROXY v1/v2.",
 	}
 }
 

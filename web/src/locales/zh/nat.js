@@ -2,6 +2,10 @@ export default {
   outbound: {
     title: '出站 NAT',
     description: '策略路由网段、共享 SNAT、1:1 与网段映射',
+    masterSwitch: '出站 NAT 总开关',
+    masterSwitchHint: '关闭后为纯三层转发，不应用任何 IPv4 出站 SNAT/masquerade；配置仍保留，重新开启后立即生效。',
+    enabled: '启用出站 NAT',
+    pureL3Active: '当前为纯三层模式：策略网段、共享 IP、1:1/网段映射及 WAN masquerade 均不会写入防火墙。',
     policyCidrs: '策略路由网段',
     sharedPool: '共享公网 IP 池',
     static1to1: '1:1 静态 SNAT',
@@ -13,7 +17,7 @@ export default {
     innerPlaceholder: '内网 IP/CIDR',
     outerPlaceholder: '公网 IP',
     addMapping: '添加映射',
-    noPolicy: '暂无策略网段',
+    noPolicy: '暂无策略网段（NAT 开启且无网段时，默认对 WAN 口 masquerade；纯三层请关闭上方总开关）',
     noShared: '暂无共享 IP',
     noStatic: '暂无静态映射',
     noPrefix: '暂无网段映射',
@@ -114,7 +118,9 @@ export default {
     backends: '后端',
     ocservClusterTitle: 'OpenConnect 集群',
     ocservClusterHint:
-      '在 WAN VIP 上同时负载均衡 TCP 与 UDP（DTLS），后端为内网多台 ocserv。NAT 模式下各 RS 默认网关须指向本机；请勿与本机 OCServ 同端口并存。',
+      '在 WAN VIP 上负载均衡 TCP 与 UDP（DTLS）。TCP 使用会话保持（默认 3600s）；UDP 仅 sh 同源调度、不单独 persistence，避免与 TCP 认证会话割裂。NAT 模式下各 RS 默认网关须指向本机；防火墙会自动同步 input(VIP) 与 forward(RS) 规则。',
+    ocservProxyProtoHint:
+      '纯 LVS 不会向 RS 发送 PROXY 协议头；后端 ocserv 请勿开启 listen-proxy-proto，除非在 LVS 与 ocserv 之间还有 HAProxy 等发送 PROXY v1/v2 的组件。',
     ocservNodes: '内网 ocserv 节点（每行一个 IP）',
     ocservNodesPh: '10.0.0.10\n10.0.0.11',
     addOcservCluster: '添加 OCServ 集群',

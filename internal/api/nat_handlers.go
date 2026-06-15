@@ -184,6 +184,34 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+func (srv *Server) handleNatIPv4(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		st := srv.store.Get()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ipv4":    st.Nat.IPv4,
+			"enabled": store.NatIPv4Enabled(st.Nat.IPv4),
+		})
+	case http.MethodPut:
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			writeBadJSON(w)
+			return
+		}
+		enabled := body.Enabled
+		if !srv.commitNatIPv4Change(w, func(st *store.State) {
+			st.Nat.IPv4.Enabled = &enabled
+		}) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	default:
+		writeMethodNotAllowed(w)
+	}
+}
+
 func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:

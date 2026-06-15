@@ -53,19 +53,24 @@ func Render(cfg Config, st store.State) (string, error) {
 		cfg.AdminPort,
 		AutoInputFromState(st),
 		st.Firewall.WanPortForwards,
+		st.LVS,
 		cfg.DevLAN,
+		cfg.DevWAN,
 		HairpinAddrResolver(cfg.DevLAN, cfg.DevWAN),
 	)
 	routes := st.Nat.IPv4.PolicyRoutes
-	if len(routes) == 0 {
-		routes = []string{st.Shaper.PolicyCIDR}
-	}
-	if len(routes) == 0 {
-		routes = []string{"10.0.0.0/8"}
-	}
 	egressCIDRs := store.EgressPolicyCIDRs(st.Network.EgressPolicies)
-	routes = store.FilterPolicyRoutesForWAN(routes, egressCIDRs)
+	natOn := store.NatIPv4Enabled(st.Nat.IPv4)
+	if natOn {
+		routes = store.FilterPolicyRoutesForWAN(routes, egressCIDRs)
+	} else {
+		routes = nil
+		egressCIDRs = nil
+	}
 	egress := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
+	if !natOn {
+		egress = nil
+	}
 	ips, _ := ResolveSharedIPs(cfg, st)
 
 	var b strings.Builder
@@ -89,56 +94,10 @@ func Render(cfg Config, st store.State) (string, error) {
 	// postrouting SNAT
 	b.WriteString("    chain postrouting {\n")
 	b.WriteString("        type nat hook postrouting priority srcnat; policy accept;\n")
-	staticKeys := sortedKeys(st.Nat.IPv4.StaticMappings)
-	for _, inner := range staticKeys {
-		b.WriteString(fmt.Sprintf("        ip saddr %s snat to %s\n", inner, st.Nat.IPv4.StaticMappings[inner]))
-	}
-	if len(st.Nat.IPv4.PrefixMappings) > 0 {
-		b.WriteString(fmt.Sprintf("        oifname \"%s\" snat ip prefix to ip saddr map {\n", cfg.DevWAN))
-		for _, inner := range sortedKeys(st.Nat.IPv4.PrefixMappings) {
-			b.WriteString(fmt.Sprintf("            %s : %s,\n", inner, st.Nat.IPv4.PrefixMappings[inner]))
-		}
-		b.WriteString("        }\n")
-	}
 	writeNPTv6Postrouting(&b, cfg, st.Nat)
-	for _, e := range egress {
-		match := store.EgressSNATMatchClause(e.Policy)
-		if match == "" {
-			continue
-		}
-		if e.Masquerade {
-			b.WriteString(fmt.Sprintf(
-				"        %s oifname \"%s\" masquerade\n",
-				match, e.Device,
-			))
-			continue
-		}
-		b.WriteString(fmt.Sprintf(
-			"        %s oifname \"%s\" snat to %s\n",
-			match, e.Device, e.SNATIP,
-		))
+	if natOn {
+		writeIPv4PostroutingNAT(&b, cfg, st, routes, ips, egress, st.Firewall.WanPortForwards)
 	}
-	if len(ips) > 0 {
-		var inline []string
-		for i, ip := range ips {
-			inline = append(inline, fmt.Sprintf("%d : %s", i, ip))
-		}
-		for _, cidr := range routes {
-			b.WriteString(fmt.Sprintf(
-				"        ip saddr %s oifname \"%s\" snat to numgen inc mod %d map { %s }\n",
-				cidr, cfg.DevWAN, len(ips), strings.Join(inline, ", "),
-			))
-		}
-	} else {
-		for _, cidr := range routes {
-			b.WriteString(fmt.Sprintf(
-				"        ip saddr %s oifname \"%s\" masquerade\n",
-				cidr, cfg.DevWAN,
-			))
-		}
-	}
-	writeWanForwardHairpinSNAT(&b, cfg, st.Firewall.WanPortForwards)
-	b.WriteString(fmt.Sprintf("        oifname \"%s\" masquerade\n", cfg.DevWAN))
 	b.WriteString("    }\n\n")
 
 	// forward filter
@@ -166,17 +125,19 @@ func Render(cfg Config, st store.State) (string, error) {
 			b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", cfg.DevLAN, dev))
 			b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", dev, cfg.DevLAN))
 		}
-		// 非对称回程：公网源直达 LAN 内网段丢弃
-		allPolicyCIDRs := append(append([]string{}, routes...), egressCIDRs...)
-		for _, cidr := range allPolicyCIDRs {
-			for dev := range wanDevs {
-				if dev == "" || dev == cfg.DevLAN {
-					continue
+		// 非对称回程：公网源直达 LAN 内网段丢弃（仅 NAT 开启时）
+		if natOn {
+			allPolicyCIDRs := append(append([]string{}, routes...), egressCIDRs...)
+			for _, cidr := range allPolicyCIDRs {
+				for dev := range wanDevs {
+					if dev == "" || dev == cfg.DevLAN {
+						continue
+					}
+					b.WriteString(fmt.Sprintf(
+						"        iifname \"%s\" oifname \"%s\" ip daddr %s ip saddr != %s drop\n",
+						dev, cfg.DevLAN, cidr, cidr,
+					))
 				}
-				b.WriteString(fmt.Sprintf(
-					"        iifname \"%s\" oifname \"%s\" ip daddr %s ip saddr != %s drop\n",
-					dev, cfg.DevLAN, cidr, cidr,
-				))
 			}
 		}
 	}
@@ -228,6 +189,57 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        drop comment \"qosnat2-input-default-deny\"\n")
 	b.WriteString("    }\n}\n")
 	return b.String(), nil
+}
+
+func writeIPv4PostroutingNAT(b *strings.Builder, cfg Config, st store.State, routes, ips []string, egress []store.ResolvedEgress, forwards []store.WanPortForward) {
+	for _, inner := range sortedKeys(st.Nat.IPv4.StaticMappings) {
+		b.WriteString(fmt.Sprintf("        ip saddr %s snat to %s\n", inner, st.Nat.IPv4.StaticMappings[inner]))
+	}
+	if len(st.Nat.IPv4.PrefixMappings) > 0 {
+		b.WriteString(fmt.Sprintf("        oifname \"%s\" snat ip prefix to ip saddr map {\n", cfg.DevWAN))
+		for _, inner := range sortedKeys(st.Nat.IPv4.PrefixMappings) {
+			b.WriteString(fmt.Sprintf("            %s : %s,\n", inner, st.Nat.IPv4.PrefixMappings[inner]))
+		}
+		b.WriteString("        }\n")
+	}
+	for _, e := range egress {
+		match := store.EgressSNATMatchClause(e.Policy)
+		if match == "" {
+			continue
+		}
+		if e.Masquerade {
+			b.WriteString(fmt.Sprintf(
+				"        %s oifname \"%s\" masquerade\n",
+				match, e.Device,
+			))
+			continue
+		}
+		b.WriteString(fmt.Sprintf(
+			"        %s oifname \"%s\" snat to %s\n",
+			match, e.Device, e.SNATIP,
+		))
+	}
+	if len(ips) > 0 {
+		var inline []string
+		for i, ip := range ips {
+			inline = append(inline, fmt.Sprintf("%d : %s", i, ip))
+		}
+		for _, cidr := range routes {
+			b.WriteString(fmt.Sprintf(
+				"        ip saddr %s oifname \"%s\" snat to numgen inc mod %d map { %s }\n",
+				cidr, cfg.DevWAN, len(ips), strings.Join(inline, ", "),
+			))
+		}
+	} else {
+		for _, cidr := range routes {
+			b.WriteString(fmt.Sprintf(
+				"        ip saddr %s oifname \"%s\" masquerade\n",
+				cidr, cfg.DevWAN,
+			))
+		}
+	}
+	writeWanForwardHairpinSNAT(b, cfg, forwards)
+	b.WriteString(fmt.Sprintf("        oifname \"%s\" masquerade\n", cfg.DevWAN))
 }
 
 // CheckRuleset 语法检查 ruleset（不写盘、不加载）。

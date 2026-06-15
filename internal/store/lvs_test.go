@@ -66,6 +66,9 @@ func TestBuildLVSOCServCluster(t *testing.T) {
 	if len(vs.RealServers) != 2 || vs.PersistenceSec != 3600 || vs.Scheduler != "sh" {
 		t.Fatalf("vs=%+v", vs)
 	}
+	if LVSPersistenceSec(vs, "udp") != 0 {
+		t.Fatal("ocserv cluster udp should not use persistence")
+	}
 }
 
 func TestCollectLVSInputEndpoints(t *testing.T) {
