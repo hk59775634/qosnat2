@@ -47,6 +47,42 @@ func TestRenderConfRadius(t *testing.T) {
 	}
 }
 
+func TestRenderConfRadiusEmptyPool(t *testing.T) {
+	o := store.DefaultOCServ()
+	o.AuthMethod = store.OCServAuthRadius
+	o.Radius = store.OCServRadius{
+		Server:      "10.0.0.1",
+		AuthPort:    1812,
+		Secret:      "s3cret",
+		GroupConfig: true,
+	}
+	o.IPv4Network = ""
+	o.IPv4Netmask = ""
+	if err := store.NormalizeOCServ(&o); err != nil {
+		t.Fatal(err)
+	}
+	conf := RenderConf(o, nil)
+	if strings.Contains(conf, "ipv4-network = ") {
+		t.Fatalf("radius without local pool must omit ipv4-network:\n%s", conf)
+	}
+}
+
+func TestRenderConfRadiusLocalPool(t *testing.T) {
+	o := store.DefaultOCServ()
+	o.AuthMethod = store.OCServAuthRadius
+	o.Radius = store.OCServRadius{
+		Server:   "10.0.0.1",
+		AuthPort: 1812,
+		Secret:   "s3cret",
+	}
+	o.IPv4Network = "10.9.0.0"
+	o.IPv4Netmask = "255.255.255.0"
+	conf := RenderConf(o, nil)
+	if !strings.Contains(conf, "ipv4-network = 10.9.0.0") {
+		t.Fatalf("missing local pool:\n%s", conf)
+	}
+}
+
 func TestRenderConfRadiusNoGroupconfig(t *testing.T) {
 	o := store.DefaultOCServ()
 	o.AuthMethod = store.OCServAuthRadius

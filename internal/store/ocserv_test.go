@@ -30,6 +30,36 @@ func TestNormalizeOCServRadius(t *testing.T) {
 	}
 }
 
+func TestNormalizeOCServRadiusEmptyPool(t *testing.T) {
+	o := DefaultOCServ()
+	o.AuthMethod = OCServAuthRadius
+	o.Radius.Server = "radius.example.com"
+	o.Radius.Secret = "shared"
+	o.IPv4Network = ""
+	o.IPv4Netmask = ""
+	if err := NormalizeOCServ(&o); err != nil {
+		t.Fatal(err)
+	}
+	if o.IPv4Network != "" || o.IPv4Netmask != "" {
+		t.Fatalf("radius empty pool should stay empty: %+v", o)
+	}
+}
+
+func TestNormalizeOCServRadiusLocalPool(t *testing.T) {
+	o := DefaultOCServ()
+	o.AuthMethod = OCServAuthRadius
+	o.Radius.Server = "radius.example.com"
+	o.Radius.Secret = "shared"
+	o.IPv4Network = "10.9.8.0"
+	o.IPv4Netmask = "255.255.255.0"
+	if err := NormalizeOCServ(&o); err != nil {
+		t.Fatal(err)
+	}
+	if o.IPv4Network != "10.9.8.0" {
+		t.Fatalf("%+v", o)
+	}
+}
+
 func TestMergeOCServAdvancedDefaults(t *testing.T) {
 	o := DefaultOCServ()
 	o.Advanced = OCServAdvanced{}

@@ -92,8 +92,10 @@ func RenderConf(o store.OCServState, managed []store.ManagedCertificate) string 
 	if ca != "" {
 		b.WriteString(fmt.Sprintf("ca-cert = %s\n", ca))
 	}
-	b.WriteString(fmt.Sprintf("ipv4-network = %s\n", o.IPv4Network))
-	b.WriteString(fmt.Sprintf("ipv4-netmask = %s\n", o.IPv4Netmask))
+	if store.OCServIPv4PoolConfigured(o) {
+		b.WriteString(fmt.Sprintf("ipv4-network = %s\n", o.IPv4Network))
+		b.WriteString(fmt.Sprintf("ipv4-netmask = %s\n", o.IPv4Netmask))
+	}
 	for _, d := range o.DNS {
 		b.WriteString(fmt.Sprintf("dns = %s\n", strings.TrimSpace(d)))
 	}

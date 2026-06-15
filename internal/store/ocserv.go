@@ -114,6 +114,11 @@ func OCServRadiusUsesGroupconfig(o OCServState) bool {
 	return OCServUsesRadius(o) && o.Radius.GroupConfig
 }
 
+// OCServIPv4PoolConfigured 是否配置了本地 IPv4 地址池（写入 ocserv ipv4-network）。
+func OCServIPv4PoolConfigured(o OCServState) bool {
+	return strings.TrimSpace(o.IPv4Network) != ""
+}
+
 // NormalizeOCServ 校验 ocserv 配置
 func NormalizeOCServ(o *OCServState) error {
 	if o == nil {
@@ -134,14 +139,30 @@ func NormalizeOCServ(o *OCServState) error {
 	if strings.TrimSpace(o.Device) == "" {
 		o.Device = "vpns"
 	}
-	if strings.TrimSpace(o.IPv4Network) == "" {
-		o.IPv4Network = "10.250.0.0"
-	}
-	if strings.TrimSpace(o.IPv4Netmask) == "" {
-		o.IPv4Netmask = "255.255.255.0"
-	}
-	if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
-		return err
+	o.IPv4Network = strings.TrimSpace(o.IPv4Network)
+	o.IPv4Netmask = strings.TrimSpace(o.IPv4Netmask)
+	if OCServUsesRadius(*o) {
+		if o.IPv4Network == "" {
+			o.IPv4Network = ""
+			o.IPv4Netmask = ""
+		} else {
+			if o.IPv4Netmask == "" {
+				o.IPv4Netmask = "255.255.255.0"
+			}
+			if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
+				return err
+			}
+		}
+	} else {
+		if o.IPv4Network == "" {
+			o.IPv4Network = "10.250.0.0"
+		}
+		if o.IPv4Netmask == "" {
+			o.IPv4Netmask = "255.255.255.0"
+		}
+		if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
+			return err
+		}
 	}
 	if o.DNS == nil {
 		o.DNS = []string{"8.8.8.8"}
