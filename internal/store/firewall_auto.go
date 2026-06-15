@@ -376,6 +376,7 @@ func BuildAutoHairpinInputRules(wanDevs []string, adminPort string, vpn AutoInpu
 func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, lvs LVSState, devLAN, defaultWAN string, resolver HairpinAddrResolver) ([]FilterRule, bool) {
 	desiredFwd := BuildAutoForwardFilterRules(forwards, devLAN)
 	desiredLVSFwd := BuildAutoLVSForwardFilterRules(lvs, devLAN, defaultWAN)
+	desiredLVSRSInput := BuildAutoLVSRSInputRules(lvs, devLAN)
 	desiredHairpinFwd := BuildAutoHairpinForwardFilterRules(forwards, devLAN, resolver.IsLocalIP)
 	hairpinInput := BuildAutoHairpinInputRules(wanDevs, adminPort, vpn, forwards, devLAN, resolver)
 	autoInputAccept, autoInputDrop := splitAutoInputByDrop(BuildAutoInputRules(wanDevs, adminPort, vpn))
@@ -390,13 +391,14 @@ func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string,
 			userFwd = append(userFwd, r)
 		}
 	}
-	merged := append(append(append(append(append(append(append(
+	merged := append(append(append(append(append(append(append(append(
 		append([]FilterRule{}, userFwd...),
 		desiredFwd...),
 		desiredLVSFwd...),
 		desiredHairpinFwd...),
 		hairpinInput...),
 		autoInputAccept...),
+		desiredLVSRSInput...),
 		userInput...),
 		autoInputDrop...)
 	return merged, !filterRulesEqual(merged, rules)

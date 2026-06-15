@@ -8,11 +8,47 @@ import (
 	"strings"
 )
 
+const (
+	// LVSRoleDirector 本机为 LVS Director（ipvsadm + 可选 WAN VIP）。
+	LVSRoleDirector = "director"
+	// LVSRoleRS 本机为 DR 模式 Real Server（lo 绑 VIP + ARP 抑制）。
+	LVSRoleRS = "rs"
+)
+
 // LVSState Linux Virtual Server（IPVS）配置。
 type LVSState struct {
+	Role string `json:"role,omitempty"` // director | rs，默认 director
 	Enabled        bool               `json:"enabled"`
-	Mode           string             `json:"mode,omitempty"` // nat | dr
+	Mode           string             `json:"mode,omitempty"` // nat | dr（仅 director；rs 隐含 dr）
 	VirtualServers []LVSVirtualServer `json:"virtual_servers,omitempty"`
+	RS             LVSRSConfig        `json:"rs,omitempty"`
+}
+
+// LVSRSConfig DR Real Server 本机绑定（VIP 在 lo、ARP 参数由 apply 写入）。
+type LVSRSConfig struct {
+	Entries []LVSRSBinding `json:"entries,omitempty"`
+}
+
+// LVSRSBinding RS 上需响应的 VIP:port（与 Director DR 虚拟服务对应）。
+type LVSRSBinding struct {
+	ID       string `json:"id"`
+	VIP      string `json:"vip"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"` // tcp | udp | tcp_udp
+	Comment  string `json:"comment,omitempty"`
+}
+
+// LVSRole 返回规范化角色（未知值视为 director）。
+func LVSRole(l *LVSState) string {
+	if l == nil {
+		return LVSRoleDirector
+	}
+	switch strings.ToLower(strings.TrimSpace(l.Role)) {
+	case LVSRoleRS:
+		return LVSRoleRS
+	default:
+		return LVSRoleDirector
+	}
 }
 
 // LVSVirtualServer 虚拟服务 VIP:port → 多台 Real Server。
@@ -41,8 +77,10 @@ type LVSRealServer struct {
 
 func DefaultLVS() LVSState {
 	return LVSState{
+		Role:           LVSRoleDirector,
 		Mode:           "nat",
 		VirtualServers: []LVSVirtualServer{},
+		RS:             LVSRSConfig{Entries: []LVSRSBinding{}},
 	}
 }
 
@@ -55,6 +93,10 @@ var lvsSchedulers = map[string]struct{}{
 func NormalizeLVS(l *LVSState, defaultWAN string) error {
 	if l == nil {
 		return fmt.Errorf("lvs config nil")
+	}
+	l.Role = LVSRole(l)
+	if LVSRole(l) == LVSRoleRS {
+		return normalizeLVSRS(l)
 	}
 	mode := strings.ToLower(strings.TrimSpace(l.Mode))
 	if mode == "" {
@@ -82,6 +124,63 @@ func NormalizeLVS(l *LVSState, defaultWAN string) error {
 		return fmt.Errorf("virtual_servers required when lvs enabled")
 	}
 	return nil
+}
+
+func normalizeLVSRS(l *LVSState) error {
+	l.Mode = "dr"
+	if l.RS.Entries == nil {
+		l.RS.Entries = []LVSRSBinding{}
+	}
+	seen := map[string]struct{}{}
+	for i := range l.RS.Entries {
+		if err := normalizeLVSRSBinding(&l.RS.Entries[i]); err != nil {
+			return fmt.Errorf("rs.entries[%d]: %w", i, err)
+		}
+		key := lvsRSKey(l.RS.Entries[i])
+		if _, dup := seen[key]; dup {
+			return fmt.Errorf("duplicate rs binding %s", key)
+		}
+		seen[key] = struct{}{}
+	}
+	if l.Enabled && len(l.RS.Entries) == 0 {
+		return fmt.Errorf("rs.entries required when lvs enabled in rs role")
+	}
+	return nil
+}
+
+func normalizeLVSRSBinding(e *LVSRSBinding) error {
+	if e.ID == "" {
+		e.ID = NewLVSID()
+	}
+	vip := strings.TrimSpace(e.VIP)
+	if vip == "" {
+		return fmt.Errorf("vip required")
+	}
+	parsed := net.ParseIP(vip)
+	if parsed == nil || parsed.To4() == nil {
+		return fmt.Errorf("vip must be ipv4")
+	}
+	e.VIP = parsed.String()
+	if e.Port <= 0 || e.Port > 65535 {
+		return fmt.Errorf("port required (1-65535)")
+	}
+	proto := strings.ToLower(strings.TrimSpace(e.Protocol))
+	switch proto {
+	case "", "tcp":
+		e.Protocol = "tcp"
+	case "udp":
+		e.Protocol = "udp"
+	case "tcp_udp", "tcp+udp", "both":
+		e.Protocol = "tcp_udp"
+	default:
+		return fmt.Errorf("protocol must be tcp, udp, or tcp_udp")
+	}
+	e.Comment = strings.TrimSpace(e.Comment)
+	return nil
+}
+
+func lvsRSKey(e LVSRSBinding) string {
+	return e.Protocol + "://" + e.VIP + ":" + fmt.Sprintf("%d", e.Port)
 }
 
 func normalizeLVSVirtualServer(v *LVSVirtualServer, defaultWAN string) error {
@@ -376,11 +475,26 @@ func MigrateLVS(l *LVSState) {
 	if l == nil {
 		return
 	}
+	if strings.TrimSpace(l.Role) == "" {
+		l.Role = LVSRoleDirector
+	}
 	if l.Mode == "" {
 		l.Mode = "nat"
 	}
 	if l.VirtualServers == nil {
 		l.VirtualServers = []LVSVirtualServer{}
+	}
+	if l.RS.Entries == nil {
+		l.RS.Entries = []LVSRSBinding{}
+	}
+	for i := range l.RS.Entries {
+		e := &l.RS.Entries[i]
+		if e.ID == "" {
+			e.ID = NewLVSID()
+		}
+		if e.Protocol == "" {
+			e.Protocol = "tcp"
+		}
 	}
 	for i := range l.VirtualServers {
 		v := &l.VirtualServers[i]
@@ -435,9 +549,9 @@ func LVSVSConflictsForward(vs LVSVirtualServer, forwards []WanPortForward) bool 
 	return false
 }
 
-// CollectLVSInputEndpoints 汇总启用 LVS 时需在 WAN input 放行的 VIP:port。
+// CollectLVSInputEndpoints 汇总 Director 启用 LVS 时需在 WAN input 放行的 VIP:port。
 func CollectLVSInputEndpoints(l LVSState) []AutoInputLVSEndpoint {
-	if !l.Enabled {
+	if !l.Enabled || LVSRole(&l) != LVSRoleDirector {
 		return nil
 	}
 	var out []AutoInputLVSEndpoint
@@ -447,6 +561,25 @@ func CollectLVSInputEndpoints(l LVSState) []AutoInputLVSEndpoint {
 				VSID:  vs.ID,
 				VIP:   vs.VIP,
 				Port:  vs.Port,
+				Proto: proto,
+			})
+		}
+	}
+	return out
+}
+
+// CollectLVSRSInputEndpoints 汇总 RS 角色时需在 LAN input 放行的 VIP:port。
+func CollectLVSRSInputEndpoints(l LVSState) []AutoInputLVSEndpoint {
+	if !l.Enabled || LVSRole(&l) != LVSRoleRS {
+		return nil
+	}
+	var out []AutoInputLVSEndpoint
+	for _, e := range l.RS.Entries {
+		for _, proto := range LVSProtos(e.Protocol) {
+			out = append(out, AutoInputLVSEndpoint{
+				VSID:  e.ID,
+				VIP:   e.VIP,
+				Port:  e.Port,
 				Proto: proto,
 			})
 		}

@@ -54,20 +54,31 @@ func ShowStatus() Status {
 	return st
 }
 
-// Apply 写入 IPVS 规则；disabled 时清空。
+// Apply 写入 IPVS 规则（Director）或 RS 本机配置；disabled 时清空。
 func Apply(cfg Config) error {
+	st := cfg.State
+	if err := store.NormalizeLVS(&st, cfg.DevWAN); err != nil {
+		return err
+	}
+	role := store.LVSRole(&st)
+	if !st.Enabled {
+		_ = ClearRS(st)
+		if role == store.LVSRoleRS {
+			return nil
+		}
+		return clearRules()
+	}
+	if role == store.LVSRoleRS {
+		return ApplyRS(st)
+	}
+	_ = ClearRS(st)
 	if !installed() {
 		return fmt.Errorf("ipvsadm not installed (apt install ipvsadm)")
 	}
-	st := cfg.State
-	_ = store.NormalizeLVS(&st, cfg.DevWAN)
 	if err := ensureModules(st.Mode); err != nil {
 		return err
 	}
 	_ = exec.Command("sysctl", "-w", "net.ipv4.vs.conntrack=1").Run()
-	if !st.Enabled {
-		return clearRules()
-	}
 	for _, vs := range st.VirtualServers {
 		if vs.AutoVIP && vs.WANDevice != "" {
 			if err := ensureVIP(vs.WANDevice, vs.VIP); err != nil {

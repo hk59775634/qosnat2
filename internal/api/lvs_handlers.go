@@ -17,7 +17,7 @@ func (srv *Server) handleLVS(w http.ResponseWriter, r *http.Request) {
 		cfg := st.LVS
 		_ = store.NormalizeLVS(&cfg, srv.env.DevWAN)
 		var warnings []string
-		if st.VPN.OCServ.Enabled {
+		if store.LVSRole(&cfg) == store.LVSRoleDirector && st.VPN.OCServ.Enabled {
 			for _, vs := range cfg.VirtualServers {
 				if vs.Service == "ocserv" && store.LVSOCServConflictsLocal(vs, st.VPN.OCServ) {
 					warnings = append(warnings, "local ocserv enabled on same port as LVS ocserv cluster; disable local ocserv or use a different port")
@@ -25,9 +25,13 @@ func (srv *Server) handleLVS(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		if store.LVSRole(&cfg) == store.LVSRoleRS && cfg.Enabled && !st.VPN.OCServ.Enabled {
+			warnings = append(warnings, "rs mode: enable local service (e.g. ocserv) listening on VIP:port")
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"config":       cfg,
 			"status":       lvs.ShowStatus(),
+			"rs_status":    lvs.ShowRSStatus(cfg),
 			"dev_wan":      srv.env.DevWAN,
 			"dev_lan":      srv.env.DevLAN,
 			"root":         os.Getuid() == 0,
@@ -85,8 +89,9 @@ func (srv *Server) handleLVSApply(w http.ResponseWriter, r *http.Request) {
 	}
 	srv.auditLog(r, "lvs.apply", "")
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":     true,
-		"status": lvs.ShowStatus(),
+		"ok":        true,
+		"status":    lvs.ShowStatus(),
+		"rs_status": lvs.ShowRSStatus(cfg),
 	})
 }
 
@@ -119,6 +124,10 @@ func (srv *Server) handleLVSVirtualServers(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		st := srv.store.Get()
+		if store.LVSRole(&st.LVS) == store.LVSRoleRS {
+			writeBadRequest(w, "virtual servers require director role")
+			return
+		}
 		probe := store.LVSState{
 			Enabled:        true,
 			Mode:           st.LVS.Mode,
@@ -185,6 +194,11 @@ func (srv *Server) handleLVSVirtualServers(w http.ResponseWriter, r *http.Reques
 }
 
 func (srv *Server) handleLVSRealServers(w http.ResponseWriter, r *http.Request) {
+	st := srv.store.Get()
+	if store.LVSRole(&st.LVS) == store.LVSRoleRS {
+		writeBadRequest(w, "real server management requires director role")
+		return
+	}
 	switch r.Method {
 	case http.MethodPost:
 		var body struct {
@@ -327,6 +341,10 @@ func (srv *Server) handleLVSOCServCluster(w http.ResponseWriter, r *http.Request
 		vs.Comment = c
 	}
 	st := srv.store.Get()
+	if store.LVSRole(&st.LVS) == store.LVSRoleRS {
+		writeBadRequest(w, "ocserv cluster requires director role")
+		return
+	}
 	if store.LVSVSConflictsForward(vs, st.Firewall.WanPortForwards) {
 		writeBadRequest(w, "conflicts with WAN port forward on same vip:port")
 		return

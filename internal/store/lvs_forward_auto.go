@@ -20,7 +20,7 @@ func IsAutoLVSForwardRule(r FilterRule) bool {
 
 // BuildAutoLVSForwardFilterRules 为 LVS NAT 生成 WAN→LAN 至各 RS 的 forward 放行（与端口转发 auto-fwd 类似）。
 func BuildAutoLVSForwardFilterRules(l LVSState, devLAN, defaultWAN string) []FilterRule {
-	if !l.Enabled {
+	if !l.Enabled || LVSRole(&l) != LVSRoleDirector {
 		return nil
 	}
 	devLAN = strings.TrimSpace(devLAN)

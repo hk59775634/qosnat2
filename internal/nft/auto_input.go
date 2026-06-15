@@ -25,7 +25,7 @@ func AutoInputFromState(st store.State) store.AutoInputVPN {
 		}
 		ai.SNMPAllowedNetworks = append([]string(nil), cfg.AllowedNetworks...)
 	}
-	if st.LVS.Enabled {
+	if st.LVS.Enabled && store.LVSRole(&st.LVS) == store.LVSRoleDirector {
 		ai.LVSEndpoints = store.CollectLVSInputEndpoints(st.LVS)
 	}
 	return ai
