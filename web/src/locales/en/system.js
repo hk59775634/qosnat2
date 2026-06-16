@@ -96,6 +96,7 @@ export default {
     importState: 'Import state.json',
     importConfirm: 'I understand this will overwrite the current configuration',
     stateExported: 'Configuration exported',
+    exportNeedPassword: 'Enter current password before export',
     stateImported: 'Configuration imported',
     importNeedPassword: 'Enter current password before import',
     importNeedConfirm: 'Confirm import checkbox required',

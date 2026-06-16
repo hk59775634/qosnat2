@@ -23,3 +23,23 @@ func TestMergeOCServRadiusSecretBeforeNormalize(t *testing.T) {
 		t.Fatalf("secret = %q, want saved-secret", body.Radius.Secret)
 	}
 }
+
+func TestMergeAllOCServVhostUserPasswords(t *testing.T) {
+	prev := store.DefaultOCServ()
+	prev.Vhosts = []store.OCServVhost{{
+		Domain:  "vpn.example.com",
+		Enabled: true,
+		Users:   []store.OCServUser{{Username: "alice", Password: "saved-pw"}},
+	}}
+	body := prev
+	body.Vhosts = []store.OCServVhost{{
+		Domain:  "vpn.example.com",
+		Enabled: true,
+		Users:   []store.OCServUser{{Username: "alice"}},
+	}}
+
+	mergeAllOCServVhostUserPasswords(&body, prev)
+	if body.Vhosts[0].Users[0].Password != "saved-pw" {
+		t.Fatalf("password = %q, want saved-pw", body.Vhosts[0].Users[0].Password)
+	}
+}

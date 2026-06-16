@@ -12,11 +12,38 @@ import (
 )
 
 func (srv *Server) handleSystemStateExport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet, http.MethodPost:
+	default:
 		writeMethodNotAllowed(w)
 		return
 	}
+	if code, msg := srv.apiKeyAdminScopeError(r); code != "" {
+		writeAPIError(w, http.StatusForbidden, code, msg)
+		return
+	}
+	pass := currentPasswordFromRequest(r)
+	if r.Method == http.MethodPost {
+		var body struct {
+			CurrentPassword string `json:"current_password"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			writeAPIError(w, http.StatusBadRequest, "VALID_BAD_JSON", "bad json")
+			return
+		}
+		if pass == "" {
+			pass = strings.TrimSpace(body.CurrentPassword)
+		}
+	}
+	if pass == "" {
+		writeAPIError(w, http.StatusForbidden, "AUTH_FORBIDDEN", "current password required (JSON body or X-Current-Password header)")
+		return
+	}
 	st := srv.store.Get()
+	if !srv.verifyAdmin(st.AdminUser, pass) {
+		writeAPIError(w, http.StatusForbidden, "AUTH_FORBIDDEN", "current password required to export state")
+		return
+	}
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		writeApplyError(w, err)
@@ -66,16 +93,17 @@ func (srv *Server) handleSystemStateImport(w http.ResponseWriter, r *http.Reques
 	srv.commitStateImport(w, r, imported, srv.store.Path())
 }
 
-// handleSystemStateImportRaw accepts raw state.json upload with password query/header.
+// handleSystemStateImportRaw accepts raw state.json upload with password header/body only.
 func (srv *Server) handleSystemStateImportRaw(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		writeMethodNotAllowed(w)
 		return
 	}
-	pass := r.URL.Query().Get("current_password")
-	if pass == "" {
-		pass = r.Header.Get("X-Current-Password")
+	if r.URL.Query().Get("current_password") != "" {
+		writeAPIError(w, http.StatusBadRequest, "VALID_PASSWORD_QUERY", "current_password must be sent via X-Current-Password header, not query string")
+		return
 	}
+	pass := currentPasswordFromRequest(r)
 	st := srv.store.Get()
 	if !srv.verifyAdmin(st.AdminUser, pass) {
 		writeAPIError(w, http.StatusForbidden, "AUTH_FORBIDDEN", "current password required")

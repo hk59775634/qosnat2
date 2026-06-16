@@ -69,6 +69,10 @@ func (srv *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		writeUnauthorized(w, "unauthorized")
 		return
 	}
+	if code, msg := srv.apiKeyAdminScopeError(r); code != "" {
+		writeAPIError(w, http.StatusForbidden, code, msg)
+		return
+	}
 	if !terminalClientAllowed(r) {
 		writeForbidden(w, "", "client IP not allowed for web terminal (QOSNAT_TERMINAL_ALLOW_CIDRS)")
 		return

@@ -72,14 +72,15 @@ func (srv *Server) handleRoutesPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if err := route.Apply(entry); err != nil {
-			writeInternalError(w, err.Error())
-			return
-		}
 		_ = srv.store.Update(func(st *store.State) {
 			st.Routes = append(st.Routes, entry)
 		})
 		if !srv.persistState(w) {
+			return
+		}
+		if err := route.Apply(entry); err != nil {
+			srv.removeRouteByID(entry.ID)
+			writeInternalError(w, err.Error())
 			return
 		}
 	}
@@ -244,10 +245,13 @@ func (srv *Server) handleRoutesItem(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			_ = route.Delete(old)
 			if !srv.persistState(w) {
+				_ = srv.store.Update(func(st *store.State) {
+					st.Routes = append(st.Routes, old)
+				})
 				return
 			}
+			_ = route.Delete(old)
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:

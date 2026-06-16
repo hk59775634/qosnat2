@@ -65,6 +65,8 @@ type Server struct {
 	lastNatStackDHCP     store.DHCPState
 	dataplaneMetrics     dataplaneMetrics
 	warpWatchCancel      context.CancelFunc
+	serviceBgCancel      context.CancelFunc
+	bootApplyCancel      context.CancelFunc
 	serviceBackgroundOnce sync.Once
 }
 
@@ -173,7 +175,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/system/mark-policy", srv.requireAuth(srv.handleMarkPolicy))
 	m.HandleFunc("/api/v1/system/tuning", srv.requireAuth(srv.handleSystemTuning))
 	m.HandleFunc("/api/v1/system/general", srv.requireAuth(srv.handleSystemGeneral))
-	m.HandleFunc("/api/v1/system/state/export", srv.requireAuth(srv.handleSystemStateExport))
+	m.HandleFunc("/api/v1/system/state/export", srv.requireAuth(srv.handleSystemStateExport)) // GET/POST
 	m.HandleFunc("/api/v1/system/state/import", srv.requireAuth(srv.handleSystemStateImport))
 	m.HandleFunc("/api/v1/system/state/import/raw", srv.requireAuth(srv.handleSystemStateImportRaw))
 	m.HandleFunc("/api/v1/system/version/switch/verify", srv.requireAuth(srv.handleSystemVersionSwitchVerify))

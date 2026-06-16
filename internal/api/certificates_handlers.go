@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -237,14 +238,23 @@ func (srv *Server) migrateCertificateAutoRenew() {
 	}
 }
 
-func (srv *Server) startManagedCertsBackground() {
+func (srv *Server) startManagedCertsBackground(ctx context.Context) {
 	go func() {
-		time.Sleep(20 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(20 * time.Second):
+		}
 		srv.runCertificateAutoRenewTick()
 		t := time.NewTicker(12 * time.Hour)
 		defer t.Stop()
-		for range t.C {
-			srv.runCertificateAutoRenewTick()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				srv.runCertificateAutoRenewTick()
+			}
 		}
 	}()
 }

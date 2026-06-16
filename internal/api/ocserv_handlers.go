@@ -41,6 +41,7 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		mergeOCServRadiusSecret(&body, prev)
 		mergeOCServCamouflageSecret(&body, prev)
 		mergeAllOCServVhostSecrets(&body, prev)
+		mergeAllOCServVhostUserPasswords(&body, prev)
 		if err := store.NormalizeOCServ(&body); err != nil {
 			writeBadRequest(w, err.Error())
 			return

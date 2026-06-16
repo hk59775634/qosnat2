@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/hk59775634/qosnat2/internal/api"
 	"github.com/hk59775634/qosnat2/internal/ebpf"
@@ -70,6 +72,14 @@ func runServer() {
 	srv.ReconcileTLSOnBoot()
 	srv.ApplyAllOnBoot()
 	srv.StartBackground()
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Println("shutdown signal received, stopping background tasks")
+		srv.StopBackground()
+		os.Exit(0)
+	}()
 	if err := srv.Listen(); err != nil {
 		log.Fatal(err)
 	}

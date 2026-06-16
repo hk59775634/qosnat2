@@ -15,16 +15,19 @@ func (srv *Server) handleSNMP(w http.ResponseWriter, r *http.Request) {
 		st := srv.store.Get()
 		cfg := st.SNMP
 		_ = store.NormalizeSNMP(&cfg)
+		pub := cfg
+		pub.ROCommunity = ""
 		rendered := ""
 		if snmpd.ShowStatus().Installed {
 			rendered = snmpd.RenderConf(cfg)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"config":     cfg,
-			"status":     snmpd.ShowStatus(),
-			"rendered":   rendered,
-			"root":       os.Getuid() == 0,
-			"monitoring": snmpd.MonitoringHintsFor(srv.env.DevLAN, srv.env.DevWAN),
+			"config":            pub,
+			"ro_community_set":  strings.TrimSpace(cfg.ROCommunity) != "",
+			"status":            snmpd.ShowStatus(),
+			"rendered":          rendered,
+			"root":              os.Getuid() == 0,
+			"monitoring":        snmpd.MonitoringHintsFor(srv.env.DevLAN, srv.env.DevWAN),
 		})
 	case http.MethodPut:
 		var body store.SNMPState

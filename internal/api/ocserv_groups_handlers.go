@@ -127,7 +127,6 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		prevFull := deepCopyOCServState(srv.store.Get().VPN.OCServ)
-		body.Enabled = true
 		st := srv.store.Get().VPN.OCServ
 		if r.Method == http.MethodPost {
 			body = store.VhostFromGlobal(st, body.Domain, body.Comment, body.AuthMethod)
@@ -281,6 +280,14 @@ func mergeAllOCServVhostSecrets(body *store.OCServState, prev store.OCServState)
 	for i := range body.Vhosts {
 		if p := findOCServVhost(prev.Vhosts, body.Vhosts[i].Domain); p.Domain != "" {
 			mergeOCServVhostSecrets(&body.Vhosts[i], p)
+		}
+	}
+}
+
+func mergeAllOCServVhostUserPasswords(body *store.OCServState, prev store.OCServState) {
+	for i := range body.Vhosts {
+		if p := findOCServVhost(prev.Vhosts, body.Vhosts[i].Domain); p.Domain != "" {
+			mergeOCServVhostUserPasswords(&body.Vhosts[i], p)
 		}
 	}
 }

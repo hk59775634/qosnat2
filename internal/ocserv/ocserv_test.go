@@ -175,3 +175,18 @@ func TestRenderConfPlain(t *testing.T) {
 		t.Fatalf("%s", conf)
 	}
 }
+
+func TestRenderConfSkipsDisabledVhost(t *testing.T) {
+	o := store.DefaultOCServ()
+	o.Vhosts = []store.OCServVhost{
+		{Enabled: false, Domain: "disabled.example.com"},
+		{Enabled: true, Domain: "active.example.com"},
+	}
+	conf := RenderConf(o, nil)
+	if strings.Contains(conf, "[vhost:disabled.example.com]") {
+		t.Fatalf("disabled vhost must not be rendered:\n%s", conf)
+	}
+	if !strings.Contains(conf, "[vhost:active.example.com]") {
+		t.Fatalf("active vhost missing:\n%s", conf)
+	}
+}

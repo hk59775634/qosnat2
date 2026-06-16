@@ -154,6 +154,8 @@ export const api = {
       put: (body) => request('/api/v1/system/general', { method: 'PUT', body: JSON.stringify(body) }),
     },
     state: {
+      export: (body) =>
+        request('/api/v1/system/state/export', { method: 'POST', body: JSON.stringify(body) }),
       exportUrl: () => '/api/v1/system/state/export',
       import: (body) =>
         request('/api/v1/system/state/import', { method: 'POST', body: JSON.stringify(body) }),

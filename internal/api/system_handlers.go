@@ -253,6 +253,10 @@ func (srv *Server) handleSystemGeneral(w http.ResponseWriter, r *http.Request) {
 			srv.auditLog(r, "system.password", "changed")
 		}
 		if h := strings.TrimSpace(body.Hostname); h != "" {
+			if err := validateHostname(h); err != nil {
+				writeBadRequest(w, err.Error())
+				return
+			}
 			_ = srv.store.Update(func(st *store.State) {
 				st.System.Hostname = h
 			})
@@ -310,4 +314,19 @@ func (srv *Server) handleSystemAudit(w http.ResponseWriter, r *http.Request) {
 		"entries": list,
 		"path":    audit.Path(),
 	})
+}
+
+func validateHostname(h string) error {
+	if h == "" || len(h) > 253 {
+		return fmt.Errorf("invalid hostname")
+	}
+	if strings.ContainsAny(h, " /\\") {
+		return fmt.Errorf("invalid hostname")
+	}
+	for _, label := range strings.Split(h, ".") {
+		if label == "" || len(label) > 63 {
+			return fmt.Errorf("invalid hostname")
+		}
+	}
+	return nil
 }

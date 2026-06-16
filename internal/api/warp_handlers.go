@@ -79,7 +79,6 @@ func (srv *Server) handleNetworkWarpStatus(w http.ResponseWriter, r *http.Reques
 	resp := map[string]any{
 		"installed":            installed,
 		"enabled":              srv.store.Get().Network.WarpEnabled,
-		"warp_license_key":     strings.TrimSpace(srv.store.Get().Network.WarpLicenseKey),
 		"warp_license_key_set": store.WarpLicenseKeyConfigured(srv.store.Get()),
 		"service_up":           service,
 		"connected":     connected,
@@ -128,11 +127,9 @@ func (srv *Server) handleNetworkWarpLicensePut(w http.ResponseWriter, r *http.Re
 		return
 	}
 	srv.auditLog(r, "network.warp.license", "")
-	key := strings.TrimSpace(srv.store.Get().Network.WarpLicenseKey)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                   true,
-		"warp_license_key":     key,
-		"warp_license_key_set": key != "",
+		"warp_license_key_set": store.WarpLicenseKeyConfigured(srv.store.Get()),
 	})
 }
 
@@ -142,7 +139,6 @@ func (srv *Server) handleNetworkWarpLicenseDelete(w http.ResponseWriter, r *http
 	if !hadKey && !wasEnabled && !warpnetns.IsConnected() && !warpnetns.NetnsExists() {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":                   true,
-			"warp_license_key":     "",
 			"warp_license_key_set": false,
 		})
 		return
@@ -170,7 +166,6 @@ func (srv *Server) handleNetworkWarpLicenseDelete(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":                   true,
 		"message":              "WARP license key removed; auto-reconnect disabled",
-		"warp_license_key":     "",
 		"warp_license_key_set": false,
 	})
 }
@@ -209,7 +204,6 @@ func (srv *Server) handleNetworkWarpLicenseApply(w http.ResponseWriter, r *http.
 	resp := map[string]any{
 		"ok":                   true,
 		"message":              "WARP+ license applied",
-		"warp_license_key":     key,
 		"warp_license_key_set": true,
 	}
 	if warpnetns.IsConnected() {

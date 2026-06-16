@@ -99,13 +99,11 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 				return
 			}
 		}
-		var old store.EgressPolicy
 		found := false
 		backup := store.CloneEgressPolicies(stBefore.Network.EgressPolicies)
 		_ = srv.store.Update(func(st *store.State) {
 			for i, p := range st.Network.EgressPolicies {
 				if p.ID == id {
-					old = p
 					st.Network.EgressPolicies[i] = body
 					found = true
 					break
@@ -125,9 +123,6 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeNftApplyError(w, err)
 			return
 		}
-		if old.ID != "" {
-			policyroute.DeletePolicy(old, stBefore.Network.WanLinks, store.AliasByName(stBefore.Firewall.Aliases))
-		}
 		if !srv.saveState(w) {
 			srv.setEgressPolicies(backup)
 			return
@@ -144,16 +139,12 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeBadRequest(w, "id required")
 			return
 		}
-		var removed store.EgressPolicy
-		var links []store.WanLink
 		found := false
 		backup := store.CloneEgressPolicies(srv.store.Get().Network.EgressPolicies)
 		_ = srv.store.Update(func(st *store.State) {
-			links = append([]store.WanLink(nil), st.Network.WanLinks...)
 			var out []store.EgressPolicy
 			for _, p := range st.Network.EgressPolicies {
 				if p.ID == id {
-					removed = p
 					found = true
 					continue
 				}
@@ -174,7 +165,6 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeNftApplyError(w, err)
 			return
 		}
-		policyroute.DeletePolicy(removed, links, store.AliasByName(srv.store.Get().Firewall.Aliases))
 		if !srv.saveState(w) {
 			srv.setEgressPolicies(backup)
 			return

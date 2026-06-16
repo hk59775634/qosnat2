@@ -493,20 +493,14 @@ async function handleConfirm(password) {
 async function exportState() {
   err.value = ''
   ok.value = ''
+  if (!importPassword.value) {
+    err.value = t('system.general.exportNeedPassword')
+    return
+  }
   backupBusy.value = true
   try {
-    const res = await fetch(api.system.state.exportUrl(), { credentials: 'include' })
-    if (!res.ok) {
-      let msg = res.statusText
-      try {
-        const j = await res.json()
-        msg = j.error || msg
-      } catch {
-        /* ignore */
-      }
-      throw new Error(msg)
-    }
-    const blob = await res.blob()
+    const res = await api.system.state.export({ current_password: importPassword.value })
+    const blob = new Blob([JSON.stringify(res, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -517,7 +511,7 @@ async function exportState() {
     URL.revokeObjectURL(url)
     ok.value = t('system.general.stateExported')
   } catch (e) {
-    err.value = e.message
+    err.value = e.data?.error || e.message
   } finally {
     backupBusy.value = false
   }

@@ -19,9 +19,22 @@ var Defaults = map[string]string{
 
 const confPath = "/etc/sysctl.d/99-qosnat2.conf"
 
+// ValidateValue rejects sysctl values that could break the generated config file.
+func ValidateValue(v string) error {
+	if strings.ContainsAny(v, "\n\r\x00=") {
+		return fmt.Errorf("invalid sysctl value")
+	}
+	return nil
+}
+
 // Apply 写入 sysctl.d 并 sysctl -p（extra 为用户覆盖，usePerformance 合并高性能预设）
 func Apply(extra map[string]string, usePerformance bool) error {
 	merged := Merge(extra, usePerformance)
+	for _, v := range merged {
+		if err := ValidateValue(v); err != nil {
+			return err
+		}
+	}
 	var b strings.Builder
 	b.WriteString("# qosnat2 — generated\n")
 	for k, v := range merged {

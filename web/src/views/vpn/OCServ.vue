@@ -141,8 +141,8 @@ const radiusUsesGroupconfig = computed(() => isRadius.value && cfg.value?.radius
 const useOcctl = computed(() => !!cfg.value?.advanced?.use_occtl)
 
 const needsCiscoSvcUdp443 = computed(() => {
-  if (!cfg.value?.advanced?.cisco_svc_client_compat) return false
-  return !cfg.value.advanced?.udp || cfg.value.udp_port !== 443
+  if (!usesCiscoSvcCompatAnywhere()) return false
+  return !cfg.value?.advanced?.udp || cfg.value.udp_port !== 443
 })
 
 function usesCiscoSvcCompatAnywhere() {

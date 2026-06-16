@@ -75,7 +75,7 @@ func NormalizeOCServGroups(groups *[]OCServGroup) error {
 	return nil
 }
 
-// NormalizeOCServVhosts 校验并规范化 vhost 列表
+// NormalizeOCServVhosts 校验并规范化 vhost 列表（enabled=false 的 vhost 保留在 state，不写入 ocserv.conf）
 func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 	if vhosts == nil {
 		return nil
@@ -83,10 +83,25 @@ func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 	seen := map[string]bool{}
 	out := make([]OCServVhost, 0, len(*vhosts))
 	for i := range *vhosts {
-		if !(*vhosts)[i].Enabled {
+		v := (*vhosts)[i]
+		if !v.Enabled {
+			d, err := normalizeOCServVhostDomain(v.Domain)
+			if err != nil {
+				return err
+			}
+			if seen[d] {
+				return fmt.Errorf("duplicate vhost %s", d)
+			}
+			seen[d] = true
+			v.Domain = d
+			v.Enabled = false
+			if v.Users == nil {
+				v.Users = []OCServUser{}
+			}
+			out = append(out, v)
 			continue
 		}
-		d, err := normalizeOCServVhostDomain((*vhosts)[i].Domain)
+		d, err := normalizeOCServVhostDomain(v.Domain)
 		if err != nil {
 			return err
 		}
@@ -94,7 +109,6 @@ func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 			return fmt.Errorf("duplicate vhost %s", d)
 		}
 		seen[d] = true
-		v := (*vhosts)[i]
 		v.Domain = d
 		am := strings.TrimSpace(v.AuthMethod)
 		if am != "" && am != OCServAuthPlain && am != OCServAuthRadius && am != "certificate" {
@@ -125,14 +139,14 @@ func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 		if v.Users == nil {
 			v.Users = []OCServUser{}
 		}
-		for i := range v.Users {
-			u := strings.TrimSpace(v.Users[i].Username)
+		for j := range v.Users {
+			u := strings.TrimSpace(v.Users[j].Username)
 			if u == "" {
 				return fmt.Errorf("vhost %s: user username required", d)
 			}
-			v.Users[i].Username = u
-			v.Users[i].Group = strings.TrimSpace(v.Users[i].Group)
-			v.Users[i].Comment = strings.TrimSpace(v.Users[i].Comment)
+			v.Users[j].Username = u
+			v.Users[j].Group = strings.TrimSpace(v.Users[j].Group)
+			v.Users[j].Comment = strings.TrimSpace(v.Users[j].Comment)
 		}
 		out = append(out, v)
 	}

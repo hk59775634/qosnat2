@@ -162,13 +162,13 @@ const warpServiceLine = computed(() => {
 
 const warpLicenseKeySet = computed(() => !!warpStatus.value?.warp_license_key_set)
 
-const warpLicenseDirty = computed(() => warpLicenseKey.value !== warpLicenseSaved.value)
+const warpLicenseDirty = computed(() => warpLicenseKey.value.trim() !== '')
 
 const warpLicenseStatusText = computed(() => {
-  const key = warpLicenseDirty.value
-    ? warpLicenseKey.value.trim()
-    : String(warpLicenseSaved.value || warpStatus.value?.warp_license_key || '').trim()
-  return key
+  const typed = warpLicenseKey.value.trim()
+  if (typed) return typed
+  if (warpLicenseKeySet.value && !warpLicenseDirty.value) return ''
+  return ''
 })
 
 const warpCanApplyLicense = computed(
@@ -177,7 +177,7 @@ const warpCanApplyLicense = computed(
     warpStatus.value?.installed &&
     warpUiConnected.value &&
     warpStatus.value?.netns_healthy &&
-    !!warpLicenseStatusText.value &&
+    warpLicenseKeySet.value &&
     !warpLicenseDirty.value
 )
 
@@ -255,11 +255,10 @@ function applyConnectTaskResult(result) {
 }
 
 function syncWarpLicenseFromStatus(ws) {
-  const saved = String(ws?.warp_license_key || '')
-  warpLicenseSaved.value = saved
   if (!warpLicenseDirty.value) {
-    warpLicenseKey.value = saved
+    warpLicenseKey.value = ''
   }
+  warpLicenseSaved.value = ws?.warp_license_key_set ? 'configured' : ''
 }
 
 function applyWarpStatus(ws) {
@@ -508,12 +507,10 @@ async function saveWarpLicenseKey() {
   warpLicenseSaving.value = true
   try {
     const r = await api.network.warp.saveLicense({ license_key: warpLicenseKey.value.trim() })
-    const saved = String(r.warp_license_key || warpLicenseKey.value.trim())
-    warpLicenseKey.value = saved
-    warpLicenseSaved.value = saved
+    warpLicenseKey.value = ''
+    warpLicenseSaved.value = r.warp_license_key_set ? 'configured' : ''
     warpStatus.value = {
       ...warpStatus.value,
-      warp_license_key: saved,
       warp_license_key_set: !!r.warp_license_key_set,
     }
     ok.value = t('network.wanLinks.warpLicenseKeySaved')
@@ -967,6 +964,7 @@ onUnmounted(() => {
         <div>
           {{ t('network.wanLinks.warpLicenseKeyStatusLabel') }}:
           <span v-if="warpLicenseStatusText" class="font-mono break-all">{{ warpLicenseStatusText }}</span>
+          <span v-else-if="warpLicenseKeySet && !warpLicenseDirty" class="text-emerald-700">{{ t('network.wanLinks.warpLicenseKeyConfigured') }}</span>
           <span v-else class="text-slate-400">{{ t('network.wanLinks.warpLicenseKeyNotSet') }}</span>
           <span v-if="warpLicenseDirty && warpLicenseStatusText" class="text-amber-700 ml-1">
             ({{ t('network.wanLinks.warpLicenseKeyUnsavedShort') }})

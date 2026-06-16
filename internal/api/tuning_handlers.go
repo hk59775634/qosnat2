@@ -113,6 +113,18 @@ func (srv *Server) putSystemTuning(w http.ResponseWriter, r *http.Request) {
 		writeBadJSON(w)
 		return
 	}
+	if body.Sysctl != nil {
+		allowed := sysctlKeySet()
+		for k, v := range body.Sysctl {
+			if v == "" || !allowed[k] {
+				continue
+			}
+			if err := sysctl.ValidateValue(v); err != nil {
+				writeBadRequest(w, err.Error())
+				return
+			}
+		}
+	}
 	var appliedRec *tuning.Result
 	if err := srv.store.Update(func(st *store.State) {
 		sys := st.System

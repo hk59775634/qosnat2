@@ -88,11 +88,18 @@ func (srv *Server) reloadNftWithFilterRevert(backup []store.FilterRule) error {
 			if !srv.persistStateOrLog("revert filter rules") {
 				log.Printf("revert filter rules: save failed")
 			}
-			_ = srv.reloadNftLocked()
-			return err
+			return srv.revertReloadError("filter rules", err)
 		}
 		return nil
 	})
+}
+
+func (srv *Server) revertReloadError(what string, applyErr error) error {
+	if rerr := srv.reloadNftLocked(); rerr != nil {
+		log.Printf("revert %s reload: %v", what, rerr)
+		return fmt.Errorf("%s nft apply: %w; revert reload: %v", what, applyErr, rerr)
+	}
+	return applyErr
 }
 
 func (srv *Server) reloadNftWithForwardRevert(backupFwd []store.WanPortForward, backupRules []store.FilterRule) error {
@@ -103,8 +110,7 @@ func (srv *Server) reloadNftWithForwardRevert(backupFwd []store.WanPortForward, 
 			srv.syncAutoFirewallRules()
 			if !srv.persistStateOrLog("nft revert save") {
 			}
-			_ = srv.reloadNftLocked()
-			return err
+			return srv.revertReloadError("forward rules", err)
 		}
 		return nil
 	})
@@ -116,8 +122,7 @@ func (srv *Server) reloadNftWithAliasRevert(backup []store.AliasSet) error {
 			srv.setAliases(backup)
 			if !srv.persistStateOrLog("nft revert save") {
 			}
-			_ = srv.reloadNftLocked()
-			return err
+			return srv.revertReloadError("aliases", err)
 		}
 		return nil
 	})
@@ -152,8 +157,7 @@ func (srv *Server) reloadNftWithNatRevert(backup store.NatState) error {
 			srv.setNatState(backup)
 			if !srv.persistStateOrLog("nft revert save") {
 			}
-			_ = srv.reloadNftLocked()
-			return err
+			return srv.revertReloadError("nat", err)
 		}
 		return nil
 	})
@@ -165,8 +169,7 @@ func (srv *Server) reloadNftWithNatIPv4Revert(backup store.NatIPv4State) error {
 			srv.setNatIPv4(backup)
 			if !srv.persistStateOrLog("nft revert save") {
 			}
-			_ = srv.reloadNftLocked()
-			return err
+			return srv.revertReloadError("nat ipv4", err)
 		}
 		return nil
 	})
@@ -191,7 +194,10 @@ func (srv *Server) reloadNftAfterEgressRevert(backupPolicies []store.EgressPolic
 			srv.setEgressPolicies(backupPolicies)
 			if !srv.persistStateOrLog("nft revert save") {
 			}
-			_ = srv.applyEgressDataPlaneLocked()
+			if rerr := srv.applyEgressDataPlaneLocked(); rerr != nil {
+				log.Printf("revert egress dataplane: %v", rerr)
+				return fmt.Errorf("egress dataplane: %w; revert: %v", err, rerr)
+			}
 			return err
 		}
 		return nil

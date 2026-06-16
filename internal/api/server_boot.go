@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
@@ -89,7 +90,9 @@ func (srv *Server) ApplyAllOnBoot() {
 		log.Printf("apply on start: %v", bootErr)
 	}
 	if bootErr != nil {
-		go srv.bootApplyRetryLoop()
+		ctx, cancel := context.WithCancel(context.Background())
+		srv.bootApplyCancel = cancel
+		go srv.bootApplyRetryLoop(ctx)
 	}
 	if srv.setupComplete() {
 		go func() {
@@ -100,10 +103,14 @@ func (srv *Server) ApplyAllOnBoot() {
 	}
 }
 
-func (srv *Server) bootApplyRetryLoop() {
+func (srv *Server) bootApplyRetryLoop(ctx context.Context) {
 	delays := []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second}
 	for i, d := range delays {
-		time.Sleep(d)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(d):
+		}
 		if err := srv.ApplyAll(); err != nil {
 			log.Printf("apply on start retry %d/%d: %v", i+1, len(delays), err)
 			continue
@@ -125,7 +132,9 @@ func (srv *Server) StartBackground() {
 
 func (srv *Server) startServiceBackground() {
 	srv.serviceBackgroundOnce.Do(func() {
-		srv.startACMEBackground()
-		srv.startManagedCertsBackground()
+		ctx, cancel := context.WithCancel(context.Background())
+		srv.serviceBgCancel = cancel
+		srv.startACMEBackground(ctx)
+		srv.startManagedCertsBackground(ctx)
 	})
 }

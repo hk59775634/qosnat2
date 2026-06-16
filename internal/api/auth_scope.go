@@ -37,6 +37,21 @@ func apiKeyFirewallWriteAllowed(path string) bool {
 	return strings.HasPrefix(path, "/api/v1/firewall/")
 }
 
+// apiKeyAdminScopeError 限制 scoped API Key：仅 admin 角色或会话 Cookie/Bearer 可访问敏感端点。
+func (srv *Server) apiKeyAdminScopeError(r *http.Request) (code, message string) {
+	if strings.TrimSpace(r.Header.Get("X-API-Key")) == "" {
+		return "", ""
+	}
+	if srv.apiKeyRoleFromRequest(r) == store.APIKeyRoleAdmin {
+		return "", ""
+	}
+	return "AUTH_SCOPE_ADMIN", "admin API key or session login required"
+}
+
+func currentPasswordFromRequest(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get("X-Current-Password"))
+}
+
 func (srv *Server) apiKeyRoleFromRequest(r *http.Request) string {
 	key := strings.TrimSpace(r.Header.Get("X-API-Key"))
 	if key == "" {

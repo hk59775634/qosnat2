@@ -70,3 +70,23 @@ func TestMergeOCServAdvancedDefaults(t *testing.T) {
 		t.Fatalf("%+v", o.Advanced)
 	}
 }
+
+func TestNormalizeOCServVhostsPreservesDisabled(t *testing.T) {
+	o := DefaultOCServ()
+	o.Vhosts = []OCServVhost{
+		{Enabled: false, Domain: "disabled.example.com", Comment: "off"},
+		{Enabled: true, Domain: "active.example.com"},
+	}
+	if err := NormalizeOCServ(&o); err != nil {
+		t.Fatal(err)
+	}
+	if len(o.Vhosts) != 2 {
+		t.Fatalf("got %d vhosts, want 2", len(o.Vhosts))
+	}
+	if o.Vhosts[0].Domain != "disabled.example.com" || o.Vhosts[0].Enabled {
+		t.Fatalf("disabled vhost: %+v", o.Vhosts[0])
+	}
+	if o.Vhosts[1].Domain != "active.example.com" || !o.Vhosts[1].Enabled {
+		t.Fatalf("active vhost: %+v", o.Vhosts[1])
+	}
+}

@@ -74,15 +74,17 @@ func (srv *Server) reloadNftLocked() error {
 	return nil
 }
 
-// applyWanLinkDataPlane 多 WAN 变更后同步策略路由与 nft。
+// applyWanLinkDataPlane 多 WAN 变更后同步策略路由与 nft（在 nftApplyMu 内原子执行）。
 func (srv *Server) applyWanLinkDataPlane() error {
-	if warns := srv.refreshURLAliasesLocked(); len(warns) > 0 {
-		log.Printf("url alias refresh: %v", warns)
-	}
-	if err := srv.applyEgressPolicyRoutes(); err != nil {
-		return err
-	}
-	return srv.reloadNft()
+	return srv.withNftApply(func() error {
+		if warns := srv.refreshURLAliasesLocked(); len(warns) > 0 {
+			log.Printf("url alias refresh: %v", warns)
+		}
+		if err := srv.applyEgressPolicyRoutes(); err != nil {
+			return err
+		}
+		return srv.reloadNftLocked()
+	})
 }
 
 func (srv *Server) nftCfg() nft.Config {

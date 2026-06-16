@@ -96,6 +96,7 @@ export default {
     importState: '导入 state.json',
     importConfirm: '我确认这将覆盖当前全部配置',
     stateExported: '配置已导出',
+    exportNeedPassword: '导出前请填写当前密码',
     stateImported: '配置已导入',
     importNeedPassword: '导入前请填写当前密码',
     importNeedConfirm: '请勾选确认导入',

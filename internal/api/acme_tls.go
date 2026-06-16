@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -155,14 +156,23 @@ func (srv *Server) maybeAutoRenewACME() {
 	}
 }
 
-func (srv *Server) startACMEBackground() {
+func (srv *Server) startACMEBackground(ctx context.Context) {
 	go func() {
-		time.Sleep(15 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(15 * time.Second):
+		}
 		srv.maybeAutoRenewACME()
 		t := time.NewTicker(12 * time.Hour)
 		defer t.Stop()
-		for range t.C {
-			srv.maybeAutoRenewACME()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				srv.maybeAutoRenewACME()
+			}
 		}
 	}()
 }
