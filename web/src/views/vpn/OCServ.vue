@@ -1804,12 +1804,12 @@ onUnmounted(() => {
         </label>
         <label class="text-sm">
           {{ t('ocserv.ipv4Net') }}
-          <input v-model="cfg.ipv4_network" class="input w-full mt-1" :placeholder="isRadius ? t('ocserv.ipv4NetRadiusPh') : ''" />
+          <input v-model="cfg.ipv4_network" class="input w-full mt-1" />
           <span v-if="isRadius" class="text-xs text-slate-500 block mt-1">{{ t('ocserv.ipv4NetRadiusHint') }}</span>
         </label>
         <label class="text-sm">
           {{ t('ocserv.ipv4Mask') }}
-          <input v-model="cfg.ipv4_netmask" class="input w-full mt-1" :placeholder="isRadius ? t('ocserv.ipv4MaskRadiusPh') : ''" />
+          <input v-model="cfg.ipv4_netmask" class="input w-full mt-1" />
         </label>
         <label class="text-sm">{{ t('ocserv.device') }} <input v-model="cfg.device" class="input w-full mt-1" /></label>
         <label class="text-sm">{{ t('ocserv.maxClients') }} <input v-model.number="cfg.max_clients" type="number" class="input w-full mt-1" /></label>

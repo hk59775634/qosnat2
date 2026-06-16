@@ -20,7 +20,7 @@ type OCServRadius struct {
 	AuthPort        int    `json:"auth_port,omitempty"`         // 默认 1812
 	AcctPort        int    `json:"acct_port,omitempty"`         // 默认 1813
 	Secret          string `json:"secret,omitempty"`            // 共享密钥；GET 不返回
-	GroupConfig     bool   `json:"groupconfig"`                 // 从 RADIUS 读取 per-user 配置；false 时可用本地 config-per-group
+	GroupConfig     bool   `json:"groupconfig"`                 // auth groupconfig=true；RADIUS Access-Accept 可覆盖 ipv4-network 等配置
 	NASIdentifier   string `json:"nas_identifier,omitempty"`    // NAS-Identifier 属性
 	AcctEnabled     bool   `json:"acct_enabled,omitempty"`      // RADIUS 计费
 	StatsReportTime int    `json:"stats_report_time,omitempty"` // 计费上报间隔（秒），默认 360
@@ -114,7 +114,7 @@ func OCServRadiusUsesGroupconfig(o OCServState) bool {
 	return OCServUsesRadius(o) && o.Radius.GroupConfig
 }
 
-// OCServIPv4PoolConfigured 是否配置了本地 IPv4 地址池（写入 ocserv ipv4-network）。
+// OCServIPv4PoolConfigured 是否配置了 IPv4 地址池（全局 ipv4-network 必填；vhost 可留空继承）。
 func OCServIPv4PoolConfigured(o OCServState) bool {
 	return strings.TrimSpace(o.IPv4Network) != ""
 }
@@ -141,28 +141,14 @@ func NormalizeOCServ(o *OCServState) error {
 	}
 	o.IPv4Network = strings.TrimSpace(o.IPv4Network)
 	o.IPv4Netmask = strings.TrimSpace(o.IPv4Netmask)
-	if OCServUsesRadius(*o) {
-		if o.IPv4Network == "" {
-			o.IPv4Network = ""
-			o.IPv4Netmask = ""
-		} else {
-			if o.IPv4Netmask == "" {
-				o.IPv4Netmask = "255.255.255.0"
-			}
-			if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
-				return err
-			}
-		}
-	} else {
-		if o.IPv4Network == "" {
-			o.IPv4Network = "10.250.0.0"
-		}
-		if o.IPv4Netmask == "" {
-			o.IPv4Netmask = "255.255.255.0"
-		}
-		if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
-			return err
-		}
+	if o.IPv4Network == "" {
+		o.IPv4Network = "10.250.0.0"
+	}
+	if o.IPv4Netmask == "" {
+		o.IPv4Netmask = "255.255.255.0"
+	}
+	if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
+		return err
 	}
 	if o.DNS == nil {
 		o.DNS = []string{"8.8.8.8"}

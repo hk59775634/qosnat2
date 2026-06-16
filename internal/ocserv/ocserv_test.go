@@ -47,7 +47,7 @@ func TestRenderConfRadius(t *testing.T) {
 	}
 }
 
-func TestRenderConfRadiusEmptyPool(t *testing.T) {
+func TestRenderConfRadiusAlwaysWritesPool(t *testing.T) {
 	o := store.DefaultOCServ()
 	o.AuthMethod = store.OCServAuthRadius
 	o.Radius = store.OCServRadius{
@@ -56,14 +56,15 @@ func TestRenderConfRadiusEmptyPool(t *testing.T) {
 		Secret:      "s3cret",
 		GroupConfig: true,
 	}
-	o.IPv4Network = ""
-	o.IPv4Netmask = ""
 	if err := store.NormalizeOCServ(&o); err != nil {
 		t.Fatal(err)
 	}
 	conf := RenderConf(o, nil)
-	if strings.Contains(conf, "ipv4-network = ") {
-		t.Fatalf("radius without local pool must omit ipv4-network:\n%s", conf)
+	if !strings.Contains(conf, "ipv4-network = 10.250.0.0") {
+		t.Fatalf("ocserv.conf must always include ipv4-network:\n%s", conf)
+	}
+	if !strings.Contains(conf, "ipv4-netmask = 255.255.255.0") {
+		t.Fatalf("ocserv.conf must always include ipv4-netmask:\n%s", conf)
 	}
 }
 
