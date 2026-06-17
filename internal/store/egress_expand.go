@@ -2,10 +2,11 @@ package store
 
 import "strings"
 
-// EgressIPRule 一条 ip rule（from/to 空表示省略该维度）。
+// EgressIPRule 一条 ip rule（from/to/iif 空表示省略该维度）。
 type EgressIPRule struct {
 	From     string
 	To       string
+	Iif      string
 	Table    int
 	Priority int
 	Mode     string // source|destination|both — 决定 main 旁路规则形态
@@ -35,10 +36,14 @@ func ExpandEgressIPRules(p EgressPolicy, table int, aliases map[string]AliasSet)
 	if len(dsts) == 0 {
 		dsts = []string{""}
 	}
+	iif := strings.TrimSpace(p.SrcIface)
+	hasSrc := len(srcs) == 1 && srcs[0] != "" || len(srcs) > 1
+	hasDst := len(dsts) == 1 && dsts[0] != "" || len(dsts) > 1
+	hasIif := iif != ""
 	mode := "both"
-	if srcs[0] == "" && len(srcs) == 1 {
+	if !hasSrc && !hasIif && hasDst {
 		mode = "destination"
-	} else if dsts[0] == "" && len(dsts) == 1 {
+	} else if (hasSrc || hasIif) && !hasDst {
 		mode = "source"
 	}
 	var rules []EgressIPRule
@@ -47,6 +52,7 @@ func ExpandEgressIPRules(p EgressPolicy, table int, aliases map[string]AliasSet)
 			rules = append(rules, EgressIPRule{
 				From:     src,
 				To:       dst,
+				Iif:      iif,
 				Table:    table,
 				Priority: p.Priority,
 				Mode:     mode,
@@ -63,6 +69,9 @@ func EgressEndpointsLabel(p EgressPolicy) string {
 		parts = append(parts, "src:@"+p.SrcAlias)
 	} else if p.SrcCIDR != "" {
 		parts = append(parts, "src:"+p.SrcCIDR)
+	}
+	if p.SrcIface != "" {
+		parts = append(parts, "iif:"+p.SrcIface)
 	}
 	if p.DstAlias != "" {
 		parts = append(parts, "dst:@"+p.DstAlias)

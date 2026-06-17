@@ -648,6 +648,7 @@ components:
         dst_cidr: { type: string }
         src_alias: { type: string, description: '源地址别名' }
         dst_alias: { type: string, description: '目标地址别名' }
+        src_iface: { type: string, description: '入接口 iif，可与源地址组合' }
         wan_link_id: { type: string, description: '绑定的 WanLink.id' }
         snat_ip: { type: string, description: '出站 SNAT 地址，空则使用该 WAN 口首个全球 IPv4' }
         priority: { type: integer, description: 'ip rule 优先级，默认 100' }

@@ -116,7 +116,14 @@ func listTunDevices(prefix string) []string {
 // removeLegacyIFBPath 清除 HTB/IFB 遗留；须在 EDT BPF attach 之前调用。
 func (srv *Server) removeLegacyIFBPath(st store.State) {
 	for _, dev := range srv.shaperAllManagedDevices(st) {
-		_ = exec.Command("tc", "filter", "del", "dev", dev, "ingress").Run()
+		for i := 0; i < 32; i++ {
+			out, _ := exec.Command("tc", "filter", "del", "dev", dev, "ingress").CombinedOutput()
+			msg := string(out)
+			if strings.Contains(msg, "No such file") || strings.Contains(msg, "Cannot find") ||
+				strings.Contains(msg, "does not match") {
+				break
+			}
+		}
 	}
 	shaper.TeardownDevice(netif.IFBDev)
 	netif.RemoveIFB()

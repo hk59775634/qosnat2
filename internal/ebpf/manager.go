@@ -293,16 +293,22 @@ func (m *Manager) ReplayState(st store.State) error {
 	if err := m.flushProfileLpm(); err != nil {
 		return err
 	}
+	var replayErr error
 	for _, p := range store.SortProfilesByID(st.Shaper.Profiles) {
 		rv, err := rateFromProfile(p.Down, p.Up)
 		if err != nil {
-			return err
+			if replayErr == nil {
+				replayErr = err
+			}
+			continue
 		}
 		if err := m.UpdateProfile(p.CIDR, rv); err != nil {
-			return err
+			if replayErr == nil {
+				replayErr = err
+			}
 		}
 	}
-	return nil
+	return replayErr
 }
 
 func (m *Manager) UpdateProfile(cidr string, rv RateVal) error {

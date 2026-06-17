@@ -253,13 +253,17 @@ func writeEgressSameIfaceForward(b *strings.Builder, devLAN string, egress []sto
 		if e.Device != devLAN {
 			continue
 		}
-		match := store.EgressSNATMatchClause(e.Policy)
-		if match == "" {
+		iif := devLAN
+		if ifc := strings.TrimSpace(e.Policy.SrcIface); ifc != "" {
+			iif = ifc
+		}
+		ipMatch := store.EgressSNATIPMatchClause(e.Policy)
+		if ipMatch == "" && strings.TrimSpace(e.Policy.SrcIface) == "" {
 			continue
 		}
 		b.WriteString(fmt.Sprintf(
 			"        iifname \"%s\" oifname \"%s\" %s accept comment \"qosnat2-egress-same-iface\"\n",
-			devLAN, e.Device, match,
+			iif, e.Device, strings.TrimSpace(ipMatch),
 		))
 	}
 }

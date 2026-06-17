@@ -47,6 +47,7 @@ const WARP_ACTION_LOCK_MS = 4000
 const warpActionLocked = ref(false)
 let warpActionLockTimer = null
 const devWan = ref('')
+const ifaces = ref([])
 const err = ref('')
 const ok = ref('')
 const form = ref({
@@ -60,6 +61,7 @@ const form = ref({
 })
 const egForm = ref({
   name: 'US exit',
+  src_iface: '',
   src_mode: 'cidr',
   src_cidr: '10.250.0.0/24',
   src_alias: '',
@@ -75,6 +77,7 @@ const editingId = ref(null)
 const editingEgressId = ref(null)
 const egEditForm = ref({
   name: '',
+  src_iface: '',
   src_mode: 'cidr',
   src_cidr: '',
   src_alias: '',
@@ -98,6 +101,9 @@ const editForm = ref({
 
 const linkOptions = computed(() =>
   (links.value || []).filter((w) => w.enabled).map((w) => ({ id: w.id, label: `${w.name} (${w.device})` }))
+)
+const ifaceOptions = computed(() =>
+  (ifaces.value || []).map((i) => i.name).filter(Boolean)
 )
 const warpInstallRunning = computed(() => installingWarp.value || warpInstallJob.value?.state === 'running')
 const warpTaskRunning = computed(
@@ -292,10 +298,11 @@ async function refreshWarpStatus() {
 async function load() {
   err.value = ''
   try {
-    const [wan, eg, ws] = await Promise.all([
+    const [wan, eg, ws, ifs] = await Promise.all([
       api.network.wanLinks.list(),
       api.network.egressPolicies.list(),
       api.network.warp.status(),
+      api.interfaces.list(),
     ])
     links.value = wan?.wan_links || []
     devWan.value = wan?.dev_wan || ''
@@ -304,6 +311,7 @@ async function load() {
     googleIpv4Url.value = eg?.google_ipv4_url || 'https://www.gstatic.com/ipranges/goog_ipv4_only.txt'
     resolved.value = eg?.resolved || []
     cloudflareCIDRs.value = eg?.cloudflare_cdn_cidrs_ipv4 || []
+    ifaces.value = ifs?.interfaces || []
     applyWarpStatus(ws)
     if (!form.value.device && devWan.value) form.value.device = devWan.value
     if (!egForm.value.wan_link_id && links.value.length) {
@@ -668,6 +676,7 @@ function buildEgressBody(f) {
     enabled: f.enabled,
   }
   if (f.snat_ip) body.snat_ip = f.snat_ip
+  if (f.src_iface) body.src_iface = f.src_iface.trim()
   if (f.src_mode === 'cidr' && f.src_cidr) body.src_cidr = f.src_cidr.trim()
   if (f.src_mode === 'alias' && f.src_alias) body.src_alias = f.src_alias
   if (f.dst_mode === 'cidr' && f.dst_cidr) body.dst_cidr = f.dst_cidr.trim()
@@ -677,6 +686,7 @@ function buildEgressBody(f) {
 
 function egressEndpointsLabel(p) {
   const parts = []
+  if (p.src_iface) parts.push(`${t('network.wanLinks.iifShort')}:${p.src_iface}`)
   if (p.src_alias) parts.push(`${t('network.wanLinks.srcShort')}:@${p.src_alias}`)
   else if (p.src_cidr) parts.push(`${t('network.wanLinks.srcShort')}:${p.src_cidr}`)
   else if (p.cidr && p.match !== 'destination') parts.push(`${t('network.wanLinks.srcShort')}:${p.cidr}`)
@@ -717,6 +727,7 @@ function policyToEditForm(p) {
   }
   return {
     name: p.name || '',
+    src_iface: p.src_iface || '',
     src_mode,
     src_cidr,
     src_alias,
@@ -1092,6 +1103,11 @@ onUnmounted(() => {
           </select>
         </div>
         <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.srcIface') }}</label>
+          <select v-model="egForm.src_iface" class="input-field mt-1 mb-1">
+            <option value="">{{ t('network.wanLinks.matchAny') }}</option>
+            <option v-for="name in ifaceOptions" :key="'eg-iif-' + name" :value="name">{{ name }}</option>
+          </select>
           <label class="text-xs text-slate-500">{{ t('network.wanLinks.srcAddress') }}</label>
           <select v-model="egForm.src_mode" class="input-field mt-1 mb-1">
             <option value="none">{{ t('network.wanLinks.matchAny') }}</option>
@@ -1180,6 +1196,12 @@ onUnmounted(() => {
             <template v-if="editingEgressId === p.id">
               <td><input v-model="egEditForm.name" class="input-field text-xs" /></td>
               <td class="space-y-1 min-w-[14rem]">
+                <select v-model="egEditForm.src_iface" class="input-field text-xs">
+                  <option value="">{{ t('network.wanLinks.srcIface') }}: {{ t('network.wanLinks.matchAny') }}</option>
+                  <option v-for="name in ifaceOptions" :key="'eg-eiif-' + name" :value="name">
+                    {{ t('network.wanLinks.srcIface') }}: {{ name }}
+                  </option>
+                </select>
                 <select v-model="egEditForm.src_mode" class="input-field text-xs">
                   <option value="none">{{ t('network.wanLinks.srcAddress') }}: {{ t('network.wanLinks.matchAny') }}</option>
                   <option value="cidr">{{ t('network.wanLinks.srcAddress') }}: CIDR</option>

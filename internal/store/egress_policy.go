@@ -23,10 +23,29 @@ type EgressPolicy struct {
 	DstCIDR   string `json:"dst_cidr,omitempty"`
 	SrcAlias  string `json:"src_alias,omitempty"`
 	DstAlias  string `json:"dst_alias,omitempty"`
+	SrcIface  string `json:"src_iface,omitempty"` // 入接口 iif；可与 src_cidr/alias 组合
 	WanLinkID string `json:"wan_link_id"`
 	SNATIP    string `json:"snat_ip,omitempty"` // 空则使用该 WAN 口首个全球 IPv4
 	Priority  int    `json:"priority"`          // ip rule 优先级，越小越优先；默认 100
 	Enabled   bool   `json:"enabled"`
+}
+
+// normalizeEgressIPv4CIDR 接受 IPv4 主机或 CIDR，主机规范为 /32。
+func normalizeEgressIPv4CIDR(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", fmt.Errorf("empty")
+	}
+	if err := ValidateIPv4OrCIDR(s); err != nil {
+		return "", err
+	}
+	if !strings.Contains(s, "/") {
+		return s + "/32", nil
+	}
+	if err := ValidateCIDR(s); err != nil {
+		return "", err
+	}
+	return s, nil
 }
 
 func NewEgressPolicyID() string {
@@ -50,6 +69,7 @@ func NormalizeEgressPolicy(p *EgressPolicy) error {
 	p.DstCIDR = strings.TrimSpace(p.DstCIDR)
 	p.SrcAlias = strings.TrimSpace(p.SrcAlias)
 	p.DstAlias = strings.TrimSpace(p.DstAlias)
+	p.SrcIface = strings.TrimSpace(p.SrcIface)
 	p.WanLinkID = strings.TrimSpace(p.WanLinkID)
 	p.SNATIP = strings.TrimSpace(p.SNATIP)
 
@@ -61,8 +81,8 @@ func NormalizeEgressPolicy(p *EgressPolicy) error {
 			p.SrcCIDR = p.CIDR
 		}
 	}
-	if p.SrcCIDR == "" && p.DstCIDR == "" && p.SrcAlias == "" && p.DstAlias == "" {
-		return fmt.Errorf("source or destination (cidr or alias) required")
+	if p.SrcCIDR == "" && p.DstCIDR == "" && p.SrcAlias == "" && p.DstAlias == "" && p.SrcIface == "" {
+		return fmt.Errorf("source or destination (cidr, alias, or interface) required")
 	}
 	if p.SrcCIDR != "" && p.SrcAlias != "" {
 		return fmt.Errorf("src_cidr and src_alias are mutually exclusive")
@@ -70,15 +90,24 @@ func NormalizeEgressPolicy(p *EgressPolicy) error {
 	if p.DstCIDR != "" && p.DstAlias != "" {
 		return fmt.Errorf("dst_cidr and dst_alias are mutually exclusive")
 	}
-	if p.SrcCIDR != "" {
-		if err := ValidateCIDR(p.SrcCIDR); err != nil {
-			return fmt.Errorf("src_cidr: %w", err)
+	if p.SrcIface != "" {
+		if err := ValidateIfaceName(p.SrcIface); err != nil {
+			return fmt.Errorf("src_iface: %w", err)
 		}
 	}
+	if p.SrcCIDR != "" {
+		cidr, err := normalizeEgressIPv4CIDR(p.SrcCIDR)
+		if err != nil {
+			return fmt.Errorf("src_cidr: %w", err)
+		}
+		p.SrcCIDR = cidr
+	}
 	if p.DstCIDR != "" {
-		if err := ValidateCIDR(p.DstCIDR); err != nil {
+		cidr, err := normalizeEgressIPv4CIDR(p.DstCIDR)
+		if err != nil {
 			return fmt.Errorf("dst_cidr: %w", err)
 		}
+		p.DstCIDR = cidr
 	}
 	if p.SrcAlias != "" {
 		if err := ValidateAliasName(p.SrcAlias); err != nil {
@@ -186,7 +215,7 @@ func EgressPolicySourceMatchCIDRs(policies []EgressPolicy) []string {
 }
 
 func legacySourceCIDR(p EgressPolicy) string {
-	if p.SrcCIDR != "" || p.DstCIDR != "" || p.SrcAlias != "" || p.DstAlias != "" {
+	if p.SrcCIDR != "" || p.DstCIDR != "" || p.SrcAlias != "" || p.DstAlias != "" || p.SrcIface != "" {
 		return ""
 	}
 	if p.Match == "destination" {
@@ -203,8 +232,8 @@ func EgressSNATAddrPrefix(match string) string {
 	return "ip saddr"
 }
 
-// EgressSNATMatchClause 生成 nft SNAT 匹配子句（支持源/目的 CIDR 与别名组合）。
-func EgressSNATMatchClause(p EgressPolicy) string {
+// EgressSNATIPMatchClause 生成 nft SNAT 的 IP 匹配子句（不含 iifname）。
+func EgressSNATIPMatchClause(p EgressPolicy) string {
 	var parts []string
 	if p.SrcAlias != "" {
 		parts = append(parts, "ip saddr @alias_"+p.SrcAlias)
@@ -222,10 +251,22 @@ func EgressSNATMatchClause(p EgressPolicy) string {
 	return strings.Join(parts, " ")
 }
 
+// EgressSNATMatchClause 生成 nft SNAT 匹配子句（源/目的 CIDR、别名与入接口）。
+func EgressSNATMatchClause(p EgressPolicy) string {
+	var parts []string
+	if iif := strings.TrimSpace(p.SrcIface); iif != "" {
+		parts = append(parts, fmt.Sprintf(`iifname "%s"`, iif))
+	}
+	if ip := EgressSNATIPMatchClause(p); ip != "" {
+		parts = append(parts, ip)
+	}
+	return strings.Join(parts, " ")
+}
+
 // EgressPolicySignature 用于去重比较。
 func EgressPolicySignature(p EgressPolicy) string {
 	return strings.Join([]string{
-		p.SrcCIDR, p.DstCIDR, p.SrcAlias, p.DstAlias, p.CIDR, p.Match, p.WanLinkID,
+		p.SrcCIDR, p.DstCIDR, p.SrcAlias, p.DstAlias, p.SrcIface, p.CIDR, p.Match, p.WanLinkID,
 	}, "|")
 }
 

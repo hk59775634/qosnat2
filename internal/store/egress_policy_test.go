@@ -61,6 +61,45 @@ func TestNormalizeEgressPolicyBothEndpoints(t *testing.T) {
 	}
 }
 
+func TestNormalizeEgressPolicyHostIPv4(t *testing.T) {
+	p := &EgressPolicy{SrcCIDR: "10.0.0.42", WanLinkID: "wan-1"}
+	if err := NormalizeEgressPolicy(p); err != nil {
+		t.Fatal(err)
+	}
+	if p.SrcCIDR != "10.0.0.42/32" {
+		t.Fatalf("src_cidr=%q want /32", p.SrcCIDR)
+	}
+}
+
+func TestNormalizeEgressPolicySrcIfaceOnly(t *testing.T) {
+	p := &EgressPolicy{SrcIface: "wg0", WanLinkID: "wan-1"}
+	if err := NormalizeEgressPolicy(p); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExpandEgressIPRules_iif(t *testing.T) {
+	p := EgressPolicy{
+		SrcIface: "wg0", SrcCIDR: "10.8.0.0/24",
+		Priority: 100, Enabled: true,
+	}
+	rules, err := ExpandEgressIPRules(p, 201, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 1 || rules[0].Iif != "wg0" || rules[0].From != "10.8.0.0/24" || rules[0].Mode != "source" {
+		t.Fatalf("got %+v", rules)
+	}
+}
+
+func TestEgressSNATMatchClause_iif(t *testing.T) {
+	cl := EgressSNATMatchClause(EgressPolicy{SrcIface: "vpns0", SrcCIDR: "10.250.0.5/32"})
+	want := `iifname "vpns0" ip saddr 10.250.0.5/32`
+	if cl != want {
+		t.Fatalf("got %q want %q", cl, want)
+	}
+}
+
 func TestExpandEgressIPRules_both(t *testing.T) {
 	p := EgressPolicy{
 		SrcCIDR: "10.0.0.0/8", DstCIDR: "8.8.8.0/24",

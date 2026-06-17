@@ -88,14 +88,17 @@ func addExpandedRule(r store.EgressIPRule) error {
 	if toPrio < 1 {
 		toPrio = 1
 	}
-	if err := addPolicyRuleLookup(r.From, r.To, strconv.Itoa(r.Table), r.Priority); err != nil {
+	if err := addPolicyRuleLookup(r.From, r.To, r.Iif, strconv.Itoa(r.Table), r.Priority); err != nil {
 		return err
 	}
 	return addMainBypass(r, toPrio)
 }
 
-func addPolicyRuleLookup(from, to, lookup string, priority int) error {
+func addPolicyRuleLookup(from, to, iif, lookup string, priority int) error {
 	args := []string{"rule", "add"}
+	if iif != "" {
+		args = append(args, "iif", iif)
+	}
 	if from != "" {
 		args = append(args, "from", from)
 	}
@@ -115,18 +118,21 @@ func addPolicyRuleLookup(from, to, lookup string, priority int) error {
 func addMainBypass(r store.EgressIPRule, toPrio int) error {
 	switch r.Mode {
 	case "source":
-		if r.From == "" {
+		if r.From == "" && r.Iif == "" {
 			return nil
 		}
-		return addPolicyRuleLookup("", r.From, "main", toPrio)
+		if r.From != "" {
+			return addPolicyRuleLookup("", r.From, r.Iif, "main", toPrio)
+		}
+		return addPolicyRuleLookup("", "", r.Iif, "main", toPrio)
 	case "destination":
 		if r.To == "" {
 			return nil
 		}
-		return addPolicyRuleLookup(r.To, "", "main", toPrio)
+		return addPolicyRuleLookup(r.To, "", r.Iif, "main", toPrio)
 	case "both":
 		if r.From != "" && r.To != "" {
-			return addPolicyRuleLookup(r.From, r.To, "main", toPrio)
+			return addPolicyRuleLookup(r.From, r.To, r.Iif, "main", toPrio)
 		}
 	}
 	return nil
@@ -137,26 +143,31 @@ func delExpandedRule(r store.EgressIPRule) {
 	if toPrio < 1 {
 		toPrio = 1
 	}
-	delRuleLoop(r.From, r.To, strconv.Itoa(r.Table), r.Priority)
+	delRuleLoop(r.From, r.To, r.Iif, strconv.Itoa(r.Table), r.Priority)
 	switch r.Mode {
 	case "source":
 		if r.From != "" {
-			delRuleLoop("", r.From, "main", toPrio)
+			delRuleLoop("", r.From, r.Iif, "main", toPrio)
+		} else if r.Iif != "" {
+			delRuleLoop("", "", r.Iif, "main", toPrio)
 		}
 	case "destination":
 		if r.To != "" {
-			delRuleLoop(r.To, "", "main", toPrio)
+			delRuleLoop(r.To, "", r.Iif, "main", toPrio)
 		}
 	case "both":
 		if r.From != "" && r.To != "" {
-			delRuleLoop(r.From, r.To, "main", toPrio)
+			delRuleLoop(r.From, r.To, r.Iif, "main", toPrio)
 		}
 	}
 }
 
-func delRuleLoop(from, to, lookup string, priority int) {
+func delRuleLoop(from, to, iif, lookup string, priority int) {
 	for {
 		args := []string{"rule", "del"}
+		if iif != "" {
+			args = append(args, "iif", iif)
+		}
 		if from != "" {
 			args = append(args, "from", from)
 		}
