@@ -5,20 +5,19 @@
 
 ## 概要
 
-出站策略支持源接口与单 IP 匹配；修复 EDT QoS 升级遗留 IFB 清理与 profile 回放失败导致不限速。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- 多 WAN 出站策略支持 `src_iface`（入接口 iif），可与源/目标 CIDR 或别名组合
+- （无）
 
 ## 优化
 
-- 出站策略源/目标地址支持单 IPv4（自动规范为 /32）；Web UI 增加源接口选择与网卡列表
+- （无）
 
 ## 修复
 
-- EDT 模式清理 HTB/IFB 遗留时循环删除 ingress filter，避免 mirred 残留导致内网流量误进 ifb0
-- BPF `ReplayState` 遇非法 profile 速率时跳过该项，其余网段限速仍生效
+- （无）
 
 ## 删除
 
@@ -26,4 +25,4 @@
 
 ## 其他
 
-- ip rule / nft SNAT 同步支持 iif 维度；同口转发规则避免重复 iifname
+- （无）

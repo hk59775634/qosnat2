@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061701",
+      "tag": "v2026061701",
+      "published_at": "2026-06-17T06:13:25Z",
+      "summary": "出站策略支持源接口与单 IP 匹配；修复 EDT QoS 升级遗留 IFB 清理与 profile 回放失败导致不限速。"
+    },
+    {
       "id": "2026061602",
       "tag": "v2026061602",
       "published_at": "2026-06-16T17:08:03Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061505",
       "published_at": "2026-06-15T07:21:17Z",
       "summary": "修复 LVS 安装 ipvsadm 时因缺少 linux-modules-extra 导致 modprobe ip_vs 失败的问题。"
-    },
-    {
-      "id": "2026061504",
-      "tag": "v2026061504",
-      "published_at": "2026-06-15T06:33:44Z",
-      "summary": "LVS 支持 Director / Real Server 角色切换，RS 模式可通过 Web 自动配置 lo VIP、ARP 抑制与 LAN 防火墙放行。"
     }
   ]
 }
