@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026061702",
+      "tag": "v2026061702",
+      "published_at": "2026-06-17T07:13:13Z",
+      "summary": "修复防火墙 ICMP/ICMPv6 规则生成无效 nft 语法导致无法应用的问题。"
+    },
+    {
       "id": "2026061701",
       "tag": "v2026061701",
       "published_at": "2026-06-17T06:13:25Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061506",
       "published_at": "2026-06-15T09:47:05Z",
       "summary": "OCServ RADIUS 认证时 IPv4 地址池可留空，由 RADIUS 下发客户端 IP，不再默认兜底 10.250.0.0。"
-    },
-    {
-      "id": "2026061505",
-      "tag": "v2026061505",
-      "published_at": "2026-06-15T07:21:17Z",
-      "summary": "修复 LVS 安装 ipvsadm 时因缺少 linux-modules-extra 导致 modprobe ip_vs 失败的问题。"
     }
   ]
 }
