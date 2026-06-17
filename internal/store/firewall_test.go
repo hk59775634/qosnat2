@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFilterRuleNftLine(t *testing.T) {
 	r := FilterRule{
@@ -18,6 +21,31 @@ func TestFilterRuleNftLine(t *testing.T) {
 	tcpIdx := indexOf(line, " tcp ")
 	if ipIdx < 0 || tcpIdx < 0 || ipIdx > tcpIdx {
 		t.Fatalf("ip match must precede tcp: %s", line)
+	}
+}
+
+func TestFilterRuleNftLineIcmp(t *testing.T) {
+	r := FilterRule{
+		ID: "fr-icmp", Chain: "forward", Action: "accept",
+		Iif: "ens19", Oif: "ens18", Proto: "icmp", Enabled: true,
+	}
+	line := r.NftRuleLine()
+	if !containsAll(line, `iifname "ens19"`, `oifname "ens18"`, "meta l4proto icmp", " accept") {
+		t.Fatalf("unexpected icmp line: %s", line)
+	}
+	if strings.Contains(line, `oifname "ens18" icmp `) {
+		t.Fatalf("bare icmp must not appear: %s", line)
+	}
+}
+
+func TestFilterRuleNftLineIcmpv6(t *testing.T) {
+	r := FilterRule{
+		Chain: "input", Action: "accept", Iif: "ens18",
+		Proto: "icmpv6", IPVersion: "ipv6", Enabled: true,
+	}
+	line := r.NftRuleLine()
+	if !contains(line, "meta l4proto ipv6-icmp") {
+		t.Fatalf("unexpected icmpv6 line: %s", line)
 	}
 }
 

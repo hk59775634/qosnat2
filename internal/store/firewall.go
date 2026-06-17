@@ -199,7 +199,7 @@ func (r FilterRule) NftRuleLine() string {
 	}
 	// L4 协议与端口须在 ip/ip6 地址匹配之后（nft 语法要求）。
 	if r.Proto != "" && r.Proto != "all" {
-		parts = append(parts, r.Proto)
+		parts = append(parts, filterProtoNftClause(r.Proto))
 	}
 	if r.SrcPort > 0 {
 		parts = append(parts, fmt.Sprintf("sport %d", r.SrcPort))
@@ -213,6 +213,19 @@ func (r FilterRule) NftRuleLine() string {
 		line += c
 	}
 	return line
+}
+
+// filterProtoNftClause 将 UI/API 协议名转为 inet filter 链合法 nft 匹配子句。
+// 裸 icmp/icmpv6 在 inet 表 filter 链非法，须用 meta l4proto。
+func filterProtoNftClause(proto string) string {
+	switch strings.ToLower(strings.TrimSpace(proto)) {
+	case "icmp":
+		return "meta l4proto icmp"
+	case "icmpv6":
+		return "meta l4proto ipv6-icmp"
+	default:
+		return proto
+	}
 }
 
 func filterRuleComment(r FilterRule) string {

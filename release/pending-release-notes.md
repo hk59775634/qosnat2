@@ -5,7 +5,7 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+修复防火墙 ICMP/ICMPv6 规则生成无效 nft 语法导致无法应用的问题。
 
 ## 新增
 
@@ -17,7 +17,7 @@
 
 ## 修复
 
-- （无）
+- 防火墙规则协议为 `icmp` / `icmpv6` 时改为输出 `meta l4proto`，修复 `iifname ... icmp accept` 触发 `FIREWALL_NFT_INVALID` 的问题
 
 ## 删除
 
