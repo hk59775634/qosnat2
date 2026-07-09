@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026070901",
+      "tag": "v2026070901",
+      "published_at": "2026-07-09T03:18:06Z",
+      "summary": "ocserv 源码安装增加 Route B TunnelGroupName 补丁，并修复一键安装时 git fetch 标签冲突。"
+    },
+    {
       "id": "2026061702",
       "tag": "v2026061702",
       "published_at": "2026-06-17T07:13:13Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061601",
       "published_at": "2026-06-16T16:18:53Z",
       "summary": "加固 API 密钥权限与敏感信息脱敏，修复 OCServ 虚拟主机与数据面一致性，并支持 RADIUS 模式下 IPv4 地址池留空。"
-    },
-    {
-      "id": "2026061506",
-      "tag": "v2026061506",
-      "published_at": "2026-06-15T09:47:05Z",
-      "summary": "OCServ RADIUS 认证时 IPv4 地址池可留空，由 RADIUS 下发客户端 IP，不再默认兜底 10.250.0.0。"
     }
   ]
 }

@@ -5,12 +5,11 @@
 
 ## 概要
 
-ocserv 源码安装增加 Route B TunnelGroupName 补丁，并修复一键安装时 git fetch 标签冲突。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- ocserv 编译安装自动应用 `patches/ocserv/0001-radius-tunnel-group-name.patch`（URL 选组写入 RADIUS VSA 146）
-- radcli 字典增加 Cisco `TunnelGroupName`（VSA 146）属性
+- （无）
 
 ## 优化
 
@@ -18,7 +17,7 @@ ocserv 源码安装增加 Route B TunnelGroupName 补丁，并修复一键安装
 
 ## 修复
 
-- 一键安装 `install.sh`：已有 git 仓库时 `git fetch --tags` 因本地 tag 与远端不一致失败（would clobber existing tag）
+- （无）
 
 ## 删除
 
@@ -26,4 +25,4 @@ ocserv 源码安装增加 Route B TunnelGroupName 补丁，并修复一键安装
 
 ## 其他
 
-- 补丁源自 [ocserv-tunnel](https://github.com/hk59775634/ocserv-tunnel) SPEC-01，并补全 sec-mod 组名传递
+- （无）
