@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026070902",
+      "tag": "v2026070902",
+      "published_at": "2026-07-09T04:19:44Z",
+      "summary": "修复活跃主机（按 IP）页面上行/下行活动速率与配置不一致的显示错误。"
+    },
+    {
       "id": "2026070901",
       "tag": "v2026070901",
       "published_at": "2026-07-09T03:18:06Z",
@@ -25,12 +31,6 @@
       "tag": "v2026061602",
       "published_at": "2026-06-16T17:08:03Z",
       "summary": "修正 OCServ RADIUS 地址池策略：ocserv.conf 中 ipv4-network 必填，groupconfig=true 时 RADIUS 属性方可覆盖。"
-    },
-    {
-      "id": "2026061601",
-      "tag": "v2026061601",
-      "published_at": "2026-06-16T16:18:53Z",
-      "summary": "加固 API 密钥权限与敏感信息脱敏，修复 OCServ 虚拟主机与数据面一致性，并支持 RADIUS 模式下 IPv4 地址池留空。"
     }
   ]
 }
