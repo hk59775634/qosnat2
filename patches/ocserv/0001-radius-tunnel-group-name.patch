@@ -1,0 +1,97 @@
+diff --git a/src/auth/radius.c b/src/auth/radius.c
+index 2e6e3dc..a9101a3 100644
+--- a/src/auth/radius.c
++++ b/src/auth/radius.c
+@@ -167,6 +167,11 @@ static int radius_auth_init(void **ctx, void *pool, void *_vctx,
+ 		strlcpy(pctx->user_agent, info->user_agent,
+ 			sizeof(pctx->user_agent));
+ 
++	pctx->selected_group[0] = 0;
++	if (info->groupname && info->groupname[0] != 0)
++		strlcpy(pctx->selected_group, info->groupname,
++			sizeof(pctx->selected_group));
++
+ 	*ctx = pctx;
+ 
+ 	return ERR_AUTH_CONTINUE;
+@@ -423,6 +428,19 @@ static int radius_auth_pass(void *ctx, const char *pass, unsigned int pass_len)
+ 		pctx->state = NULL;
+ 	}
+ 
++	if (pctx->selected_group[0] != 0) {
++		if (rc_avpair_add(pctx->vctx->rh, &send, PW_TUNNELGROUPNAME,
++				  pctx->selected_group, -1, 0) == NULL) {
++			oc_syslog(
++				LOG_ERR,
++				"%s:%u: error adding TunnelGroupName VSA for user '%s' group '%s'",
++				__func__, __LINE__, pctx->username,
++				pctx->selected_group);
++			ret = ERR_AUTH_FAIL;
++			goto cleanup;
++		}
++	}
++
+ 	pctx->pass_msg[0] = 0;
+ 	ret = rc_aaa(pctx->vctx->rh, 0, send, &recvd, pctx->pass_msg, 0,
+ 		     PW_ACCESS_REQUEST);
+diff --git a/src/auth/radius.h b/src/auth/radius.h
+index e84c3e2..d43301f 100644
+--- a/src/auth/radius.h
++++ b/src/auth/radius.h
+@@ -42,6 +42,8 @@ struct radius_ctx_st {
+ 	char username[MAX_USERNAME_SIZE * 2];
+ 	char user_agent[MAX_AGENT_NAME];
+ 
++	char selected_group[MAX_GROUPNAME_SIZE];
++
+ 	char *groupnames[MAX_GROUPS];
+ 	unsigned int groupnames_size;
+ 
+diff --git a/src/sec-mod-auth.c b/src/sec-mod-auth.c
+index d2e2905..0f1e814 100644
+--- a/src/sec-mod-auth.c
++++ b/src/sec-mod-auth.c
+@@ -938,6 +938,11 @@ int handle_sec_auth_init(int cfd, sec_mod_st *sec, const SecAuthInitMsg *req,
+ 		goto cleanup;
+ 	}
+ 
++	if (req->group_name != NULL) {
++		strlcpy(e->req_group_name, req->group_name,
++			sizeof(e->req_group_name));
++	}
++
+ 	if (e->module) {
+ 		common_auth_init_st st;
+ 
+@@ -945,6 +950,7 @@ int handle_sec_auth_init(int cfd, sec_mod_st *sec, const SecAuthInitMsg *req,
+ 		st.ip = req->remote_ip;
+ 		st.our_ip = req->our_ip;
+ 		st.user_agent = req->user_agent;
++		st.groupname = (e->req_group_name[0] != 0) ? e->req_group_name : NULL;
+ 		st.id = pid;
+ 
+ 		ret = e->module->auth_init(&e->auth_ctx, e, e->vhost_auth_ctx,
+@@ -985,11 +991,6 @@ int handle_sec_auth_init(int cfd, sec_mod_st *sec, const SecAuthInitMsg *req,
+ 			sizeof(e->acct_info.our_ip));
+ 	}
+ 
+-	if (req->group_name != NULL) {
+-		strlcpy(e->req_group_name, req->group_name,
+-			sizeof(e->req_group_name));
+-	}
+-
+ 	if (req->cert_user_name != NULL) {
+ 		strlcpy(e->cert_user_name, req->cert_user_name,
+ 			sizeof(e->cert_user_name));
+diff --git a/src/sec-mod.h b/src/sec-mod.h
+index 090cf17..f1fd380 100644
+--- a/src/sec-mod.h
++++ b/src/sec-mod.h
+@@ -64,6 +64,7 @@ typedef struct common_auth_init_st {
+ 	const char *ip;
+ 	const char *our_ip;
+ 	const char *user_agent;
++	const char *groupname;
+ 	unsigned int id;
+ } common_auth_init_st;
+ 

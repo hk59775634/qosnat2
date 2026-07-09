@@ -10,6 +10,7 @@
 #   OCSERV_MIRROR_REPO            自建镜像（默认 github.com/hk59775634/ocserv，经 gh-proxy）
 #   OCSERV_GITLAB_REPO            官方 GitLab 回退
 #   OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
+#   PATCH_DIR=.../patches/ocserv   Route B 补丁目录（默认仓库内 patches/ocserv）
 set -euo pipefail
 
 OCSERV_MIRROR_REPO="${OCSERV_MIRROR_REPO:-https://github.com/hk59775634/ocserv.git}"
@@ -23,6 +24,7 @@ OCSERV_VERSION="${OCSERV_VERSION:-${OCSERV_TAG}}"
 OCSERV_PREFIX="${OCSERV_PREFIX:-/usr/local}"
 OCSERV_SYSCONFDIR="${OCSERV_SYSCONFDIR:-/etc/ocserv}"
 BUILD_DIR="${BUILD_DIR:-/usr/local/src/ocserv-build}"
+PATCH_DIR="${PATCH_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/patches/ocserv}"
 OCSERV_BIN="${OCSERV_PREFIX}/sbin/ocserv"
 MESON_BUILD_DIR="${MESON_BUILD_DIR:-build}"
 
@@ -155,6 +157,25 @@ fetch_source() {
   die "无法获取 ocserv 源码（tag=${tag}）"
 }
 
+apply_ocserv_patches() {
+  local patches=()
+  if [[ -d "${PATCH_DIR}" ]]; then
+    shopt -s nullglob
+    patches=("${PATCH_DIR}"/*.patch)
+    shopt -u nullglob
+  fi
+  [[ ${#patches[@]} -gt 0 ]] || return 0
+  log "应用 ocserv 补丁（${#patches[@]} 个）…"
+  cd "${BUILD_DIR}/ocserv"
+  local p
+  for p in "${patches[@]}"; do
+    log "  补丁: $(basename "${p}")"
+    if ! patch -p1 -N -s < "${p}"; then
+      die "补丁应用失败: $(basename "${p}")"
+    fi
+  done
+}
+
 build_install() {
   cd "${BUILD_DIR}/ocserv"
   if [[ -f meson.build ]]; then
@@ -258,6 +279,7 @@ install_source() {
   OCSERV_TAG="${OCSERV_VERSION}"
   install_build_deps
   fetch_source
+  apply_ocserv_patches
   build_install
   install_systemd_from_source
   seed_config

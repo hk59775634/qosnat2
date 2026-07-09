@@ -170,7 +170,8 @@ clone_or_update() {
   local ref="${QOSNAT_RELEASE_TAG:-main}"
   if [[ -d "${QOSNAT_INSTALL_DIR}/.git" ]]; then
     log "同步仓库到 ${ref}…"
-    git -C "${QOSNAT_INSTALL_DIR}" fetch --tags origin \
+    # --force：本地 tag 与远端不一致时避免 "would clobber existing tag" 导致 fetch 失败
+    git -C "${QOSNAT_INSTALL_DIR}" fetch --tags --force origin \
       || die "git fetch 失败（请检查网络，或删除 ${QOSNAT_INSTALL_DIR} 后重试）"
     if [[ "${ref}" == "main" ]]; then
       git -C "${QOSNAT_INSTALL_DIR}" reset --hard "origin/main" || die "git reset 失败"

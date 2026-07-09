@@ -292,13 +292,14 @@ ATTRIBUTE	RP-Downstream-Speed-Limit	2	integer
 
 END-VENDOR Roaring-Penguin
 
-# Cisco ASA (vendor 3076) — Access-Accept from ASA/RADIUS servers
+# Cisco ASA (vendor 3076) — Access-Accept from ASA/RADIUS servers; Route B TunnelGroupName (VSA 146)
 VENDOR Cisco-ASA 3076
 BEGIN-VENDOR Cisco-ASA
 ATTRIBUTE	ASA-Simultaneous-Logins		2	integer
 ATTRIBUTE	ASA-Use-Client-Address		17	integer
-ATTRIBUTE	ASA-Address-Pools			217	string
 ATTRIBUTE	ASA-Group-Policy			25	string
 ATTRIBUTE	ASA-Primary-DNS				5	ipaddr
 ATTRIBUTE	ASA-Secondary-DNS			6	ipaddr
+ATTRIBUTE	ASA-Address-Pools			217	string
+ATTRIBUTE	TunnelGroupName				146	string
 END-VENDOR Cisco-ASA

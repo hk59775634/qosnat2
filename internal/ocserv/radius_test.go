@@ -60,6 +60,7 @@ func TestRadcliDictionaryOcservAndCiscoASA(t *testing.T) {
 		"ATTRIBUTE	Acct-Status-Type	40	integer",
 		"VENDOR Cisco-ASA 3076",
 		"ATTRIBUTE	ASA-Address-Pools",
+		"ATTRIBUTE	TunnelGroupName				146	string",
 	} {
 		if !strings.Contains(radcliDictionary, sub) {
 			t.Fatalf("radcli dictionary missing %q", sub)
