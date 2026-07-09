@@ -65,7 +65,8 @@ func (m *Manager) ListActive() ([]ActiveEntry, error) {
 		}
 		ip := binary.BigEndian.Uint32(kbuf[0:4])
 		bps := binary.LittleEndian.Uint64(vbuf[16:24])
-		addActivity(ip, bps/2, bps/2)
+		// ingress token bucket 仅整形上行（源 IP）；勿计入下行活动
+		addActivity(ip, 0, bps)
 	}
 	if err := iter.Err(); err != nil {
 		return nil, err
