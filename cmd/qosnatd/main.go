@@ -14,12 +14,28 @@ import (
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	if len(os.Args) > 1 {
+		if isHelpArg(os.Args[1]) {
+			printHelp()
+			return
+		}
 		switch os.Args[1] {
 		case "apply-state":
 			runApplyState()
 			return
 		case "acme-ip-ssl":
 			runAcmeIPSSL()
+			return
+		case "status":
+			runStatus()
+			return
+		case "set-port":
+			runSetPort()
+			return
+		case "set-user":
+			runSetUser()
+			return
+		case "set-password":
+			runSetPassword()
 			return
 		}
 	}
