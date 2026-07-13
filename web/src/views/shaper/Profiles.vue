@@ -228,6 +228,7 @@ onMounted(load)
             <th class="w-10">ID</th>
             <th>{{ t('shaper.profiles.colIface') }}</th>
             <th>{{ t('shaper.profiles.cidrLabel') }}</th>
+            <th>{{ t('shaper.profiles.colMask') }}</th>
             <th>{{ t('shaper.profiles.colDown') }}</th>
             <th>{{ t('shaper.profiles.colUp') }}</th>
             <th class="w-24 text-right">{{ t('common.actions') }}</th>
@@ -248,6 +249,7 @@ onMounted(load)
             <td class="text-center font-mono text-slate-500">{{ p.id }}</td>
             <td class="font-mono text-xs">{{ p.device || bindDevice || devLan }}</td>
             <td class="font-mono">{{ p.cidr }}</td>
+            <td class="font-mono text-center">/{{ p.mask || 32 }}</td>
             <td>{{ bpsLabel(p.down_bps) }}</td>
             <td>{{ bpsLabel(p.up_bps) }}</td>
             <td class="text-right whitespace-nowrap">
@@ -257,7 +259,7 @@ onMounted(load)
             </td>
           </tr>
           <tr v-if="!profiles.length">
-            <td colspan="7" class="text-center text-slate-400 py-3">{{ t('shaper.profiles.noProfiles') }}</td>
+            <td colspan="8" class="text-center text-slate-400 py-3">{{ t('shaper.profiles.noProfiles') }}</td>
           </tr>
         </tbody>
       </table>

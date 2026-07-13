@@ -20,6 +20,7 @@ export default {
     help24: '/24 = whole subnet share',
     help32: '/32 = per-host',
     colIface: 'Interface',
+    colMask: 'Mask',
     colDown: 'Down',
     colUp: 'Up',
     dragSort: 'Drag to reorder',

@@ -20,6 +20,7 @@ export default {
     help24: '/24 整网共享',
     help32: '/32 每主机',
     colIface: '网卡',
+    colMask: '掩码',
     colDown: '下行',
     colUp: '上行',
     dragSort: '拖动排序',
