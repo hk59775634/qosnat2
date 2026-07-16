@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026071602",
+      "tag": "v2026071602",
+      "published_at": "2026-07-16T08:53:21Z",
+      "summary": "生产网关 FRR 托管路由自动恢复，并默认禁止 unattended-upgrades 自动升级 systemd/netplan 等关键包。"
+    },
+    {
       "id": "2026071601",
       "tag": "v2026071601",
       "published_at": "2026-07-16T05:19:01Z",
@@ -25,12 +31,6 @@
       "tag": "v2026070902",
       "published_at": "2026-07-09T04:19:44Z",
       "summary": "修复活跃主机（按 IP）页面上行/下行活动速率与配置不一致的显示错误。"
-    },
-    {
-      "id": "2026070901",
-      "tag": "v2026070901",
-      "published_at": "2026-07-09T03:18:06Z",
-      "summary": "ocserv 源码安装增加 Route B TunnelGroupName 补丁，并修复一键安装时 git fetch 标签冲突。"
     }
   ]
 }
