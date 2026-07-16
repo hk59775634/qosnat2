@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026071601",
+      "tag": "v2026071601",
+      "published_at": "2026-07-16T05:19:01Z",
+      "summary": "支持 FQDN 防火墙别名：网关主动解析域名并用于出站分流，无需客户端使用网关 DNS。"
+    },
+    {
       "id": "2026071301",
       "tag": "v2026071301",
       "published_at": "2026-07-13T07:09:32Z",
@@ -25,12 +31,6 @@
       "tag": "v2026070901",
       "published_at": "2026-07-09T03:18:06Z",
       "summary": "ocserv 源码安装增加 Route B TunnelGroupName 补丁，并修复一键安装时 git fetch 标签冲突。"
-    },
-    {
-      "id": "2026061702",
-      "tag": "v2026061702",
-      "published_at": "2026-06-17T07:13:13Z",
-      "summary": "修复防火墙 ICMP/ICMPv6 规则生成无效 nft 语法导致无法应用的问题。"
     }
   ]
 }
