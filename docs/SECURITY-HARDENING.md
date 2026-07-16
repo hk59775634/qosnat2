@@ -44,4 +44,34 @@ git pull && git checkout p12-security-hardening   # 或 main
 systemctl restart qosnatd
 ```
 
+## 生产网关：限制 unattended-upgrades
+
+默认部署（`deploy-qos-nat.sh start`）会执行 **lockdown** 模式：
+
+- 禁止 `apt-daily` / `apt-daily-upgrade` 定时器
+- 禁止自动 `update` / `upgrade` / `unattended-upgrade`
+- 写入包黑名单（systemd、netplan、frr、内核、iproute2、nftables 等），防止误开自动升级时动到数据面
+
+维护窗口内手动升级：
+
+```bash
+apt update
+apt upgrade   # 或按需指定包
+```
+
+单独配置（已安装机器）：
+
+```bash
+sudo ./scripts/configure-gateway-apt.sh lockdown        # 推荐
+sudo ./scripts/configure-gateway-apt.sh security-only   # 仅安全更新 + 黑名单（仍有风险）
+sudo ./scripts/configure-gateway-apt.sh off           # 恢复 Ubuntu 默认 apt 定时器
+```
+
+环境变量：`QOSNAT_GATEWAY_APT=off ./deploy-qos-nat.sh start` 可跳过。
+
+配置文件：
+
+- `/etc/apt/apt.conf.d/20qosnat2-gateway.conf`
+- `/etc/apt/apt.conf.d/51qosnat2-gateway-unattended.conf`
+
 已安装机器：若 `env` 中无 `ADMIN_PASS` 且未完成引导，需重新运行安装脚本或手动设置 `ADMIN_PASS` 后再登录。

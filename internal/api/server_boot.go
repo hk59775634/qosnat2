@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/nft"
+	"github.com/hk59775634/qosnat2/internal/frr"
 	"github.com/hk59775634/qosnat2/internal/route"
 )
 
@@ -56,18 +57,31 @@ func (srv *Server) ApplyAll() error {
 }
 
 func (srv *Server) applyManagedRoutesWithRetry() {
-	const attempts = 3
-	for i := 0; i < attempts; i++ {
-		if i > 0 {
-			time.Sleep(2 * time.Second)
+	delays := []time.Duration{0, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 12 * time.Second}
+	st := srv.store.Get()
+	if route.NormalizeBackend(st.System.RouteBackend) == route.BackendFRR && frr.PackageInstalled() {
+		if !frr.WaitActive(30 * time.Second) {
+			log.Printf("routes apply: frr not active after 30s")
 		}
-		st := srv.store.Get()
-		if _, err := route.ApplyFromState(st); err != nil {
-			log.Printf("routes apply (attempt %d/%d): %v", i+1, attempts, err)
+	}
+	for i, d := range delays {
+		if i > 0 {
+			time.Sleep(d)
+		}
+		st = srv.store.Get()
+		res, err := route.ApplyFromState(st)
+		if err != nil {
+			log.Printf("routes apply (attempt %d/%d): %v", i+1, len(delays), err)
 			continue
 		}
+		if missing, merr := route.MissingManaged(st.Routes); merr == nil && len(missing) > 0 {
+			log.Printf("routes apply (attempt %d/%d): still missing %d route(s)", i+1, len(delays), len(missing))
+			continue
+		}
+		log.Printf("routes apply: ok backend=%s applied=%d skipped=%d", res.Backend, res.Applied, res.Skipped)
 		return
 	}
+	log.Printf("routes apply: retries exhausted")
 }
 
 func (srv *Server) applyNetworkVLANs() bool {
@@ -132,10 +146,12 @@ func (srv *Server) StartBackground() {
 
 func (srv *Server) startServiceBackground() {
 	srv.serviceBackgroundOnce.Do(func() {
+		srv.ensureGatewayAptLockdown()
 		ctx, cancel := context.WithCancel(context.Background())
 		srv.serviceBgCancel = cancel
 		srv.startACMEBackground(ctx)
 		srv.startManagedCertsBackground(ctx)
 		srv.startAliasRefreshBackground(ctx)
+		srv.startRouteGuardBackground(ctx)
 	})
 }

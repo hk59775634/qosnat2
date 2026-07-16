@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -33,6 +34,21 @@ func PackageInstalled() bool {
 func ServiceActive() bool {
 	out, err := exec.Command("systemctl", "is-active", "frr").CombinedOutput()
 	return err == nil && strings.TrimSpace(string(out)) == "active"
+}
+
+// WaitActive 等待 frr 进入 active，超时返回当前状态。
+func WaitActive(timeout time.Duration) bool {
+	if ServiceActive() {
+		return true
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		if ServiceActive() {
+			return true
+		}
+	}
+	return ServiceActive()
 }
 
 // BootEnabled 是否已设置开机启动（systemd enabled）。

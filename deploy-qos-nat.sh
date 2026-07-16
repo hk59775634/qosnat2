@@ -287,12 +287,12 @@ EOF
   cat > /etc/systemd/system/qos-nat.service <<EOF
 [Unit]
 Description=qosnat2 dataplane apply (enabled after setup wizard)
-After=network-online.target qosnatd.service
+After=network-online.target qosnatd.service frr.service
 
 [Service]
 Type=oneshot
 EnvironmentFile=${CONFIG_DIR}/env
-ExecStartPre=/bin/sleep 8
+ExecStartPre=/bin/sleep 12
 ExecStart=${QOSNATD_BIN} apply-state
 RemainAfterExit=yes
 
@@ -302,6 +302,19 @@ EOF
   systemctl daemon-reload
   systemctl enable qosnatd.service
   systemctl disable qos-nat.service 2>/dev/null || true
+}
+
+configure_gateway_apt() {
+  local mode="${QOSNAT_GATEWAY_APT:-lockdown}"
+  local script="${ROOT}/scripts/configure-gateway-apt.sh"
+  if [[ "${mode}" == "off" ]]; then
+    return 0
+  fi
+  if [[ ! -f "${script}" ]]; then
+    warn "未找到 ${script}，跳过 gateway apt 限制"
+    return 0
+  fi
+  bash "${script}" "${mode}"
 }
 
 cmd_start() {
@@ -324,6 +337,7 @@ cmd_start() {
   init_state
   save_deploy_env
   install_systemd
+  configure_gateway_apt
   if [[ "${IPSSL}" == "1" ]]; then
     configure_ipssl_https
   fi
@@ -413,6 +427,7 @@ usage() {
   DEV_LAN=... DEV_WAN=... ADMIN_USER=admin ADMIN_PASS=...（不设则随机 20 位）
   ADMIN_PORT=（不设则自动选取未占用端口）  SKIP_WEB_BUILD=1  BUILD_WEB=1  SKIP_BUILD=1
   IPSSL=1  ACME_EMAIL=...  PUBLIC_IP=1.2.3.4  ACME_STAGING=1
+  QOSNAT_GATEWAY_APT=lockdown|security-only|off  （默认 lockdown，禁止 unattended-upgrades）
   （ipssl 未设 ACME_EMAIL 时默认 hk59775634@gmail.com）
 
 一键安装（从 GitHub 拉取，仅验证 Ubuntu 24.04，推荐 Ubuntu 24.04）:

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/frr"
+	"github.com/hk59775634/qosnat2/internal/route"
 )
 
 const (
@@ -151,6 +153,12 @@ func (srv *Server) startFrrInstallAsync(r *http.Request) error {
 		st := srv.store.Get()
 		if st.System.FrrBootOnStartup {
 			_ = frr.SetBootEnabled(true)
+		}
+		if err := frr.PrepareInstalled(); err != nil {
+			log.Printf("frr install: prepare config: %v", err)
+		}
+		if _, err := route.ApplyFromState(st); err != nil {
+			log.Printf("frr install: route apply: %v", err)
 		}
 		srv.auditLog(r, "frr.install", "")
 		finishFrrInstall(started, warpInstallStateOK, "frr installed")

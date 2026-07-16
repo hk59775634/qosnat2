@@ -213,6 +213,15 @@ remove_installed_files() {
     fi
   fi
 
+  rm -f /etc/apt/apt.conf.d/20qosnat2-gateway.conf
+  rm -f /etc/apt/apt.conf.d/51qosnat2-gateway-unattended.conf
+  if command -v systemctl &>/dev/null; then
+    systemctl unmask apt-daily-upgrade.timer 2>/dev/null || true
+    systemctl unmask apt-daily.timer 2>/dev/null || true
+    systemctl enable apt-daily-upgrade.timer 2>/dev/null || true
+    systemctl enable apt-daily.timer 2>/dev/null || true
+  fi
+
   rm -f "${BPF_OBJ}"
   rmdir /usr/lib/qosnat2 2>/dev/null || true
   rm -f "${NFT_RULES}"

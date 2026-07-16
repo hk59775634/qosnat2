@@ -14,6 +14,7 @@ const (
 	ManagedRoutes    = Dir + "/managed-routes.conf"
 	ExtraConfig      = Dir + "/extra.conf"
 	IncludeSnippet   = "/etc/frr/frr.conf.d/qosnat2.conf"
+	mainIncludeLine  = "include " + IncludeSnippet
 	ApplyVTYSHScript = Dir + "/apply.vtysh"
 )
 
@@ -142,6 +143,9 @@ func ApplyManaged(routes []store.RouteEntry) error {
 	if err := ensureInclude(); err != nil {
 		return err
 	}
+	if err := ensureMainConfInclude(); err != nil {
+		return err
+	}
 	if err := os.WriteFile(ApplyVTYSHScript, []byte(scriptBody), 0600); err != nil {
 		return err
 	}
@@ -167,9 +171,47 @@ func ensureInclude() error {
 	}
 	cur, err := os.ReadFile(IncludeSnippet)
 	if err == nil && string(cur) == includeBody {
+		return ensureMainConfInclude()
+	}
+	if err := os.WriteFile(IncludeSnippet, []byte(includeBody), 0644); err != nil {
+		return err
+	}
+	return ensureMainConfInclude()
+}
+
+// ensureMainConfInclude 保证 /etc/frr/frr.conf 引用 qosnat2 include，以便 FRR 冷启动加载托管路由。
+func ensureMainConfInclude() error {
+	if !PackageInstalled() {
 		return nil
 	}
-	return os.WriteFile(IncludeSnippet, []byte(includeBody), 0644)
+	b, err := os.ReadFile(FRRConfPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	content := string(b)
+	if strings.Contains(content, IncludeSnippet) || strings.Contains(content, "frr.conf.d/qosnat2.conf") {
+		return nil
+	}
+	var out strings.Builder
+	out.WriteString(strings.TrimRight(content, "\n"))
+	out.WriteByte('\n')
+	out.WriteString(mainIncludeLine)
+	out.WriteByte('\n')
+	return os.WriteFile(FRRConfPath, []byte(out.String()), 0644)
+}
+
+// PrepareInstalled 在 FRR 包安装后写入 include 并挂接到主 frr.conf。
+func PrepareInstalled() error {
+	if !PackageInstalled() {
+		return nil
+	}
+	if err := ensureInclude(); err != nil {
+		return err
+	}
+	return ensureMainConfInclude()
 }
 
 // ReadExtra 读取用户附加 FRR 配置。

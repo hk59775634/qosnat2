@@ -118,6 +118,16 @@ else
   install -m 0755 "${ROOT}/bin/qosnatd" "${QOSNATD_BIN}"
 fi
 
+if [[ "${QOSNAT_GATEWAY_APT:-lockdown}" != "off" ]]; then
+  apt_script="${ROOT}/scripts/configure-gateway-apt.sh"
+  if [[ -x "${apt_script}" ]]; then
+  if [[ ! -f /etc/apt/apt.conf.d/20qosnat2-gateway.conf ]]; then
+    log "应用 gateway apt lockdown（尚未配置）"
+    bash "${apt_script}" lockdown || warn "gateway apt lockdown 失败"
+  fi
+  fi
+fi
+
 if systemctl is-enabled qosnatd &>/dev/null; then
   log "重启 qosnatd"
   systemctl restart qosnatd

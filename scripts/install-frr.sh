@@ -32,6 +32,9 @@ if [[ ! -f /etc/frr/frr.conf.d/qosnat2.conf ]]; then
 include /etc/qosnat2/frr/managed-routes.conf
 EOF
 fi
+if [[ -f /etc/frr/frr.conf ]] && ! grep -q 'frr.conf.d/qosnat2.conf' /etc/frr/frr.conf; then
+  printf '\ninclude /etc/frr/frr.conf.d/qosnat2.conf\n' >> /etc/frr/frr.conf
+fi
 
 systemctl enable frr
 systemctl restart frr
