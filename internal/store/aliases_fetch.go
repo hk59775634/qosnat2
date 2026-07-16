@@ -12,43 +12,60 @@ import (
 const aliasFetchTimeout = 60 * time.Second
 const aliasFetchMaxBytes = 4 << 20 // 4 MiB
 
-// FetchCIDRListFromURL 从 URL 拉取 CIDR 列表（每行一条，忽略空行与 # 注释）。
-func FetchCIDRListFromURL(rawURL string) ([]string, error) {
+func fetchURLText(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return nil, fmt.Errorf("url required")
+		return "", fmt.Errorf("url required")
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("url: %w", err)
+		return "", fmt.Errorf("url: %w", err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("url scheme must be http or https")
+		return "", fmt.Errorf("url scheme must be http or https")
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("url host required")
+		return "", fmt.Errorf("url host required")
 	}
 
 	client := &http.Client{Timeout: aliasFetchTimeout}
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	req.Header.Set("User-Agent", "qosnat2/1.0")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch: %w", err)
+		return "", fmt.Errorf("fetch: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("fetch: HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("fetch: HTTP %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, aliasFetchMaxBytes))
 	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// FetchCIDRListFromURL 从 URL 拉取 CIDR 列表（每行一条，忽略空行与 # 注释）。
+func FetchCIDRListFromURL(rawURL string) ([]string, error) {
+	text, err := fetchURLText(rawURL)
+	if err != nil {
 		return nil, err
 	}
-	return ParseCIDRListText(string(body))
+	return ParseCIDRListText(text)
+}
+
+// FetchFQDNListFromURL 从 URL 拉取域名列表（每行一条，忽略空行与 # 注释）。
+func FetchFQDNListFromURL(rawURL string) ([]string, error) {
+	text, err := fetchURLText(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFQDNListText(text)
 }
 
 // ParseCIDRListText 解析文本 CIDR 列表。
@@ -81,10 +98,47 @@ func ParseCIDRListText(text string) ([]string, error) {
 	return out, nil
 }
 
-// RefreshAliasFromURL 拉取 URL 并更新 alias members。
+// ParseFQDNListText 解析文本域名列表（不支持通配符）。
+func ParseFQDNListText(text string) ([]string, error) {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = strings.TrimSpace(line[:i])
+		}
+		if line == "" {
+			continue
+		}
+		nd, err := NormalizeFQDN(line)
+		if err != nil {
+			return nil, fmt.Errorf("line %q: %w", line, err)
+		}
+		if _, ok := seen[nd]; ok {
+			continue
+		}
+		seen[nd] = struct{}{}
+		out = append(out, nd)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no valid domains in response")
+	}
+	if len(out) > fqdnMaxDomains {
+		return nil, fmt.Errorf("too many domains (max %d)", fqdnMaxDomains)
+	}
+	return out, nil
+}
+
+// RefreshAliasFromURL 拉取 URL 并更新 alias members（仅 ipv4_addr；fqdn 请用 RefreshAliasDynamic）。
 func RefreshAliasFromURL(a *AliasSet) error {
 	if a == nil {
 		return fmt.Errorf("alias nil")
+	}
+	if strings.ToLower(strings.TrimSpace(a.Type)) == "fqdn" {
+		return fmt.Errorf("alias %q is fqdn: use RefreshAliasDynamic for url+dns", a.Name)
 	}
 	u := strings.TrimSpace(a.URL)
 	if u == "" {
@@ -95,6 +149,24 @@ func RefreshAliasFromURL(a *AliasSet) error {
 		return err
 	}
 	a.Members = members
+	a.URLFetchedAt = time.Now().UTC().Format(time.RFC3339)
+	return nil
+}
+
+// RefreshAliasDomainsFromURL 拉取 URL 域名列表并写入 Domains（不解析 DNS）。
+func RefreshAliasDomainsFromURL(a *AliasSet) error {
+	if a == nil {
+		return fmt.Errorf("alias nil")
+	}
+	u := strings.TrimSpace(a.URL)
+	if u == "" {
+		return fmt.Errorf("alias %q has no url", a.Name)
+	}
+	domains, err := FetchFQDNListFromURL(u)
+	if err != nil {
+		return err
+	}
+	a.Domains = domains
 	a.URLFetchedAt = time.Now().UTC().Format(time.RFC3339)
 	return nil
 }

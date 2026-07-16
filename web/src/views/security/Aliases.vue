@@ -22,16 +22,16 @@ function validateForm() {
     err.value = t('security.aliases.errName')
     return false
   }
+  const hasURL = !!String(form.value.url || '').trim()
   if (isFQDN.value) {
     const domains = form.value.domainsText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
-    if (!domains.length) {
+    if (!domains.length && !hasURL) {
       err.value = t('security.aliases.errDomains')
       return false
     }
     return true
   }
   const members = form.value.membersText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
-  const hasURL = !!String(form.value.url || '').trim()
   if (!members.length && !hasURL) {
     err.value = t('security.aliases.errMembers')
     return false
@@ -50,12 +50,12 @@ async function add() {
       comment: form.value.comment,
       members: [],
     }
+    const url = String(form.value.url || '').trim()
+    if (url) body.url = url
     if (isFQDN.value) {
       body.domains = form.value.domainsText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
     } else {
       body.members = form.value.membersText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
-      const url = String(form.value.url || '').trim()
-      if (url) body.url = url
     }
     await api.firewall.aliases.add(body)
     form.value = { name: '', type: 'ipv4_addr', membersText: '', domainsText: '', url: '', comment: '' }
@@ -79,7 +79,7 @@ async function refreshAlias(name) {
 }
 
 function canRefresh(a) {
-  if ((a.type || '') === 'fqdn' && (a.domains || []).length) return true
+  if ((a.type || '') === 'fqdn' && ((a.domains || []).length || a.url)) return true
   return !!a.url
 }
 
@@ -112,6 +112,7 @@ onMounted(load)
           class="input-field font-mono text-xs h-24"
           :placeholder="t('security.aliases.domainsPh')"
         />
+        <input v-model="form.url" class="input-field font-mono text-xs" :placeholder="t('security.aliases.fqdnUrlPh')" />
         <p class="text-xs text-slate-500">{{ t('security.aliases.fqdnHint') }}</p>
       </template>
       <template v-else>
@@ -155,6 +156,10 @@ onMounted(load)
               <template v-if="a.type === 'fqdn'">
                 <span class="text-slate-600">{{ t('security.aliases.domainCount', { n: (a.domains || []).length }) }}</span>
                 <p v-if="(a.domains || []).length <= 4" class="text-slate-500">{{ (a.domains || []).join(', ') }}</p>
+                <template v-if="a.url">
+                  <a :href="a.url" target="_blank" rel="noopener" class="text-blue-600 hover:underline block">{{ a.url }}</a>
+                  <p v-if="a.url_fetched_at" class="text-slate-400">{{ a.url_fetched_at }}</p>
+                </template>
                 <p v-if="a.resolved_at" class="text-slate-400">{{ a.resolved_at }}</p>
               </template>
               <template v-else-if="a.url">

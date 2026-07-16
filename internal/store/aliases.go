@@ -15,7 +15,7 @@ type AliasSet struct {
 	ASN          int      `json:"asn,omitempty"`
 	Members      []string `json:"members"`
 	Domains      []string `json:"domains,omitempty"`         // type=fqdn：待解析域名列表
-	URL          string   `json:"url,omitempty"`            // 可选：从 URL 拉取 members（ipv4_addr）
+	URL          string   `json:"url,omitempty"`            // 可选：ipv4_addr 拉取 CIDR；fqdn 拉取域名列表
 	URLFetchedAt string   `json:"url_fetched_at,omitempty"` // 上次 URL 拉取时间（RFC3339）
 	ResolvedAt   string   `json:"resolved_at,omitempty"`    // 上次 FQDN 解析时间（RFC3339）
 	Comment      string   `json:"comment,omitempty"`
@@ -55,7 +55,9 @@ func NormalizeAlias(a *AliasSet) error {
 
 	if typ == "fqdn" {
 		if a.URL != "" {
-			return fmt.Errorf("fqdn alias cannot set url (use domains)")
+			if _, err := url.Parse(a.URL); err != nil {
+				return fmt.Errorf("url: %w", err)
+			}
 		}
 		var domains []string
 		seen := map[string]struct{}{}
@@ -70,8 +72,8 @@ func NormalizeAlias(a *AliasSet) error {
 			seen[nd] = struct{}{}
 			domains = append(domains, nd)
 		}
-		if len(domains) == 0 {
-			return fmt.Errorf("domains required for fqdn alias")
+		if len(domains) == 0 && a.URL == "" {
+			return fmt.Errorf("domains required for fqdn alias (or set url to fetch)")
 		}
 		if len(domains) > fqdnMaxDomains {
 			return fmt.Errorf("too many domains (max %d)", fqdnMaxDomains)

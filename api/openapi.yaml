@@ -280,7 +280,7 @@ components:
         type: { type: string, enum: [ipv4_addr, fqdn], description: "asn 类型暂不支持；fqdn 由网关解析 A 记录写入 members" }
         members: { type: array, items: { type: string }, description: IPv4 地址或 CIDR（fqdn 类型为解析结果） }
         domains: { type: array, items: { type: string }, description: 'type=fqdn 时的域名列表（不支持通配符）' }
-        url: { type: string, description: '从 URL 拉取 CIDR 列表（每行一条）；不可与 fqdn 同用' }
+        url: { type: string, description: '从 URL 拉取列表（每行一条）：ipv4_addr 为 CIDR；fqdn 为域名' }
         url_fetched_at: { type: string, description: '上次 URL 拉取时间 RFC3339' }
         resolved_at: { type: string, description: '上次 FQDN 解析时间 RFC3339' }
         asn: { type: integer, deprecated: true }
@@ -2742,8 +2742,8 @@ paths:
       summary: 添加或覆盖 ipv4_addr / fqdn 别名集
       description: |
         同名则覆盖；保存前 nft 预检。
-        type=ipv4_addr：members 为 IPv4/CIDR，或设 url 拉取。
-        type=fqdn：domains 为域名列表，网关主动解析 A 记录写入 members（无需客户端使用网关 DNS）；不支持通配符。
+        type=ipv4_addr：members 为 IPv4/CIDR，或设 url 拉取 CIDR 列表。
+        type=fqdn：domains 为域名列表，和/或设 url 拉取域名列表；网关主动解析 A 记录写入 members（无需客户端使用网关 DNS）；不支持通配符。
         type=asn 暂不支持。
       requestBody:
         content:
@@ -2794,7 +2794,7 @@ paths:
         - name: name
           in: query
           schema: { type: string }
-          description: 指定别名；省略则刷新所有带 url 或 fqdn domains 的别名
+          description: 指定别名；省略则刷新所有带 url 或 fqdn domains/url 的别名
       responses:
         '200':
           description: ok

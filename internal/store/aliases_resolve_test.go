@@ -35,10 +35,23 @@ func TestNormalizeAliasFQDN(t *testing.T) {
 	}
 }
 
-func TestNormalizeAliasFQDNRejectsURL(t *testing.T) {
-	a := &AliasSet{Name: "x", Type: "fqdn", Domains: []string{"a.example.com"}, URL: "https://example.com/list.txt"}
+func TestNormalizeAliasFQDNWithURL(t *testing.T) {
+	a := &AliasSet{Name: "x", Type: "fqdn", URL: "https://example.com/domains.txt"}
+	if err := NormalizeAlias(a); err != nil {
+		t.Fatal(err)
+	}
+	if a.URL != "https://example.com/domains.txt" {
+		t.Fatalf("url: %q", a.URL)
+	}
+	if len(a.Domains) != 0 {
+		t.Fatalf("domains should be empty until fetch: %v", a.Domains)
+	}
+}
+
+func TestNormalizeAliasFQDNRequiresDomainsOrURL(t *testing.T) {
+	a := &AliasSet{Name: "x", Type: "fqdn"}
 	if err := NormalizeAlias(a); err == nil {
-		t.Fatal("expected url rejection")
+		t.Fatal("expected error")
 	}
 }
 
@@ -64,6 +77,9 @@ func TestRefreshAliasFromFQDN_localhost(t *testing.T) {
 func TestAliasNeedsDynamicRefresh(t *testing.T) {
 	if !AliasNeedsDynamicRefresh(AliasSet{Type: "fqdn", Domains: []string{"a.example.com"}}) {
 		t.Fatal("fqdn")
+	}
+	if !AliasNeedsDynamicRefresh(AliasSet{Type: "fqdn", URL: "https://x"}) {
+		t.Fatal("fqdn url")
 	}
 	if !AliasNeedsDynamicRefresh(AliasSet{Type: "ipv4_addr", URL: "https://x"}) {
 		t.Fatal("url")

@@ -157,7 +157,6 @@ func RefreshAliasFromFQDN(a *AliasSet) error {
 	a.Members = members
 	now := time.Now().UTC().Format(time.RFC3339)
 	a.ResolvedAt = now
-	a.URLFetchedAt = "" // not a URL fetch
 	if len(unresolved) > 0 {
 		return &FQDNPartialResolveError{Unresolved: unresolved, Members: members}
 	}
@@ -192,7 +191,7 @@ func AcceptFQDNPartial(a *AliasSet, err error) (warn string, fatal error) {
 // AliasNeedsDynamicRefresh 是否可通过 URL 或 FQDN 自动刷新。
 func AliasNeedsDynamicRefresh(a AliasSet) bool {
 	typ := strings.ToLower(strings.TrimSpace(a.Type))
-	if typ == "fqdn" && len(a.Domains) > 0 {
+	if typ == "fqdn" && (len(a.Domains) > 0 || strings.TrimSpace(a.URL) != "") {
 		return true
 	}
 	if strings.TrimSpace(a.URL) != "" {
@@ -208,6 +207,14 @@ func RefreshAliasDynamic(a *AliasSet) (warn string, err error) {
 	}
 	typ := strings.ToLower(strings.TrimSpace(a.Type))
 	if typ == "fqdn" {
+		if strings.TrimSpace(a.URL) != "" {
+			if err := RefreshAliasDomainsFromURL(a); err != nil {
+				return "", err
+			}
+		}
+		if len(a.Domains) == 0 {
+			return "", fmt.Errorf("alias %q has no domains after url fetch", a.Name)
+		}
 		err := RefreshAliasFromFQDN(a)
 		return AcceptFQDNPartial(a, err)
 	}
