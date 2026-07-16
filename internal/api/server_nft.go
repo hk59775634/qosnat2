@@ -59,9 +59,14 @@ func (srv *Server) reloadNft() error {
 }
 
 func (srv *Server) reloadNftLocked() error {
-	if warns := srv.refreshURLAliasesLocked(); len(warns) > 0 {
+	if warns := srv.refreshDynamicAliasesLocked(); len(warns) > 0 {
 		log.Printf("url alias refresh: %v", warns)
 	}
+	return srv.applyNftLocked()
+}
+
+// applyNftLocked 仅应用当前 state 的 nft（调用方须已持有 nftApplyMu）。
+func (srv *Server) applyNftLocked() error {
 	start := time.Now()
 	st := srv.store.Get()
 	err := nft.Apply(srv.nftCfg(), st)
@@ -77,13 +82,13 @@ func (srv *Server) reloadNftLocked() error {
 // applyWanLinkDataPlane 多 WAN 变更后同步策略路由与 nft（在 nftApplyMu 内原子执行）。
 func (srv *Server) applyWanLinkDataPlane() error {
 	return srv.withNftApply(func() error {
-		if warns := srv.refreshURLAliasesLocked(); len(warns) > 0 {
+		if warns := srv.refreshDynamicAliasesLocked(); len(warns) > 0 {
 			log.Printf("url alias refresh: %v", warns)
 		}
 		if err := srv.applyEgressPolicyRoutes(); err != nil {
 			return err
 		}
-		return srv.reloadNftLocked()
+		return srv.applyNftLocked()
 	})
 }
 

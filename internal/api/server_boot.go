@@ -136,5 +136,6 @@ func (srv *Server) startServiceBackground() {
 		srv.serviceBgCancel = cancel
 		srv.startACMEBackground(ctx)
 		srv.startManagedCertsBackground(ctx)
+		srv.startAliasRefreshBackground(ctx)
 	})
 }

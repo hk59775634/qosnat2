@@ -9,9 +9,11 @@ import (
 
 func writeAliasSets(b *strings.Builder, aliases []store.AliasSet) {
 	for _, a := range aliases {
-		if strings.ToLower(strings.TrimSpace(a.Type)) == "asn" {
+		typ := strings.ToLower(strings.TrimSpace(a.Type))
+		if typ == "asn" {
 			continue
 		}
+		// ipv4_addr / fqdn：均以解析或静态 members 写入 ipv4_addr set
 		if len(a.Members) == 0 {
 			continue
 		}

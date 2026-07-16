@@ -25,7 +25,14 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 			writeBadRequest(w, err.Error())
 			return
 		}
-		if body.URL != "" && len(body.Members) == 0 {
+		if body.Type == "fqdn" && len(body.Members) == 0 {
+			warn, err := store.RefreshAliasDynamic(&body)
+			if err != nil {
+				writeBadRequest(w, err.Error())
+				return
+			}
+			_ = warn
+		} else if body.URL != "" && len(body.Members) == 0 {
 			if err := store.RefreshAliasFromURL(&body); err != nil {
 				writeBadRequest(w, err.Error())
 				return
@@ -52,9 +59,14 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		backup := cloneAliases(st.Firewall.Aliases)
-		srv.setAliases(newAliases)
+		if replaced {
+			srv.reapplyEgressAfterAliasChange(backup, newAliases)
+		} else {
+			srv.setAliases(newAliases)
+		}
 		if !srv.saveState(w) {
 			srv.setAliases(backup)
+			_ = srv.applyEgressPolicyRoutes()
 			return
 		}
 		if err := srv.reloadNftWithAliasRevert(backup); err != nil {

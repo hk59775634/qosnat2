@@ -118,10 +118,12 @@ func (srv *Server) reloadNftWithForwardRevert(backupFwd []store.WanPortForward, 
 
 func (srv *Server) reloadNftWithAliasRevert(backup []store.AliasSet) error {
 	return srv.withNftApply(func() error {
-		if err := srv.reloadNftLocked(); err != nil {
+		// 别名 API 路径已自行刷新/写入 members，此处不再二次 DNS/URL 拉取。
+		if err := srv.applyNftLocked(); err != nil {
 			srv.setAliases(backup)
 			if !srv.persistStateOrLog("nft revert save") {
 			}
+			_ = srv.applyEgressPolicyRoutes()
 			return srv.revertReloadError("aliases", err)
 		}
 		return nil

@@ -99,12 +99,15 @@ func RefreshAliasFromURL(a *AliasSet) error {
 	return nil
 }
 
-// RefreshURLAliases 刷新所有带 URL 的别名；返回更新后的列表与错误摘要。
+// RefreshURLAliases 刷新所有带 URL 的别名（不含 FQDN）；兼容旧调用。
 func RefreshURLAliases(aliases []AliasSet) ([]AliasSet, []string) {
 	out := make([]AliasSet, len(aliases))
 	copy(out, aliases)
 	var warns []string
 	for i := range out {
+		if strings.ToLower(strings.TrimSpace(out[i].Type)) == "fqdn" {
+			continue
+		}
 		if strings.TrimSpace(out[i].URL) == "" {
 			continue
 		}
@@ -137,7 +140,7 @@ func AliasMembers(cidr, aliasName string, byName map[string]AliasSet) ([]string,
 			return nil, fmt.Errorf("alias %q not found", aliasName)
 		}
 		if len(a.Members) == 0 {
-			return nil, fmt.Errorf("alias %q has no members (refresh url first)", aliasName)
+			return nil, fmt.Errorf("alias %q has no members (refresh url/fqdn first)", aliasName)
 		}
 		return append([]string(nil), a.Members...), nil
 	}
