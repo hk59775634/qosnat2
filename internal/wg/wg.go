@@ -2,10 +2,13 @@ package wg
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
@@ -156,6 +159,145 @@ func WriteConf(wg store.WireGuardState) error {
 	return os.WriteFile(path, []byte(RenderConf(wg)), 0600)
 }
 
+func wgQuickDown(iface string) error {
+	cmd := exec.Command("wg-quick", "down", iface)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		low := strings.ToLower(msg)
+		if strings.Contains(low, "not found") || strings.Contains(low, "no such device") {
+			return nil
+		}
+		return fmt.Errorf("wg-quick: %s %w", msg, err)
+	}
+	return nil
+}
+
+func wgQuickUp(iface string) error {
+	cmd := exec.Command("wg-quick", "up", iface)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("wg-quick: %s %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// normalizeAddressCIDR 将 Address 条目规范为 ip/prefix（裸 IP 按 /32 或 /128）
+func normalizeAddressCIDR(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", fmt.Errorf("empty address")
+	}
+	if !strings.Contains(s, "/") {
+		ip := net.ParseIP(s)
+		if ip == nil {
+			return "", fmt.Errorf("invalid IP %q", s)
+		}
+		if ip.To4() != nil {
+			return ip.To4().String() + "/32", nil
+		}
+		return ip.String() + "/128", nil
+	}
+	ip, n, err := net.ParseCIDR(s)
+	if err != nil {
+		return "", err
+	}
+	ones, _ := n.Mask.Size()
+	if v4 := ip.To4(); v4 != nil {
+		return fmt.Sprintf("%s/%d", v4.String(), ones), nil
+	}
+	return fmt.Sprintf("%s/%d", ip.String(), ones), nil
+}
+
+// parseWGAddressList 解析 wg-quick Address（逗号分隔）
+func parseWGAddressList(addr string) ([]string, error) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return nil, nil
+	}
+	parts := strings.Split(addr, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		n, err := normalizeAddressCIDR(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func cidrSetsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// liveGlobalCIDRs 读取接口上 global 地址（不含 link-local）
+func liveGlobalCIDRs(iface string) ([]string, error) {
+	out, err := exec.Command("ip", "-json", "addr", "show", "dev", iface).Output()
+	if err != nil {
+		return nil, fmt.Errorf("ip addr show %s: %w", iface, err)
+	}
+	var links []struct {
+		AddrInfo []struct {
+			Family    string `json:"family"`
+			Local     string `json:"local"`
+			Prefixlen int    `json:"prefixlen"`
+			Scope     string `json:"scope"`
+		} `json:"addr_info"`
+	}
+	if err := json.Unmarshal(out, &links); err != nil {
+		return nil, err
+	}
+	var cidrs []string
+	for _, link := range links {
+		for _, a := range link.AddrInfo {
+			if a.Family != "inet" && a.Family != "inet6" {
+				continue
+			}
+			if a.Local == "" {
+				continue
+			}
+			if a.Scope != "" && a.Scope != "global" {
+				continue
+			}
+			n, err := normalizeAddressCIDR(fmt.Sprintf("%s/%d", a.Local, a.Prefixlen))
+			if err != nil {
+				continue
+			}
+			cidrs = append(cidrs, n)
+		}
+	}
+	sort.Strings(cidrs)
+	return cidrs, nil
+}
+
+// addressNeedsRecycle Address 与运行态不一致时需 down/up（syncconf 不处理 Address）
+func addressNeedsRecycle(iface, desired string) bool {
+	want, err := parseWGAddressList(desired)
+	if err != nil {
+		// 配置异常时保守走 recycle，避免静默保留旧地址
+		return true
+	}
+	have, err := liveGlobalCIDRs(iface)
+	if err != nil {
+		return true
+	}
+	return !cidrSetsEqual(want, have)
+}
+
 // Apply up|down wg-quick
 func Apply(wg store.WireGuardState, up bool) error {
 	if !wgInstalled() {
@@ -172,20 +314,16 @@ func Apply(wg store.WireGuardState, up bool) error {
 		return err
 	}
 	if !up {
-		cmd := exec.Command("wg-quick", "down", iface)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			msg := strings.TrimSpace(string(out))
-			low := strings.ToLower(msg)
-			if strings.Contains(low, "not found") || strings.Contains(low, "no such device") {
-				return nil
-			}
-			return fmt.Errorf("wg-quick: %s %w", msg, err)
-		}
-		return nil
+		return wgQuickDown(iface)
 	}
-	// 已存在接口时 wg-quick up 会报 `already exists`；改用 syncconf 热更新密钥/peer，避免断连
+	// 已存在接口时：Address 等 wg-quick 字段只能靠 down/up；密钥/peer 可用 syncconf 热更新
 	if netif.LinkExists(iface) {
+		if addressNeedsRecycle(iface, wg.Address) {
+			if err := wgQuickDown(iface); err != nil {
+				return err
+			}
+			return wgQuickUp(iface)
+		}
 		stripped, err := exec.Command("wg-quick", "strip", iface).Output()
 		if err != nil {
 			return fmt.Errorf("wg-quick strip %s: %w", iface, err)
@@ -198,12 +336,7 @@ func Apply(wg store.WireGuardState, up bool) error {
 		}
 		return nil
 	}
-	cmd := exec.Command("wg-quick", "up", iface)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("wg-quick: %s %w", strings.TrimSpace(string(out)), err)
-	}
-	return nil
+	return wgQuickUp(iface)
 }
 
 // ShowStatus wg show
