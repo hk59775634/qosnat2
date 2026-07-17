@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026071701",
+      "tag": "v2026071701",
+      "published_at": "2026-07-17T02:49:30Z",
+      "summary": "修复 ocserv 源码安装在 Ubuntu 24.04 / libradcli 下因 `PW_TUNNELGROUPNAME` 未定义导致编译失败。"
+    },
+    {
       "id": "2026071603",
       "tag": "v2026071603",
       "published_at": "2026-07-16T11:20:16Z",
@@ -25,12 +31,6 @@
       "tag": "v2026071301",
       "published_at": "2026-07-13T07:09:32Z",
       "summary": "修复 QoS 策略列表未显示限速掩码（颗粒度）。"
-    },
-    {
-      "id": "2026071001",
-      "tag": "v2026071001",
-      "published_at": "2026-07-10T07:06:42Z",
-      "summary": "qosnatd 新增 CLI 子命令：查看状态、修改端口/用户名/密码，以及 `-h`/`--help` 帮助。"
     }
   ]
 }
