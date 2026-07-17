@@ -5,7 +5,7 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+修复 ocserv 源码安装在 Ubuntu 24.04 / libradcli 下因 `PW_TUNNELGROUPNAME` 未定义导致编译失败。
 
 ## 新增
 
@@ -17,7 +17,7 @@
 
 ## 修复
 
-- （无）
+- ocserv Route B 补丁补充定义 Cisco ASA TunnelGroupName（vendor 3076 / VSA 146），兼容系统 radcli 头文件
 
 ## 删除
 

@@ -2,7 +2,18 @@ diff --git a/src/auth/radius.c b/src/auth/radius.c
 index 2e6e3dc..a9101a3 100644
 --- a/src/auth/radius.c
 +++ b/src/auth/radius.c
-@@ -167,6 +167,11 @@ static int radius_auth_init(void **ctx, void *pool, void *_vctx,
+@@ -54,6 +54,10 @@
+ /* Roaring Penguin */
+ #define RP_UPSTREAM_SPEED_LIMIT VATTRID_SET(1, 10055)
+ #define RP_DOWNSTREAM_SPEED_LIMIT VATTRID_SET(2, 10055)
++/* Cisco ASA Tunnel-Group-Name (vendor 3076, VSA 146); not in stock radcli headers */
++#ifndef PW_TUNNELGROUPNAME
++#define PW_TUNNELGROUPNAME VATTRID_SET(146, 3076)
++#endif
+ 
+ #if defined(LEGACY_RADIUS)
+ #ifndef PW_DELEGATED_IPV6_PREFIX
+@@ -167,6 +171,11 @@ static int radius_auth_init(void **ctx, void *pool, void *_vctx,
  		strlcpy(pctx->user_agent, info->user_agent,
  			sizeof(pctx->user_agent));
  
@@ -14,7 +25,7 @@ index 2e6e3dc..a9101a3 100644
  	*ctx = pctx;
  
  	return ERR_AUTH_CONTINUE;
-@@ -423,6 +428,19 @@ static int radius_auth_pass(void *ctx, const char *pass, unsigned int pass_len)
+@@ -423,6 +432,19 @@ static int radius_auth_pass(void *ctx, const char *pass, unsigned int pass_len)
  		pctx->state = NULL;
  	}
  
@@ -94,4 +105,3 @@ index 090cf17..f1fd380 100644
 +	const char *groupname;
  	unsigned int id;
  } common_auth_init_st;
- 
