@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复 WireGuard 修改隧道地址后 apply 不生效（syncconf 未更新 Address）。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -17,7 +17,7 @@
 
 ## 修复
 
-- WireGuard 接口已存在时，若隧道地址与运行态不一致，改为 `wg-quick down/up` 重建接口，使 Address 生效；仅改密钥/peer 时仍走 syncconf 热更新
+- （无）
 
 ## 删除
 
