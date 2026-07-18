@@ -16,6 +16,9 @@ func TestRenderAutoWANInputRules(t *testing.T) {
 	if !strings.Contains(body, `iifname "ens18" tcp dport 9443 accept`) {
 		t.Fatalf("missing admin auto rule in:\n%s", body)
 	}
+	if !strings.Contains(body, `iifname "ens18" tcp dport 22 accept`) {
+		t.Fatalf("missing SSH auto rule in:\n%s", body)
+	}
 	if !strings.Contains(body, `iifname "ens18" drop`) {
 		t.Fatal("missing wan drop")
 	}

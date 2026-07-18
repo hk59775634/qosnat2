@@ -9,7 +9,9 @@ import (
 // Auto rule IDs (reserved prefix auto-).
 const (
 	autoIDInputAdmin        = "auto-input-admin"
+	autoIDInputSSH          = "auto-input-ssh"
 	autoIDInputHairpinAdmin = "auto-input-hairpin-admin"
+	autoIDInputHairpinSSH   = "auto-input-hairpin-ssh"
 	autoIDInputHairpinFwd   = "auto-input-hairpin-fwd"
 	autoIDInputOcservTCP    = "auto-input-ocserv-tcp"
 	autoIDInputOcservUDP    = "auto-input-ocserv-udp"
@@ -17,6 +19,10 @@ const (
 	autoIDInputSNMPPrefix   = "auto-input-snmp"
 	autoIDInputWanDrop      = "auto-input-wan-drop"
 )
+
+// DefaultSSHPort is the host SSH port always opened on WAN input by default
+// so operators are not locked out after firewall apply (before recording Web UI credentials).
+const DefaultSSHPort = 22
 
 // AutoInputVPN mirrors nft.VPNFirewall without importing nft.
 type AutoInputVPN struct {
@@ -103,6 +109,7 @@ func CollectWanForwardDevices(devWAN, devLAN string, st State, egressDevices []s
 }
 
 // BuildAutoInputRules 为每个 WAN 口生成 input 链自动规则（放行项 → 该口默认丢弃）。
+// 默认放行：管理口、SSH/22、已启用 VPN/SNMP/LVS 端口。
 func BuildAutoInputRules(wanDevs []string, adminPort string, vpn AutoInputVPN) []FilterRule {
 	if len(wanDevs) == 0 {
 		return nil
@@ -130,6 +137,21 @@ func BuildAutoInputRules(wanDevs []string, adminPort string, vpn AutoInputVPN) [
 			Enabled: true,
 			System:  true,
 		})
+		// Always allow SSH on WAN so default deploy cannot lock out shell access.
+		// Skip when admin port is already 22 (same tcp dport would duplicate).
+		if adminP != DefaultSSHPort {
+			out = append(out, FilterRule{
+				ID:      autoIDInputSSH + "-" + sfx,
+				Chain:   "input",
+				Action:  "accept",
+				Iif:     wan,
+				Proto:   "tcp",
+				DstPort: DefaultSSHPort,
+				Comment: fmt.Sprintf("SSH TCP/%d %s（自动）", DefaultSSHPort, wan),
+				Enabled: true,
+				System:  true,
+			})
+		}
 		if vpn.OCServEnabled && vpn.OCServTCP > 0 {
 			out = append(out, FilterRule{
 				ID: autoIDInputOcservTCP + "-" + sfx, Chain: "input", Action: "accept",
@@ -309,6 +331,12 @@ func BuildAutoHairpinInputRules(wanDevs []string, adminPort string, vpn AutoInpu
 			autoIDInputHairpinAdmin+"-"+sfx, wan, "ipv4", wanIP(wan), "tcp", port,
 			fmt.Sprintf("内网访问公网 IP 管理口 %s（自动）", wan),
 		)
+		if port != DefaultSSHPort {
+			mirror(
+				autoIDInputHairpinSSH+"-"+sfx, wan, "ipv4", wanIP(wan), "tcp", DefaultSSHPort,
+				fmt.Sprintf("内网访问公网 IP SSH %s（自动）", wan),
+			)
+		}
 		if vpn.OCServEnabled && vpn.OCServTCP > 0 {
 			mirror(
 				autoIDInputOcservTCP+"-hairpin-"+sfx, wan, "ipv4", wanIP(wan), "tcp", vpn.OCServTCP,
@@ -372,7 +400,7 @@ func BuildAutoHairpinInputRules(wanDevs []string, adminPort string, vpn AutoInpu
 
 // SyncAutoFilterRules 合并用户规则与自动规则。
 // forward：用户 → 端口转发 WAN→LAN → 端口转发回流 LAN→LAN。
-// input：公网 IP 环回 → 自动放行(admin/VPN) → 用户 → 自动 WAN 丢弃。
+// input：公网 IP 环回 → 自动放行(admin/SSH/VPN) → 用户 → 自动 WAN 丢弃。
 func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, lvs LVSState, devLAN, defaultWAN string, resolver HairpinAddrResolver) ([]FilterRule, bool) {
 	desiredFwd := BuildAutoForwardFilterRules(forwards, devLAN)
 	desiredLVSFwd := BuildAutoLVSForwardFilterRules(lvs, devLAN, defaultWAN)

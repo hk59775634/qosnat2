@@ -91,14 +91,29 @@ func TestBuildAutoInputRulesLVS(t *testing.T) {
 
 func TestBuildAutoInputRulesAdminPort(t *testing.T) {
 	rules := BuildAutoInputRules([]string{"wan0"}, "9090", AutoInputVPN{})
-	if len(rules) < 2 {
-		t.Fatal("expected admin + wan drop")
+	if len(rules) < 3 {
+		t.Fatal("expected admin + ssh + wan drop")
 	}
 	if rules[0].DstPort != 9090 {
 		t.Fatalf("admin port: got %d", rules[0].DstPort)
 	}
 	if rules[0].ID != "auto-input-admin-wan0" {
 		t.Fatalf("id: %s", rules[0].ID)
+	}
+	if rules[1].ID != "auto-input-ssh-wan0" || rules[1].DstPort != DefaultSSHPort || rules[1].Proto != "tcp" {
+		t.Fatalf("ssh rule: %+v", rules[1])
+	}
+}
+
+func TestBuildAutoInputRulesSSHSkippedWhenAdminIs22(t *testing.T) {
+	rules := BuildAutoInputRules([]string{"wan0"}, "22", AutoInputVPN{})
+	for _, r := range rules {
+		if r.ID == "auto-input-ssh-wan0" {
+			t.Fatal("ssh auto rule must be omitted when admin port is already 22")
+		}
+	}
+	if rules[0].ID != "auto-input-admin-wan0" || rules[0].DstPort != 22 {
+		t.Fatalf("admin should cover ssh: %+v", rules[0])
 	}
 }
 

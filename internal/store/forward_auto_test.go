@@ -60,16 +60,19 @@ func TestBuildAutoHairpinInputRules(t *testing.T) {
 		DstPort: 443, RedirectIP: "192.168.1.10", RedirectPort: 443,
 	}}
 	rules := BuildAutoHairpinInputRules([]string{"eth0"}, "8443", AutoInputVPN{}, fwd, "br-lan", resolver)
-	var admin, portFwd bool
+	var admin, ssh, portFwd bool
 	for _, r := range rules {
 		if r.ID == "auto-input-hairpin-admin-eth0" && r.DstAddr == "203.0.113.10" && r.DstPort == 8443 {
 			admin = true
+		}
+		if r.ID == "auto-input-hairpin-ssh-eth0" && r.DstAddr == "203.0.113.10" && r.DstPort == DefaultSSHPort {
+			ssh = true
 		}
 		if r.ID == "auto-input-hairpin-fwd-fwd-1-tcp" && r.DstAddr == "203.0.113.10" && r.DstPort == 443 {
 			portFwd = true
 		}
 	}
-	if !admin || !portFwd {
+	if !admin || !ssh || !portFwd {
 		t.Fatalf("missing hairpin input rules: %+v", rules)
 	}
 }

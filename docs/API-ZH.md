@@ -207,7 +207,7 @@ ocserv 配置项为服务端上下行。Web UI「客户端上行/下行」映射
 
 GET `/api/v1/firewall/rules` 响应要点：
 
-- `rules`：forward/input 链 filter 规则（含 `auto-input-*` 管理口/VPN、`auto-fwd-*` 端口转发放行）
+- `rules`：forward/input 链 filter 规则（含 `auto-input-*` 管理口/SSH/VPN、`auto-fwd-*` 端口转发放行）
 - `nft_lines`：`{ "规则id": "单行 nft 语法" }`；**disabled** 规则无条目
 - `rendered`：当前将加载的完整 `inet qosnat` ruleset 文本
 - `alias_names`：可供规则引用的别名名列表
@@ -225,11 +225,11 @@ DELETE 别名：若仍有规则引用 → **409** `alias is referenced by firewa
 3. **hairpin** — 内网访问公网 IP:端口 时的回流：
    - 目标为内网主机：`prerouting` DNAT + `forward` LAN→LAN 放行 + `postrouting` masquerade
    - 目标为本机（网关）：跳过 DNAT，生成 `input` 链 `auto-input-hairpin-*` 放行公网 IP:端口
-   - 管理口/VPN 端口同步生成 `auto-input-hairpin-admin-*` 等规则
+   - 管理口/SSH/VPN 端口同步生成 `auto-input-hairpin-admin-*` 等规则
 
 删除端口转发会一并移除上述 DNAT 与 `auto-fwd-*` 规则。**请勿**在防火墙页单独删改 `auto-fwd-*`（API 403）。
 
-input 链顺序（自动规则与用户规则）：`auto-input-admin/VPN 放行` → **用户规则** → `auto-input-wan-drop` → 内置 LAN 放行。
+input 链顺序（自动规则与用户规则）：`auto-input-admin/SSH/VPN 放行` → **用户规则** → `auto-input-wan-drop` → 内置 LAN 放行。
 
 ### Web UI 深链（防火墙规则页）
 
