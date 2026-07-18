@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026071802",
+      "tag": "v2026071802",
+      "published_at": "2026-07-18T17:58:06Z",
+      "summary": "修复 ocserv 完整 SPEC-01 安装，并支持出站策略「仅路由 / 不 SNAT」接入机模式。"
+    },
+    {
       "id": "2026071801",
       "tag": "v2026071801",
       "published_at": "2026-07-18T15:17:12Z",
@@ -25,12 +31,6 @@
       "tag": "v2026071603",
       "published_at": "2026-07-16T11:20:16Z",
       "summary": "FQDN 防火墙别名支持从 URL 拉取域名列表，保存与后台刷新时自动解析为 IPv4 成员。"
-    },
-    {
-      "id": "2026071602",
-      "tag": "v2026071602",
-      "published_at": "2026-07-16T08:53:21Z",
-      "summary": "生产网关 FRR 托管路由自动恢复，并默认禁止 unattended-upgrades 自动升级 systemd/netplan 等关键包。"
     }
   ]
 }
