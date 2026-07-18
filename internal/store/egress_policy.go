@@ -13,7 +13,7 @@ const EgressTableBase = 201
 // GoogleIPv4RangesURL Google 官方 IPv4-only 网段列表。
 const GoogleIPv4RangesURL = "https://www.gstatic.com/ipranges/goog_ipv4_only.txt"
 
-// EgressPolicy 将源/目的网段流量导向指定 WanLink（Linux 策略路由 + 对应 WAN 口 SNAT）
+// EgressPolicy 将源/目的网段流量导向指定 WanLink（Linux 策略路由；默认再叠加该 WAN 口 SNAT）
 type EgressPolicy struct {
 	ID        string `json:"id"`
 	Name      string `json:"name,omitempty"`
@@ -25,9 +25,11 @@ type EgressPolicy struct {
 	DstAlias  string `json:"dst_alias,omitempty"`
 	SrcIface  string `json:"src_iface,omitempty"` // 入接口 iif；可与 src_cidr/alias 组合
 	WanLinkID string `json:"wan_link_id"`
-	SNATIP    string `json:"snat_ip,omitempty"` // 空则使用该 WAN 口首个全球 IPv4
-	Priority  int    `json:"priority"`          // ip rule 优先级，越小越优先；默认 100
-	Enabled   bool   `json:"enabled"`
+	SNATIP    string `json:"snat_ip,omitempty"` // 空则使用该 WAN 口首个全球 IPv4；NoSNAT 时忽略
+	// NoSNAT：仅策略路由到 WanLink 网关（如远端 NAT 服务器），本机不做 SNAT/masquerade。
+	NoSNAT   bool `json:"no_snat,omitempty"`
+	Priority int  `json:"priority"` // ip rule 优先级，越小越优先；默认 100
+	Enabled  bool `json:"enabled"`
 }
 
 // normalizeEgressIPv4CIDR 接受 IPv4 主机或 CIDR，主机规范为 /32。
@@ -130,7 +132,9 @@ func NormalizeEgressPolicy(p *EgressPolicy) error {
 	if p.Match != "" && p.Match != "source" && p.Match != "destination" {
 		return fmt.Errorf("match must be source or destination")
 	}
-	if p.SNATIP != "" {
+	if p.NoSNAT {
+		p.SNATIP = ""
+	} else if p.SNATIP != "" {
 		if err := ValidateIPv4OrCIDR(p.SNATIP); err != nil {
 			return fmt.Errorf("snat_ip: %w", err)
 		}
@@ -196,9 +200,21 @@ func EgressPolicyCIDRs(policies []EgressPolicy) []string {
 
 // EgressPolicySourceMatchCIDRs 仅 source 侧 CIDR（用于主 WAN SNAT 排除）；别名在运行时展开。
 func EgressPolicySourceMatchCIDRs(policies []EgressPolicy) []string {
+	return egressPolicySourceMatchCIDRs(policies, false)
+}
+
+// EgressPolicySnatSourceCIDRs 需要本机 SNAT 的 source CIDR（用于非对称回程丢弃；排除 no_snat）。
+func EgressPolicySnatSourceCIDRs(policies []EgressPolicy) []string {
+	return egressPolicySourceMatchCIDRs(policies, true)
+}
+
+func egressPolicySourceMatchCIDRs(policies []EgressPolicy, snatOnly bool) []string {
 	seen := map[string]struct{}{}
 	var out []string
 	for _, p := range EnabledEgressPolicies(policies) {
+		if snatOnly && p.NoSNAT {
+			continue
+		}
 		for _, c := range []string{p.SrcCIDR, legacySourceCIDR(p)} {
 			c = strings.TrimSpace(c)
 			if c == "" || p.SrcAlias != "" {
@@ -265,8 +281,12 @@ func EgressSNATMatchClause(p EgressPolicy) string {
 
 // EgressPolicySignature 用于去重比较。
 func EgressPolicySignature(p EgressPolicy) string {
+	noSNAT := "0"
+	if p.NoSNAT {
+		noSNAT = "1"
+	}
 	return strings.Join([]string{
-		p.SrcCIDR, p.DstCIDR, p.SrcAlias, p.DstAlias, p.SrcIface, p.CIDR, p.Match, p.WanLinkID,
+		p.SrcCIDR, p.DstCIDR, p.SrcAlias, p.DstAlias, p.SrcIface, p.CIDR, p.Match, p.WanLinkID, noSNAT,
 	}, "|")
 }
 
@@ -321,6 +341,7 @@ type ResolvedEgress struct {
 	Table      int          `json:"table"`
 	SNATIP     string       `json:"snat_ip"`
 	Masquerade bool         `json:"masquerade,omitempty"`
+	NoSNAT     bool         `json:"no_snat,omitempty"`
 	Priority   int          `json:"priority"`
 }
 
@@ -339,6 +360,21 @@ func ResolveEgressPolicies(st State, primaryIP func(device string) (string, erro
 		}
 		tbl := WanLinkRouteTable(w.ID, st.Network.WanLinks)
 		if tbl == 0 {
+			continue
+		}
+		if p.NoSNAT {
+			if gw == "" {
+				continue
+			}
+			out = append(out, ResolvedEgress{
+				Policy:   p,
+				WanLink:  w,
+				Device:   dev,
+				Gateway:  gw,
+				Table:    tbl,
+				NoSNAT:   true,
+				Priority: p.Priority,
+			})
 			continue
 		}
 		snat := p.SNATIP

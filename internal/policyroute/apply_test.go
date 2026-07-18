@@ -1,6 +1,7 @@
 package policyroute
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -37,7 +38,7 @@ func TestDelRulesSymmetricWithAddRules(t *testing.T) {
 	}
 }
 
-func TestCheckUnresolvedEgress_noSNAT(t *testing.T) {
+func TestCheckUnresolvedEgress_missingSNATIP(t *testing.T) {
 	st := store.State{
 		Network: store.NetworkState{
 			WanLinks: []store.WanLink{
@@ -51,6 +52,23 @@ func TestCheckUnresolvedEgress_noSNAT(t *testing.T) {
 	err := checkUnresolvedEgress(st, nil)
 	if err == nil {
 		t.Fatal("expected error when no SNAT and no resolver in resolved list")
+	}
+}
+
+func TestCheckUnresolvedEgress_routeOnlyMissingGateway(t *testing.T) {
+	st := store.State{
+		Network: store.NetworkState{
+			WanLinks: []store.WanLink{
+				{ID: "wan-1", Device: "eth1", Gateway: "", Enabled: true},
+			},
+			EgressPolicies: []store.EgressPolicy{
+				{ID: "eg-1", SrcCIDR: "10.250.0.0/24", WanLinkID: "wan-1", NoSNAT: true, Enabled: true, Priority: 100},
+			},
+		},
+	}
+	err := checkUnresolvedEgress(st, nil)
+	if err == nil || !strings.Contains(err.Error(), "no_snat requires gateway") {
+		t.Fatalf("expected no_snat gateway error, got %v", err)
 	}
 }
 

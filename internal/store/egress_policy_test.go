@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestWanLinkRouteTableStable(t *testing.T) {
 	links := []WanLink{
@@ -176,5 +179,73 @@ func TestResolveEgressPolicies_WarpMasqueradeFallback(t *testing.T) {
 	}
 	if resolved[0].SNATIP != "" {
 		t.Fatalf("unexpected snat ip: %q", resolved[0].SNATIP)
+	}
+}
+
+func TestResolveEgressPolicies_NoSNAT(t *testing.T) {
+	st := State{
+		Network: NetworkState{
+			WanLinks: []WanLink{
+				{ID: "wan-nat", Device: "ens18", Gateway: "203.0.113.1", Enabled: true, PolicyOnly: true},
+			},
+			EgressPolicies: []EgressPolicy{
+				{ID: "eg-1", SrcCIDR: "10.250.0.0/24", WanLinkID: "wan-nat", NoSNAT: true, Enabled: true, Priority: 50},
+			},
+		},
+	}
+	resolved := ResolveEgressPolicies(st, func(device string) (string, error) {
+		return "", fmt.Errorf("no ip")
+	})
+	if len(resolved) != 1 {
+		t.Fatalf("resolved len=%d want 1", len(resolved))
+	}
+	if !resolved[0].NoSNAT || resolved[0].SNATIP != "" || resolved[0].Masquerade {
+		t.Fatalf("unexpected resolved: %+v", resolved[0])
+	}
+	if resolved[0].Gateway != "203.0.113.1" {
+		t.Fatalf("gateway: %s", resolved[0].Gateway)
+	}
+}
+
+func TestResolveEgressPolicies_NoSNATRequiresGateway(t *testing.T) {
+	st := State{
+		Network: NetworkState{
+			WanLinks: []WanLink{
+				{ID: "wan-nat", Device: "ens18", Gateway: "", Enabled: true},
+			},
+			EgressPolicies: []EgressPolicy{
+				{ID: "eg-1", SrcCIDR: "10.250.0.0/24", WanLinkID: "wan-nat", NoSNAT: true, Enabled: true},
+			},
+		},
+	}
+	if got := ResolveEgressPolicies(st, nil); len(got) != 0 {
+		t.Fatalf("want skip without gateway, got %+v", got)
+	}
+}
+
+func TestEgressPolicySnatSourceCIDRsExcludesNoSNAT(t *testing.T) {
+	policies := []EgressPolicy{
+		{ID: "a", SrcCIDR: "10.250.0.0/24", WanLinkID: "w1", NoSNAT: true, Enabled: true},
+		{ID: "b", SrcCIDR: "10.251.0.0/24", WanLinkID: "w1", Enabled: true},
+	}
+	snat := EgressPolicySnatSourceCIDRs(policies)
+	if len(snat) != 1 || snat[0] != "10.251.0.0/24" {
+		t.Fatalf("snat cidrs: %v", snat)
+	}
+	all := EgressPolicySourceMatchCIDRs(policies)
+	if len(all) != 2 {
+		t.Fatalf("all source cidrs: %v", all)
+	}
+}
+
+func TestNormalizeEgressPolicyClearsSNATWhenNoSNAT(t *testing.T) {
+	p := EgressPolicy{
+		SrcCIDR: "10.250.0.0/24", WanLinkID: "w1", SNATIP: "203.0.113.10", NoSNAT: true, Enabled: true,
+	}
+	if err := NormalizeEgressPolicy(&p); err != nil {
+		t.Fatal(err)
+	}
+	if p.SNATIP != "" {
+		t.Fatalf("snat_ip should be cleared: %q", p.SNATIP)
 	}
 }

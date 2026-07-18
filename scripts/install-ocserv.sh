@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# 安装 ocserv（OpenConnect VPN 服务端）— 从官方源码编译安装。
+# 安装 ocserv（OpenConnect VPN 服务端）— 官方 1.4.2 源码 + Route B SPEC-01 补丁。
 #
 # 用法:
 #   sudo /opt/qosnat2/scripts/install-ocserv.sh
 #   sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.4.2
 #
 # 环境变量:
-#   OCSERV_TAG / OCSERV_VERSION   官方 tag（默认 1.4.2）
+#   OCSERV_TAG / OCSERV_VERSION   官方 tag（默认且仅验证 1.4.2）
 #   OCSERV_MIRROR_REPO            自建镜像（默认 github.com/hk59775634/ocserv，经 gh-proxy）
 #   OCSERV_GITLAB_REPO            官方 GitLab 回退
 #   OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
-#   PATCH_DIR=.../patches/ocserv   Route B 补丁目录（默认仓库内 patches/ocserv）
+#   PATCH_DIR=.../patches/ocserv   SPEC-01 脚本目录（默认仓库内 patches/ocserv）
+#   OCSERV_ALLOW_UNPATCHED=1       允许非 1.4.2（跳过 SPEC-01，仅开发用）
 set -euo pipefail
 
 OCSERV_MIRROR_REPO="${OCSERV_MIRROR_REPO:-https://github.com/hk59775634/ocserv.git}"
@@ -25,8 +26,11 @@ OCSERV_PREFIX="${OCSERV_PREFIX:-/usr/local}"
 OCSERV_SYSCONFDIR="${OCSERV_SYSCONFDIR:-/etc/ocserv}"
 BUILD_DIR="${BUILD_DIR:-/usr/local/src/ocserv-build}"
 PATCH_DIR="${PATCH_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/patches/ocserv}"
+SPEC01_SCRIPT="${SPEC01_SCRIPT:-${PATCH_DIR}/apply-spec01-edits.py}"
 OCSERV_BIN="${OCSERV_PREFIX}/sbin/ocserv"
+OCSERV_WORKER_BIN="${OCSERV_PREFIX}/sbin/ocserv-worker"
 MESON_BUILD_DIR="${MESON_BUILD_DIR:-build}"
+OCSERV_SPEC01_BASELINE="1.4.2"
 
 log()  { echo "[ocserv-install] $*"; }
 warn() { echo "[ocserv-install] WARN: $*" >&2; }
@@ -73,7 +77,7 @@ install_build_deps() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y --no-install-recommends \
-    build-essential meson ninja-build pkg-config git curl xz-utils \
+    build-essential meson ninja-build pkg-config git curl xz-utils python3 \
     libgnutls28-dev libev-dev libreadline-dev libseccomp-dev \
     libnl-route-3-dev libnl-genl-3-dev libtalloc-dev libhttp-parser-dev \
     libprotobuf-c-dev libpam0g-dev libradcli-dev \
@@ -157,23 +161,61 @@ fetch_source() {
   die "无法获取 ocserv 源码（tag=${tag}）"
 }
 
-apply_ocserv_patches() {
-  local patches=()
-  if [[ -d "${PATCH_DIR}" ]]; then
-    shopt -s nullglob
-    patches=("${PATCH_DIR}"/*.patch)
-    shopt -u nullglob
-  fi
-  [[ ${#patches[@]} -gt 0 ]] || return 0
-  log "应用 ocserv 补丁（${#patches[@]} 个）…"
-  cd "${BUILD_DIR}/ocserv"
-  local p
-  for p in "${patches[@]}"; do
-    log "  补丁: $(basename "${p}")"
-    if ! patch -p1 -N -s < "${p}"; then
-      die "补丁应用失败: $(basename "${p}")"
+apply_spec01() {
+  if [[ "${OCSERV_VERSION}" != "${OCSERV_SPEC01_BASELINE}" ]]; then
+    if [[ "${OCSERV_ALLOW_UNPATCHED:-}" == "1" ]]; then
+      warn "跳过 SPEC-01（OCSERV_ALLOW_UNPATCHED=1，version=${OCSERV_VERSION}）"
+      return 0
     fi
-  done
+    die "Route B 生产安装仅支持 ocserv ${OCSERV_SPEC01_BASELINE}（当前: ${OCSERV_VERSION}）；开发跳过补丁请设 OCSERV_ALLOW_UNPATCHED=1"
+  fi
+  [[ -f "${SPEC01_SCRIPT}" ]] || die "缺少 SPEC-01 脚本: ${SPEC01_SCRIPT}"
+  command -v python3 >/dev/null || die "需要 python3 以应用 SPEC-01"
+  log "应用完整 SPEC-01（ocserv-tunnel apply-spec01-edits.py）…"
+  python3 "${SPEC01_SCRIPT}" "${BUILD_DIR}/ocserv"
+}
+
+# Explicitly install main + worker so isolate-workers never keeps a stale unpatched worker.
+install_binaries() {
+  local built_ocserv="${BUILD_DIR}/ocserv/${MESON_BUILD_DIR}/src/ocserv"
+  local built_worker="${BUILD_DIR}/ocserv/${MESON_BUILD_DIR}/src/ocserv-worker"
+  if [[ ! -x "${built_ocserv}" ]]; then
+    built_ocserv="$(find "${BUILD_DIR}/ocserv/${MESON_BUILD_DIR}" -type f -executable -name ocserv | head -1)"
+  fi
+  if [[ ! -x "${built_worker}" ]]; then
+    built_worker="$(find "${BUILD_DIR}/ocserv/${MESON_BUILD_DIR}" -type f -executable -name ocserv-worker | head -1)"
+  fi
+  [[ -n "${built_ocserv}" && -x "${built_ocserv}" ]] || die "构建产物缺少 ocserv"
+  [[ -n "${built_worker}" && -x "${built_worker}" ]] || die "构建产物缺少 ocserv-worker（SPEC-01 依赖 worker 侧 group-access）"
+  install -d "${OCSERV_PREFIX}/sbin"
+  install -m 0755 "${built_ocserv}" "${OCSERV_BIN}"
+  install -m 0755 "${built_worker}" "${OCSERV_WORKER_BIN}"
+  log "已安装 ${OCSERV_BIN} 与 ${OCSERV_WORKER_BIN}"
+}
+
+verify_spec01_binaries() {
+  if [[ "${OCSERV_VERSION}" != "${OCSERV_SPEC01_BASELINE}" && "${OCSERV_ALLOW_UNPATCHED:-}" == "1" ]]; then
+    return 0
+  fi
+  local missing=0
+  if ! strings "${OCSERV_BIN}" 2>/dev/null | grep -Fq "radius_auth_bind_group"; then
+    warn "ocserv 缺少符号字符串 radius_auth_bind_group"
+    missing=1
+  fi
+  if ! strings "${OCSERV_BIN}" 2>/dev/null | grep -Fq "TunnelGroupName"; then
+    warn "ocserv 缺少 TunnelGroupName 相关字符串"
+    missing=1
+  fi
+  if ! strings "${OCSERV_WORKER_BIN}" 2>/dev/null | grep -Fq "parse_group_access_url"; then
+    warn "ocserv-worker 缺少 parse_group_access_url（OpenConnect <group-access>）"
+    missing=1
+  fi
+  if ! strings "${OCSERV_WORKER_BIN}" 2>/dev/null | grep -Fq "<group-access>"; then
+    warn "ocserv-worker 缺少 <group-access> 解析"
+    missing=1
+  fi
+  [[ "${missing}" -eq 0 ]] || die "SPEC-01 校验失败：二进制未完整打补丁，拒绝安装残缺产物"
+  log "SPEC-01 校验通过（ocserv + ocserv-worker）"
 }
 
 build_install() {
@@ -183,15 +225,19 @@ build_install() {
     meson setup "${MESON_BUILD_DIR}" --prefix="${OCSERV_PREFIX}" --sysconfdir="${OCSERV_SYSCONFDIR}"
     ninja -C "${MESON_BUILD_DIR}"
     ninja -C "${MESON_BUILD_DIR}" install
+    install_binaries
   elif [[ -f configure.ac || -f configure ]]; then
     log "Autotools 构建..."
     [[ -x ./configure ]] || autoreconf -fi
     ./configure --prefix="${OCSERV_PREFIX}" --sysconfdir="${OCSERV_SYSCONFDIR}"
     make -j"$(nproc)"
     make install
+    [[ -x "${OCSERV_BIN}" ]] || die "未找到 ${OCSERV_BIN}"
+    [[ -x "${OCSERV_WORKER_BIN}" ]] || die "未找到 ${OCSERV_WORKER_BIN}"
   else
     die "未识别的构建系统"
   fi
+  verify_spec01_binaries
 }
 
 install_systemd_from_source() {
@@ -279,14 +325,14 @@ install_source() {
   OCSERV_TAG="${OCSERV_VERSION}"
   install_build_deps
   fetch_source
-  apply_ocserv_patches
+  apply_spec01
   build_install
   install_systemd_from_source
   seed_config
   enable_ip_forward
   install -d /var/lib/qosnat2
   echo "${OCSERV_VERSION}" > /var/lib/qosnat2/ocserv-release-tag
-  log "源码安装完成: ${OCSERV_BIN} (${OCSERV_VERSION})"
+  log "源码安装完成: ${OCSERV_BIN} + ${OCSERV_WORKER_BIN} (${OCSERV_VERSION}, SPEC-01)"
   if ldd "${OCSERV_BIN}" 2>/dev/null | grep -qE 'radcli|radiusclient'; then
     log "RADIUS: 已链接 radcli"
   else

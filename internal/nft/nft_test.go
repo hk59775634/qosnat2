@@ -181,6 +181,33 @@ func TestRenderEgressWarpMasquerade(t *testing.T) {
 	}
 }
 
+func TestRenderEgressNoSNAT(t *testing.T) {
+	st := store.DefaultState()
+	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8"}
+	st.Network.WanLinks = []store.WanLink{
+		{ID: "wan-nat", Device: "ens18", Gateway: "203.0.113.1", Enabled: true, PolicyOnly: true},
+	}
+	st.Network.EgressPolicies = []store.EgressPolicy{
+		{ID: "eg-1", SrcCIDR: "10.250.0.0/24", WanLinkID: "wan-nat", NoSNAT: true, Enabled: true},
+	}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantReturn := `ip saddr 10.250.0.0/24 return comment "qosnat2-egress-no-snat"`
+	if !strings.Contains(body, wantReturn) {
+		t.Fatalf("missing no_snat return in:\n%s", body)
+	}
+	if strings.Contains(body, `ip saddr 10.250.0.0/24 oifname "ens18" snat`) ||
+		strings.Contains(body, `ip saddr 10.250.0.0/24 oifname "ens18" masquerade`) {
+		t.Fatal("no_snat must not emit SNAT/masquerade for matched source")
+	}
+	asym := `iifname "ens18" oifname "ens19" ip daddr 10.250.0.0/24 ip saddr != 10.250.0.0/24 drop`
+	if strings.Contains(body, asym) {
+		t.Fatal("asymmetric drop must skip no_snat source CIDRs")
+	}
+}
+
 func TestRenderSessionLimitPerIP(t *testing.T) {
 	st := store.DefaultState()
 	st.Firewall.MaxSessionsPerIP = 500

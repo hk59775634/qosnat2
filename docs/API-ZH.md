@@ -103,7 +103,7 @@ GET 响应要点：
 | POST | `/api/v1/vpn/ocserv/uninstall` | 卸载（需 root + `admin_password`） |
 | GET | `/api/v1/vpn/ocserv/install/status` | 轮询任务状态 |
 
-`POST /api/v1/vpn/ocserv/install` 请求体（可选）：`{ "version": "1.4.2" }` 指定官方源码 tag。
+`POST /api/v1/vpn/ocserv/install` 请求体（可选）：`{ "version": "1.4.2" }`（生产固定 **1.4.2** + 完整 SPEC-01；安装 `ocserv` 与 `ocserv-worker`）。
 
 `install_job.state`：`idle` | `running` | `ok` | `failed`；`log_tail` 为日志末尾约 80 行。
 

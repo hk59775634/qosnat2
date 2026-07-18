@@ -70,6 +70,7 @@ const egForm = ref({
   dst_alias: '',
   wan_link_id: '',
   snat_ip: '',
+  no_snat: false,
   priority: 100,
   enabled: true,
 })
@@ -86,6 +87,7 @@ const egEditForm = ref({
   dst_alias: '',
   wan_link_id: '',
   snat_ip: '',
+  no_snat: false,
   priority: 100,
   enabled: true,
 })
@@ -674,8 +676,9 @@ function buildEgressBody(f) {
     wan_link_id: f.wan_link_id,
     priority: f.priority,
     enabled: f.enabled,
+    no_snat: !!f.no_snat,
   }
-  if (f.snat_ip) body.snat_ip = f.snat_ip
+  if (!f.no_snat && f.snat_ip) body.snat_ip = f.snat_ip
   if (f.src_iface) body.src_iface = f.src_iface.trim()
   if (f.src_mode === 'cidr' && f.src_cidr) body.src_cidr = f.src_cidr.trim()
   if (f.src_mode === 'alias' && f.src_alias) body.src_alias = f.src_alias
@@ -736,6 +739,7 @@ function policyToEditForm(p) {
     dst_alias,
     wan_link_id: p.wan_link_id,
     snat_ip: p.snat_ip || '',
+    no_snat: !!p.no_snat,
     priority: p.priority,
     enabled: p.enabled,
   }
@@ -1149,7 +1153,17 @@ onUnmounted(() => {
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('network.wanLinks.snatIp') }}</label>
-          <input v-model="egForm.snat_ip" class="input-field mt-1 font-mono" :placeholder="t('network.wanLinks.snatAuto')" />
+          <input
+            v-model="egForm.snat_ip"
+            class="input-field mt-1 font-mono"
+            :disabled="egForm.no_snat"
+            :placeholder="egForm.no_snat ? t('network.wanLinks.snatDisabled') : t('network.wanLinks.snatAuto')"
+          />
+          <label class="mt-2 flex items-center gap-2 text-xs text-slate-600">
+            <input v-model="egForm.no_snat" type="checkbox" />
+            {{ t('network.wanLinks.noSnat') }}
+          </label>
+          <p class="mt-1 text-[11px] text-slate-400 leading-snug">{{ t('network.wanLinks.noSnatHint') }}</p>
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('network.wanLinks.priority') }}</label>
@@ -1226,7 +1240,20 @@ onUnmounted(() => {
                   <option v-for="o in linkOptions" :key="o.id" :value="o.id">{{ o.label }}</option>
                 </select>
               </td>
-              <td><input v-model="egEditForm.snat_ip" class="input-field text-xs font-mono" /></td>
+              <td>
+                <div class="space-y-1">
+                  <input
+                    v-model="egEditForm.snat_ip"
+                    class="input-field text-xs font-mono"
+                    :disabled="egEditForm.no_snat"
+                    :placeholder="egEditForm.no_snat ? t('network.wanLinks.snatDisabled') : t('network.wanLinks.snatAuto')"
+                  />
+                  <label class="inline-flex items-center gap-1 text-xs text-slate-600">
+                    <input v-model="egEditForm.no_snat" type="checkbox" />
+                    {{ t('network.wanLinks.noSnatShort') }}
+                  </label>
+                </div>
+              </td>
               <td>{{ resolvedRow(p.id)?.table ?? '—' }}</td>
               <td><input v-model.number="egEditForm.priority" type="number" class="input-field text-xs w-16" /></td>
               <td class="space-x-2 whitespace-nowrap">
@@ -1242,7 +1269,12 @@ onUnmounted(() => {
               <td class="font-mono text-xs">{{ egressEndpointsLabel(p) }}</td>
               <td class="font-mono">{{ links.find((w) => w.id === p.wan_link_id)?.name || p.wan_link_id }}</td>
               <td class="font-mono text-xs">
-                {{ resolvedRow(p.id)?.snat_ip || p.snat_ip || t('network.wanLinks.snatAuto') }}
+                <template v-if="p.no_snat || resolvedRow(p.id)?.no_snat">
+                  {{ t('network.wanLinks.noSnatShort') }}
+                </template>
+                <template v-else>
+                  {{ resolvedRow(p.id)?.snat_ip || p.snat_ip || t('network.wanLinks.snatAuto') }}
+                </template>
               </td>
               <td>{{ resolvedRow(p.id)?.table ?? '—' }}</td>
               <td>{{ p.priority }}</td>

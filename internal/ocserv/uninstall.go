@@ -26,6 +26,8 @@ func UninstallBinaries() error {
 
 	candidates := []string{
 		BinaryPath,
+		filepath.Join(filepath.Dir(BinaryPath), "ocserv-worker"),
+		"/usr/local/sbin/ocserv-worker",
 		OcpasswdPath,
 		OcctlPath,
 		filepath.Join(filepath.Dir(BinaryPath), "ocpasswd"),

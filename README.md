@@ -16,7 +16,7 @@
 | **QoS** | Per-IP HTB + eBPF `profile_lpm`；网段与单 IP（`/32`）均在 QoS 策略页，`POST /shaper/wizard` |
 | **网络** | 接口 4h 流量、实时速率（线速占比/手动基准）、ethtool、**netplan** IPv4/VLAN、路由、DHCP |
 | **可观测** | Dashboard、eBPF Maps、Mark 审计、conntrack、tcpdump 抓包 |
-| **VPN** | WireGuard；**ocserv**（OpenConnect，[`scripts/install-ocserv.sh`](scripts/install-ocserv.sh) 官方源码编译安装） |
+| **VPN** | WireGuard；**ocserv**（OpenConnect，[`scripts/install-ocserv.sh`](scripts/install-ocserv.sh) 官方 1.4.2 + Route B SPEC-01） |
 
 ## 仓库结构
 

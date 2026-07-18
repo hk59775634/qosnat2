@@ -60,12 +60,14 @@ func Render(cfg Config, st store.State) (string, error) {
 	)
 	routes := st.Nat.IPv4.PolicyRoutes
 	egressCIDRs := store.EgressPolicyCIDRs(st.Network.EgressPolicies)
+	snatEgressCIDRs := store.EgressPolicySnatSourceCIDRs(st.Network.EgressPolicies)
 	natOn := store.NatIPv4Enabled(st.Nat.IPv4)
 	if natOn {
 		routes = store.FilterPolicyRoutesForWAN(routes, egressCIDRs)
 	} else {
 		routes = nil
 		egressCIDRs = nil
+		snatEgressCIDRs = nil
 	}
 	egress := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
 	if !natOn {
@@ -126,9 +128,9 @@ func Render(cfg Config, st store.State) (string, error) {
 			b.WriteString(fmt.Sprintf("        iifname \"%s\" oifname \"%s\" accept\n", dev, cfg.DevLAN))
 		}
 		writeEgressSameIfaceForward(&b, cfg.DevLAN, egress)
-		// 非对称回程：公网源直达 LAN 内网段丢弃（仅 NAT 开启时）
+		// 非对称回程：公网源直达 LAN 内网段丢弃（仅本机 SNAT 的策略网段；no_snat 由远端 NAT 回程）
 		if natOn {
-			allPolicyCIDRs := append(append([]string{}, routes...), egressCIDRs...)
+			allPolicyCIDRs := append(append([]string{}, routes...), snatEgressCIDRs...)
 			for _, cidr := range allPolicyCIDRs {
 				for dev := range wanDevs {
 					if dev == "" || dev == cfg.DevLAN {
@@ -206,6 +208,14 @@ func writeIPv4PostroutingNAT(b *strings.Builder, cfg Config, st store.State, rou
 	for _, e := range egress {
 		match := store.EgressSNATMatchClause(e.Policy)
 		if match == "" {
+			continue
+		}
+		if e.NoSNAT {
+			// 跳出 postrouting，避免后续 catch-all masquerade 仍对本机做 SNAT。
+			b.WriteString(fmt.Sprintf(
+				"        %s return comment \"qosnat2-egress-no-snat\"\n",
+				match,
+			))
 			continue
 		}
 		if e.Masquerade {
