@@ -239,12 +239,27 @@ download_release_binary() {
   fi
   if [[ -f "${tmp}/lib/dnsmasq-chnroutes" ]]; then
     install -d /usr/local/lib/qosnat2
-    install -m 0755 "${tmp}/lib/dnsmasq-chnroutes" /usr/local/lib/qosnat2/dnsmasq-chnroutes
+    # staging+rename，避免 ETXTBSY
+    install -m 0755 "${tmp}/lib/dnsmasq-chnroutes" /usr/local/lib/qosnat2/dnsmasq-chnroutes.new
+    mv -f /usr/local/lib/qosnat2/dnsmasq-chnroutes.new /usr/local/lib/qosnat2/dnsmasq-chnroutes
     if command -v dnsmasq &>/dev/null && ! dnsmasq --help 2>&1 | grep -q chnroutes-file; then
+      local dnsmasq_was_active=0
+      if systemctl is-active --quiet dnsmasq 2>/dev/null; then
+        dnsmasq_was_active=1
+        systemctl stop dnsmasq || true
+      fi
       if [[ -x /usr/sbin/dnsmasq && ! -f /usr/sbin/dnsmasq.dist ]]; then
         cp -a /usr/sbin/dnsmasq /usr/sbin/dnsmasq.dist
       fi
-      install -m 0755 "${tmp}/lib/dnsmasq-chnroutes" /usr/sbin/dnsmasq
+      install -m 0755 "${tmp}/lib/dnsmasq-chnroutes" /usr/sbin/dnsmasq.new
+      if [[ -e /usr/sbin/dnsmasq ]]; then
+        mv -f /usr/sbin/dnsmasq /usr/sbin/dnsmasq.old
+      fi
+      mv -f /usr/sbin/dnsmasq.new /usr/sbin/dnsmasq
+      rm -f /usr/sbin/dnsmasq.old
+      if [[ "${dnsmasq_was_active}" -eq 1 ]]; then
+        systemctl start dnsmasq || true
+      fi
       log "已从 release 安装 dnsmasq-chnroutes"
     fi
   fi

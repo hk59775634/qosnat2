@@ -68,6 +68,7 @@ func LocatePrebuiltChnroutes() (string, error) {
 }
 
 // InstallChnroutesBinary 将预编译二进制安装到 ChnroutesLibPath 与 SystemDnsmasqPath。
+// 对正在运行的 /usr/sbin/dnsmasq 使用 staging+rename，避免 ETXTBSY（text file busy）。
 func InstallChnroutesBinary(src string) error {
 	src = filepath.Clean(src)
 	st, err := os.Stat(src)
@@ -83,30 +84,66 @@ func InstallChnroutesBinary(src string) error {
 	if err := os.MkdirAll(filepath.Dir(ChnroutesLibPath), 0755); err != nil {
 		return err
 	}
-	if err := copyExecutable(src, ChnroutesLibPath); err != nil {
+	if err := replaceExecutableAtomic(src, ChnroutesLibPath); err != nil {
 		return fmt.Errorf("install %s: %w", ChnroutesLibPath, err)
 	}
-	if err := installSystemDnsmasq(src); err != nil {
-		return err
+
+	wasActive := dnsmasqServiceActive()
+	if wasActive {
+		_ = exec.Command("systemctl", "stop", "dnsmasq").Run()
 	}
-	if active, _ := exec.Command("systemctl", "is-active", "dnsmasq").Output(); strings.TrimSpace(string(active)) == "active" {
+	installErr := installSystemDnsmasq(src)
+	if wasActive {
+		_ = exec.Command("systemctl", "start", "dnsmasq").Run()
+	} else if dnsmasqServiceActive() {
 		_ = exec.Command("systemctl", "restart", "dnsmasq").Run()
 	}
-	return nil
+	return installErr
+}
+
+func dnsmasqServiceActive() bool {
+	out, err := exec.Command("systemctl", "is-active", "dnsmasq").Output()
+	return err == nil && strings.TrimSpace(string(out)) == "active"
 }
 
 func installSystemDnsmasq(src string) error {
 	if st, err := os.Stat(SystemDnsmasqPath); err == nil && !st.IsDir() {
 		backup := SystemDnsmasqPath + ".dist"
 		if _, err := os.Stat(backup); os.IsNotExist(err) {
-			if err := os.Rename(SystemDnsmasqPath, backup); err != nil {
+			// 复制备份，勿 rename 掉正在执行的路径后再 O_TRUNC 写回。
+			if err := copyExecutable(SystemDnsmasqPath, backup); err != nil {
 				return fmt.Errorf("backup %s: %w", SystemDnsmasqPath, err)
 			}
 		}
 	} else if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	return copyExecutable(src, SystemDnsmasqPath)
+	return replaceExecutableAtomic(src, SystemDnsmasqPath)
+}
+
+// replaceExecutableAtomic 先写到 dst.new，再 rename 换入，避免覆盖正在映射执行的文件（ETXTBSY）。
+func replaceExecutableAtomic(src, dst string) error {
+	staging := dst + ".new"
+	if err := copyExecutable(src, staging); err != nil {
+		return err
+	}
+	backup := dst + ".old"
+	_ = os.Remove(backup)
+	if _, err := os.Stat(dst); err == nil {
+		if err := os.Rename(dst, backup); err != nil {
+			_ = os.Remove(staging)
+			return fmt.Errorf("rename %s aside: %w", dst, err)
+		}
+	}
+	if err := os.Rename(staging, dst); err != nil {
+		if _, err2 := os.Stat(backup); err2 == nil {
+			_ = os.Rename(backup, dst)
+		}
+		_ = os.Remove(staging)
+		return fmt.Errorf("activate %s: %w", dst, err)
+	}
+	_ = os.Remove(backup)
+	return nil
 }
 
 func copyExecutable(src, dst string) error {

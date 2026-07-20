@@ -60,7 +60,8 @@ func InstallReleaseBinary(versionID, binPath, route string) error {
 		prebuilt := filepath.Join(tmp, dnsmasq.ReleaseTarDnsmasqRel)
 		if _, err := os.Stat(prebuilt); err == nil {
 			if err := dnsmasq.InstallChnroutesBinary(prebuilt); err != nil {
-				return fmt.Errorf("install dnsmasq-chnroutes: %w", err)
+				// 不阻断 qosnatd 版本切换：dnsmasq 可随后在 DHCP 页单独安装。
+				fmt.Fprintf(os.Stderr, "warn: install dnsmasq-chnroutes during version switch: %v\n", err)
 			}
 		}
 	}
