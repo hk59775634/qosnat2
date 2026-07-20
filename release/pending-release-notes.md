@@ -5,11 +5,11 @@
 
 ## 概要
 
-`GET /api/v1/shaper/active` 支持按 IP 查询，仅返回该 IP 所在限速桶
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- `GET /api/v1/shaper/active?ip=`：指定后仅列出该 IPv4 所在限速桶（共享桶含全部成员），不再全量返回
+- （无）
 
 ## 优化
 

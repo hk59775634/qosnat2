@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072005",
+      "tag": "v2026072005",
+      "published_at": "2026-07-20T07:31:22Z",
+      "summary": "`GET /api/v1/shaper/active` 支持按 IP 查询，仅返回该 IP 所在限速桶"
+    },
+    {
       "id": "2026072004",
       "tag": "v2026072004",
       "published_at": "2026-07-20T06:48:09Z",
@@ -25,12 +31,6 @@
       "tag": "v2026072001",
       "published_at": "2026-07-20T03:07:39Z",
       "summary": "修复版本升级时安装 dnsmasq-chnroutes 因 text file busy 失败、阻断升级的问题。"
-    },
-    {
-      "id": "2026071802",
-      "tag": "v2026071802",
-      "published_at": "2026-07-18T17:58:06Z",
-      "summary": "修复 ocserv 完整 SPEC-01 安装，并支持出站策略「仅路由 / 不 SNAT」接入机模式。"
     }
   ]
 }
