@@ -38,6 +38,66 @@ type ActiveEntry struct {
 	Hosts        []ActiveHost `json:"hosts,omitempty"`
 }
 
+// ResolveBucketKey 解析 IP 所属限速桶键：优先 host_flow，否则按策略 host_mask 聚合。
+func (m *Manager) ResolveBucketKey(ip string) (uint32, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.loaded || m.objs == nil {
+		return 0, errors.New("ebpf not loaded")
+	}
+	hostKey, err := IPToHostKey(ip)
+	if err != nil {
+		return 0, err
+	}
+	if m.objs.HostFlow != nil {
+		key := make([]byte, 4)
+		binary.BigEndian.PutUint32(key, hostKey)
+		var vbuf []byte
+		if err := m.objs.HostFlow.Lookup(key, &vbuf); err == nil && len(vbuf) >= 4 {
+			return binary.BigEndian.Uint32(vbuf[0:4]), nil
+		}
+	}
+	_, _, mask, ok := m.lookupRateMetaLocked(hostKey)
+	if !ok {
+		mask = 32
+	}
+	return AggregateHostKey(hostKey, mask), nil
+}
+
+// ListActiveByIP 仅返回指定 IP 所在限速桶（共享桶含全部成员）。
+func (m *Manager) ListActiveByIP(ip string) ([]ActiveEntry, error) {
+	bucketKey, err := m.ResolveBucketKey(ip)
+	if err != nil {
+		return nil, err
+	}
+	list, err := m.ListActive()
+	if err != nil {
+		return nil, err
+	}
+	return filterActiveByIP(list, bucketKey, ip), nil
+}
+
+func filterActiveByIP(list []ActiveEntry, bucketKey uint32, ip string) []ActiveEntry {
+	bucketIP := HostKeyToIP(bucketKey)
+	for _, e := range list {
+		if e.Key == bucketIP || e.IP == bucketIP {
+			return []ActiveEntry{e}
+		}
+	}
+	// 回退：按成员 IP 匹配（策略变更导致聚合键短暂不一致时）
+	for _, e := range list {
+		if e.IP == ip || e.Key == ip {
+			return []ActiveEntry{e}
+		}
+		for _, h := range e.Hosts {
+			if h.IP == ip {
+				return []ActiveEntry{e}
+			}
+		}
+	}
+	return []ActiveEntry{}
+}
+
 // ListActive 枚举运行期限速桶；轮询间隔内根据字节增量推算瞬时速率。
 func (m *Manager) ListActive() ([]ActiveEntry, error) {
 	m.mu.RLock()

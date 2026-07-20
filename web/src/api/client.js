@@ -341,7 +341,12 @@ export const api = {
     delProfile: (cidr) => request(`/api/v1/shaper/profiles?cidr=${encodeURIComponent(cidr)}`, { method: 'DELETE' }),
     reorderProfiles: (order) =>
       request('/api/v1/shaper/profiles/order', { method: 'PUT', body: JSON.stringify({ order }) }),
-    active: () => request('/api/v1/shaper/active'),
+    active: (ip) =>
+      request(
+        ip
+          ? `/api/v1/shaper/active?ip=${encodeURIComponent(ip)}`
+          : '/api/v1/shaper/active',
+      ),
     tc: {
       put: (body) => request('/api/v1/shaper/tc', { method: 'PUT', body: JSON.stringify(body) }),
     },

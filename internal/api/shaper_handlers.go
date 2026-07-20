@@ -274,7 +274,20 @@ func (srv *Server) handleShaperActive(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []ebpf.ActiveEntry{})
 		return
 	}
-	list, err := srv.bpf.ListActive()
+	ip := strings.TrimSpace(r.URL.Query().Get("ip"))
+	var (
+		list []ebpf.ActiveEntry
+		err  error
+	)
+	if ip != "" {
+		if _, err := ebpf.IPToHostKey(ip); err != nil {
+			writeBadRequest(w, "invalid ip")
+			return
+		}
+		list, err = srv.bpf.ListActiveByIP(ip)
+	} else {
+		list, err = srv.bpf.ListActive()
+	}
 	if err != nil {
 		writeUnavailable(w, "", err.Error())
 		return

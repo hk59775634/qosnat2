@@ -5,6 +5,51 @@ import (
 	"time"
 )
 
+func TestFilterActiveByIP(t *testing.T) {
+	shared := ActiveEntry{
+		IP:       "10.0.0.0",
+		Key:      "10.0.0.0",
+		Shared:   true,
+		HostMask: 24,
+		Hosts: []ActiveHost{
+			{IP: "10.0.0.5"},
+			{IP: "10.0.0.8"},
+		},
+	}
+	solo := ActiveEntry{
+		IP:       "10.1.0.9",
+		Key:      "10.1.0.9",
+		HostMask: 32,
+	}
+	list := []ActiveEntry{shared, solo}
+
+	bucket24, err := IPToHostKey("10.0.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := filterActiveByIP(list, bucket24, "10.0.0.5")
+	if len(got) != 1 || got[0].Key != "10.0.0.0" || len(got[0].Hosts) != 2 {
+		t.Fatalf("shared bucket: %+v", got)
+	}
+
+	bucket32, err := IPToHostKey("10.1.0.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = filterActiveByIP(list, bucket32, "10.1.0.9")
+	if len(got) != 1 || got[0].Key != "10.1.0.9" {
+		t.Fatalf("solo bucket: %+v", got)
+	}
+
+	missing, err := IPToHostKey("10.2.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got = filterActiveByIP(list, missing, "10.2.0.1"); len(got) != 0 {
+		t.Fatalf("missing want empty, got %+v", got)
+	}
+}
+
 func TestRateFromSamples(t *testing.T) {
 	prevAt := time.Now().Add(-2 * time.Second)
 	now := time.Now()
