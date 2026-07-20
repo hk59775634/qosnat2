@@ -5,7 +5,7 @@
 
 ## 概要
 
-WARP 与 ProxyEgress 内部链路改用 198.18.0.0/15，避免与 VPN 用户池 10.0.0.0/8 冲突
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -13,11 +13,11 @@ WARP 与 ProxyEgress 内部链路改用 198.18.0.0/15，避免与 VPN 用户池 
 
 ## 优化
 
-- 新增 `internal/linknet` 统一管理 WARP veth / ProxyEgress TUN 内部地址
+- （无）
 
 ## 修复
 
-- WARP veth 由 10.99.0.0/30 迁至 198.18.0.0/30；ProxyEgress TUN 由 10.87.x 迁至 198.18.(N+1).0/30，降低与 VPN 地址池冲突导致用户无法上网的风险
+- （无）
 
 ## 删除
 
@@ -25,4 +25,4 @@ WARP 与 ProxyEgress 内部链路改用 198.18.0.0/15，避免与 VPN 用户池 
 
 ## 其他
 
-- 升级后需重新连接 WARP 与代理出口，以重建 veth/TUN 新地址
+- （无）
