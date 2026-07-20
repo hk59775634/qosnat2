@@ -76,6 +76,10 @@ func CollectWanInputDevices(devWAN, devLAN string, st State) []string {
 		if !w.Enabled {
 			continue
 		}
+		// WARP/ProxyEgress 虚拟口不是真实 WAN 上联；入站默认丢弃会误伤 TUN/veth 回程。
+		if IsManagedWanLink(w) {
+			continue
+		}
 		add(w.Device)
 	}
 	sort.Strings(out)

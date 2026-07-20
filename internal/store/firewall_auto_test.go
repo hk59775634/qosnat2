@@ -123,6 +123,8 @@ func TestCollectWanInputDevices(t *testing.T) {
 		{ID: "w2", Device: "ens20", Enabled: true},
 		{ID: "w3", Device: "ens19", Enabled: false},
 		{ID: "w4", Device: "ens19", Enabled: true},
+		{ID: "wan-warp", Device: "qwp0", Enabled: true, WarpManaged: true},
+		{ID: "wan-proxy-x", Device: "qpe0", Enabled: true, ProxyManaged: true},
 	}
 	devs := CollectWanInputDevices("ens18", "ens19", st)
 	want := []string{"ens18", "ens20"}

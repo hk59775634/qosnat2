@@ -127,7 +127,8 @@ func BuildConfig(p store.ProxyEgress) (map[string]any, error) {
 				"mtu":                        1500,
 				"auto_route":                 false,
 				"strict_route":               false,
-				"stack":                      "system",
+				// gvisor：system/mixed 在 auto_route=false 时无法可靠接管进 TUN 的 TCP。
+				"stack":                      "gvisor",
 				"sniff":                      true,
 				"sniff_override_destination": true,
 			},
@@ -137,11 +138,23 @@ func BuildConfig(p store.ProxyEgress) (map[string]any, error) {
 			map[string]any{"type": "direct", "tag": "direct"},
 			map[string]any{"type": "block", "tag": "block"},
 		},
-		"route": map[string]any{
-			"final":                 "proxy",
-			"auto_detect_interface": true,
-		},
+		"route": routeSection(p.Type),
 	}, nil
+}
+
+func routeSection(proxyType string) map[string]any {
+	route := map[string]any{
+		"final":                 "proxy",
+		"auto_detect_interface": true,
+	}
+	// HTTP(S) 代理不支持 UDP；DNS 等走直连，避免客户端解析失败。
+	switch strings.ToLower(strings.TrimSpace(proxyType)) {
+	case "http", "https":
+		route["rules"] = []any{
+			map[string]any{"network": "udp", "outbound": "direct"},
+		}
+	}
+	return route
 }
 
 func outboundType(t string) string {

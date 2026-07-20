@@ -51,6 +51,10 @@ func checkUnresolvedEgress(st store.State, resolved []store.ResolvedEgress) erro
 		}
 		w, found := store.FindWanLink(st.Network.WanLinks, p.WanLinkID)
 		if !found || !w.Enabled {
+			// 托管隧道（WARP/Proxy）断开时 WanLink 会 disabled，策略保留但不报错。
+			if found && store.IsManagedWanLink(w) {
+				continue
+			}
 			return fmt.Errorf("egress %s: wan link %q not found or disabled", p.ID, p.WanLinkID)
 		}
 		if strings.TrimSpace(w.Device) == "" {

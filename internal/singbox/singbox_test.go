@@ -24,6 +24,9 @@ func TestBuildConfigSocks5(t *testing.T) {
 	if in["interface_name"] != "qpe2" || in["auto_route"] != false {
 		t.Fatalf("inbound=%v", in)
 	}
+	if in["stack"] != "gvisor" {
+		t.Fatalf("stack=%v want gvisor", in["stack"])
+	}
 	addrs, _ := in["address"].([]string)
 	if len(addrs) != 1 || addrs[0] != "198.18.3.1/30" {
 		t.Fatalf("address=%v", in["address"])

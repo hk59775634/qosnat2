@@ -378,15 +378,17 @@ func ResolveEgressPolicies(st State, primaryIP func(device string) (string, erro
 			continue
 		}
 		snat := p.SNATIP
-		if snat == "" && primaryIP != nil {
+		if snat == "" && primaryIP != nil && !IsProxyWanLink(w) {
+			// ProxyEgress TUN 地址仅用于链路，不能当作公网 SNAT；一律 MASQUERADE。
 			snat, _ = primaryIP(dev)
 		}
 		masquerade := false
-		if snat == "" {
+		if snat == "" || IsProxyWanLink(w) {
 			// WARP / ProxyEgress 托管链路通常没有稳定的公网 IPv4，回退为按出口口 MASQUERADE。
 			if IsWarpWanLink(w) || IsProxyWanLink(w) {
 				masquerade = true
-			} else {
+				snat = ""
+			} else if snat == "" {
 				continue
 			}
 		}
