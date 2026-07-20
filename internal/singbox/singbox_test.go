@@ -25,7 +25,7 @@ func TestBuildConfigSocks5(t *testing.T) {
 		t.Fatalf("inbound=%v", in)
 	}
 	addrs, _ := in["address"].([]string)
-	if len(addrs) != 1 || addrs[0] != "10.87.2.1/30" {
+	if len(addrs) != 1 || addrs[0] != "198.18.3.1/30" {
 		t.Fatalf("address=%v", in["address"])
 	}
 	outs := cfg["outbounds"].([]any)

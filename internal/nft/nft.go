@@ -185,7 +185,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	}
 	// IFB 上行整形（mirred 重定向）须放行入站，否则 u32/BPF 路径异常。
 	b.WriteString("        iifname \"ifb0\" accept\n")
-	// WARP netns veth 网关（10.99.0.1）；须在默认丢弃之前。
+	// WARP netns veth 网关（198.18.0.0/30）；须在默认丢弃之前。
 	b.WriteString("        iifname \"qwp0\" accept comment \"qosnat2-input-warp-netns\"\n")
 	b.WriteString("        iifname \"qpe*\" accept comment \"qosnat2-input-proxy-egress\"\n")
 	// VPN 隧道口：客户端访问隧道网关/DNS（控制面接入仍由 WAN auto 规则处理）。

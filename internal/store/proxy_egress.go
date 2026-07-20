@@ -7,15 +7,15 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/hk59775634/qosnat2/internal/linknet"
 )
 
 const (
 	// ProxyEgressTunPrefix TUN 接口名前缀（qpe0..qpe63）。
 	ProxyEgressTunPrefix = "qpe"
 	// ProxyEgressTunMax 最大并行代理出口数。
-	ProxyEgressTunMax = 64
-	// ProxyEgressTunNet 为 TUN 地址池网段（10.87.N.0/30，主机侧 .1）。
-	ProxyEgressTunNet = "10.87"
+	ProxyEgressTunMax = linknet.ProxyTunMax
 	// ProxyEgressWanLinkPrefix 托管 WanLink ID 前缀。
 	ProxyEgressWanLinkPrefix = "wan-proxy-"
 )
@@ -64,12 +64,9 @@ func ProxyTunDevice(tunIndex int) string {
 	return fmt.Sprintf("%s%d", ProxyEgressTunPrefix, tunIndex)
 }
 
-// ProxyTunAddress 返回 sing-box TUN inet4 地址（主机侧 /30）。
+// ProxyTunAddress 返回 sing-box TUN inet4 地址（主机侧 /30，198.18.0.0/15 内部池）。
 func ProxyTunAddress(tunIndex int) string {
-	if tunIndex < 0 || tunIndex >= ProxyEgressTunMax {
-		return ""
-	}
-	return fmt.Sprintf("%s.%d.1/30", ProxyEgressTunNet, tunIndex)
+	return linknet.ProxyTunHostCIDR(tunIndex)
 }
 
 // IsProxyWanLink 是否为 ProxyEgress 托管链路。

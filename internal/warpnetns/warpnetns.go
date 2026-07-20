@@ -14,15 +14,17 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/hk59775634/qosnat2/internal/linknet"
 )
 
 const (
 	NetnsName    = "qosnat2-warp"
 	VethHost     = "qwp0"
 	VethNS       = "qwp1"
-	HostVethCIDR = "10.99.0.1/30"
-	NSVethCIDR   = "10.99.0.2/30"
-	NSVethGW     = "10.99.0.1"
+	HostVethCIDR = linknet.WarpHostVethCIDR
+	NSVethCIDR   = linknet.WarpNSVethCIDR
+	NSVethGW     = linknet.WarpNSVethGW
 
 	stateFile = "/var/lib/qosnat2/warp-netns.json"
 	warpSvc   = "/usr/bin/warp-svc"
@@ -393,8 +395,8 @@ func nftEnsureHostWarpUplinkMasq(uplink string) {
 	_, _ = run("nft", "add", "table", "ip", "qosnat2_warp")
 	_, _ = run("nft", "add", "chain", "ip", "qosnat2_warp", "postrouting",
 		"{", "type", "nat", "hook", "postrouting", "priority", "srcnat", ";", "policy", "accept", ";", "}")
-	rule := fmt.Sprintf(`ip saddr 10.99.0.0/30 oifname "%s" masquerade`, uplink)
-	_, _ = run("nft", "add", "rule", "ip", "qosnat2_warp", "postrouting", "ip", "saddr", "10.99.0.0/30", "oifname", uplink, "masquerade")
+	rule := fmt.Sprintf(`ip saddr %s oifname "%s" masquerade`, linknet.WarpVethSubnet, uplink)
+	_, _ = run("nft", "add", "rule", "ip", "qosnat2_warp", "postrouting", "ip", "saddr", linknet.WarpVethSubnet, "oifname", uplink, "masquerade")
 	// 去重：保留一条同内容规则即可
 	out, err := run("nft", "-a", "list", "chain", "ip", "qosnat2_warp", "postrouting")
 	if err != nil {
@@ -423,7 +425,7 @@ func nftRemoveHostWarpUplinkMasq(uplink string) {
 	if strings.TrimSpace(uplink) == "" {
 		return
 	}
-	rule := fmt.Sprintf(`ip saddr 10.99.0.0/30 oifname "%s" masquerade`, uplink)
+	rule := fmt.Sprintf(`ip saddr %s oifname "%s" masquerade`, linknet.WarpVethSubnet, uplink)
 	out, err := run("nft", "-a", "list", "chain", "ip", "qosnat2_warp", "postrouting")
 	if err != nil {
 		return
@@ -455,13 +457,13 @@ func nftEnsureNetnsWarpMasq(warpIface string) {
 func cleanupLegacyIPTablesNAT(uplink, warpIface string) {
 	if strings.TrimSpace(uplink) != "" {
 		_ = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
-			"-s", "10.99.0.0/30", "-o", uplink, "-j", "MASQUERADE").Run()
+			"-s", linknet.WarpVethSubnet, "-o", uplink, "-j", "MASQUERADE").Run()
 	}
 	if strings.TrimSpace(warpIface) != "" && netnsExists() {
 		_ = exec.Command("ip", "netns", "exec", NetnsName, "iptables", "-t", "nat", "-D", "POSTROUTING",
 			"-o", warpIface, "-j", "MASQUERADE").Run()
 		_ = exec.Command("ip", "netns", "exec", NetnsName, "iptables", "-t", "nat", "-D", "POSTROUTING",
-			"-s", "10.99.0.0/30", "-o", warpIface, "-j", "MASQUERADE").Run()
+			"-s", linknet.WarpVethSubnet, "-o", warpIface, "-j", "MASQUERADE").Run()
 	}
 }
 
@@ -811,7 +813,7 @@ func removeNATRule(uplink string) {
 	}
 	nftRemoveHostWarpUplinkMasq(uplink)
 	_ = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
-		"-s", "10.99.0.0/30", "-o", uplink, "-j", "MASQUERADE").Run()
+		"-s", linknet.WarpVethSubnet, "-o", uplink, "-j", "MASQUERADE").Run()
 }
 
 // connectedStackRecoverable WARP 已连接或 netns 内 warp-svc 仍在运行，应尽量修复而非拆除 netns。

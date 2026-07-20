@@ -1,6 +1,10 @@
 package store
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/hk59775634/qosnat2/internal/linknet"
+)
 
 // WanLinkIDWarp 由「启用 WARP」自动创建的多 WAN 链路 ID（不可手动删除）。
 const WanLinkIDWarp = "wan-warp"
@@ -13,7 +17,7 @@ func WarpWanLink(device string) WanLink {
 	}
 	gateway := ""
 	if device == "qwp0" {
-		gateway = "10.99.0.2"
+		gateway = linknet.WarpWanGateway
 	}
 	return WanLink{
 		ID:          WanLinkIDWarp,

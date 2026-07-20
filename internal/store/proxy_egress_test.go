@@ -53,7 +53,7 @@ func TestProxyWanLinkUpsertSync(t *testing.T) {
 }
 
 func TestProxyTunAddress(t *testing.T) {
-	if ProxyTunAddress(5) != "10.87.5.1/30" {
+	if ProxyTunAddress(5) != "198.18.6.1/30" {
 		t.Fatal(ProxyTunAddress(5))
 	}
 	if ProxyTunDevice(5) != "qpe5" {
