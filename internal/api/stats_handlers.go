@@ -93,8 +93,9 @@ func topActive(list []ebpf.ActiveEntry, n int) []topHost {
 			IP:        e.Key,
 			BytesDown: e.BytesDown,
 			BytesUp:   e.BytesUp,
-			DownMbps:  float64(e.RateDownBPS) / 1e6,
-			UpMbps:    float64(e.RateUpBPS) / 1e6,
+			// Rate*BPS 为字节/秒（与 MbitToBPS 一致）
+			DownMbps: float64(e.RateDownBPS) / 125000,
+			UpMbps:   float64(e.RateUpBPS) / 125000,
 		})
 	}
 	return out

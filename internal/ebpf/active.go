@@ -211,11 +211,12 @@ func rateFromSamples(prev, cur map[uint32]activeSample, prevAt, now time.Time) m
 			continue
 		}
 		var rd, ru uint64
+		// 与 store.MbitToBPS / bpsLabel 一致：返回字节/秒，勿再 ×8
 		if c.down >= p.down {
-			rd = uint64(float64(c.down-p.down) * 8 / dt)
+			rd = uint64(float64(c.down-p.down) / dt)
 		}
 		if c.up >= p.up {
-			ru = uint64(float64(c.up-p.up) * 8 / dt)
+			ru = uint64(float64(c.up-p.up) / dt)
 		}
 		out[k] = activeSample{down: rd, up: ru}
 	}
