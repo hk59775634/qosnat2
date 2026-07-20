@@ -654,7 +654,13 @@ components:
         password: { type: string }
         tun_index: { type: integer }
         enabled: { type: boolean, description: '启用意图；断线后 watchdog 重连' }
-        egress_ip: { type: string, description: '最近探测到的出口公网 IP' }
+        egress_ip: { type: string }
+        egress_country: { type: string }
+        egress_city: { type: string }
+        egress_region: { type: string }
+        egress_org: { type: string }
+        egress_checked_at: { type: string }
+        last_test_error: { type: string }
     EgressPolicy:
       type: object
       properties:

@@ -22,12 +22,14 @@ const (
 )
 
 type proxyTaskStatus struct {
-	State      string `json:"state"`
-	Op         string `json:"op,omitempty"`
-	ProxyID    string `json:"proxy_id,omitempty"`
-	Message    string `json:"message,omitempty"`
-	StartedAt  string `json:"started_at,omitempty"`
-	FinishedAt string `json:"finished_at,omitempty"`
+	State      string         `json:"state"`
+	Op         string         `json:"op,omitempty"`
+	ProxyID    string         `json:"proxy_id,omitempty"`
+	Message    string         `json:"message,omitempty"`
+	StartedAt  string         `json:"started_at,omitempty"`
+	FinishedAt string         `json:"finished_at,omitempty"`
+	ExitInfo   map[string]any `json:"exit_info,omitempty"`
+	TestOK     bool           `json:"test_ok,omitempty"`
 }
 
 var (
@@ -136,9 +138,11 @@ func startProxyTaskAsync(srv *Server, op string, p store.ProxyEgress) bool {
 			proxyTaskMu.Unlock()
 		}()
 		var err error
+		var exitInfo map[string]any
+		testOK := false
 		switch op {
 		case "connect":
-			err = runProxyConnect(srv, p)
+			exitInfo, testOK, err = runProxyConnect(srv, p)
 		case "disconnect":
 			err = runProxyDisconnect(srv, p.ID)
 		default:
@@ -153,6 +157,8 @@ func startProxyTaskAsync(srv *Server, op string, p store.ProxyEgress) bool {
 				Message:    err.Error(),
 				StartedAt:  started,
 				FinishedAt: finished,
+				ExitInfo:   exitInfo,
+				TestOK:     testOK,
 			})
 			return
 		}
@@ -163,28 +169,49 @@ func startProxyTaskAsync(srv *Server, op string, p store.ProxyEgress) bool {
 			Message:    op + " ok",
 			StartedAt:  started,
 			FinishedAt: finished,
+			ExitInfo:   exitInfo,
+			TestOK:     testOK,
 		})
 	}()
 	return true
 }
 
-func runProxyConnect(srv *Server, p store.ProxyEgress) error {
+func runProxyConnect(srv *Server, p store.ProxyEgress) (map[string]any, bool, error) {
 	_ = srv.store.Update(func(st *store.State) {
 		store.SetProxyEgressEnabled(st, p.ID, true)
+		store.ClearProxyEgressExitInfo(st, p.ID)
 	})
 	_ = srv.store.Save()
 	cur, ok := store.ProxyEgressByID(srv.store.Get().Network.ProxyEgress, p.ID)
 	if !ok {
-		return errString("proxy not found")
+		return nil, false, errString("proxy not found")
 	}
 	if err := singbox.Start(cur); err != nil {
 		_ = srv.store.Update(func(st *store.State) {
 			store.SetProxyEgressEnabled(st, p.ID, false)
 		})
 		_ = srv.store.Save()
-		return err
+		return nil, false, err
 	}
-	return srv.applyProxyWanAfterStart(cur)
+	info := singbox.ProbeExitInfo(cur)
+	exitView := storeProxyExitInfo(info)
+	if info.IP == "" {
+		_ = singbox.Stop(p.ID)
+		_ = srv.store.Update(func(st *store.State) {
+			store.SetProxyEgressEnabled(st, p.ID, false)
+			store.SetProxyEgressExitInfo(st, p.ID, storeProxyExitInfoToStore(info))
+		})
+		_ = srv.store.Save()
+		msg := strings.TrimSpace(info.Error)
+		if msg == "" {
+			msg = "proxy test failed: no egress IP"
+		}
+		return exitView, false, errString(msg)
+	}
+	if err := srv.applyProxyWanAfterStart(cur, info); err != nil {
+		return exitView, false, err
+	}
+	return exitView, true, nil
 }
 
 func runProxyDisconnect(srv *Server, id string) error {
@@ -223,3 +250,27 @@ func clearStaleProxyTaskOnBoot() {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+func storeProxyExitInfo(info singbox.ExitInfo) map[string]any {
+	return store.ProxyExitInfoFromStore(store.ProxyEgress{
+		EgressIP:        info.IP,
+		EgressCountry:   info.Country,
+		EgressCity:      info.City,
+		EgressRegion:    info.Region,
+		EgressOrg:       info.Org,
+		EgressCheckedAt: info.FetchedAt,
+		LastTestError:   info.Error,
+	})
+}
+
+func storeProxyExitInfoToStore(info singbox.ExitInfo) store.ProxyExitInfo {
+	return store.ProxyExitInfo{
+		IP:        info.IP,
+		Country:   info.Country,
+		City:      info.City,
+		Region:    info.Region,
+		Org:       info.Org,
+		CheckedAt: info.FetchedAt,
+		Error:     info.Error,
+	}
+}

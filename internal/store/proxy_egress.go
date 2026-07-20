@@ -35,6 +35,13 @@ type ProxyEgress struct {
 	Enabled bool `json:"enabled"`
 	// EgressIP 最近一次探测到的出口公网 IP（展示用，可空）。
 	EgressIP string `json:"egress_ip,omitempty"`
+	// 出口探测详情（与 WARP exit_info 对齐）。
+	EgressCountry   string `json:"egress_country,omitempty"`
+	EgressCity      string `json:"egress_city,omitempty"`
+	EgressRegion    string `json:"egress_region,omitempty"`
+	EgressOrg       string `json:"egress_org,omitempty"`
+	EgressCheckedAt string `json:"egress_checked_at,omitempty"`
+	LastTestError   string `json:"last_test_error,omitempty"`
 }
 
 // NewProxyEgressID 生成 pe-<12hex> ID。
@@ -230,6 +237,70 @@ func SetProxyEgressEnabled(st *State, id string, enabled bool) bool {
 		}
 	}
 	return false
+}
+
+// SetProxyEgressExitInfo 更新探测到的出口信息。
+func SetProxyEgressExitInfo(st *State, id string, info ProxyExitInfo) bool {
+	for i := range st.Network.ProxyEgress {
+		if st.Network.ProxyEgress[i].ID != id {
+			continue
+		}
+		st.Network.ProxyEgress[i].EgressIP = strings.TrimSpace(info.IP)
+		st.Network.ProxyEgress[i].EgressCountry = strings.TrimSpace(info.Country)
+		st.Network.ProxyEgress[i].EgressCity = strings.TrimSpace(info.City)
+		st.Network.ProxyEgress[i].EgressRegion = strings.TrimSpace(info.Region)
+		st.Network.ProxyEgress[i].EgressOrg = strings.TrimSpace(info.Org)
+		st.Network.ProxyEgress[i].EgressCheckedAt = strings.TrimSpace(info.CheckedAt)
+		st.Network.ProxyEgress[i].LastTestError = strings.TrimSpace(info.Error)
+		return true
+	}
+	return false
+}
+
+// ClearProxyEgressExitInfo 清除出口探测结果。
+func ClearProxyEgressExitInfo(st *State, id string) bool {
+	return SetProxyEgressExitInfo(st, id, ProxyExitInfo{})
+}
+
+// ProxyExitInfo 持久化的代理出口探测结果。
+type ProxyExitInfo struct {
+	IP        string
+	Country   string
+	City      string
+	Region    string
+	Org       string
+	CheckedAt string
+	Error     string
+}
+
+// ProxyExitInfoFromStore 从 ProxyEgress 构造 API exit_info。
+func ProxyExitInfoFromStore(p ProxyEgress) map[string]any {
+	out := map[string]any{}
+	if ip := strings.TrimSpace(p.EgressIP); ip != "" {
+		out["ip"] = ip
+	}
+	if v := strings.TrimSpace(p.EgressCountry); v != "" {
+		out["country"] = v
+	}
+	if v := strings.TrimSpace(p.EgressCity); v != "" {
+		out["city"] = v
+	}
+	if v := strings.TrimSpace(p.EgressRegion); v != "" {
+		out["region"] = v
+	}
+	if v := strings.TrimSpace(p.EgressOrg); v != "" {
+		out["org"] = v
+	}
+	if v := strings.TrimSpace(p.EgressCheckedAt); v != "" {
+		out["fetched_at"] = v
+	}
+	if v := strings.TrimSpace(p.LastTestError); v != "" {
+		out["error"] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // SetProxyEgressIP 更新探测到的出口 IP。

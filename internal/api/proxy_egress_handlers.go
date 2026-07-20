@@ -95,7 +95,19 @@ func (srv *Server) handleProxyEgressCreate(w http.ResponseWriter, r *http.Reques
 	srv.applyManagedRoutes()
 	_ = srv.applyWanLinkDataPlane()
 	srv.auditLog(r, "network.proxy_egress.add", created.ID)
-	writeJSON(w, http.StatusOK, store.ProxyEgressPublicView(created))
+	view := store.ProxyEgressPublicView(created)
+	if singbox.Installed() {
+		if startProxyTaskAsync(srv, "connect", created) {
+			writeJSON(w, http.StatusAccepted, map[string]any{
+				"ok":         true,
+				"auto_test":  true,
+				"proxy":      view,
+				"task":       getProxyTaskStatus(),
+			})
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (srv *Server) handleProxyEgressUpdate(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +169,7 @@ func (srv *Server) handleProxyEgressUpdate(w http.ResponseWriter, r *http.Reques
 				writeInternalError(w, err.Error())
 				return
 			}
-			_ = srv.applyProxyWanAfterStart(p)
+			_ = srv.applyProxyWanAfterStart(p, singbox.ExitInfo{})
 		}
 	} else {
 		srv.applyManagedRoutes()
@@ -217,18 +229,23 @@ func (srv *Server) handleNetworkProxyEgressStatus(w http.ResponseWriter, r *http
 	st := srv.store.Get()
 	items := make([]map[string]any, 0, len(st.Network.ProxyEgress))
 	for _, p := range st.Network.ProxyEgress {
-		items = append(items, map[string]any{
-			"id":         p.ID,
-			"name":       p.Name,
-			"enabled":    p.Enabled,
-			"running":    singbox.IsRunning(p),
-			"device":     store.ProxyTunDevice(p.TunIndex),
+		item := map[string]any{
+			"id":          p.ID,
+			"name":        p.Name,
+			"enabled":     p.Enabled,
+			"running":     singbox.IsRunning(p),
+			"device":      store.ProxyTunDevice(p.TunIndex),
 			"wan_link_id": store.ProxyWanLinkID(p.ID),
-			"egress_ip":  p.EgressIP,
-			"type":       p.Type,
-			"server":     p.Server,
-			"port":       p.Port,
-		})
+			"egress_ip":   p.EgressIP,
+			"type":        p.Type,
+			"server":      p.Server,
+			"port":        p.Port,
+		}
+		if info := store.ProxyExitInfoFromStore(p); info != nil {
+			item["exit_info"] = info
+			item["test_ok"] = p.EgressIP != "" && strings.TrimSpace(p.LastTestError) == ""
+		}
+		items = append(items, item)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"installed":   singbox.Installed(),
@@ -404,13 +421,13 @@ func readFileTail(path string, max int) string {
 	return string(b)
 }
 
-func (srv *Server) applyProxyWanAfterStart(p store.ProxyEgress) error {
-	ip := singbox.ProbeEgressIP(p)
+func (srv *Server) applyProxyWanAfterStart(p store.ProxyEgress, info singbox.ExitInfo) error {
+	if strings.TrimSpace(info.FetchedAt) == "" {
+		info = singbox.ProbeExitInfo(p)
+	}
 	_ = srv.store.Update(func(st *store.State) {
 		store.SetProxyEgressEnabled(st, p.ID, true)
-		if ip != "" {
-			store.SetProxyEgressIP(st, p.ID, ip)
-		}
+		store.SetProxyEgressExitInfo(st, p.ID, storeProxyExitInfoToStore(info))
 		if cur, ok := store.ProxyEgressByID(st.Network.ProxyEgress, p.ID); ok {
 			store.UpsertProxyWanLink(st, cur)
 		}
@@ -461,7 +478,7 @@ func (srv *Server) replayProxyEgressOnBoot() {
 			if err := singbox.Start(pe); err != nil {
 				return
 			}
-			_ = srv.applyProxyWanAfterStart(pe)
+			_ = srv.applyProxyWanAfterStart(pe, singbox.ExitInfo{})
 		}(p)
 	}
 }

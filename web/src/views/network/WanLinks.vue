@@ -162,6 +162,33 @@ const proxyInstallRunning = computed(
 )
 const proxyTaskRunning = computed(() => proxyTaskJob.value?.state === 'running' || !!proxyBusyId.value)
 
+function formatProxyExitCheckedAt(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
+}
+
+function proxyExitLine(p) {
+  const e = p?.exit_info
+  if (!e) {
+    if (p?.egress_ip) return p.egress_ip
+    return ''
+  }
+  if (e.ip) {
+    const loc = [e.city, e.region, e.country].filter(Boolean).join(', ')
+    return loc ? `${e.ip} · ${loc}` : e.ip
+  }
+  if (e.error) return e.error
+  return ''
+}
+
+function proxyExitOrg(p) {
+  return p?.exit_info?.org || ''
+}
+
 async function refreshProxyStatus() {
   const st = await api.network.proxyEgress.status()
   proxyInstalled.value = !!st?.installed
@@ -256,12 +283,17 @@ function startProxyTaskPoll() {
       if (job?.state === 'ok') {
         stopProxyTaskPoll()
         proxyBusyId.value = ''
-        ok.value = job.message || t('common.saved')
+        if (job.exit_info?.ip) {
+          ok.value = t('network.wanLinks.proxyTestOk') + ': ' + proxyExitLine({ exit_info: job.exit_info })
+        } else {
+          ok.value = job.message || t('common.saved')
+        }
         await load()
       } else if (job?.state === 'failed') {
         stopProxyTaskPoll()
         proxyBusyId.value = ''
-        err.value = job.message || 'proxy task failed'
+        const line = proxyExitLine({ exit_info: job.exit_info })
+        err.value = line || job.message || t('network.wanLinks.proxyTestFailed')
         await refreshProxyStatus()
       }
     } catch {
@@ -289,10 +321,21 @@ async function addProxy() {
       username: proxyForm.value.username || undefined,
       password: proxyForm.value.password || undefined,
     }
-    await api.network.proxyEgress.add(body)
+    const res = await api.network.proxyEgress.add(body)
     proxyForm.value = { name: '', type: 'socks5', server: '', port: 1080, username: '', password: '' }
+    const id = res?.proxy?.id || res?.id
+    if (res?.auto_test && id) {
+      ok.value = t('network.wanLinks.proxyTesting')
+      proxyBusyId.value = id
+      startProxyTaskPoll()
+      await load()
+      return
+    }
     ok.value = t('common.saved')
     await load()
+    if (proxyInstalled.value && id) {
+      await connectProxy(id)
+    }
   } catch (e) {
     err.value = e?.message || String(e)
   }
@@ -1400,13 +1443,30 @@ onUnmounted(() => {
             <td class="font-mono uppercase text-xs">{{ p.type }}</td>
             <td class="font-mono text-xs">{{ p.server }}:{{ p.port }}</td>
             <td class="font-mono">{{ p.device || '—' }}</td>
-            <td class="font-mono">{{ p.egress_ip || '—' }}</td>
+            <td class="font-mono text-xs">
+              <div v-if="proxyExitLine(p)">{{ proxyExitLine(p) }}</div>
+              <div v-else-if="proxyBusyId === p.id && proxyTaskRunning" class="text-slate-400">
+                {{ t('network.wanLinks.proxyExitLoading') }}
+              </div>
+              <span v-else class="text-slate-400">—</span>
+              <div
+                v-if="p.exit_info?.fetched_at"
+                class="text-[10px] text-slate-400 font-sans"
+              >
+                {{ t('network.wanLinks.proxyExitCheckedAt', { time: formatProxyExitCheckedAt(p.exit_info.fetched_at) }) }}
+              </div>
+              <div v-if="proxyExitOrg(p)" class="text-[10px] text-slate-500 font-sans" :title="proxyExitOrg(p)">
+                {{ proxyExitOrg(p) }}
+              </div>
+            </td>
             <td class="text-xs">
               <span :class="p.running ? 'text-emerald-700' : 'text-slate-500'">
                 {{ p.running ? t('network.wanLinks.proxyRunning') : t('network.wanLinks.proxyStopped') }}
               </span>
               ·
               {{ p.enabled ? t('network.wanLinks.proxyEnabled') : t('network.wanLinks.proxyDisabled') }}
+              <span v-if="p.test_ok" class="text-emerald-700"> · {{ t('network.wanLinks.proxyTestOk') }}</span>
+              <span v-else-if="p.exit_info?.error" class="text-red-600"> · {{ t('network.wanLinks.proxyTestFailed') }}</span>
             </td>
             <td class="space-x-2 whitespace-nowrap">
               <button

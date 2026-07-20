@@ -53,7 +53,7 @@ func (srv *Server) proxyEgressWatchdogTick() {
 			log.Printf("proxy-egress watchdog start %s: %v", p.ID, err)
 			continue
 		}
-		if err := srv.applyProxyWanAfterStart(p); err != nil {
+		if err := srv.applyProxyWanAfterStart(p, singbox.ExitInfo{}); err != nil {
 			log.Printf("proxy-egress watchdog apply %s: %v", p.ID, err)
 		}
 	}
