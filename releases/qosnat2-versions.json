@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072002",
+      "tag": "v2026072002",
+      "published_at": "2026-07-20T03:12:57Z",
+      "summary": "修复默认未启用 DHCP 时 dnsmasq 仍被 apt 自启、需手动 Apply 才停止的问题。"
+    },
+    {
       "id": "2026072001",
       "tag": "v2026072001",
       "published_at": "2026-07-20T03:07:39Z",
@@ -25,12 +31,6 @@
       "tag": "v2026071702",
       "published_at": "2026-07-17T03:38:03Z",
       "summary": "修复 WireGuard 修改隧道地址后 apply 不生效（syncconf 未更新 Address）。"
-    },
-    {
-      "id": "2026071701",
-      "tag": "v2026071701",
-      "published_at": "2026-07-17T02:49:30Z",
-      "summary": "修复 ocserv 源码安装在 Ubuntu 24.04 / libradcli 下因 `PW_TUNNELGROUPNAME` 未定义导致编译失败。"
     }
   ]
 }

@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复默认未启用 DHCP 时 dnsmasq 仍被 apt 自启、需手动 Apply 才停止的问题。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -17,9 +17,7 @@
 
 ## 修复
 
-- 启动回放调用 `applyManagedDHCP`，按配置启停 dnsmasq
-- DHCP/DNS 未启用时 `stop` 并 `disable`，避免重启后再次自启
-- 安装/替换 dnsmasq 后不再盲目 start；apt 安装后默认 `disable --now`
+- （无）
 
 ## 删除
 
