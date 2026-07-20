@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072003",
+      "tag": "v2026072003",
+      "published_at": "2026-07-20T04:05:16Z",
+      "summary": "QoS 策略 mask 共享限速（数据面）+ 活跃桶观测（实测速率与成员展开）"
+    },
+    {
       "id": "2026072002",
       "tag": "v2026072002",
       "published_at": "2026-07-20T03:12:57Z",
@@ -25,12 +31,6 @@
       "tag": "v2026071801",
       "published_at": "2026-07-18T15:17:12Z",
       "summary": "默认部署时 WAN 防火墙自动放行 SSH（TCP/22），避免防火墙生效后无法 SSH 进入服务器。"
-    },
-    {
-      "id": "2026071702",
-      "tag": "v2026071702",
-      "published_at": "2026-07-17T03:38:03Z",
-      "summary": "修复 WireGuard 修改隧道地址后 apply 不生效（syncconf 未更新 Address）。"
     }
   ]
 }
