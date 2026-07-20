@@ -35,7 +35,7 @@ func (srv *Server) replayAllProfileBPFMaps(st store.State) error {
 		return err
 	}
 	for _, p := range store.SortProfilesByID(st.Shaper.Profiles) {
-		rv, err := srv.rateVal(p.Down, p.Up)
+		rv, err := srv.rateVal(p.Down, p.Up, p.Mask)
 		if err != nil {
 			continue
 		}

@@ -46,7 +46,7 @@ func (srv *Server) listProfileItems() ([]ProfileListItem, error) {
 		if br, ok := bpfRates[p.CIDR]; ok {
 			item.DownBPS = br.DownBPS
 			item.UpBPS = br.UpBPS
-		} else if rv, err := srv.rateVal(p.Down, p.Up); err == nil {
+		} else if rv, err := srv.rateVal(p.Down, p.Up, p.Mask); err == nil {
 			item.DownBPS = rv.DownBPS
 			item.UpBPS = rv.UpBPS
 		}
@@ -82,7 +82,7 @@ func (srv *Server) handleShaperProfilesOrder(w http.ResponseWriter, r *http.Requ
 	}
 	if srv.bpf != nil && srv.bpf.Ready() {
 		for _, p := range store.SortProfilesByID(reordered) {
-			rv, e := srv.rateVal(p.Down, p.Up)
+			rv, e := srv.rateVal(p.Down, p.Up, p.Mask)
 			if e != nil {
 				continue
 			}

@@ -24,7 +24,7 @@ func (srv *Server) syncProfileBPFMaps(cidr string, rv ebpf.RateVal) error {
 	return nil
 }
 
-func (srv *Server) rateVal(down, up string) (ebpf.RateVal, error) {
+func (srv *Server) rateVal(down, up string, mask int) (ebpf.RateVal, error) {
 	d, err := store.MbitToBPS(down)
 	if err != nil {
 		return ebpf.RateVal{}, err
@@ -33,7 +33,7 @@ func (srv *Server) rateVal(down, up string) (ebpf.RateVal, error) {
 	if err != nil {
 		return ebpf.RateVal{}, err
 	}
-	return ebpf.RateVal{DownBPS: d, UpBPS: u}, nil
+	return ebpf.RateVal{DownBPS: d, UpBPS: u, HostMask: ebpf.NormalizeHostMask(mask)}, nil
 }
 
 // upsertShaperProfile 写入 BPF/state；wizard 额外同步 policy_routes
@@ -43,7 +43,7 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 	if err != nil {
 		return false, err
 	}
-	if _, err := srv.rateVal(down, up); err != nil {
+	if _, err := srv.rateVal(down, up, mask); err != nil {
 		return false, err
 	}
 	// 必须先更新内存 state 再装 TC/BPF；BPF 失败则不持久化。
@@ -96,7 +96,7 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 	if !srv.bpfReady() {
 		return false, errEbpfNotLoaded
 	}
-	rv, err := srv.rateVal(down, up)
+	rv, err := srv.rateVal(down, up, mask)
 	if err != nil {
 		return false, err
 	}

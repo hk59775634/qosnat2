@@ -23,6 +23,7 @@ struct throttle_val {
 	__u64 t_last;
 	__u64 bps;
 	__u64 t_horizon;
+	__u64 bytes; /* 观测：经调度放行的累计字节 */
 };
 
 struct token_bucket_key {
@@ -33,6 +34,17 @@ struct token_bucket_val {
 	__u64 tokens;
 	__u64 last_ns;
 	__u64 bps;
+	__u64 bytes; /* 观测：经令牌桶放行的累计字节 */
+};
+
+/* 每主机流量（共享桶时仍按原始 IP），供观测面展开成员 */
+struct host_flow_val {
+	__u32 bucket_be;
+	__u8  host_mask;
+	__u8  pad[3];
+	__u64 bytes_down;
+	__u64 bytes_up;
+	__u64 last_ns;
 };
 
 #endif

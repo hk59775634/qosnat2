@@ -8,7 +8,8 @@ struct rate_val {
 	__u64 down_bps;
 	__u64 up_bps;
 	__u32 class_minor;
-	__u8  pad[4];
+	__u8  host_mask; /* 1–32；0/32=每主机；<32 时按该前缀聚合共享桶 */
+	__u8  pad[3];
 };
 
 struct lpm_v4_key {

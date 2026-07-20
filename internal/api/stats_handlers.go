@@ -81,7 +81,7 @@ func topActive(list []ebpf.ActiveEntry, n int) []topHost {
 	}
 	var s []scored
 	for _, a := range list {
-		s = append(s, scored{a, a.ActivityDown + a.ActivityUp})
+		s = append(s, scored{a, a.RateDownBPS + a.RateUpBPS})
 	}
 	sort.Slice(s, func(i, j int) bool { return s[i].total > s[j].total })
 	if len(s) > n {
@@ -90,11 +90,11 @@ func topActive(list []ebpf.ActiveEntry, n int) []topHost {
 	out := make([]topHost, 0, len(s))
 	for _, e := range s {
 		out = append(out, topHost{
-			IP:        e.IP,
-			BytesDown: e.ActivityDown,
-			BytesUp:   e.ActivityUp,
-			DownMbps:  float64(e.ActivityDown) * 8 / 1e6,
-			UpMbps:    float64(e.ActivityUp) * 8 / 1e6,
+			IP:        e.Key,
+			BytesDown: e.BytesDown,
+			BytesUp:   e.BytesUp,
+			DownMbps:  float64(e.RateDownBPS) / 1e6,
+			UpMbps:    float64(e.RateUpBPS) / 1e6,
 		})
 	}
 	return out

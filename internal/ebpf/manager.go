@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -22,6 +23,7 @@ const (
 	mapHost           = "host_exact"
 	mapThrottle       = "throttle"
 	mapTokenBucket    = "token_bucket"
+	mapHostFlow       = "host_flow"
 	progIngress       = "rate_limit_ingress"
 	progEgress        = "rate_limit_egress"
 )
@@ -31,6 +33,7 @@ type bpfObjects struct {
 	HostExact   *ebpf.Map     `ebpf:"host_exact"`
 	Throttle    *ebpf.Map     `ebpf:"throttle"`
 	TokenBucket *ebpf.Map     `ebpf:"token_bucket"`
+	HostFlow    *ebpf.Map     `ebpf:"host_flow"`
 	Ingress     *ebpf.Program `ebpf:"rate_limit_ingress"`
 	Egress      *ebpf.Program `ebpf:"rate_limit_egress"`
 }
@@ -57,6 +60,9 @@ func (o *bpfObjects) close() {
 	if o.TokenBucket != nil {
 		o.TokenBucket.Close()
 	}
+	if o.HostFlow != nil {
+		o.HostFlow.Close()
+	}
 }
 
 // Manager EDT BPF 生命周期、map CRUD 与 TC attach。
@@ -67,6 +73,17 @@ type Manager struct {
 	attachedDev string
 	attached    map[string]struct{}
 	loaded      bool
+
+	// 观测面采样：上次 ListActive 的字节计数，用于推算瞬时速率
+	activeSampleMu sync.Mutex
+	activePrev     map[uint32]activeSample
+	activePrevAt   time.Time
+	hostPrev       map[uint32]activeSample
+	hostPrevAt     time.Time
+}
+
+type activeSample struct {
+	down, up uint64
 }
 
 func New() *Manager {
@@ -127,13 +144,19 @@ func (m *Manager) loadCollectionSpec() (*ebpf.CollectionSpec, error) {
 
 func loadPinnedMapReplacements(spec *ebpf.CollectionSpec) map[string]*ebpf.Map {
 	reps := make(map[string]*ebpf.Map)
-	for _, name := range []string{mapProfile, mapHost, mapThrottle, mapTokenBucket} {
-		if _, ok := spec.Maps[name]; !ok {
+	for _, name := range []string{mapProfile, mapHost, mapThrottle, mapTokenBucket, mapHostFlow} {
+		ms, ok := spec.Maps[name]
+		if !ok {
 			continue
 		}
 		path := filepath.Join(PinDir, name)
 		pm, err := ebpf.LoadPinnedMap(path, nil)
 		if err != nil {
+			continue
+		}
+		if pm.Type() != ms.Type || int(pm.KeySize()) != int(ms.KeySize) || int(pm.ValueSize()) != int(ms.ValueSize) {
+			pm.Close()
+			_ = os.Remove(path)
 			continue
 		}
 		reps[name] = pm
@@ -153,6 +176,7 @@ func (m *Manager) pinMaps(objs *bpfObjects) error {
 		{mapHost, objs.HostExact.Pin},
 		{mapThrottle, objs.Throttle.Pin},
 		{mapTokenBucket, objs.TokenBucket.Pin},
+		{mapHostFlow, objs.HostFlow.Pin},
 	}
 	for _, p := range pins {
 		path := filepath.Join(PinDir, p.name)
@@ -221,7 +245,7 @@ func (m *Manager) Status() map[string]any {
 		"attached_devs": m.attachedList(),
 		"obj":           m.objPath,
 		"loaded":        m.loaded,
-		"maps":          []string{mapProfile, mapHost, mapThrottle, mapTokenBucket},
+		"maps":          []string{mapProfile, mapHost, mapThrottle, mapTokenBucket, mapHostFlow},
 	}
 	if m.loaded && m.objs != nil {
 		st["profile_lpm_entries"] = m.objs.ProfileLpm.MaxEntries()
@@ -230,7 +254,7 @@ func (m *Manager) Status() map[string]any {
 	return st
 }
 
-func rateFromProfile(down, up string) (RateVal, error) {
+func rateFromProfile(down, up string, mask int) (RateVal, error) {
 	d, err := store.MbitToBPS(down)
 	if err != nil {
 		return RateVal{}, err
@@ -239,7 +263,7 @@ func rateFromProfile(down, up string) (RateVal, error) {
 	if err != nil {
 		return RateVal{}, err
 	}
-	return RateVal{DownBPS: d, UpBPS: u}, nil
+	return RateVal{DownBPS: d, UpBPS: u, HostMask: NormalizeHostMask(mask)}, nil
 }
 
 func flushMapIter(del func(interface{}) error, iter *ebpf.MapIterator) error {
@@ -282,10 +306,15 @@ func (m *Manager) FlushRuntimeMaps() error {
 	if err := flushMapIter(m.objs.TokenBucket.Delete, m.objs.TokenBucket.Iterate()); err != nil {
 		return err
 	}
+	if m.objs.HostFlow != nil {
+		if err := flushMapIter(m.objs.HostFlow.Delete, m.objs.HostFlow.Iterate()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// ReplayState 启动时把 state 写入 map。
+// ReplayState 启动时把 state 写入 map；并清空 throttle/token_bucket，避免旧 per-IP 键残留。
 func (m *Manager) ReplayState(st store.State) error {
 	if err := m.Load(); err != nil {
 		return err
@@ -293,9 +322,16 @@ func (m *Manager) ReplayState(st store.State) error {
 	if err := m.flushProfileLpm(); err != nil {
 		return err
 	}
+	if m.objs != nil {
+		_ = flushMapIter(m.objs.Throttle.Delete, m.objs.Throttle.Iterate())
+		_ = flushMapIter(m.objs.TokenBucket.Delete, m.objs.TokenBucket.Iterate())
+		if m.objs.HostFlow != nil {
+			_ = flushMapIter(m.objs.HostFlow.Delete, m.objs.HostFlow.Iterate())
+		}
+	}
 	var replayErr error
 	for _, p := range store.SortProfilesByID(st.Shaper.Profiles) {
-		rv, err := rateFromProfile(p.Down, p.Up)
+		rv, err := rateFromProfile(p.Down, p.Up, p.Mask)
 		if err != nil {
 			if replayErr == nil {
 				replayErr = err
@@ -458,17 +494,42 @@ func ipv4PrefixAddr(addr uint32, prefix int) uint32 {
 }
 
 func (m *Manager) lookupRatesLocked(hostKey uint32) (down, up uint64, ok bool) {
+	down, up, _, ok = m.lookupRateMetaLocked(hostKey)
+	return down, up, ok
+}
+
+func parseRateVal(rv []byte) (down, up uint64, mask uint8, ok bool) {
+	if len(rv) < 16 {
+		return 0, 0, 0, false
+	}
+	down = binary.LittleEndian.Uint64(rv[0:8])
+	up = binary.LittleEndian.Uint64(rv[8:16])
+	mask = 32
+	if len(rv) >= 21 {
+		mask = rv[20]
+		if mask == 0 {
+			mask = 32
+		}
+	}
+	return down, up, mask, true
+}
+
+func (m *Manager) lookupRateMetaLocked(hostKey uint32) (down, up uint64, mask uint8, ok bool) {
 	key := make([]byte, 4)
 	binary.BigEndian.PutUint32(key, hostKey)
 	var rv []byte
-	if err := m.objs.HostExact.Lookup(key, &rv); err == nil && len(rv) >= 16 {
-		return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
+	if err := m.objs.HostExact.Lookup(key, &rv); err == nil {
+		if down, up, mask, ok = parseRateVal(rv); ok {
+			return down, up, mask, true
+		}
 	}
 	for prefix := 32; prefix >= 0; prefix-- {
 		lpmKey := LPMKey{Prefixlen: uint32(prefix), Addr: ipv4PrefixAddr(hostKey, prefix)}.Marshal()
-		if err := m.objs.ProfileLpm.Lookup(lpmKey, &rv); err == nil && len(rv) >= 16 {
-			return binary.LittleEndian.Uint64(rv[0:8]), binary.LittleEndian.Uint64(rv[8:16]), true
+		if err := m.objs.ProfileLpm.Lookup(lpmKey, &rv); err == nil {
+			if down, up, mask, ok = parseRateVal(rv); ok {
+				return down, up, mask, true
+			}
 		}
 	}
-	return 0, 0, false
+	return 0, 0, 0, false
 }

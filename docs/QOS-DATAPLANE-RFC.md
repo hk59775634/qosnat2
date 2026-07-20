@@ -26,7 +26,8 @@
   "shaper": {
     "enabled": true,
     "profiles": [
-      {"cidr": "10.0.0.0/8", "down": "8mbit", "up": "8mbit", "mask": 32}
+      {"cidr": "10.0.0.0/8", "down": "8mbit", "up": "8mbit", "mask": 32},
+      {"cidr": "10.1.0.0/30", "down": "8mbit", "up": "8mbit", "mask": 30}
     ]
   }
 }
@@ -34,7 +35,16 @@
 
 省略 `mode` 即 EDT。从旧版升级时若 `state.json` 含 `"mode": "htb"`，加载后自动清除该字段。
 
-**QoS 限速仅以 `profiles` 列表为准**；`default_profile` 不再参与 BPF。`policy_cidr` 仅用于 NAT/路由语义，不写入限速 map。
+**`mask`（host_mask）语义**：
+
+| mask | 限速桶键 | 含义 |
+|------|----------|------|
+| `32` 或省略/`0` | 完整主机 IP | 每 IP 独立限速（默认） |
+| `1`–`31` | `ip & mask` 网段地址 | 同前缀主机共享 `down`/`up` 配额 |
+
+`cidr` 仍只决定 **谁匹配该策略**（LPM）；`mask` 决定匹配后 **如何聚合共享桶**。例如 `cidr=10.1.0.0/30` 且 `mask=30` 时，该 /30 内四台主机共用 8M；`mask=32` 时各自 8M。
+
+下行 fq 的 `queue_mapping` 仍按 **原始主机 IP** 散列，保证同网段内流间公平。
 
 ## BPF 对象
 
@@ -44,7 +54,13 @@
 
 安装路径：`/usr/lib/qosnat2/rate_edt.bpf.o`
 
-Map：`profile_lpm`, `host_exact`, `throttle`, `token_bucket`（均 LRU/哈希，内核态 per-IP 状态）
+Map：`profile_lpm`, `host_exact`, `throttle`, `token_bucket`
+
+- `profile_lpm` / `host_exact` 的 `rate_val` 含 `host_mask`（偏移 20）
+- `throttle` / `token_bucket` 的键在 `host_mask<32` 时为聚合后的网段地址；值含累计 `bytes` 供观测采样
+- `host_flow`：按原始主机 IP 记账，共享桶可展开成员；`ReplayState` 会清空 throttle/token_bucket/host_flow
+
+**QoS 限速仅以 `profiles` 列表为准**；`default_profile` 不再参与 BPF。`policy_cidr` 仅用于 NAT/路由语义，不写入限速 map。
 
 ## 构建
 

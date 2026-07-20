@@ -56,7 +56,7 @@ func (srv *Server) syncWGPeerRates(st store.State, inst store.WireGuardInstance)
 			continue
 		}
 		down, up := peerRateStrings(p)
-		rv, err := srv.rateVal(down, up)
+		rv, err := srv.rateVal(down, up, 32)
 		if err != nil {
 			log.Printf("wg peer rate %s: %v", ip, err)
 			continue

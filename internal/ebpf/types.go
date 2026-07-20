@@ -6,12 +6,32 @@ import (
 	"net"
 )
 
-// RateVal 与 bpf rate_val 对齐
+// RateVal 与 bpf rate_val 对齐（24 字节）
 type RateVal struct {
-	DownBPS     uint64
-	UpBPS       uint64
-	ClassMinor  uint32
-	Pad         [4]byte
+	DownBPS    uint64
+	UpBPS      uint64
+	ClassMinor uint32
+	HostMask   uint8 // 1–32；0/32=每主机；<32 时按前缀聚合共享限速桶
+	Pad        [3]byte
+}
+
+// NormalizeHostMask 规范化策略掩码：0 或越界视为每主机 /32。
+func NormalizeHostMask(mask int) uint8 {
+	if mask <= 0 || mask > 32 {
+		return 32
+	}
+	return uint8(mask)
+}
+
+// AggregateHostKey 将 hostKey（与 IPToHostKey 相同的大端 IPv4 数值）按 host_mask 归并为共享桶键。
+func AggregateHostKey(hostKey uint32, hostMask uint8) uint32 {
+	if hostMask == 0 || hostMask >= 32 {
+		return hostKey
+	}
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, hostKey)
+	masked := net.IP(b).Mask(net.CIDRMask(int(hostMask), 32))
+	return binary.BigEndian.Uint32(masked)
 }
 
 // LPMKey profile_lpm key
@@ -59,6 +79,11 @@ func (r RateVal) Marshal() []byte {
 	binary.LittleEndian.PutUint64(b[0:], r.DownBPS)
 	binary.LittleEndian.PutUint64(b[8:], r.UpBPS)
 	binary.LittleEndian.PutUint32(b[16:], r.ClassMinor)
+	mask := r.HostMask
+	if mask == 0 {
+		mask = 32
+	}
+	b[20] = mask
 	return b
 }
 

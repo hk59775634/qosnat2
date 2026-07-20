@@ -38,12 +38,58 @@ struct {
 	__type(value, struct token_bucket_val);
 } token_bucket SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
+	__uint(max_entries, 131072);
+	__type(key, __u32); /* flow host IP (network order) */
+	__type(value, struct host_flow_val);
+} host_flow SEC(".maps");
+
 static __always_inline __u32 wire_len(struct __sk_buff *skb)
 {
 	__u64 len = (__u64)skb->len;
 	if (len > 0xffff)
 		len = 0xffff;
 	return (__u32)len;
+}
+
+/* host_mask<32：把 IP 归并到网段地址，供 throttle/token_bucket 共享限速。 */
+static __always_inline __u32 aggregate_ip_be(__u32 ip_be, __u8 host_mask)
+{
+	if (host_mask == 0 || host_mask >= 32)
+		return ip_be;
+	__u32 host = bpf_ntohl(ip_be);
+	__u32 m = 0xffffffffu << (32 - host_mask);
+	return bpf_htonl(host & m);
+}
+
+static __always_inline void account_host_flow(__u32 flow_ip_be, __u32 bucket_be, __u8 host_mask,
+					     __u32 len, __u8 dir)
+{
+	if (!flow_ip_be || !len)
+		return;
+	__u64 now = bpf_ktime_get_ns();
+	struct host_flow_val *hf = bpf_map_lookup_elem(&host_flow, &flow_ip_be);
+	if (!hf) {
+		struct host_flow_val init = {
+			.bucket_be = bucket_be,
+			.host_mask = host_mask,
+			.last_ns = now,
+		};
+		if (dir == DIR_DOWN)
+			init.bytes_down = len;
+		else
+			init.bytes_up = len;
+		bpf_map_update_elem(&host_flow, &flow_ip_be, &init, BPF_ANY);
+		return;
+	}
+	hf->bucket_be = bucket_be;
+	hf->host_mask = host_mask;
+	hf->last_ns = now;
+	if (dir == DIR_DOWN)
+		hf->bytes_down += len;
+	else
+		hf->bytes_up += len;
 }
 
 static __always_inline struct rate_val *lookup_rate_v4(__u32 addr_be)
@@ -92,20 +138,23 @@ static __always_inline int l3_offset(struct __sk_buff *skb)
 	return 0;
 }
 
-/* 下行 EDT：按目的 IP（客户端）整形 */
-static __always_inline int edt_sched(struct __sk_buff *skb, __u32 ip_be, __u64 bps)
+/* 下行 EDT：flow_ip 用于 fq 流标识；key_ip 用于共享限速桶（可已按 mask 聚合）。 */
+static __always_inline int edt_sched(struct __sk_buff *skb, __u32 flow_ip_be, __u32 key_ip_be,
+				     __u64 bps, __u8 host_mask)
 {
-	if (!ip_be || !bps)
+	if (!key_ip_be || !bps)
 		return TC_ACT_OK;
 
 	__u64 now = bpf_ktime_get_ns();
-	__u64 delay = (__u64)wire_len(skb) * NSEC_PER_SEC / bps;
-	struct throttle_key tk = { .ip_be = ip_be, .direction = DIR_DOWN };
+	__u32 len = wire_len(skb);
+	__u64 delay = (__u64)len * NSEC_PER_SEC / bps;
+	struct throttle_key tk = { .ip_be = key_ip_be, .direction = DIR_DOWN };
 	struct throttle_val *info = bpf_map_lookup_elem(&throttle, &tk);
 	struct throttle_val init = {
 		.t_last = now,
 		.bps = bps,
 		.t_horizon = EDT_HORIZON_NS,
+		.bytes = 0,
 	};
 
 	if (!info) {
@@ -124,21 +173,26 @@ static __always_inline int edt_sched(struct __sk_buff *skb, __u32 ip_be, __u64 b
 	__u64 t_next = info->t_last + delay;
 	if (t_next <= t) {
 		info->t_last = t;
-		skb->queue_mapping = aggregate_id(ip_be, DIR_DOWN);
+		info->bytes += len;
+		account_host_flow(flow_ip_be, key_ip_be, host_mask, len, DIR_DOWN);
+		skb->queue_mapping = aggregate_id(flow_ip_be, DIR_DOWN);
 		return TC_ACT_OK;
 	}
 	if (t_next - now >= info->t_horizon)
 		return TC_ACT_SHOT;
 	info->t_last = t_next;
+	info->bytes += len;
+	account_host_flow(flow_ip_be, key_ip_be, host_mask, len, DIR_DOWN);
 	skb->tstamp = t_next;
-	skb->queue_mapping = aggregate_id(ip_be, DIR_DOWN);
+	skb->queue_mapping = aggregate_id(flow_ip_be, DIR_DOWN);
 	return TC_ACT_OK;
 }
 
-/* 上行 token bucket：按源 IP 整形（Cilium ingress 同款思路） */
-static __always_inline int bucket_check(struct __sk_buff *skb, __u32 ip_be, __u64 bps)
+/* 上行 token bucket：key_ip 可为聚合网段地址 */
+static __always_inline int bucket_check(struct __sk_buff *skb, __u32 flow_ip_be, __u32 key_ip_be,
+					__u64 bps, __u8 host_mask)
 {
-	if (!ip_be || !bps)
+	if (!key_ip_be || !bps)
 		return TC_ACT_OK;
 
 	__u64 now = bpf_ktime_get_ns();
@@ -147,19 +201,22 @@ static __always_inline int bucket_check(struct __sk_buff *skb, __u32 ip_be, __u6
 	if (burst_bytes < 1500)
 		burst_bytes = 1500;
 
-	struct token_bucket_key bk = { .ip_be = ip_be };
+	struct token_bucket_key bk = { .ip_be = key_ip_be };
 	struct token_bucket_val *b = bpf_map_lookup_elem(&token_bucket, &bk);
 	struct token_bucket_val fresh = {
 		.tokens = burst_bytes,
 		.last_ns = now,
 		.bps = bps,
+		.bytes = 0,
 	};
 
 	if (!b) {
 		if (cost > burst_bytes)
 			return TC_ACT_SHOT;
 		fresh.tokens = burst_bytes - cost;
+		fresh.bytes = cost;
 		bpf_map_update_elem(&token_bucket, &bk, &fresh, BPF_ANY);
+		account_host_flow(flow_ip_be, key_ip_be, host_mask, (__u32)cost, DIR_UP);
 		return TC_ACT_OK;
 	}
 	if (b->bps != bps)
@@ -175,6 +232,8 @@ static __always_inline int bucket_check(struct __sk_buff *skb, __u32 ip_be, __u6
 	}
 	if (b->tokens >= cost) {
 		b->tokens -= cost;
+		b->bytes += cost;
+		account_host_flow(flow_ip_be, key_ip_be, host_mask, (__u32)cost, DIR_UP);
 		return TC_ACT_OK;
 	}
 	return TC_ACT_SHOT;
@@ -194,7 +253,8 @@ int rate_limit_ingress(struct __sk_buff *skb)
 	struct rate_val *rv = lookup_rate_v4(saddr);
 	if (!rv || !rv->up_bps)
 		return TC_ACT_OK;
-	return bucket_check(skb, saddr, rv->up_bps);
+	__u32 key = aggregate_ip_be(saddr, rv->host_mask);
+	return bucket_check(skb, saddr, key, rv->up_bps, rv->host_mask);
 }
 
 SEC("tc/egress")
@@ -211,7 +271,8 @@ int rate_limit_egress(struct __sk_buff *skb)
 	struct rate_val *rv = lookup_rate_v4(daddr);
 	if (!rv || !rv->down_bps)
 		return TC_ACT_OK;
-	return edt_sched(skb, daddr, rv->down_bps);
+	__u32 key = aggregate_ip_be(daddr, rv->host_mask);
+	return edt_sched(skb, daddr, key, rv->down_bps, rv->host_mask);
 }
 
 char LICENSE[] SEC("license") = "GPL";
