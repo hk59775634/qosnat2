@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072001",
+      "tag": "v2026072001",
+      "published_at": "2026-07-20T03:07:39Z",
+      "summary": "修复版本升级时安装 dnsmasq-chnroutes 因 text file busy 失败、阻断升级的问题。"
+    },
+    {
       "id": "2026071802",
       "tag": "v2026071802",
       "published_at": "2026-07-18T17:58:06Z",
@@ -25,12 +31,6 @@
       "tag": "v2026071701",
       "published_at": "2026-07-17T02:49:30Z",
       "summary": "修复 ocserv 源码安装在 Ubuntu 24.04 / libradcli 下因 `PW_TUNNELGROUPNAME` 未定义导致编译失败。"
-    },
-    {
-      "id": "2026071603",
-      "tag": "v2026071603",
-      "published_at": "2026-07-16T11:20:16Z",
-      "summary": "FQDN 防火墙别名支持从 URL 拉取域名列表，保存与后台刷新时自动解析为 IPv4 成员。"
     }
   ]
 }

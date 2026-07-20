@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复版本升级时安装 dnsmasq-chnroutes 因 text file busy 失败、阻断升级的问题。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -13,11 +13,11 @@
 
 ## 优化
 
-- 版本切换时 dnsmasq-chnroutes 安装失败仅告警，不再阻断 qosnatd 升级
+- （无）
 
 ## 修复
 
-- dnsmasq-chnroutes 安装改为 staging+rename，并在替换前停止服务，避免覆盖运行中的 `/usr/sbin/dnsmasq`（ETXTBSY）
+- （无）
 
 ## 删除
 
