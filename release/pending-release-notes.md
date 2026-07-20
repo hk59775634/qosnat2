@@ -5,7 +5,7 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+修复 sing-box 1.11 因弃用 inet4_address 导致 ProxyEgress TUN 无法创建的问题
 
 ## 新增
 
@@ -17,7 +17,7 @@
 
 ## 修复
 
-- （无）
+- ProxyEgress sing-box 配置改用 `address` 数组（替代已移除的 `inet4_address`），避免启动报 FATAL 且 TUN qpe* 创建失败
 
 ## 删除
 
