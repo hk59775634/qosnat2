@@ -5,19 +5,19 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+独立 IP 代理页 sing-box 安装后显示「删除 sing-box」按钮，避免已安装仍呈灰色不可点
 
 ## 新增
 
-- （无）
+- `POST /api/v1/network/proxy-egress/uninstall`：停止全部代理隧道并删除 sing-box 二进制
 
 ## 优化
 
-- （无）
+- 已安装 sing-box 时，WanLinks「独立 IP 代理」页将安装按钮切换为可点击的「删除 sing-box」（带确认）
 
 ## 修复
 
-- （无）
+- 修复 sing-box 安装完成后安装按钮长期灰色禁用，易被误认为安装未完成
 
 ## 删除
 

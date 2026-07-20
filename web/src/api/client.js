@@ -325,6 +325,7 @@ export const api = {
       status: () => request('/api/v1/network/proxy-egress/status'),
       install: () => request('/api/v1/network/proxy-egress/install', { method: 'POST', body: '{}' }),
       installStatus: () => request('/api/v1/network/proxy-egress/install/status'),
+      uninstall: () => request('/api/v1/network/proxy-egress/uninstall', { method: 'POST', body: '{}' }),
       connect: (id) =>
         request(`/api/v1/network/proxy-egress/connect?id=${encodeURIComponent(id)}`, {
           method: 'POST',

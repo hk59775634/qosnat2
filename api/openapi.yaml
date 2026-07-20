@@ -3492,6 +3492,17 @@ paths:
               schema:
                 type: object
 
+  /api/v1/network/proxy-egress/uninstall:
+    post:
+      tags: [network]
+      summary: 删除 sing-box（停止全部代理隧道后移除二进制）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
   /api/v1/network/proxy-egress/connect:
     post:
       tags: [network]

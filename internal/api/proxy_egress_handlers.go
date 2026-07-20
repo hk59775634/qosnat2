@@ -261,6 +261,56 @@ func (srv *Server) handleNetworkProxyEgressInstall(w http.ResponseWriter, r *htt
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "state": proxyInstallStateRunning})
 }
 
+func (srv *Server) handleNetworkProxyEgressUninstall(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	if os.Getuid() != 0 {
+		writeBadRequest(w, "root required")
+		return
+	}
+	proxyInstallMu.Lock()
+	busy := proxyInstallBusy
+	proxyInstallMu.Unlock()
+	if busy {
+		writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "message": "install already running"})
+		return
+	}
+	proxyTaskMu.Lock()
+	taskBusy := proxyTaskBusy
+	proxyTaskMu.Unlock()
+	if taskBusy {
+		writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "message": "proxy task running"})
+		return
+	}
+	st := srv.store.Get()
+	if err := singbox.Uninstall(st.Network.ProxyEgress); err != nil {
+		writeInternalError(w, err.Error())
+		return
+	}
+	_ = srv.store.Update(func(st *store.State) {
+		for i := range st.Network.ProxyEgress {
+			st.Network.ProxyEgress[i].Enabled = false
+		}
+		store.SyncProxyWanLinks(st)
+		store.SyncWanRoutes(st)
+		store.SyncEgressRoutes(st)
+	})
+	if !srv.persistState(w) {
+		return
+	}
+	srv.applyManagedRoutes()
+	_ = srv.applyWanLinkDataPlane()
+	_ = writeProxyInstallStatus(proxyInstallStatus{
+		State:      proxyInstallStateIdle,
+		Message:    "uninstalled",
+		FinishedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	srv.auditLog(r, "network.proxy_egress.uninstall", "")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "installed": false})
+}
+
 func (srv *Server) handleNetworkProxyEgressInstallStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w)

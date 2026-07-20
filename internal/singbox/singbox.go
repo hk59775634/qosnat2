@@ -391,6 +391,18 @@ func DownloadAndInstall(logW io.Writer) error {
 	return nil
 }
 
+// Uninstall 停止全部实例并删除 sing-box 二进制（保留 ProxyEgress 配置目录，便于重装后重连）。
+func Uninstall(list []store.ProxyEgress) error {
+	StopAll(list)
+	instMu.Lock()
+	defer instMu.Unlock()
+	if err := os.Remove(BinaryPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove %s: %w", BinaryPath, err)
+	}
+	_ = os.Remove(BinaryPath + ".tmp")
+	return nil
+}
+
 func httpDownload(url, dest string) error {
 	client := &http.Client{Timeout: 3 * time.Minute}
 	req, err := http.NewRequest(http.MethodGet, url, nil)

@@ -145,6 +145,7 @@ const proxyRoot = ref(false)
 const proxyInstallJob = ref(null)
 const proxyInstallPoll = ref(null)
 const installingProxy = ref(false)
+const uninstallingProxy = ref(false)
 const proxyTaskJob = ref(null)
 const proxyTaskPoll = ref(null)
 const proxyBusyId = ref('')
@@ -197,6 +198,23 @@ async function installProxy() {
   } catch (e) {
     installingProxy.value = false
     err.value = e?.message || String(e)
+  }
+}
+
+async function uninstallProxy() {
+  if (!confirm(t('network.wanLinks.proxyUninstallConfirm'))) return
+  err.value = ''
+  ok.value = ''
+  uninstallingProxy.value = true
+  try {
+    await api.network.proxyEgress.uninstall()
+    ok.value = t('network.wanLinks.proxyUninstalled')
+    proxyInstallJob.value = null
+    await load()
+  } catch (e) {
+    err.value = e?.message || t('network.wanLinks.proxyUninstallFailed')
+  } finally {
+    uninstallingProxy.value = false
   }
 }
 
@@ -1290,12 +1308,22 @@ onUnmounted(() => {
       </div>
       <div class="flex flex-wrap gap-2 items-center">
         <button
+          v-if="!proxyInstalled"
           type="button"
           class="btn-secondary"
-          :disabled="!proxyRoot || proxyInstalled || proxyInstallRunning"
+          :disabled="!proxyRoot || proxyInstallRunning || uninstallingProxy"
           @click="installProxy"
         >
           {{ proxyInstallRunning ? t('network.wanLinks.proxyInstalling') : t('network.wanLinks.proxyInstallBtn') }}
+        </button>
+        <button
+          v-else
+          type="button"
+          class="btn-secondary text-red-700 border-red-200"
+          :disabled="!proxyRoot || proxyInstallRunning || uninstallingProxy || proxyTaskRunning"
+          @click="uninstallProxy"
+        >
+          {{ uninstallingProxy ? t('network.wanLinks.proxyUninstalling') : t('network.wanLinks.proxyUninstallBtn') }}
         </button>
       </div>
       <div
