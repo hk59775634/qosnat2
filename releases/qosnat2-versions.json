@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072006",
+      "tag": "v2026072006",
+      "published_at": "2026-07-20T07:53:50Z",
+      "summary": "支持经 sing-box TUN 接入 HTTP/HTTPS/SOCKS5 独立 IP 代理出口，并与 WanLink/出站策略联动"
+    },
+    {
       "id": "2026072005",
       "tag": "v2026072005",
       "published_at": "2026-07-20T07:31:22Z",
@@ -25,12 +31,6 @@
       "tag": "v2026072002",
       "published_at": "2026-07-20T03:12:57Z",
       "summary": "修复默认未启用 DHCP 时 dnsmasq 仍被 apt 自启、需手动 Apply 才停止的问题。"
-    },
-    {
-      "id": "2026072001",
-      "tag": "v2026072001",
-      "published_at": "2026-07-20T03:07:39Z",
-      "summary": "修复版本升级时安装 dnsmasq-chnroutes 因 text file busy 失败、阻断升级的问题。"
     }
   ]
 }
