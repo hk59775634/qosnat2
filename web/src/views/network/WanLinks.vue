@@ -134,9 +134,188 @@ const activeTab = ref('wan')
 const wanTabs = computed(() => [
   { id: 'wan', label: t('network.wanLinks.tabWan') },
   { id: 'warp', label: t('network.wanLinks.tabWarp') },
+  { id: 'proxy', label: t('network.wanLinks.tabProxy') },
   { id: 'egress', label: t('network.wanLinks.tabEgress') },
 ])
 
+const proxyItems = ref([])
+const proxyInstalled = ref(false)
+const proxyVersion = ref('')
+const proxyRoot = ref(false)
+const proxyInstallJob = ref(null)
+const proxyInstallPoll = ref(null)
+const installingProxy = ref(false)
+const proxyTaskJob = ref(null)
+const proxyTaskPoll = ref(null)
+const proxyBusyId = ref('')
+const proxyForm = ref({
+  name: '',
+  type: 'socks5',
+  server: '',
+  port: 1080,
+  username: '',
+  password: '',
+})
+const proxyInstallRunning = computed(
+  () => installingProxy.value || proxyInstallJob.value?.state === 'running'
+)
+const proxyTaskRunning = computed(() => proxyTaskJob.value?.state === 'running' || !!proxyBusyId.value)
+
+async function refreshProxyStatus() {
+  const st = await api.network.proxyEgress.status()
+  proxyInstalled.value = !!st?.installed
+  proxyVersion.value = st?.version || ''
+  proxyRoot.value = !!st?.root
+  proxyItems.value = st?.items || []
+  if (st?.install_job && st.install_job.state !== 'idle' && st.install_job.state !== 'ok') {
+    proxyInstallJob.value = st.install_job
+    installingProxy.value = st.install_job.state === 'running'
+  } else if (st?.install_job?.state === 'ok') {
+    proxyInstallJob.value = null
+    installingProxy.value = false
+  }
+  if (st?.task && st.task.state !== 'idle') {
+    proxyTaskJob.value = st.task
+    if (st.task.state === 'running' && !proxyTaskPoll.value) {
+      proxyBusyId.value = st.task.proxy_id || ''
+      startProxyTaskPoll()
+    }
+    if (st.task.state === 'ok' || st.task.state === 'failed') {
+      proxyBusyId.value = ''
+    }
+  }
+  return st
+}
+
+async function installProxy() {
+  err.value = ''
+  ok.value = ''
+  try {
+    installingProxy.value = true
+    await api.network.proxyEgress.install()
+    startProxyInstallPoll()
+  } catch (e) {
+    installingProxy.value = false
+    err.value = e?.message || String(e)
+  }
+}
+
+function startProxyInstallPoll() {
+  stopProxyInstallPoll()
+  proxyInstallPoll.value = setInterval(async () => {
+    try {
+      const job = await api.network.proxyEgress.installStatus()
+      proxyInstallJob.value = job
+      if (job?.state === 'ok') {
+        stopProxyInstallPoll()
+        installingProxy.value = false
+        ok.value = t('network.wanLinks.proxyInstalled')
+        await refreshProxyStatus()
+      } else if (job?.state === 'failed') {
+        stopProxyInstallPoll()
+        installingProxy.value = false
+        err.value = job.message || t('network.wanLinks.proxyInstallFailed')
+      }
+    } catch {
+      /* ignore */
+    }
+  }, 2000)
+}
+
+function stopProxyInstallPoll() {
+  if (proxyInstallPoll.value) {
+    clearInterval(proxyInstallPoll.value)
+    proxyInstallPoll.value = null
+  }
+}
+
+function startProxyTaskPoll() {
+  stopProxyTaskPoll()
+  proxyTaskPoll.value = setInterval(async () => {
+    try {
+      const job = await api.network.proxyEgress.taskStatus()
+      proxyTaskJob.value = job
+      if (job?.state === 'ok') {
+        stopProxyTaskPoll()
+        proxyBusyId.value = ''
+        ok.value = job.message || t('common.saved')
+        await load()
+      } else if (job?.state === 'failed') {
+        stopProxyTaskPoll()
+        proxyBusyId.value = ''
+        err.value = job.message || 'proxy task failed'
+        await refreshProxyStatus()
+      }
+    } catch {
+      /* ignore */
+    }
+  }, 1500)
+}
+
+function stopProxyTaskPoll() {
+  if (proxyTaskPoll.value) {
+    clearInterval(proxyTaskPoll.value)
+    proxyTaskPoll.value = null
+  }
+}
+
+async function addProxy() {
+  err.value = ''
+  ok.value = ''
+  try {
+    const body = {
+      name: proxyForm.value.name,
+      type: proxyForm.value.type,
+      server: proxyForm.value.server,
+      port: Number(proxyForm.value.port) || 0,
+      username: proxyForm.value.username || undefined,
+      password: proxyForm.value.password || undefined,
+    }
+    await api.network.proxyEgress.add(body)
+    proxyForm.value = { name: '', type: 'socks5', server: '', port: 1080, username: '', password: '' }
+    ok.value = t('common.saved')
+    await load()
+  } catch (e) {
+    err.value = e?.message || String(e)
+  }
+}
+
+async function connectProxy(id) {
+  err.value = ''
+  ok.value = ''
+  proxyBusyId.value = id
+  try {
+    await api.network.proxyEgress.connect(id)
+    startProxyTaskPoll()
+  } catch (e) {
+    proxyBusyId.value = ''
+    err.value = e?.message || String(e)
+  }
+}
+
+async function disconnectProxy(id) {
+  err.value = ''
+  ok.value = ''
+  proxyBusyId.value = id
+  try {
+    await api.network.proxyEgress.disconnect(id)
+    startProxyTaskPoll()
+  } catch (e) {
+    proxyBusyId.value = ''
+    err.value = e?.message || String(e)
+  }
+}
+
+async function removeProxy(id) {
+  if (!confirm(t('network.wanLinks.proxyDeleteConfirm'))) return
+  err.value = ''
+  try {
+    await api.network.proxyEgress.del(id)
+    await load()
+  } catch (e) {
+    err.value = e?.message || String(e)
+  }
+}
 const warpExitLine = computed(() => {
   const e = warpExitInfo.value
   if (!e) return ''
@@ -315,6 +494,11 @@ async function load() {
     cloudflareCIDRs.value = eg?.cloudflare_cdn_cidrs_ipv4 || []
     ifaces.value = ifs?.interfaces || []
     applyWarpStatus(ws)
+    try {
+      await refreshProxyStatus()
+    } catch {
+      /* optional */
+    }
     if (!form.value.device && devWan.value) form.value.device = devWan.value
     if (!egForm.value.wan_link_id && links.value.length) {
       const pick =
@@ -842,6 +1026,8 @@ onUnmounted(() => {
   stopWarpInstallPoll()
   stopWarpStatusPoll()
   stopWarpTaskPoll()
+  stopProxyInstallPoll()
+  stopProxyTaskPoll()
   if (warpActionLockTimer) clearTimeout(warpActionLockTimer)
 })
 </script>
@@ -924,6 +1110,7 @@ onUnmounted(() => {
               <td>
                 {{ w.name }}
                 <span v-if="w.warp_managed" class="ml-1 text-[10px] px-1 py-0.5 rounded bg-violet-100 text-violet-800">WARP</span>
+                <span v-else-if="w.proxy_managed" class="ml-1 text-[10px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-800">Proxy</span>
               </td>
               <td class="font-mono">{{ w.device }}</td>
               <td class="font-mono">
@@ -937,18 +1124,19 @@ onUnmounted(() => {
               <td>{{ w.weight }}</td>
               <td class="space-x-2 whitespace-nowrap">
                 <button
-                  v-if="!w.warp_managed"
+                  v-if="!w.warp_managed && !w.proxy_managed"
                   type="button"
                   class="text-indigo-600 text-xs"
                   @click="startEdit(w)"
                 >{{ t('common.edit') }}</button>
                 <button
-                  v-if="!w.warp_managed"
+                  v-if="!w.warp_managed && !w.proxy_managed"
                   type="button"
                   class="text-red-600 text-xs"
                   @click="remove(w.id)"
                 >{{ t('common.delete') }}</button>
-                <span v-else class="text-slate-400 text-xs">{{ t('network.wanLinks.warpManagedNoDelete') }}</span>
+                <span v-else-if="w.warp_managed" class="text-slate-400 text-xs">{{ t('network.wanLinks.warpManagedNoDelete') }}</span>
+                <span v-else class="text-slate-400 text-xs">{{ t('network.wanLinks.proxyManagedNoDelete') }}</span>
               </td>
             </template>
           </tr>
@@ -1087,6 +1275,138 @@ onUnmounted(() => {
         </div>
         <pre v-if="warpInstallJob?.log_tail" class="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-slate-700">{{ warpInstallJob.log_tail }}</pre>
       </div>
+    </div>
+
+    <div v-show="activeTab === 'proxy'" class="card card-body mb-0 space-y-3 text-sm">
+      <div>
+        <h3 class="font-medium text-slate-800">{{ t('network.wanLinks.proxyTitle') }}</h3>
+        <p class="text-xs text-slate-500 mt-1">{{ t('network.wanLinks.proxyHint') }}</p>
+      </div>
+      <div class="text-xs text-slate-600 rounded bg-slate-50 p-2 space-y-1">
+        <div>
+          {{ proxyInstalled ? t('network.wanLinks.proxyInstalled') : t('network.wanLinks.proxyNotInstalled') }}
+          <span v-if="proxyVersion" class="font-mono text-slate-500"> · {{ proxyVersion }}</span>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 items-center">
+        <button
+          type="button"
+          class="btn-secondary"
+          :disabled="!proxyRoot || proxyInstalled || proxyInstallRunning"
+          @click="installProxy"
+        >
+          {{ proxyInstallRunning ? t('network.wanLinks.proxyInstalling') : t('network.wanLinks.proxyInstallBtn') }}
+        </button>
+      </div>
+      <div
+        v-if="proxyInstallRunning || (proxyInstallJob && (proxyInstallJob.state === 'running' || proxyInstallJob.state === 'failed'))"
+        class="p-3 rounded border text-xs space-y-2"
+        :class="proxyInstallJob?.state === 'failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'"
+      >
+        <div>
+          <strong>{{ proxyInstallJob?.state || 'running' }}</strong>
+          <span v-if="proxyInstallJob?.message" class="text-slate-600 ml-2">{{ proxyInstallJob.message }}</span>
+        </div>
+        <pre v-if="proxyInstallJob?.log_tail" class="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px]">{{ proxyInstallJob.log_tail }}</pre>
+      </div>
+
+      <div class="border-t border-slate-100 pt-3 grid sm:grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.proxyName') }}</label>
+          <input v-model="proxyForm.name" class="input-field mt-1" placeholder="US residential" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.proxyType') }}</label>
+          <select v-model="proxyForm.type" class="input-field mt-1">
+            <option value="socks5">SOCKS5</option>
+            <option value="http">HTTP</option>
+            <option value="https">HTTPS</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.proxyServer') }}</label>
+          <input v-model="proxyForm.server" class="input-field mt-1 font-mono" placeholder="proxy.example.com" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.proxyPort') }}</label>
+          <input v-model.number="proxyForm.port" type="number" min="1" max="65535" class="input-field mt-1 font-mono" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.proxyUsername') }}</label>
+          <input v-model="proxyForm.username" class="input-field mt-1 font-mono" autocomplete="off" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.proxyPassword') }}</label>
+          <input v-model="proxyForm.password" type="password" class="input-field mt-1 font-mono" autocomplete="new-password" />
+        </div>
+      </div>
+      <div>
+        <button type="button" class="btn-primary" :disabled="!proxyForm.server || !proxyForm.port" @click="addProxy">
+          {{ t('network.wanLinks.proxyAdd') }}
+        </button>
+      </div>
+    </div>
+
+    <div v-show="activeTab === 'proxy'" class="table-wrap card">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>{{ t('network.wanLinks.proxyName') }}</th>
+            <th>{{ t('network.wanLinks.proxyType') }}</th>
+            <th>{{ t('network.wanLinks.proxyServer') }}</th>
+            <th>{{ t('network.wanLinks.proxyDevice') }}</th>
+            <th>{{ t('network.wanLinks.proxyEgressIP') }}</th>
+            <th>{{ t('common.status') }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="!proxyItems.length">
+            <td colspan="7" class="text-slate-400 text-sm">{{ t('network.wanLinks.proxyEmpty') }}</td>
+          </tr>
+          <tr v-for="p in proxyItems" :key="p.id">
+            <td>
+              {{ p.name }}
+              <div class="text-[10px] text-slate-400 font-mono">{{ p.wan_link_id }}</div>
+            </td>
+            <td class="font-mono uppercase text-xs">{{ p.type }}</td>
+            <td class="font-mono text-xs">{{ p.server }}:{{ p.port }}</td>
+            <td class="font-mono">{{ p.device || '—' }}</td>
+            <td class="font-mono">{{ p.egress_ip || '—' }}</td>
+            <td class="text-xs">
+              <span :class="p.running ? 'text-emerald-700' : 'text-slate-500'">
+                {{ p.running ? t('network.wanLinks.proxyRunning') : t('network.wanLinks.proxyStopped') }}
+              </span>
+              ·
+              {{ p.enabled ? t('network.wanLinks.proxyEnabled') : t('network.wanLinks.proxyDisabled') }}
+            </td>
+            <td class="space-x-2 whitespace-nowrap">
+              <button
+                type="button"
+                class="text-indigo-600 text-xs"
+                :disabled="!proxyInstalled || proxyTaskRunning || p.running"
+                @click="connectProxy(p.id)"
+              >
+                {{ proxyBusyId === p.id && !p.running ? t('network.wanLinks.proxyConnecting') : t('network.wanLinks.proxyConnect') }}
+              </button>
+              <button
+                type="button"
+                class="text-amber-700 text-xs"
+                :disabled="proxyTaskRunning || (!p.running && !p.enabled)"
+                @click="disconnectProxy(p.id)"
+              >
+                {{ proxyBusyId === p.id && (p.running || p.enabled) ? t('network.wanLinks.proxyDisconnecting') : t('network.wanLinks.proxyDisconnect') }}
+              </button>
+              <button
+                type="button"
+                class="text-red-600 text-xs"
+                :disabled="proxyTaskRunning || p.running || p.enabled"
+                @click="removeProxy(p.id)"
+              >{{ t('common.delete') }}</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <div v-show="activeTab === 'egress'" class="card card-body space-y-3 text-sm">

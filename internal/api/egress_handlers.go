@@ -312,8 +312,11 @@ func egressPoliciesUsingWanLink(st store.State, wanID string) []store.EgressPoli
 }
 
 func validateWanLinkDeletable(st store.State, wanID string) error {
-	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok && store.IsWarpWanLink(w) {
-		return errWarpWanLinkLocked{}
+	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok && store.IsManagedWanLink(w) {
+		if store.IsWarpWanLink(w) {
+			return errWarpWanLinkLocked{}
+		}
+		return errProxyWanLinkLocked{}
 	}
 	if len(egressPoliciesUsingWanLink(st, wanID)) > 0 {
 		return errWanLinkInUse{wanID: wanID}
@@ -322,8 +325,11 @@ func validateWanLinkDeletable(st store.State, wanID string) error {
 }
 
 func validateWanLinkMutable(st store.State, wanID string) error {
-	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok && store.IsWarpWanLink(w) {
-		return errWarpWanLinkLocked{}
+	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok && store.IsManagedWanLink(w) {
+		if store.IsWarpWanLink(w) {
+			return errWarpWanLinkLocked{}
+		}
+		return errProxyWanLinkLocked{}
 	}
 	return nil
 }
@@ -332,6 +338,12 @@ type errWarpWanLinkLocked struct{}
 
 func (errWarpWanLinkLocked) Error() string {
 	return "WARP managed WAN link cannot be modified manually; disconnect WARP to remove"
+}
+
+type errProxyWanLinkLocked struct{}
+
+func (errProxyWanLinkLocked) Error() string {
+	return "Proxy Egress managed WAN link cannot be modified manually; use Proxy Egress APIs"
 }
 
 type errWanLinkInUse struct{ wanID string }

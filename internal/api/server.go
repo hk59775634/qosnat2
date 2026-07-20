@@ -65,6 +65,7 @@ type Server struct {
 	lastNatStackDHCP     store.DHCPState
 	dataplaneMetrics     dataplaneMetrics
 	warpWatchCancel      context.CancelFunc
+	proxyWatchCancel     context.CancelFunc
 	serviceBgCancel      context.CancelFunc
 	bootApplyCancel      context.CancelFunc
 	serviceBackgroundOnce sync.Once
@@ -215,6 +216,13 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/network/warp/connect", srv.requireAuth(srv.handleNetworkWarpConnect))
 	m.HandleFunc("/api/v1/network/warp/disconnect", srv.requireAuth(srv.handleNetworkWarpDisconnect))
 	m.HandleFunc("/api/v1/network/warp/task/status", srv.requireAuth(srv.handleNetworkWarpTaskStatus))
+	m.HandleFunc("/api/v1/network/proxy-egress", srv.requireAuth(srv.handleNetworkProxyEgress))
+	m.HandleFunc("/api/v1/network/proxy-egress/status", srv.requireAuth(srv.handleNetworkProxyEgressStatus))
+	m.HandleFunc("/api/v1/network/proxy-egress/install", srv.requireAuth(srv.handleNetworkProxyEgressInstall))
+	m.HandleFunc("/api/v1/network/proxy-egress/install/status", srv.requireAuth(srv.handleNetworkProxyEgressInstallStatus))
+	m.HandleFunc("/api/v1/network/proxy-egress/connect", srv.requireAuth(srv.handleNetworkProxyEgressConnect))
+	m.HandleFunc("/api/v1/network/proxy-egress/disconnect", srv.requireAuth(srv.handleNetworkProxyEgressDisconnect))
+	m.HandleFunc("/api/v1/network/proxy-egress/task/status", srv.requireAuth(srv.handleNetworkProxyEgressTaskStatus))
 	m.HandleFunc("/api/v1/shaper/tc", srv.requireAuth(srv.handleShaperTC))
 
 	m.HandleFunc("/api/v1/vpn/wireguard/instances/", srv.requireAuth(srv.handleWireGuardInstancesSubtree))
@@ -474,6 +482,7 @@ func (srv *Server) Listen() error {
 	srv.startOCServTrafficSampler()
 	srv.startWireGuardTrafficSampler()
 	srv.startWarpWatchdog()
+	srv.startProxyEgressWatchdog()
 	srv.initHTTPListener()
 	srv.httpListen.started = true
 	go srv.listenerSupervisor()

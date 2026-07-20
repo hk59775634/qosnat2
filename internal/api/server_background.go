@@ -21,6 +21,10 @@ func (srv *Server) StopBackground() {
 		srv.warpWatchCancel()
 		srv.warpWatchCancel = nil
 	}
+	if srv.proxyWatchCancel != nil {
+		srv.proxyWatchCancel()
+		srv.proxyWatchCancel = nil
+	}
 	if srv.serviceBgCancel != nil {
 		srv.serviceBgCancel()
 		srv.serviceBgCancel = nil

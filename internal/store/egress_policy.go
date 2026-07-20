@@ -383,8 +383,8 @@ func ResolveEgressPolicies(st State, primaryIP func(device string) (string, erro
 		}
 		masquerade := false
 		if snat == "" {
-			// WARP 托管链路通常没有稳定的公网 IPv4，回退为按出口口 MASQUERADE。
-			if IsWarpWanLink(w) {
+			// WARP / ProxyEgress 托管链路通常没有稳定的公网 IPv4，回退为按出口口 MASQUERADE。
+			if IsWarpWanLink(w) || IsProxyWanLink(w) {
 				masquerade = true
 			} else {
 				continue

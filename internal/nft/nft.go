@@ -147,6 +147,9 @@ func Render(cfg Config, st store.State) (string, error) {
 	// WARP netns veth（qwp0↔qwp1）；须在默认丢弃之前，否则 netns 无法经主 WAN 建连/注册。
 	b.WriteString("        iifname \"qwp0\" accept comment \"qosnat2-forward-warp-netns\"\n")
 	b.WriteString("        oifname \"qwp0\" accept comment \"qosnat2-forward-warp-netns\"\n")
+	// ProxyEgress sing-box TUN（qpe*）；策略路由导向后需转发放行。
+	b.WriteString("        iifname \"qpe*\" accept comment \"qosnat2-forward-proxy-egress\"\n")
+	b.WriteString("        oifname \"qpe*\" accept comment \"qosnat2-forward-proxy-egress\"\n")
 	// VPN 隧道转发（与 input 隧道放行一致；须在默认丢弃之前）
 	b.WriteString("        iifname \"wg*\" accept comment \"qosnat2-forward-vpn-wg\"\n")
 	b.WriteString("        oifname \"wg*\" accept comment \"qosnat2-forward-vpn-wg\"\n")
@@ -184,6 +187,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        iifname \"ifb0\" accept\n")
 	// WARP netns veth 网关（10.99.0.1）；须在默认丢弃之前。
 	b.WriteString("        iifname \"qwp0\" accept comment \"qosnat2-input-warp-netns\"\n")
+	b.WriteString("        iifname \"qpe*\" accept comment \"qosnat2-input-proxy-egress\"\n")
 	// VPN 隧道口：客户端访问隧道网关/DNS（控制面接入仍由 WAN auto 规则处理）。
 	b.WriteString("        iifname \"wg*\" accept comment \"qosnat2-vpn-wg\"\n")
 	b.WriteString("        iifname \"vpns*\" accept comment \"qosnat2-vpn-ocserv\"\n")

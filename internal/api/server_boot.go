@@ -39,6 +39,7 @@ func (srv *Server) ApplyAll() error {
 		srv.teardownShaperRuntime()
 	}
 	srv.replayWanLinksOnBoot()
+	srv.replayProxyEgressOnBoot()
 	srv.replayEgressOnBoot()
 	netplanApplied := srv.applyNetworkVLANs()
 	srv.applyManagedRoutesWithRetry()

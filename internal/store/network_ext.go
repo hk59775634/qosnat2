@@ -26,9 +26,10 @@ type WanLink struct {
 	Metric     int    `json:"metric"`
 	Tier       int    `json:"tier"`
 	Weight     int    `json:"weight"`
-	PolicyOnly  bool `json:"policy_only,omitempty"`  // true: 不参与 main default，仅用于策略路由
-	Enabled     bool `json:"enabled"`
-	WarpManaged bool `json:"warp_managed,omitempty"` // true: 由 WARP 连接自动创建，不可手动删除
+	PolicyOnly   bool `json:"policy_only,omitempty"`   // true: 不参与 main default，仅用于策略路由
+	Enabled      bool `json:"enabled"`
+	WarpManaged  bool `json:"warp_managed,omitempty"`  // true: 由 WARP 连接自动创建，不可手动删除
+	ProxyManaged bool `json:"proxy_managed,omitempty"` // true: 由 ProxyEgress/sing-box 自动创建，不可手动删除
 }
 
 // IfaceConfig 由 qosnat 写入 netplan 的物理网卡（/etc/netplan/99-qosnat2.yaml）
@@ -41,13 +42,14 @@ type IfaceConfig struct {
 
 // NetworkState VLAN / VXLAN / 多 WAN / netplan 托管接口
 type NetworkState struct {
-	Ifaces          []IfaceConfig   `json:"ifaces"`
-	VLANs           []VLANIface     `json:"vlans"`
-	VXLANTunnels    []VXLANTunnel   `json:"vxlan_tunnels"`
-	WanLinks        []WanLink       `json:"wan_links"`
-	EgressPolicies  []EgressPolicy  `json:"egress_policies,omitempty"`
-	WarpEnabled     bool   `json:"warp_enabled,omitempty"`
-	WarpLicenseKey  string `json:"warp_license_key,omitempty"` // 持久化；由 WARP status API 返回明文供管理页确认
+	Ifaces         []IfaceConfig  `json:"ifaces"`
+	VLANs          []VLANIface    `json:"vlans"`
+	VXLANTunnels   []VXLANTunnel  `json:"vxlan_tunnels"`
+	WanLinks       []WanLink      `json:"wan_links"`
+	EgressPolicies []EgressPolicy `json:"egress_policies,omitempty"`
+	ProxyEgress    []ProxyEgress  `json:"proxy_egress,omitempty"` // HTTP/HTTPS/SOCKS5 独立 IP 出口
+	WarpEnabled    bool           `json:"warp_enabled,omitempty"`
+	WarpLicenseKey string         `json:"warp_license_key,omitempty"` // 持久化；由 WARP status API 返回明文供管理页确认
 }
 
 // UpsertIfaceConfig 按设备名更新或追加托管网卡配置

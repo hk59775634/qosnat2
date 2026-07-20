@@ -638,7 +638,23 @@ components:
         metric: { type: integer }
         tier: { type: integer }
         weight: { type: integer, description: ECMP 权重（同 metric 多 nexthop） }
+        policy_only: { type: boolean }
         enabled: { type: boolean }
+        warp_managed: { type: boolean }
+        proxy_managed: { type: boolean, description: '由 ProxyEgress/sing-box 自动创建' }
+    ProxyEgress:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [socks5, http, https] }
+        server: { type: string }
+        port: { type: integer }
+        username: { type: string }
+        password: { type: string }
+        tun_index: { type: integer }
+        enabled: { type: boolean, description: '启用意图；断线后 watchdog 重连' }
+        egress_ip: { type: string, description: '最近探测到的出口公网 IP' }
     EgressPolicy:
       type: object
       properties:
@@ -2048,13 +2064,7 @@ paths:
   /api/v1/shaper/active:
     get:
       tags: [shaper]
-      summary: 遍历 eBPF 活跃限速桶（可选按 IP 仅返回该 IP 所在桶）
-      parameters:
-        - name: ip
-          in: query
-          required: false
-          schema: { type: string }
-          description: 指定后仅返回该 IPv4 所在限速桶（共享桶含全部成员）；不传则全量列出
+      summary: 遍历 eBPF 活跃 Per-IP 限速状态
       responses:
         '200':
           content:
@@ -2065,33 +2075,10 @@ paths:
                   type: object
                   properties:
                     ip: { type: string }
-                    key: { type: string }
-                    shared: { type: boolean }
-                    host_mask: { type: integer }
                     down_bps: { type: integer, format: int64 }
                     up_bps: { type: integer, format: int64 }
-                    bytes_down: { type: integer, format: int64 }
-                    bytes_up: { type: integer, format: int64 }
-                    rate_down_bps: { type: integer, format: int64 }
-                    rate_up_bps: { type: integer, format: int64 }
                     activity_down: { type: integer, format: int64 }
                     activity_up: { type: integer, format: int64 }
-                    hosts:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          ip: { type: string }
-                          bytes_down: { type: integer, format: int64 }
-                          bytes_up: { type: integer, format: int64 }
-                          rate_down_bps: { type: integer, format: int64 }
-                          rate_up_bps: { type: integer, format: int64 }
-        '400':
-          description: ip 参数非法
-          content:
-            application/json:
-              schema:
-                type: object
 
   /api/v1/stats/dashboard:
     get:
@@ -3397,6 +3384,146 @@ paths:
     get:
       tags: [network]
       summary: WARP 后台任务状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/network/proxy-egress:
+    get:
+      tags: [network]
+      summary: 列出独立 IP 代理出口（HTTP/HTTPS/SOCKS5 via sing-box TUN）
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proxy_egress:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProxyEgress'
+                  installed:
+                    type: boolean
+                  version:
+                    type: string
+    post:
+      tags: [network]
+      summary: 添加代理出口
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProxyEgress'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProxyEgress'
+    put:
+      tags: [network]
+      summary: 更新代理出口
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProxyEgress'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProxyEgress'
+    delete:
+      tags: [network]
+      summary: 删除代理出口（须先断开且无出站策略引用）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+
+  /api/v1/network/proxy-egress/status:
+    get:
+      tags: [network]
+      summary: 代理出口运行状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/network/proxy-egress/install:
+    post:
+      tags: [network]
+      summary: 安装 sing-box（异步，固定版本）
+      responses:
+        '202':
+          description: install started
+
+  /api/v1/network/proxy-egress/install/status:
+    get:
+      tags: [network]
+      summary: sing-box 安装任务状态
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/v1/network/proxy-egress/connect:
+    post:
+      tags: [network]
+      summary: 连接代理出口（启动 TUN + 托管 WanLink）
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: connect started
+
+  /api/v1/network/proxy-egress/disconnect:
+    post:
+      tags: [network]
+      summary: 断开代理出口
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '202':
+          description: disconnect started
+
+  /api/v1/network/proxy-egress/task/status:
+    get:
+      tags: [network]
+      summary: 代理出口异步任务状态
       responses:
         '200':
           content:

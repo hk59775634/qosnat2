@@ -55,7 +55,7 @@ func buildDownloadRouteOptions(st store.State) []map[string]any {
 func eligibleVersionSwitchWanLinks(links []store.WanLink) []store.WanLink {
 	var out []store.WanLink
 	for _, w := range links {
-		if !w.Enabled || store.IsWarpWanLink(w) {
+		if !w.Enabled || store.IsManagedWanLink(w) {
 			continue
 		}
 		if strings.TrimSpace(w.Device) == "" {

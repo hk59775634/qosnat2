@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/route"
@@ -155,8 +156,8 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			writeBadRequest(w, err.Error())
 			return
 		}
-		if body.ID == store.WanLinkIDWarp || body.WarpManaged {
-			writeBadRequest(w, "use WARP connect to create the WARP WAN link")
+		if body.ID == store.WanLinkIDWarp || body.WarpManaged || body.ProxyManaged || strings.HasPrefix(body.ID, store.ProxyEgressWanLinkPrefix) {
+			writeBadRequest(w, "use Proxy Egress / WARP APIs to create managed WAN links")
 			return
 		}
 		if !route.LinkExists(body.Device) {

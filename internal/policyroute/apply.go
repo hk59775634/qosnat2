@@ -59,6 +59,9 @@ func checkUnresolvedEgress(st store.State, resolved []store.ResolvedEgress) erro
 		if store.IsWarpWanLink(w) {
 			return fmt.Errorf("egress %s: unresolved warp wan link %q (warp tunnel not ready)", p.ID, p.WanLinkID)
 		}
+		if store.IsProxyWanLink(w) {
+			return fmt.Errorf("egress %s: unresolved proxy wan link %q (proxy tunnel not ready)", p.ID, p.WanLinkID)
+		}
 		if p.NoSNAT {
 			if strings.TrimSpace(w.Gateway) == "" {
 				return fmt.Errorf("egress %s: no_snat requires gateway on wan link %q (next-hop NAT server)", p.ID, p.WanLinkID)

@@ -312,6 +312,31 @@ export const api = {
       disconnect: () => request('/api/v1/network/warp/disconnect', { method: 'POST', body: '{}' }),
       taskStatus: () => request('/api/v1/network/warp/task/status'),
     },
+    proxyEgress: {
+      list: () => request('/api/v1/network/proxy-egress'),
+      add: (body) => request('/api/v1/network/proxy-egress', { method: 'POST', body: JSON.stringify(body) }),
+      put: (id, body) =>
+        request(`/api/v1/network/proxy-egress?id=${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        }),
+      del: (id) =>
+        request(`/api/v1/network/proxy-egress?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+      status: () => request('/api/v1/network/proxy-egress/status'),
+      install: () => request('/api/v1/network/proxy-egress/install', { method: 'POST', body: '{}' }),
+      installStatus: () => request('/api/v1/network/proxy-egress/install/status'),
+      connect: (id) =>
+        request(`/api/v1/network/proxy-egress/connect?id=${encodeURIComponent(id)}`, {
+          method: 'POST',
+          body: '{}',
+        }),
+      disconnect: (id) =>
+        request(`/api/v1/network/proxy-egress/disconnect?id=${encodeURIComponent(id)}`, {
+          method: 'POST',
+          body: '{}',
+        }),
+      taskStatus: () => request('/api/v1/network/proxy-egress/task/status'),
+    },
   },
   interfacesEthtool: (device) => request(`/api/v1/interfaces/ethtool?device=${encodeURIComponent(device)}`),
   setEthtool: (device, body) =>
