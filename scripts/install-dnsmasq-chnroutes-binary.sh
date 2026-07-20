@@ -48,10 +48,9 @@ if [[ -x "${INSTALL_BIN}" && ! -f "${INSTALL_BIN}.dist" ]]; then
 fi
 install_atomic "${SOURCE}" "${INSTALL_BIN}"
 
+# 不自动 start：是否运行由 qosnat2 DHCP/DNS 配置决定（默认未启用）
 if [[ "${was_active}" -eq 1 ]]; then
-  systemctl start dnsmasq || true
-elif command -v systemctl &>/dev/null && systemctl is-active --quiet dnsmasq 2>/dev/null; then
-  systemctl restart dnsmasq || true
+  log "dnsmasq was running before replace; left stopped — enable via qosnat2 DHCP Apply if needed"
 fi
 
 log "installed patched dnsmasq from prebuilt:"

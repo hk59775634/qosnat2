@@ -53,6 +53,7 @@ func (srv *Server) ApplyAll() error {
 	if err := srv.applyLVSFromStore(); err != nil {
 		log.Printf("lvs apply: %v", err)
 	}
+	srv.applyManagedDHCP()
 	return nil
 }
 

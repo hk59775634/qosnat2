@@ -131,6 +131,8 @@ install_system_packages() {
     tar; then
     die "必要软件包安装失败，请检查 apt 源与网络后重试"
   fi
+  # apt dnsmasq 默认 enable+start；qosnat2 默认未启用 DHCP/DNS
+  systemctl disable --now dnsmasq >/dev/null 2>&1 || true
   log "必要软件包已安装"
   need_cmd git
   need_cmd curl
@@ -243,9 +245,7 @@ download_release_binary() {
     install -m 0755 "${tmp}/lib/dnsmasq-chnroutes" /usr/local/lib/qosnat2/dnsmasq-chnroutes.new
     mv -f /usr/local/lib/qosnat2/dnsmasq-chnroutes.new /usr/local/lib/qosnat2/dnsmasq-chnroutes
     if command -v dnsmasq &>/dev/null && ! dnsmasq --help 2>&1 | grep -q chnroutes-file; then
-      local dnsmasq_was_active=0
       if systemctl is-active --quiet dnsmasq 2>/dev/null; then
-        dnsmasq_was_active=1
         systemctl stop dnsmasq || true
       fi
       if [[ -x /usr/sbin/dnsmasq && ! -f /usr/sbin/dnsmasq.dist ]]; then
@@ -257,10 +257,9 @@ download_release_binary() {
       fi
       mv -f /usr/sbin/dnsmasq.new /usr/sbin/dnsmasq
       rm -f /usr/sbin/dnsmasq.old
-      if [[ "${dnsmasq_was_active}" -eq 1 ]]; then
-        systemctl start dnsmasq || true
-      fi
-      log "已从 release 安装 dnsmasq-chnroutes"
+      # 默认不启动；由 qosnat2 DHCP Apply / 启动回放决定
+      systemctl disable dnsmasq >/dev/null 2>&1 || true
+      log "已从 release 安装 dnsmasq-chnroutes（服务保持停止，直至 DHCP/DNS 启用）"
     fi
   fi
   rm -rf "${tmp}"

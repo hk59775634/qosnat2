@@ -45,6 +45,10 @@ qosnat_apt_install_packages() {
   apt-get update -qq
   apt-get install -y -qq "${QOSNAT_APT_PACKAGES[@]}"
   apt-get install -y -qq "${QOSNAT_APT_PACKAGES_OPTIONAL[@]}" || true
+  # apt 的 dnsmasq 包默认 enable+start；qosnat2 默认未启用 DHCP/DNS，交由控制面 Apply 管理。
+  if command -v systemctl &>/dev/null; then
+    systemctl disable --now dnsmasq >/dev/null 2>&1 || true
+  fi
 }
 
 # 安装带 chnroutes 补丁的 dnsmasq（优先 release 预编译包，否则源码编译）

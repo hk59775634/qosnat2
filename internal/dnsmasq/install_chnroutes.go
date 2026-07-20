@@ -93,11 +93,9 @@ func InstallChnroutesBinary(src string) error {
 		_ = exec.Command("systemctl", "stop", "dnsmasq").Run()
 	}
 	installErr := installSystemDnsmasq(src)
-	if wasActive {
-		_ = exec.Command("systemctl", "start", "dnsmasq").Run()
-	} else if dnsmasqServiceActive() {
-		_ = exec.Command("systemctl", "restart", "dnsmasq").Run()
-	}
+	// 不在此自动 start：是否运行由 DHCP/DNS 配置经 Apply 决定（默认未启用）。
+	// 若替换前服务在跑，调用方（安装任务 / ApplyAll）应再 Apply。
+	_ = wasActive
 	return installErr
 }
 

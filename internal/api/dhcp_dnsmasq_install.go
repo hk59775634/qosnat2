@@ -188,9 +188,8 @@ func (srv *Server) startDnsmasqChnroutesInstallAsync(r *http.Request) error {
 				cfg.Interface = srv.env.DevLAN
 			}
 			if err := store.NormalizeDHCP(&cfg, srv.env.DevLAN); err == nil {
-				if cfg.ServiceActive() || st.Nat.DNS64UsesDnsmasqRelay() {
-					_ = dnsmasq.Apply(cfg, srv.dnsmasqOpts(st))
-				}
+				// 无论是否启用：Apply 会在未启用时 stop+disable，避免 apt 默认自启残留。
+				_ = dnsmasq.Apply(cfg, srv.dnsmasqOpts(st))
 			}
 		}
 		srv.auditLog(r, "dhcp.dnsmasq.install_chnroutes", "")

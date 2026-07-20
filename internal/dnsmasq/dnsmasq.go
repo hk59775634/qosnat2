@@ -363,12 +363,19 @@ func restartService() error {
 }
 
 func stopService() error {
+	// disable+stop：避免 apt 安装后的 enabled 单元在重启后再次自启（qosnat2 默认 DHCP/DNS 未启用）。
+	_ = exec.Command("systemctl", "disable", "dnsmasq").Run()
 	out, err := exec.Command("systemctl", "stop", "dnsmasq").CombinedOutput()
 	if err != nil {
-		if strings.Contains(string(out), "not found") {
+		msg := strings.TrimSpace(string(out))
+		if strings.Contains(msg, "not found") || strings.Contains(strings.ToLower(msg), "not loaded") {
 			return nil
 		}
-		return fmt.Errorf("systemctl stop dnsmasq: %s %w", strings.TrimSpace(string(out)), err)
+		// 已 inactive 时 stop 可能仍返回非 0，以 is-active 为准。
+		if !dnsmasqServiceActive() {
+			return nil
+		}
+		return fmt.Errorf("systemctl stop dnsmasq: %s %w", msg, err)
 	}
 	return nil
 }
