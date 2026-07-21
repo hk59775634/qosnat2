@@ -1,26 +1,27 @@
 # OpenConnect (ocserv)
 
-AnyConnect 兼容 SSL VPN，使用 **ocserv** 服务端，通过 **官方 1.4.2 源码编译 + Route B SPEC-01 补丁** 安装（非 apt 包、不提供未打补丁的生产二进制）。
+AnyConnect 兼容 SSL VPN，使用 **ocserv** 服务端，通过 **官方 1.5.0 源码编译 + Route B SPEC-01 + DST SPEC-02 补丁** 安装（非 apt 包、不提供未打补丁的生产二进制）。
 
 ## 安装
 
 ```bash
 sudo /opt/qosnat2/scripts/install-ocserv.sh
-sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.4.2
+sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.5.0
 ```
 
 脚本会：
 
-1. 拉取 ocserv **1.4.2** 源码（镜像 / GitLab / infradead 回退）
-2. 用 [`patches/ocserv/apply-spec01-edits.py`](../patches/ocserv/apply-spec01-edits.py) 应用完整 SPEC-01（源自 [ocserv-tunnel](https://github.com/hk59775634/ocserv-tunnel)）
-3. Meson/Ninja 编译，并安装 **`ocserv` + `ocserv-worker`** 到 `/usr/local/sbin/`
-4. 校验二进制含 `radius_auth_bind_group` / `parse_group_access_url` 等关键符号
+1. 拉取 ocserv **1.5.0** 源码（GitHub openconnect / GitLab / infradead 回退）
+2. 用 [`patches/ocserv/apply-spec01-edits.py`](../patches/ocserv/apply-spec01-edits.py) 应用 SPEC-01（源自 [ocserv-tunnel](https://github.com/hk59775634/ocserv)）
+3. 用 [`patches/ocserv/apply-dst-edits.py`](../patches/ocserv/apply-dst-edits.py) 应用 SPEC-02 动态拆分隧道
+4. Meson/Ninja 编译，并安装 **`ocserv` + `ocserv-worker`** 到 `/usr/local/sbin/`
+5. 校验二进制含 `radius_auth_bind_group` / `parse_group_access_url` / `X-CSTP-Post-Auth-XML` 等关键符号
 
 可选环境变量：
 
 | 变量 | 默认 |
 |------|------|
-| `OCSERV_TAG` / `OCSERV_VERSION` | `1.4.2`（生产仅此版本；其它版本需 `OCSERV_ALLOW_UNPATCHED=1`） |
+| `OCSERV_TAG` / `OCSERV_VERSION` | `1.5.0`（生产仅此版本；其它版本需 `OCSERV_ALLOW_UNPATCHED=1`） |
 | `OCSERV_PREFIX` | `/usr/local` |
 | `OCSERV_SYSCONFDIR` | `/etc/ocserv` |
 
@@ -29,6 +30,17 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.4.2
 ### Route B（TunnelGroupName）
 
 客户端以短用户名连接 `https://{pop}/{tunnel_group}` 时，Access-Request / Accounting 须携带 Cisco ASA VSA **TunnelGroupName=146**。残缺补丁或未更新的 `ocserv-worker` 会导致日志 `no selected_group; TunnelGroupName omitted`。重新执行安装脚本即可替换双二进制。
+
+### 动态拆分隧道（DST）
+
+服务器/组/虚拟主机可配置：
+
+| 配置项 | 作用 |
+|--------|------|
+| `dynamic_split_include_domains` | 匹配域名的解析 IP 由 AnyConnect 动态加入隧道路由 |
+| `dynamic_split_exclude_domains` | tunnel-all 下匹配域名走本地；可与 include 同时用（Enhanced，AC ≥ 4.6） |
+
+主验证目标：Win/macOS AnyConnect / Secure Client ≥ 4.6。服务端通过 `X-CSTP-Post-Auth-XML` 下发，不在服务端做 DNS→路由。
 
 若已在 qosnat2 启用 HTTPS，安装脚本会尝试将 `/etc/qosnat2/tls.crt` 复制为 VPN 证书。
 
@@ -42,7 +54,7 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.4.2
 
 - **概览**：安装/运行状态、版本、在线人数及 occtl `show status` 统计。
 - **在线会话**：已连接客户端列表，可断开；约每 8 秒自动刷新。
-- **服务器**：启用、端口、地址池（默认 `198.18.250.0/24`）、认证、DNS/路由、保存并 Apply。
+- **服务器**：启用、端口、地址池（默认 `198.18.250.0/24`）、认证、DNS/路由、**DST 域名列表**、保存并 Apply。
 - 其余标签见界面说明。
 
 ### 运维面板与 occtl

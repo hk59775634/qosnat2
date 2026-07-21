@@ -20,7 +20,7 @@ const (
 	installStatusFile    = "/var/lib/qosnat2/ocserv-install-status.json"
 	installLogFile       = "/var/lib/qosnat2/ocserv-install.log"
 	ocservReleaseTagFile = "/var/lib/qosnat2/ocserv-release-tag"
-	defaultSourceTag     = "1.4.2"
+	defaultSourceTag     = "1.5.0"
 )
 
 type installBusyError struct{}

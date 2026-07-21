@@ -75,6 +75,12 @@ func renderGroupConf(g store.OCServGroup) string {
 	for _, r := range g.NoRoutes {
 		fmt.Fprintf(&b, "no-route = %s\n", r)
 	}
+	for _, d := range g.DynamicSplitIncludeDomains {
+		fmt.Fprintf(&b, "dynamic-split-include-domains = %s\n", d)
+	}
+	for _, d := range g.DynamicSplitExcludeDomains {
+		fmt.Fprintf(&b, "dynamic-split-exclude-domains = %s\n", d)
+	}
 	if n := strings.TrimSpace(g.IPv4Network); n != "" {
 		fmt.Fprintf(&b, "ipv4-network = %s\n", n)
 	}

@@ -103,6 +103,12 @@ func RenderConf(o store.OCServState, managed []store.ManagedCertificate) string 
 	for _, r := range o.NoRoutes {
 		b.WriteString(fmt.Sprintf("no-route = %s\n", strings.TrimSpace(r)))
 	}
+	for _, d := range o.DynamicSplitIncludeDomains {
+		b.WriteString(fmt.Sprintf("dynamic-split-include-domains = %s\n", strings.TrimSpace(d)))
+	}
+	for _, d := range o.DynamicSplitExcludeDomains {
+		b.WriteString(fmt.Sprintf("dynamic-split-exclude-domains = %s\n", strings.TrimSpace(d)))
+	}
 	b.WriteString(fmt.Sprintf("device = %s\n", o.Device))
 	b.WriteString(fmt.Sprintf("max-clients = %d\n", o.MaxClients))
 	renderGroupGlobals(&b, o)

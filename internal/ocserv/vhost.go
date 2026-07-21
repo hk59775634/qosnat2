@@ -154,6 +154,12 @@ func renderVhostBlock(b *bytes.Buffer, v store.OCServVhost, global store.OCServS
 	if v.ExposeIRoutes {
 		appendBoolLine(b, "expose-iroutes", true)
 	}
+	for _, d := range v.DynamicSplitIncludeDomains {
+		fmt.Fprintf(b, "dynamic-split-include-domains = %s\n", d)
+	}
+	for _, d := range v.DynamicSplitExcludeDomains {
+		fmt.Fprintf(b, "dynamic-split-exclude-domains = %s\n", d)
+	}
 	if v.RxDataPerSec > 0 {
 		fmt.Fprintf(b, "rx-data-per-sec = %d\n", v.RxDataPerSec)
 	}

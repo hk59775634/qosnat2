@@ -191,3 +191,19 @@ func TestRenderConfSkipsDisabledVhost(t *testing.T) {
 		t.Fatalf("active vhost missing:\n%s", conf)
 	}
 }
+
+func TestRenderConfDynamicSplitDomains(t *testing.T) {
+	o := store.DefaultOCServ()
+	o.DynamicSplitIncludeDomains = []string{"corp.example.com", "app.example.com"}
+	o.DynamicSplitExcludeDomains = []string{"www.cisco.com"}
+	conf := RenderConf(o, nil)
+	if !strings.Contains(conf, "dynamic-split-include-domains = corp.example.com") {
+		t.Fatalf("missing include:\n%s", conf)
+	}
+	if !strings.Contains(conf, "dynamic-split-include-domains = app.example.com") {
+		t.Fatalf("missing include app:\n%s", conf)
+	}
+	if !strings.Contains(conf, "dynamic-split-exclude-domains = www.cisco.com") {
+		t.Fatalf("missing exclude:\n%s", conf)
+	}
+}

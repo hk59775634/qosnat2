@@ -25,3 +25,18 @@ func TestRenderGroupGlobalsOmitSelectGroup(t *testing.T) {
 		t.Fatalf("internal must not be in select-group:\n%s", conf)
 	}
 }
+
+func TestRenderGroupConfDynamicSplitDomains(t *testing.T) {
+	g := store.OCServGroup{
+		Name:                       "demo",
+		DynamicSplitIncludeDomains: []string{"corp.example.com"},
+		DynamicSplitExcludeDomains: []string{"tools.cisco.com"},
+	}
+	conf := renderGroupConf(g)
+	if !strings.Contains(conf, "dynamic-split-include-domains = corp.example.com") {
+		t.Fatalf("missing include:\n%s", conf)
+	}
+	if !strings.Contains(conf, "dynamic-split-exclude-domains = tools.cisco.com") {
+		t.Fatalf("missing exclude:\n%s", conf)
+	}
+}

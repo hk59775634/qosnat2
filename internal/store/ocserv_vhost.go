@@ -47,6 +47,8 @@ type OCServVhost struct {
 	NoRoutes      []string `json:"no_routes,omitempty"`
 	IRoutes       []string `json:"iroutes,omitempty"`
 	ExposeIRoutes bool     `json:"expose_iroutes,omitempty"`
+	DynamicSplitIncludeDomains []string `json:"dynamic_split_include_domains,omitempty"`
+	DynamicSplitExcludeDomains []string `json:"dynamic_split_exclude_domains,omitempty"`
 
 	// 带宽
 	RxDataPerSec int `json:"rx_data_per_sec,omitempty"`

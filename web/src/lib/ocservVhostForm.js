@@ -32,6 +32,8 @@ export function emptyVhostForm() {
     no_routes: [],
     iroutes: [],
     expose_iroutes: false,
+    dynamic_split_include_domains: [],
+    dynamic_split_exclude_domains: [],
     rx_data_per_sec: 0,
     tx_data_per_sec: 0,
     pkt_mtu_size: 0,
@@ -158,6 +160,8 @@ export function normalizeVhostFromApi(v) {
     routes: v.routes || [],
     no_routes: v.no_routes || [],
     iroutes: v.iroutes || [],
+    dynamic_split_include_domains: v.dynamic_split_include_domains || [],
+    dynamic_split_exclude_domains: v.dynamic_split_exclude_domains || [],
     select_groups: v.select_groups || [],
     radius: v.radius != null ? { ...emptyVhostRadius(), ...v.radius } : null,
   }

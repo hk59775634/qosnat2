@@ -1,16 +1,17 @@
-# ocserv Route B（SPEC-01）补丁
+# ocserv Route B（SPEC-01）+ DST（SPEC-02）补丁
 
-**基线：** ocserv **1.4.2**（与 [ocserv-tunnel](https://github.com/hk59775634/ocserv-tunnel) 生产验证一致）。
+**基线：** ocserv **1.5.0**（由 [ocserv-tunnel](https://github.com/hk59775634/ocserv) 移植/维护）。
 
-`install-ocserv.sh` 在编译前对干净源码树执行：
+`install-ocserv.sh` 在编译前对干净源码树依次执行：
 
 ```bash
 python3 patches/ocserv/apply-spec01-edits.py <ocserv-src>
+python3 patches/ocserv/apply-dst-edits.py <ocserv-src>
 ```
 
-不要使用早期残缺的 `*.patch`（`*.legacy-incomplete` 仅作历史参考，安装脚本不会应用）。
+不要使用早期残缺的 `*.patch`（`*.legacy-incomplete` 仅作历史参考）。
 
-完整链路覆盖：
+## SPEC-01（Route B / TunnelGroupName）
 
 | 区域 | 作用 |
 |------|------|
@@ -19,5 +20,12 @@ python3 patches/ocserv/apply-spec01-edits.py <ocserv-src>
 | `auth/radius.c` | Access-Request 发送 TunnelGroupName（VSA 146） |
 | `acct/radius.c` | Accounting 发送 TunnelGroupName |
 | `ipc.proto` | `sec_auth_cont_msg.group_name` |
+
+## SPEC-02（动态拆分隧道）
+
+| 区域 | 作用 |
+|------|------|
+| 配置 / IPC | `dynamic-split-include-domains` / `dynamic-split-exclude-domains` |
+| `worker-vpn.c` | CONNECT 下发 `X-CSTP-Post-Auth-XML` |
 
 安装后须同时存在打了补丁的 `/usr/local/sbin/ocserv` 与 `ocserv-worker`。

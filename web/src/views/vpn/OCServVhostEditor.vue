@@ -121,6 +121,14 @@ const iroutesText = computed({
   get: () => (v.value.iroutes || []).join('\n'),
   set: (s) => patch({ iroutes: textToList(s) }),
 })
+const dstIncludeText = computed({
+  get: () => (v.value.dynamic_split_include_domains || []).join('\n'),
+  set: (s) => patch({ dynamic_split_include_domains: textToList(s) }),
+})
+const dstExcludeText = computed({
+  get: () => (v.value.dynamic_split_exclude_domains || []).join('\n'),
+  set: (s) => patch({ dynamic_split_exclude_domains: textToList(s) }),
+})
 const nbnsText = computed({
   get: () => (v.value.nbns || []).join('\n'),
   set: (s) => patch({ nbns: textToList(s) }),
@@ -559,6 +567,16 @@ function patchRadius(partial) {
       <label>
         {{ t('ocserv.vhostFields.iroute') }}
         <textarea v-model="iroutesText" class="input w-full mt-1 font-mono text-xs" rows="2" />
+      </label>
+      <label>
+        {{ t('ocserv.dstIncludeDomains') }}
+        <textarea v-model="dstIncludeText" class="input w-full mt-1 font-mono text-xs" rows="2" :placeholder="t('ocserv.dstDomainsPlaceholder')" />
+        <span class="text-xs text-slate-500">dynamic-split-include-domains</span>
+      </label>
+      <label>
+        {{ t('ocserv.dstExcludeDomains') }}
+        <textarea v-model="dstExcludeText" class="input w-full mt-1 font-mono text-xs" rows="2" :placeholder="t('ocserv.dstDomainsPlaceholder')" />
+        <span class="text-xs text-slate-500">dynamic-split-exclude-domains · {{ t('ocserv.dstAnyConnectHint') }}</span>
       </label>
       <label class="flex gap-2">
         <input :checked="!!v.expose_iroutes" type="checkbox" @change="patch({ expose_iroutes: $event.target.checked })" />

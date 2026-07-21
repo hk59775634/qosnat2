@@ -257,17 +257,27 @@ components:
       type: object
       properties:
         id: { type: string, description: "用户规则 fr-*；自动规则 auto-* / auto-fwd-*；不可改 sys-*" }
-        chain: { type: string, enum: [forward, input] }
+        chain: { type: string, enum: [forward, input, output] }
         action: { type: string, enum: [accept, drop, reject] }
         iif: { type: string, description: 入接口 iifname }
-        oif: { type: string, description: forward 链出接口 oifname；input 链忽略 }
+        oif: { type: string, description: forward/output 链出接口 oifname；input 链忽略 }
         proto: { type: string, enum: [tcp, udp, icmp, icmpv6, sctp, udplite], description: 空表示任意 }
         src_addr: { type: string, description: IPv4/IPv6 地址或 CIDR（与 ip_version 一致） }
         dst_addr: { type: string }
-        src_alias: { type: string, description: 引用 firewall/aliases 中的 ipv4_addr 集 }
+        src_alias: { type: string, description: 引用 firewall/aliases 中的地址集 }
         dst_alias: { type: string }
         src_port: { type: integer, minimum: 0, maximum: 65535, description: "0 表示任意" }
         dst_port: { type: integer, minimum: 0, maximum: 65535 }
+        src_ports: { type: string, description: '多端口/范围，如 80,443,8000-8010' }
+        dst_ports: { type: string }
+        src_port_alias: { type: string, description: type=port 别名 }
+        dst_port_alias: { type: string }
+        log: { type: boolean, description: nft log prefix qosnat2-fw }
+        counter: { type: boolean }
+        schedule_id: { type: string }
+        wan_link_id: { type: string, description: accept+forward 时同步自动 egress }
+        shaper_down: { type: string }
+        shaper_up: { type: string }
         comment: { type: string, description: 写入 nft comment 字段 }
         enabled: { type: boolean }
         ip_version: { type: string, enum: [ipv4, ipv6], description: 默认 ipv4；影响 nft ip/ip6 匹配 }
@@ -277,13 +287,14 @@ components:
       required: [name]
       properties:
         name: { type: string }
-        type: { type: string, enum: [ipv4_addr, fqdn], description: "asn 类型暂不支持；fqdn 由网关解析 A 记录写入 members" }
-        members: { type: array, items: { type: string }, description: IPv4 地址或 CIDR（fqdn 类型为解析结果） }
-        domains: { type: array, items: { type: string }, description: 'type=fqdn 时的域名列表（不支持通配符）' }
-        url: { type: string, description: '从 URL 拉取列表（每行一条）：ipv4_addr 为 CIDR；fqdn 为域名' }
-        url_fetched_at: { type: string, description: '上次 URL 拉取时间 RFC3339' }
-        resolved_at: { type: string, description: '上次 FQDN 解析时间 RFC3339' }
-        asn: { type: integer, deprecated: true }
+        type: { type: string, enum: [ipv4_addr, fqdn, asn, geoip, port] }
+        members: { type: array, items: { type: string }, description: IPv4 CIDR 或端口规格 }
+        domains: { type: array, items: { type: string }, description: 'type=fqdn 时的域名列表' }
+        countries: { type: array, items: { type: string }, description: 'type=geoip 国家码' }
+        url: { type: string }
+        url_fetched_at: { type: string }
+        resolved_at: { type: string }
+        asn: { type: integer }
         comment: { type: string }
     FirewallRulesListResponse:
       type: object
@@ -537,8 +548,8 @@ components:
       properties:
         version:
           type: string
-          example: '1.4.2'
-          description: 可选，ocserv 官方源码 tag（默认 1.4.2）
+          example: '1.5.0'
+          description: 可选，ocserv 官方源码 tag（默认 1.5.0；生产固定此版本 + SPEC-01 + DST）
     IfaceAddr:
       type: object
       properties:
@@ -805,6 +816,14 @@ components:
         no_routes:
           type: array
           items: { type: string }
+        dynamic_split_include_domains:
+          type: array
+          items: { type: string }
+          description: AnyConnect DST include domains (SPEC-02)
+        dynamic_split_exclude_domains:
+          type: array
+          items: { type: string }
+          description: AnyConnect DST exclude domains (SPEC-02)
         ipv4_network: { type: string }
         ipv4_netmask: { type: string }
         rx_data_per_sec: { type: integer, description: 服务端下行限速（字节/秒，0=不限） }
@@ -879,6 +898,14 @@ components:
         no_routes:
           type: array
           items: { type: string }
+        dynamic_split_include_domains:
+          type: array
+          items: { type: string }
+          description: AnyConnect DST include domains (SPEC-02)
+        dynamic_split_exclude_domains:
+          type: array
+          items: { type: string }
+          description: AnyConnect DST exclude domains (SPEC-02)
         iroutes:
           type: array
           items: { type: string }
@@ -1004,6 +1031,14 @@ components:
         no_routes:
           type: array
           items: { type: string }
+        dynamic_split_include_domains:
+          type: array
+          items: { type: string }
+          description: AnyConnect DST include domains (SPEC-02)
+        dynamic_split_exclude_domains:
+          type: array
+          items: { type: string }
+          description: AnyConnect DST exclude domains (SPEC-02)
         server_cert_path: { type: string }
         server_key_path: { type: string }
         ca_cert_path: { type: string }
@@ -4117,7 +4152,7 @@ paths:
       tags: [vpn]
       summary: 后台源码编译安装 ocserv（需 root 运行 qosnatd）
       description: |
-        单实例任务；若已在安装中返回 409。从 GitLab 官方源码编译安装（默认 tag 1.4.2，可在 body 指定 version）。
+        单实例任务；若已在安装中返回 409。从官方源码编译安装（默认 tag 1.5.0 + SPEC-01 + DST，可在 body 指定 version）。
         完成后用 `GET .../install/status` 或 GET 主接口的 `install_job` 查看日志尾部。
       requestBody:
         content:

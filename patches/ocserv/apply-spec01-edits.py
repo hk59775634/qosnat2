@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Apply SPEC-01 TunnelGroupName edits to ocserv 1.4.2 source tree."""
+"""Apply SPEC-01 TunnelGroupName edits to ocserv 1.5.0 source tree.
+
+Ported from qosnat2 patches/ocserv/apply-spec01-edits.py (1.4.2 anchors).
+Idempotent: safe to re-run on an already-patched tree.
+"""
 from __future__ import annotations
 
 import sys
@@ -28,7 +32,11 @@ def insert_after(text: str, needle: str, insert: str, label: str) -> str:
 
 
 def main() -> None:
+    if len(sys.argv) != 2:
+        raise SystemExit(f"usage: {sys.argv[0]} <ocserv-src>")
     root = Path(sys.argv[1])
+    if not (root / "src" / "worker-auth.c").is_file():
+        raise SystemExit(f"{root}: not an ocserv source tree")
 
     sec_mod_h = root / "src/sec-mod.h"
     text = sec_mod_h.read_text()
@@ -42,13 +50,23 @@ def main() -> None:
 
     sec_mod_auth = root / "src/sec-mod-auth.c"
     text = sec_mod_auth.read_text()
-    text = insert_after(
-        text,
-        "\t\tst.user_agent = req->user_agent;\n",
-        "\t\tst.groupname = req->group_name;\n",
-        "sec-mod-auth.c st.groupname",
+    st_group_line = (
+        "\t\tst.groupname = e->req_group_name[0] ? e->req_group_name : req->group_name;\n"
     )
+    if st_group_line.strip() in text:
+        print("sec-mod-auth.c st.groupname: already present")
+    else:
+        # Drop short form from a prior partial apply, then insert the final line.
+        text = text.replace("\t\tst.groupname = req->group_name;\n", "", 1)
+        text = insert_after(
+            text,
+            "\t\tst.user_agent = req->user_agent;\n",
+            st_group_line,
+            "sec-mod-auth.c st.groupname",
+        )
     # Persist URL group before auth_init; st.groupname reads e->req_group_name.
+    # (1.5.0 already copies req_group_name after auth_init; early copy is required
+    # so radius_auth_init sees TunnelGroupName at password stage.)
     text = insert_before(
         text,
         "\tif (e->module) {\n\t\tcommon_auth_init_st st;\n",
@@ -59,11 +77,6 @@ def main() -> None:
             "\t}\n\n"
         ),
         "sec-mod-auth.c early req_group_name",
-    )
-    text = text.replace(
-        "\t\tst.groupname = req->group_name;\n",
-        "\t\tst.groupname = e->req_group_name[0] ? e->req_group_name : req->group_name;\n",
-        1,
     )
     auth_cont_needle = (
         "\tret = e->module->auth_pass(e->auth_ctx, req->password,\n"
@@ -230,22 +243,6 @@ def main() -> None:
             "\t\t     PW_ACCESS_REQUEST);",
             1,
         )
-    vsa_marker = (
-        "\tif (pctx->selected_group[0] != 0) {\n"
-        "\t\tif (rc_avpair_add(pctx->vctx->rh, &send, PW_TUNNELGROUPNAME,"
-    )
-    while vsa_marker in text:
-        start = text.find(vsa_marker)
-        end = text.find(
-            '\t\t\t  "radius-auth: no selected_group; TunnelGroupName omitted for user \'%s\'",\n'
-            "\t\t\t  pctx->username);\n"
-            "\t}\n",
-            start,
-        )
-        if end < 0:
-            break
-        end = text.find("\n", end + 1) + 1
-        text = text[:start] + text[end:]
 
     text = insert_after(
         text,
@@ -266,6 +263,25 @@ def main() -> None:
         "\t\t\tsizeof(pctx->selected_group));\n",
         "radius.c auth_init",
     )
+
+    vsa_marker = (
+        "\tif (pctx->selected_group[0] != 0) {\n"
+        "\t\tif (rc_avpair_add(pctx->vctx->rh, &send, PW_TUNNELGROUPNAME,"
+    )
+    vsa_end = (
+        '\t\t\t  "radius-auth: no selected_group; TunnelGroupName omitted for user \'%s\'",\n'
+        "\t\t\t  pctx->username);\n"
+        "\t}\n"
+    )
+    # Drop orphan fragments from older buggy idempotent cleanups.
+    orphan = "\n\t\t\t  pctx->username);\n\t}\n"
+    while orphan in text:
+        oi = text.find(orphan)
+        window = text[max(0, oi - 160) : oi]
+        if "TunnelGroupName omitted" in window:
+            break
+        text = text[:oi] + "\n" + text[oi + len(orphan) :]
+
     vsa_block = (
         "\tif (pctx->selected_group[0] != 0) {\n"
         "\t\tif (rc_avpair_add(pctx->vctx->rh, &send, PW_TUNNELGROUPNAME,\n"
@@ -287,13 +303,26 @@ def main() -> None:
         "\t}\n"
         "\n"
     )
-    # Insert immediately after the PW_STATE cleanup block, before rc_aaa.
-    state_close = (
-        "\t\ttalloc_free(pctx->state);\n"
-        "\t\tpctx->state = NULL;\n"
-        "\t}\n"
-    )
-    text = insert_after(text, state_close, "\n" + vsa_block, "radius.c auth_pass")
+    if "radius-auth: sending TunnelGroupName=" in text:
+        print("radius.c auth_pass: already present")
+    else:
+        while vsa_marker in text:
+            start = text.find(vsa_marker)
+            end = text.find(vsa_end, start)
+            if end < 0:
+                break
+            end = end + len(vsa_end)
+            while end < len(text) and text[end] == "\n":
+                end += 1
+            text = text[:start] + text[end:]
+        # 1.5.0: PW_STATE cleanup also clears state_len (absent in 1.4.2).
+        state_close = (
+            "\t\ttalloc_free(pctx->state);\n"
+            "\t\tpctx->state = NULL;\n"
+            "\t\tpctx->state_len = 0;\n"
+            "\t}\n"
+        )
+        text = insert_after(text, state_close, "\n" + vsa_block, "radius.c auth_pass")
     bind_fn = (
         "\nvoid radius_auth_bind_group(void *ctx, const char *group)\n"
         "{\n"
@@ -310,14 +339,6 @@ def main() -> None:
             1,
         )
     # Route B: after RADIUS OK, trust URL group that was sent as TunnelGroupName.
-    group_trust = (
-        "\tif (suggested != NULL) {\n"
-        "\t\tif (pctx->selected_group[0] != 0 &&\n"
-        "\t\t    strcmp(suggested, pctx->selected_group) == 0) {\n"
-        "\t\t\tstrlcpy(groupname, suggested, groupname_size);\n"
-        "\t\t\treturn 0;\n"
-        "\t\t}\n"
-    )
     text = insert_after(
         text,
         "\tgroupname[0] = 0;\n\n\tif (suggested != NULL) {\n",
@@ -384,7 +405,7 @@ def main() -> None:
         )
     acct_radius.write_text(acct_text)
 
-    print("SPEC-01 edits applied OK")
+    print("SPEC-01 edits applied OK (ocserv 1.5.0)")
 
 
 if __name__ == "__main__":

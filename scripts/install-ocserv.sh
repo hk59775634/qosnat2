@@ -1,36 +1,37 @@
 #!/usr/bin/env bash
-# 安装 ocserv（OpenConnect VPN 服务端）— 官方 1.4.2 源码 + Route B SPEC-01 补丁。
+# 安装 ocserv（OpenConnect VPN 服务端）— 官方 1.5.0 源码 + Route B SPEC-01 + DST SPEC-02 补丁。
 #
 # 用法:
 #   sudo /opt/qosnat2/scripts/install-ocserv.sh
-#   sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.4.2
+#   sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.5.0
 #
 # 环境变量:
-#   OCSERV_TAG / OCSERV_VERSION   官方 tag（默认且仅验证 1.4.2）
-#   OCSERV_MIRROR_REPO            自建镜像（默认 github.com/hk59775634/ocserv，经 gh-proxy）
+#   OCSERV_TAG / OCSERV_VERSION   官方 tag（默认且仅验证 1.5.0）
+#   OCSERV_MIRROR_REPO            上游镜像（默认 github.com/openconnect/ocserv；补丁在 patches/ocserv）
 #   OCSERV_GITLAB_REPO            官方 GitLab 回退
 #   OCSERV_PREFIX=/usr/local OCSERV_SYSCONFDIR=/etc/ocserv
-#   PATCH_DIR=.../patches/ocserv   SPEC-01 脚本目录（默认仓库内 patches/ocserv）
-#   OCSERV_ALLOW_UNPATCHED=1       允许非 1.4.2（跳过 SPEC-01，仅开发用）
+#   PATCH_DIR=.../patches/ocserv   SPEC-01/DST 脚本目录（默认仓库内 patches/ocserv）
+#   OCSERV_ALLOW_UNPATCHED=1       允许非 1.5.0（跳过补丁，仅开发用）
 set -euo pipefail
 
-OCSERV_MIRROR_REPO="${OCSERV_MIRROR_REPO:-https://github.com/hk59775634/ocserv.git}"
-OCSERV_MIRROR_SLUG="${OCSERV_MIRROR_SLUG:-hk59775634/ocserv}"
+OCSERV_MIRROR_REPO="${OCSERV_MIRROR_REPO:-https://github.com/openconnect/ocserv.git}"
+OCSERV_MIRROR_SLUG="${OCSERV_MIRROR_SLUG:-openconnect/ocserv}"
 OCSERV_GITHUB_REPO="${OCSERV_GITHUB_REPO:-https://github.com/openconnect/ocserv.git}"
 OCSERV_GITLAB_REPO="${OCSERV_GITLAB_REPO:-https://gitlab.com/openconnect/ocserv.git}"
 GH_PROXY_V4="${GH_PROXY_V4:-https://v4.gh-proxy.org/}"
 GH_PROXY_CDN="${GH_PROXY_CDN:-https://cdn.gh-proxy.org/}"
-OCSERV_TAG="${OCSERV_TAG:-1.4.2}"
+OCSERV_TAG="${OCSERV_TAG:-1.5.0}"
 OCSERV_VERSION="${OCSERV_VERSION:-${OCSERV_TAG}}"
 OCSERV_PREFIX="${OCSERV_PREFIX:-/usr/local}"
 OCSERV_SYSCONFDIR="${OCSERV_SYSCONFDIR:-/etc/ocserv}"
 BUILD_DIR="${BUILD_DIR:-/usr/local/src/ocserv-build}"
 PATCH_DIR="${PATCH_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/patches/ocserv}"
 SPEC01_SCRIPT="${SPEC01_SCRIPT:-${PATCH_DIR}/apply-spec01-edits.py}"
+DST_SCRIPT="${DST_SCRIPT:-${PATCH_DIR}/apply-dst-edits.py}"
 OCSERV_BIN="${OCSERV_PREFIX}/sbin/ocserv"
 OCSERV_WORKER_BIN="${OCSERV_PREFIX}/sbin/ocserv-worker"
 MESON_BUILD_DIR="${MESON_BUILD_DIR:-build}"
-OCSERV_SPEC01_BASELINE="1.4.2"
+OCSERV_SPEC01_BASELINE="1.5.0"
 
 log()  { echo "[ocserv-install] $*"; }
 warn() { echo "[ocserv-install] WARN: $*" >&2; }
@@ -66,7 +67,7 @@ parse_args() {
     esac
   done
   OCSERV_VERSION="$(normalize_version "${OCSERV_VERSION}")"
-  [[ -n "${OCSERV_VERSION}" ]] || OCSERV_VERSION="1.4.2"
+  [[ -n "${OCSERV_VERSION}" ]] || OCSERV_VERSION="1.5.0"
 }
 
 install_build_deps() {
@@ -175,6 +176,20 @@ apply_spec01() {
   python3 "${SPEC01_SCRIPT}" "${BUILD_DIR}/ocserv"
 }
 
+apply_dst() {
+  if [[ "${OCSERV_VERSION}" != "${OCSERV_SPEC01_BASELINE}" ]]; then
+    if [[ "${OCSERV_ALLOW_UNPATCHED:-}" == "1" ]]; then
+      warn "跳过 SPEC-02 DST（OCSERV_ALLOW_UNPATCHED=1，version=${OCSERV_VERSION}）"
+      return 0
+    fi
+    die "DST 生产安装仅支持 ocserv ${OCSERV_SPEC01_BASELINE}（当前: ${OCSERV_VERSION}）"
+  fi
+  [[ -f "${DST_SCRIPT}" ]] || die "缺少 SPEC-02 DST 脚本: ${DST_SCRIPT}"
+  command -v python3 >/dev/null || die "需要 python3 以应用 DST"
+  log "应用 SPEC-02 DST（dynamic-split-*-domains）…"
+  python3 "${DST_SCRIPT}" "${BUILD_DIR}/ocserv"
+}
+
 # Explicitly install main + worker so isolate-workers never keeps a stale unpatched worker.
 install_binaries() {
   local built_ocserv="${BUILD_DIR}/ocserv/${MESON_BUILD_DIR}/src/ocserv"
@@ -198,25 +213,56 @@ verify_spec01_binaries() {
     return 0
   fi
   local missing=0
-  if ! strings "${OCSERV_BIN}" 2>/dev/null | grep -Fq "radius_auth_bind_group"; then
+  if ! grep -aFq "radius_auth_bind_group" "${OCSERV_BIN}"; then
     warn "ocserv 缺少符号字符串 radius_auth_bind_group"
     missing=1
   fi
-  if ! strings "${OCSERV_BIN}" 2>/dev/null | grep -Fq "TunnelGroupName"; then
+  if ! grep -aFq "TunnelGroupName" "${OCSERV_BIN}"; then
     warn "ocserv 缺少 TunnelGroupName 相关字符串"
     missing=1
   fi
-  if ! strings "${OCSERV_WORKER_BIN}" 2>/dev/null | grep -Fq "parse_group_access_url"; then
+  if ! grep -aFq "parse_group_access_url" "${OCSERV_WORKER_BIN}"; then
     warn "ocserv-worker 缺少 parse_group_access_url（OpenConnect <group-access>）"
     missing=1
   fi
-  if ! strings "${OCSERV_WORKER_BIN}" 2>/dev/null | grep -Fq "<group-access>"; then
+  if ! grep -aFq "<group-access>" "${OCSERV_WORKER_BIN}"; then
     warn "ocserv-worker 缺少 <group-access> 解析"
     missing=1
   fi
   [[ "${missing}" -eq 0 ]] || die "SPEC-01 校验失败：二进制未完整打补丁，拒绝安装残缺产物"
   log "SPEC-01 校验通过（ocserv + ocserv-worker）"
 }
+
+verify_dst_binaries() {
+  if [[ "${OCSERV_VERSION}" != "${OCSERV_SPEC01_BASELINE}" && "${OCSERV_ALLOW_UNPATCHED:-}" == "1" ]]; then
+    return 0
+  fi
+  local missing=0
+  # Prefer grep -aF (avoids pipefail+grep -q SIGPIPE false negatives).
+  if ! grep -aFq "dynamic-split-include-domains" "${OCSERV_BIN}"; then
+    warn "ocserv 缺少 dynamic-split-include-domains"
+    missing=1
+  fi
+  if ! grep -aFq "dynamic-split-exclude-domains" "${OCSERV_BIN}"; then
+    warn "ocserv 缺少 dynamic-split-exclude-domains"
+    missing=1
+  fi
+  if ! grep -aFq "X-CSTP-Post-Auth-XML" "${OCSERV_WORKER_BIN}"; then
+    warn "ocserv-worker 缺少 X-CSTP-Post-Auth-XML"
+    missing=1
+  fi
+  if ! grep -aFq "dynamic-split-include-domains" "${OCSERV_WORKER_BIN}"; then
+    warn "ocserv-worker 缺少 dynamic-split-include-domains"
+    missing=1
+  fi
+  if ! grep -aFq "dst_join_domains" "${OCSERV_WORKER_BIN}"; then
+    warn "ocserv-worker 缺少 dst_join_domains"
+    missing=1
+  fi
+  [[ "${missing}" -eq 0 ]] || die "SPEC-02 DST 校验失败：二进制未完整打补丁"
+  log "SPEC-02 DST 校验通过（ocserv + ocserv-worker）"
+}
+
 
 build_install() {
   cd "${BUILD_DIR}/ocserv"
@@ -238,6 +284,7 @@ build_install() {
     die "未识别的构建系统"
   fi
   verify_spec01_binaries
+  verify_dst_binaries
 }
 
 install_systemd_from_source() {
@@ -326,13 +373,14 @@ install_source() {
   install_build_deps
   fetch_source
   apply_spec01
+  apply_dst
   build_install
   install_systemd_from_source
   seed_config
   enable_ip_forward
   install -d /var/lib/qosnat2
   echo "${OCSERV_VERSION}" > /var/lib/qosnat2/ocserv-release-tag
-  log "源码安装完成: ${OCSERV_BIN} + ${OCSERV_WORKER_BIN} (${OCSERV_VERSION}, SPEC-01)"
+  log "源码安装完成: ${OCSERV_BIN} + ${OCSERV_WORKER_BIN} (${OCSERV_VERSION}, SPEC-01+DST)"
   if ldd "${OCSERV_BIN}" 2>/dev/null | grep -qE 'radcli|radiusclient'; then
     log "RADIUS: 已链接 radcli"
   else

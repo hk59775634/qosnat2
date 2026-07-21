@@ -17,6 +17,8 @@ type OCServGroup struct {
 	DNS          []string `json:"dns,omitempty"`
 	Routes       []string `json:"routes,omitempty"`
 	NoRoutes     []string `json:"no_routes,omitempty"`
+	DynamicSplitIncludeDomains []string `json:"dynamic_split_include_domains,omitempty"`
+	DynamicSplitExcludeDomains []string `json:"dynamic_split_exclude_domains,omitempty"`
 	IPv4Network  string   `json:"ipv4_network,omitempty"`
 	IPv4Netmask  string   `json:"ipv4_netmask,omitempty"`
 	RxDataPerSec int      `json:"rx_data_per_sec,omitempty"`
@@ -69,6 +71,8 @@ func NormalizeOCServGroups(groups *[]OCServGroup) error {
 		g.DNS = trimStringList(g.DNS)
 		g.Routes = trimStringList(g.Routes)
 		g.NoRoutes = trimStringList(g.NoRoutes)
+		g.DynamicSplitIncludeDomains = trimStringList(g.DynamicSplitIncludeDomains)
+		g.DynamicSplitExcludeDomains = trimStringList(g.DynamicSplitExcludeDomains)
 		out = append(out, g)
 	}
 	*groups = out
@@ -135,6 +139,8 @@ func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 		v.Routes = trimStringList(v.Routes)
 		v.NoRoutes = trimStringList(v.NoRoutes)
 		v.IRoutes = trimStringList(v.IRoutes)
+		v.DynamicSplitIncludeDomains = trimStringList(v.DynamicSplitIncludeDomains)
+		v.DynamicSplitExcludeDomains = trimStringList(v.DynamicSplitExcludeDomains)
 		v.SelectGroups = trimStringList(v.SelectGroups)
 		if v.Users == nil {
 			v.Users = []OCServUser{}

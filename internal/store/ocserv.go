@@ -53,6 +53,9 @@ type OCServState struct {
 	DNS                []string       `json:"dns,omitempty"`
 	Routes             []string       `json:"routes,omitempty"`    // 如 default、10.0.0.0/24
 	NoRoutes           []string       `json:"no_routes,omitempty"` // no-route
+	// DynamicSplitIncludeDomains / DynamicSplitExcludeDomains：AnyConnect DST（SPEC-02）
+	DynamicSplitIncludeDomains []string `json:"dynamic_split_include_domains,omitempty"`
+	DynamicSplitExcludeDomains []string `json:"dynamic_split_exclude_domains,omitempty"`
 	MaxClients         int            `json:"max_clients,omitempty"`
 	IsolateWorkers     bool           `json:"isolate_workers,omitempty"` // 已迁移至 advanced，仅作旧 state 兼容
 	Advanced           OCServAdvanced `json:"advanced,omitempty"`
@@ -161,6 +164,8 @@ func NormalizeOCServ(o *OCServState) error {
 	}
 	o.Routes = trimStringList(o.Routes)
 	o.NoRoutes = trimStringList(o.NoRoutes)
+	o.DynamicSplitIncludeDomains = trimStringList(o.DynamicSplitIncludeDomains)
+	o.DynamicSplitExcludeDomains = trimStringList(o.DynamicSplitExcludeDomains)
 	if strings.TrimSpace(o.ServerCertPath) == "" {
 		o.ServerCertPath = "/etc/ocserv/certs/server-cert.pem"
 	}

@@ -1,40 +1,19 @@
-# 将 GitLab 官方 ocserv 镜像到 github.com/hk59775634/ocserv（供 install-ocserv.sh + gh-proxy 加速）。
+# DISABLED: github.com/hk59775634/ocserv is now the SPEC-01/DST *patch stack*,
+# not an upstream ocserv mirror. A git push --mirror would wipe that repo.
 #
-# 首次启用：
-#   1. 创建空仓库 https://github.com/hk59775634/ocserv （Public）
-#   2. 在 qosnat2 仓库 Settings → Secrets → Actions 添加 OCSERV_MIRROR_TOKEN
-#      （Classic PAT，勾选 repo 权限，对 hk59775634/ocserv 可写）
-#   3. Actions → mirror-ocserv → Run workflow 手动触发首次同步
-#
-# 勿把本 workflow 放到 ocserv 仓库内：git push --mirror 会覆盖目标库全部内容。
+# install-ocserv.sh fetches official source from openconnect/ocserv (GitHub/GitLab).
+# Do not re-enable this workflow without changing DEST to a dedicated mirror repo.
 name: mirror-ocserv
 
 on:
-  schedule:
-    - cron: '0 0 * * *'
   workflow_dispatch:
-
-concurrency:
-  group: mirror-ocserv
-  cancel-in-progress: false
 
 jobs:
   mirror:
     runs-on: ubuntu-latest
     steps:
-      - name: Mirror openconnect/ocserv (GitLab → GitHub)
-        env:
-          MIRROR_TOKEN: ${{ secrets.OCSERV_MIRROR_TOKEN }}
-          UPSTREAM: https://gitlab.com/openconnect/ocserv.git
-          DEST: github.com/hk59775634/ocserv.git
+      - name: Refuse to mirror over patch-stack repo
         run: |
-          set -euo pipefail
-          if [[ -z "${MIRROR_TOKEN}" ]]; then
-            echo "::error::OCSERV_MIRROR_TOKEN secret is not configured on hk59775634/qosnat2"
-            exit 1
-          fi
-          echo "Cloning upstream mirror from ${UPSTREAM} ..."
-          git clone --mirror "${UPSTREAM}" repo.git
-          echo "Pushing mirror to ${DEST} ..."
-          git -C repo.git push --mirror "https://x-access-token:${MIRROR_TOKEN}@${DEST}"
-          echo "Mirror sync completed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "::error::mirror-ocserv is disabled: hk59775634/ocserv holds the patch stack, not upstream ocserv."
+          echo "Point DEST at a dedicated mirror repo before re-enabling."
+          exit 1

@@ -64,6 +64,8 @@ const groupForm = ref(emptyGroupForm())
 const groupFormDns = ref('')
 const groupFormRoutes = ref('')
 const groupFormNoRoutes = ref('')
+const groupFormDstInclude = ref('')
+const groupFormDstExclude = ref('')
 const groupSearch = ref('')
 const basicVhostForm = ref(emptyBasicVhost())
 const vhostSearch = ref('')
@@ -130,6 +132,8 @@ const camouflageSecret = ref('')
 const dnsText = ref('')
 const routesText = ref('')
 const noRoutesText = ref('')
+const dstIncludeText = ref('')
+const dstExcludeText = ref('')
 const connectionInfo = ref(null)
 const vhostsMeta = ref([])
 /** 带宽 M = Mbps，保存时换算为 ocserv 的 B/s（×125000） */
@@ -291,6 +295,8 @@ function ensureDefaults() {
   dnsText.value = listToText(cfg.value.dns)
   routesText.value = listToText(cfg.value.routes)
   noRoutesText.value = listToText(cfg.value.no_routes)
+  dstIncludeText.value = listToText(cfg.value.dynamic_split_include_domains)
+  dstExcludeText.value = listToText(cfg.value.dynamic_split_exclude_domains)
   const caps = clientMbpsFromOcserv(
     cfg.value.advanced.rx_data_per_sec,
     cfg.value.advanced.tx_data_per_sec,
@@ -308,6 +314,8 @@ function buildBody() {
   body.dns = textToList(dnsText.value)
   body.routes = textToList(routesText.value)
   body.no_routes = textToList(noRoutesText.value)
+  body.dynamic_split_include_domains = textToList(dstIncludeText.value)
+  body.dynamic_split_exclude_domains = textToList(dstExcludeText.value)
   if (body.advanced?.camouflage && camouflageSecret.value) {
     body.advanced = { ...body.advanced, camouflage_secret: camouflageSecret.value }
   }
@@ -615,7 +623,7 @@ async function saveEditUser() {
   }
 }
 
-function buildGroupPayload(form, dnsT, routesT, noRoutesT) {
+function buildGroupPayload(form, dnsT, routesT, noRoutesT, dstIncT, dstExcT) {
   return {
     name: form.name.trim(),
     label: form.label,
@@ -623,6 +631,8 @@ function buildGroupPayload(form, dnsT, routesT, noRoutesT) {
     dns: textToList(dnsT),
     routes: textToList(routesT),
     no_routes: textToList(noRoutesT),
+    dynamic_split_include_domains: textToList(dstIncT),
+    dynamic_split_exclude_domains: textToList(dstExcT),
     ipv4_network: form.ipv4_network,
     ipv4_netmask: form.ipv4_netmask,
     mtu: form.mtu || 0,
@@ -650,6 +660,8 @@ function startEditGroup(g) {
   groupFormDns.value = listToText(g.dns)
   groupFormRoutes.value = listToText(g.routes)
   groupFormNoRoutes.value = listToText(g.no_routes)
+  groupFormDstInclude.value = listToText(g.dynamic_split_include_domains)
+  groupFormDstExclude.value = listToText(g.dynamic_split_exclude_domains)
 }
 
 function cancelEditGroup() {
@@ -658,6 +670,8 @@ function cancelEditGroup() {
   groupFormDns.value = ''
   groupFormRoutes.value = ''
   groupFormNoRoutes.value = ''
+  groupFormDstInclude.value = ''
+  groupFormDstExclude.value = ''
 }
 
 async function saveGroup() {
@@ -667,7 +681,14 @@ async function saveGroup() {
     return
   }
   try {
-    const body = buildGroupPayload(groupForm.value, groupFormDns.value, groupFormRoutes.value, groupFormNoRoutes.value)
+    const body = buildGroupPayload(
+      groupForm.value,
+      groupFormDns.value,
+      groupFormRoutes.value,
+      groupFormNoRoutes.value,
+      groupFormDstInclude.value,
+      groupFormDstExclude.value,
+    )
     if (editingGroup.value) {
       await api.put('/api/v1/vpn/ocserv/groups', body)
     } else {
@@ -1515,6 +1536,16 @@ onUnmounted(() => {
               {{ t('ocserv.noRoutesLines') }}
               <textarea v-model="groupFormNoRoutes" class="input w-full mt-1 font-mono text-xs" rows="2" />
             </label>
+            <label>
+              {{ t('ocserv.dstIncludeDomains') }}
+              <textarea v-model="groupFormDstInclude" class="input w-full mt-1 font-mono text-xs" rows="2" :placeholder="t('ocserv.dstDomainsPlaceholder')" />
+              <span class="text-xs text-slate-500">dynamic-split-include-domains</span>
+            </label>
+            <label>
+              {{ t('ocserv.dstExcludeDomains') }}
+              <textarea v-model="groupFormDstExclude" class="input w-full mt-1 font-mono text-xs" rows="2" :placeholder="t('ocserv.dstDomainsPlaceholder')" />
+              <span class="text-xs text-slate-500">dynamic-split-exclude-domains · {{ t('ocserv.dstAnyConnectHint') }}</span>
+            </label>
           </div>
           <div class="flex gap-2 pt-1">
             <button type="button" class="btn-primary text-sm" @click="saveGroup">{{ editingGroup ? t('ocserv.updateGroup') : t('ocserv.addGroup') }}</button>
@@ -1824,6 +1855,10 @@ onUnmounted(() => {
         <label class="text-sm">{{ t('ocserv.dnsLines') }}<textarea v-model="dnsText" class="input w-full mt-1 font-mono text-xs" rows="3" /></label>
         <label class="text-sm">{{ t('ocserv.pushRoutes') }}<textarea v-model="routesText" class="input w-full mt-1 font-mono text-xs" rows="3" placeholder="default" /><span class="text-xs text-slate-500">route</span></label>
         <label class="text-sm">{{ t('ocserv.excludeRoutes') }}<textarea v-model="noRoutesText" class="input w-full mt-1 font-mono text-xs" rows="3" /><span class="text-xs text-slate-500">no-route</span></label>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <label class="text-sm">{{ t('ocserv.dstIncludeDomains') }}<textarea v-model="dstIncludeText" class="input w-full mt-1 font-mono text-xs" rows="2" :placeholder="t('ocserv.dstDomainsPlaceholder')" /><span class="text-xs text-slate-500">dynamic-split-include-domains</span></label>
+        <label class="text-sm">{{ t('ocserv.dstExcludeDomains') }}<textarea v-model="dstExcludeText" class="input w-full mt-1 font-mono text-xs" rows="2" :placeholder="t('ocserv.dstDomainsPlaceholder')" /><span class="text-xs text-slate-500">dynamic-split-exclude-domains · {{ t('ocserv.dstAnyConnectHint') }}</span></label>
       </div>
 
       <div class="flex gap-2 pt-2">
