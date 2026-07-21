@@ -188,9 +188,12 @@ func AcceptFQDNPartial(a *AliasSet, err error) (warn string, fatal error) {
 	return "", err
 }
 
-// AliasNeedsDynamicRefresh 是否可通过 URL 或 FQDN 自动刷新。
+// AliasNeedsDynamicRefresh 是否可通过 URL、FQDN 或 GeoIP 自动刷新。
 func AliasNeedsDynamicRefresh(a AliasSet) bool {
 	typ := strings.ToLower(strings.TrimSpace(a.Type))
+	if typ == "geoip" && len(a.Countries) > 0 {
+		return true
+	}
 	if typ == "fqdn" && (len(a.Domains) > 0 || strings.TrimSpace(a.URL) != "") {
 		return true
 	}
@@ -200,12 +203,18 @@ func AliasNeedsDynamicRefresh(a AliasSet) bool {
 	return false
 }
 
-// RefreshAliasDynamic 按类型刷新 URL 或 FQDN 别名。
+// RefreshAliasDynamic 按类型刷新 URL、FQDN 或 GeoIP 别名。
 func RefreshAliasDynamic(a *AliasSet) (warn string, err error) {
 	if a == nil {
 		return "", fmt.Errorf("alias nil")
 	}
 	typ := strings.ToLower(strings.TrimSpace(a.Type))
+	if typ == "geoip" {
+		if err := RefreshGeoIPAlias(a); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
 	if typ == "fqdn" {
 		if strings.TrimSpace(a.URL) != "" {
 			if err := RefreshAliasDomainsFromURL(a); err != nil {

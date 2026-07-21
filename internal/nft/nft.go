@@ -107,7 +107,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        type filter hook forward priority filter; policy accept;\n")
 	b.WriteString("        ct state established,related accept\n")
 	writeSessionLimitRules(&b, st)
-	writeFilterRules(&b, "forward", st.Firewall.FilterRules)
+	writeFilterRules(&b, "forward", st.Firewall.FilterRules, st.Firewall.Schedules)
 	egressDevs := make([]string, 0, len(egress))
 	for _, e := range egress {
 		if e.Device != "" {
@@ -179,7 +179,7 @@ func Render(cfg Config, st store.State) (string, error) {
 			}
 		}
 	}
-	writeFilterRules(&b, "input", st.Firewall.FilterRules)
+	writeFilterRules(&b, "input", st.Firewall.FilterRules, st.Firewall.Schedules)
 	if cfg.DevLAN != "" {
 		b.WriteString(fmt.Sprintf("        iifname \"%s\" accept\n", cfg.DevLAN))
 	}
@@ -194,7 +194,15 @@ func Render(cfg Config, st store.State) (string, error) {
 	// WAN 管理/VPN 放行 → 用户 input 规则 → WAN 按口丢弃：由 SyncAutoFilterRules 顺序写入 filter_rules。
 	// 除 lo、LAN、ifb0 及已匹配的 WAN 放行项外，其余网卡入站一律丢弃。
 	b.WriteString("        drop comment \"qosnat2-input-default-deny\"\n")
-	b.WriteString("    }\n}\n")
+	b.WriteString("    }\n\n")
+
+	// output：限制本机出站（用户规则 + 默认 accept，避免误断管理面）
+	b.WriteString("    chain output {\n")
+	b.WriteString("        type filter hook output priority filter; policy accept;\n")
+	b.WriteString("        ct state established,related accept\n")
+	writeFilterRules(&b, "output", st.Firewall.FilterRules, st.Firewall.Schedules)
+	b.WriteString("    }\n")
+	b.WriteString("}\n")
 	return b.String(), nil
 }
 

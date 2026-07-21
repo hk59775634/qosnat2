@@ -162,5 +162,7 @@ func (srv *Server) startServiceBackground() {
 		srv.startManagedCertsBackground(ctx)
 		srv.startAliasRefreshBackground(ctx)
 		srv.startRouteGuardBackground(ctx)
+		srv.startWanHealthBackground(ctx)
+		srv.startScheduleBackground(ctx)
 	})
 }

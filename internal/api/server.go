@@ -69,6 +69,8 @@ type Server struct {
 	serviceBgCancel      context.CancelFunc
 	bootApplyCancel      context.CancelFunc
 	serviceBackgroundOnce sync.Once
+	wanHealthMu          sync.RWMutex
+	wanHealth            map[string]wanHealthStatus
 }
 
 func New(env Env, st *store.Store, bpfM *ebpf.Manager) *Server {
@@ -195,6 +197,10 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/firewall/discard", srv.requireAuth(srv.handleFirewallDiscard))
 	m.HandleFunc("/api/v1/firewall/rules/order", srv.requireAuth(srv.handleFirewallRulesOrder))
 	m.HandleFunc("/api/v1/firewall/rules", srv.requireAuth(srv.handleFirewallRules))
+	m.HandleFunc("/api/v1/firewall/schedules", srv.requireAuth(srv.handleFirewallSchedules))
+	m.HandleFunc("/api/v1/firewall/logs", srv.requireAuth(srv.handleFirewallLogs))
+	m.HandleFunc("/api/v1/firewall/counters", srv.requireAuth(srv.handleFirewallCounters))
+	m.HandleFunc("/api/v1/network/wan-health", srv.requireAuth(srv.handleWanHealth))
 	m.HandleFunc("/api/v1/interfaces/queues", srv.requireAuth(srv.handleIfaceQueues))
 	m.HandleFunc("/api/v1/interfaces/ethtool", srv.requireAuth(srv.handleInterfacesEthtool))
 	m.HandleFunc("/api/v1/interfaces/roles", srv.requireAuth(srv.handleInterfacesRoles))

@@ -233,6 +233,15 @@ export const api = {
     },
     apply: () => request('/api/v1/firewall/apply', { method: 'POST', body: '{}' }),
     discard: () => request('/api/v1/firewall/discard', { method: 'POST', body: '{}' }),
+    schedules: {
+      list: () => request('/api/v1/firewall/schedules'),
+      upsert: (body) =>
+        request('/api/v1/firewall/schedules', { method: 'POST', body: JSON.stringify(body) }),
+      del: (id) =>
+        request(`/api/v1/firewall/schedules?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
+    logs: (limit = 100) => request(`/api/v1/firewall/logs?limit=${limit}`),
+    counters: () => request('/api/v1/firewall/counters'),
     sessionLimit: {
       put: (body) =>
         request('/api/v1/firewall/session-limit', { method: 'PUT', body: JSON.stringify(body) }),
@@ -249,6 +258,7 @@ export const api = {
   },
   },
   network: {
+    wanHealth: () => request('/api/v1/network/wan-health'),
     vlans: {
       list: () => request('/api/v1/network/vlans'),
       add: (body) => request('/api/v1/network/vlans', { method: 'POST', body: JSON.stringify(body) }),

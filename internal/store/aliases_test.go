@@ -22,17 +22,27 @@ func TestValidateFilterRuleAliases(t *testing.T) {
 	if err := ValidateFilterRuleAliases(r, aliases); err != nil {
 		t.Fatal(err)
 	}
-	r.SrcAlias = "legacy"
-	aliases = append(aliases, AliasSet{Name: "legacy", Type: "asn", ASN: 13335, Members: []string{"1.2.3.4"}})
+	r.SrcAlias = "ports"
+	aliases = append(aliases, AliasSet{Name: "ports", Type: "port", Members: []string{"80", "443"}})
 	if err := ValidateFilterRuleAliases(r, aliases); err == nil {
-		t.Fatal("expected asn alias rejection")
+		t.Fatal("expected port alias rejection on src_alias")
 	}
 }
 
-func TestNormalizeAliasASNRejected(t *testing.T) {
+func TestNormalizeAliasASNOK(t *testing.T) {
 	a := &AliasSet{Name: "as13335", Type: "asn", ASN: 13335, Members: []string{"203.0.113.0/24"}}
-	if err := NormalizeAlias(a); err == nil {
-		t.Fatal("expected asn type to be rejected")
+	if err := NormalizeAlias(a); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNormalizeAliasPort(t *testing.T) {
+	a := &AliasSet{Name: "web", Type: "port", Members: []string{"80", "443", "8000-8010"}}
+	if err := NormalizeAlias(a); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Members) != 3 {
+		t.Fatalf("members=%v", a.Members)
 	}
 }
 

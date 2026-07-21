@@ -81,7 +81,9 @@ func (srv *Server) handleFirewallRulesGet(w http.ResponseWriter, r *http.Request
 		"rules":                  rules,
 		"applied_rules":          srv.appliedFilterRules(st),
 		"changes":                changes,
-		"nft_lines":              firewallNftLines(rules),
+		"nft_lines":              firewallNftLines(rules, st.Firewall.Schedules),
+		"schedules":              st.Firewall.Schedules,
+		"wan_links":              st.Network.WanLinks,
 		"dev_lan":                srv.env.DevLAN,
 		"dev_wan":                srv.env.DevWAN,
 		"admin_port":             srv.env.AdminPort,
@@ -116,6 +118,14 @@ func (srv *Server) handleFirewallRulesPost(w http.ResponseWriter, r *http.Reques
 	}
 	st := srv.store.Get()
 	if err := store.ValidateFilterRuleAliases(body, st.Firewall.Aliases); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	if err := store.ValidateFilterRulePortAliases(body, st.Firewall.Aliases); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	if err := srv.validateFilterRuleExtras(body, st); err != nil {
 		writeBadRequest(w, err.Error())
 		return
 	}
@@ -176,6 +186,14 @@ func (srv *Server) handleFirewallRulesPut(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := store.ValidateFilterRuleAliases(body, st.Firewall.Aliases); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	if err := store.ValidateFilterRulePortAliases(body, st.Firewall.Aliases); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	if err := srv.validateFilterRuleExtras(body, st); err != nil {
 		writeBadRequest(w, err.Error())
 		return
 	}

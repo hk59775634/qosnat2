@@ -179,6 +179,7 @@ func (srv *Server) handleFirewallApply(w http.ResponseWriter, r *http.Request) {
 		writeApplyError(w, err)
 		return
 	}
+	srv.applyFirewallDerivedSideEffects()
 	srv.auditLog(r, "firewall.apply", fmt.Sprintf("+%d ~%d -%d",
 		len(changes.Diff.Added), len(changes.Diff.Modified), len(changes.Diff.Removed)))
 	writeJSON(w, http.StatusOK, map[string]any{

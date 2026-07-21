@@ -6,11 +6,23 @@ import PageHeader from '@/components/PageHeader.vue'
 
 const { t } = useI18n()
 const aliases = ref([])
-const form = ref({ name: '', type: 'ipv4_addr', membersText: '', domainsText: '', url: '', comment: '' })
+const form = ref({
+  name: '',
+  type: 'ipv4_addr',
+  membersText: '',
+  domainsText: '',
+  countriesText: '',
+  asn: '',
+  url: '',
+  comment: '',
+})
 const err = ref('')
 const ok = ref('')
 
 const isFQDN = computed(() => form.value.type === 'fqdn')
+const isGeoIP = computed(() => form.value.type === 'geoip')
+const isPort = computed(() => form.value.type === 'port')
+const isASN = computed(() => form.value.type === 'asn')
 
 async function load() {
   const d = await api.firewall.aliases.list()
@@ -31,8 +43,16 @@ function validateForm() {
     }
     return true
   }
+  if (isGeoIP.value) {
+    const ccs = form.value.countriesText.split(/[\n,\s]+/).map((s) => s.trim()).filter(Boolean)
+    if (!ccs.length) {
+      err.value = t('security.aliases.errCountries')
+      return false
+    }
+    return true
+  }
   const members = form.value.membersText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
-  if (!members.length && !hasURL) {
+  if (!members.length && !hasURL && !isGeoIP.value) {
     err.value = t('security.aliases.errMembers')
     return false
   }
@@ -51,14 +71,36 @@ async function add() {
       members: [],
     }
     const url = String(form.value.url || '').trim()
-    if (url) body.url = url
+    if (url && !isPort.value && !isGeoIP.value) body.url = url
     if (isFQDN.value) {
       body.domains = form.value.domainsText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
+    } else if (isGeoIP.value) {
+      body.countries = form.value.countriesText.split(/[\n,\s]+/).map((s) => s.trim()).filter(Boolean)
+    } else if (isASN.value) {
+      const asn = parseInt(form.value.asn, 10)
+      if (Number.isFinite(asn)) body.asn = asn
+      body.members = form.value.membersText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
     } else {
       body.members = form.value.membersText.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
     }
     await api.firewall.aliases.add(body)
-    form.value = { name: '', type: 'ipv4_addr', membersText: '', domainsText: '', url: '', comment: '' }
+    if (isGeoIP.value) {
+      try {
+        await api.firewall.aliases.refresh(body.name)
+      } catch {
+        /* refresh may be slow / fail offline */
+      }
+    }
+    form.value = {
+      name: '',
+      type: 'ipv4_addr',
+      membersText: '',
+      domainsText: '',
+      countriesText: '',
+      asn: '',
+      url: '',
+      comment: '',
+    }
     ok.value = t('common.saved')
     await load()
   } catch (e) {
@@ -79,8 +121,24 @@ async function refreshAlias(name) {
 }
 
 function canRefresh(a) {
+  if ((a.type || '') === 'geoip' && (a.countries || []).length) return true
   if ((a.type || '') === 'fqdn' && ((a.domains || []).length || a.url)) return true
   return !!a.url
+}
+
+function typeLabel(a) {
+  switch (a.type) {
+    case 'fqdn':
+      return t('security.aliases.typeFqdn')
+    case 'asn':
+      return t('security.aliases.typeAsn')
+    case 'geoip':
+      return t('security.aliases.typeGeoip')
+    case 'port':
+      return t('security.aliases.typePort')
+    default:
+      return t('security.aliases.typeIpv4')
+  }
 }
 
 async function remove(name) {
@@ -105,6 +163,9 @@ onMounted(load)
       <select v-model="form.type" class="input-field">
         <option value="ipv4_addr">{{ t('security.aliases.typeIpv4') }}</option>
         <option value="fqdn">{{ t('security.aliases.typeFqdn') }}</option>
+        <option value="asn">{{ t('security.aliases.typeAsn') }}</option>
+        <option value="geoip">{{ t('security.aliases.typeGeoip') }}</option>
+        <option value="port">{{ t('security.aliases.typePort') }}</option>
       </select>
       <template v-if="isFQDN">
         <textarea
@@ -115,7 +176,30 @@ onMounted(load)
         <input v-model="form.url" class="input-field font-mono text-xs" :placeholder="t('security.aliases.fqdnUrlPh')" />
         <p class="text-xs text-slate-500">{{ t('security.aliases.fqdnHint') }}</p>
       </template>
+      <template v-else-if="isGeoIP">
+        <textarea
+          v-model="form.countriesText"
+          class="input-field font-mono text-xs h-20"
+          :placeholder="t('security.aliases.countriesPh')"
+        />
+        <p class="text-xs text-slate-500">{{ t('security.aliases.geoipHint') }}</p>
+      </template>
+      <template v-else-if="isPort">
+        <textarea
+          v-model="form.membersText"
+          class="input-field font-mono text-xs h-24"
+          :placeholder="t('security.aliases.portHint')"
+        />
+      </template>
       <template v-else>
+        <input
+          v-if="isASN"
+          v-model="form.asn"
+          type="number"
+          class="input-field font-mono text-xs"
+          :placeholder="t('security.aliases.asnPh')"
+        />
+        <p v-if="isASN" class="text-xs text-slate-500">{{ t('security.aliases.asnHint') }}</p>
         <textarea
           v-model="form.membersText"
           class="input-field font-mono text-xs h-24"
@@ -141,13 +225,7 @@ onMounted(load)
         <tbody>
           <tr v-for="a in aliases" :key="a.name">
             <td class="font-mono">{{ a.name }}</td>
-            <td>
-              <span v-if="(a.type || 'ipv4_addr') === 'asn'" class="text-amber-700 text-xs">
-                {{ t('security.aliases.asnUnsupported') }}
-              </span>
-              <span v-else-if="a.type === 'fqdn'">{{ t('security.aliases.typeFqdn') }}</span>
-              <span v-else>{{ a.type || 'ipv4_addr' }}</span>
-            </td>
+            <td>{{ typeLabel(a) }}</td>
             <td class="text-xs font-mono">
               {{ t('security.aliases.memberCount', { n: (a.members || []).length }) }}
               <span v-if="(a.members || []).length <= 8" class="text-slate-500"> · {{ (a.members || []).join(', ') }}</span>
@@ -161,6 +239,10 @@ onMounted(load)
                   <p v-if="a.url_fetched_at" class="text-slate-400">{{ a.url_fetched_at }}</p>
                 </template>
                 <p v-if="a.resolved_at" class="text-slate-400">{{ a.resolved_at }}</p>
+              </template>
+              <template v-else-if="a.type === 'geoip'">
+                <span>{{ (a.countries || []).join(', ') }}</span>
+                <p v-if="a.url_fetched_at" class="text-slate-400">{{ a.url_fetched_at }}</p>
               </template>
               <template v-else-if="a.url">
                 <a :href="a.url" target="_blank" rel="noopener" class="text-blue-600 hover:underline">{{ a.url }}</a>

@@ -32,6 +32,11 @@ func (srv *Server) handleFirewallAliases(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			_ = warn
+		} else if body.Type == "geoip" && len(body.Members) == 0 {
+			if err := store.RefreshGeoIPAlias(&body); err != nil {
+				writeBadRequest(w, err.Error())
+				return
+			}
 		} else if body.URL != "" && len(body.Members) == 0 {
 			if err := store.RefreshAliasFromURL(&body); err != nil {
 				writeBadRequest(w, err.Error())

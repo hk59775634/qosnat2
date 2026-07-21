@@ -8,6 +8,8 @@ import PageTabs from '@/components/PageTabs.vue'
 
 const { t } = useI18n()
 const links = ref([])
+const wanHealth = ref({})
+const wanHealthPoll = ref(null)
 const egress = ref([])
 const aliases = ref([])
 const googleIpv4Url = ref('')
@@ -58,6 +60,10 @@ const form = ref({
   tier: 2,
   weight: 1,
   enabled: true,
+  monitor_enabled: false,
+  monitor_addr: '',
+  monitor_interval_sec: 5,
+  monitor_loss_threshold: 3,
 })
 const egForm = ref({
   name: 'US exit',
@@ -537,6 +543,58 @@ async function refreshWarpStatus() {
   return ws
 }
 
+async function loadWanHealth() {
+  try {
+    const d = await api.network.wanHealth()
+    const map = {}
+    for (const h of d.health || []) {
+      if (h?.id) map[h.id] = h
+    }
+    wanHealth.value = map
+  } catch {
+    /* optional while tab idle */
+  }
+}
+
+function healthFor(w) {
+  return wanHealth.value?.[w.id] || null
+}
+
+function healthLabel(w) {
+  if (!w.monitor_enabled) return '—'
+  const h = healthFor(w)
+  if (!h) return t('network.wanLinks.healthPending')
+  if (h.unhealthy) return t('network.wanLinks.healthDown')
+  if (h.ok) {
+    const ms = h.latency_ms != null ? ` ${h.latency_ms}ms` : ''
+    return t('network.wanLinks.healthOK') + ms
+  }
+  return t('network.wanLinks.healthFailing', { n: h.fail_count || 0 })
+}
+
+function healthClass(w) {
+  if (!w.monitor_enabled) return 'text-slate-400'
+  const h = healthFor(w)
+  if (!h) return 'text-slate-400'
+  if (h.unhealthy) return 'text-red-600 font-medium'
+  if (h.ok) return 'text-emerald-700'
+  return 'text-amber-700'
+}
+
+function startWanHealthPoll() {
+  stopWanHealthPoll()
+  wanHealthPoll.value = setInterval(() => {
+    loadWanHealth()
+  }, 5000)
+}
+
+function stopWanHealthPoll() {
+  if (wanHealthPoll.value) {
+    clearInterval(wanHealthPoll.value)
+    wanHealthPoll.value = null
+  }
+}
+
 async function load() {
   err.value = ''
   try {
@@ -555,6 +613,7 @@ async function load() {
     cloudflareCIDRs.value = eg?.cloudflare_cdn_cidrs_ipv4 || []
     ifaces.value = ifs?.interfaces || []
     applyWarpStatus(ws)
+    await loadWanHealth()
     try {
       await refreshProxyStatus()
     } catch {
@@ -871,6 +930,10 @@ function startEdit(w) {
     tier: w.tier,
     weight: w.weight,
     enabled: w.enabled,
+    monitor_enabled: !!w.monitor_enabled,
+    monitor_addr: w.monitor_addr || '',
+    monitor_interval_sec: w.monitor_interval_sec || 5,
+    monitor_loss_threshold: w.monitor_loss_threshold || 3,
   }
 }
 
@@ -1082,6 +1145,7 @@ async function removeEgress(id) {
 onMounted(async () => {
   await load()
   startWarpStatusPoll()
+  startWanHealthPoll()
 })
 onUnmounted(() => {
   stopWarpInstallPoll()
@@ -1089,6 +1153,7 @@ onUnmounted(() => {
   stopWarpTaskPoll()
   stopProxyInstallPoll()
   stopProxyTaskPoll()
+  stopWanHealthPoll()
   if (warpActionLockTimer) clearTimeout(warpActionLockTimer)
 })
 </script>
@@ -1133,6 +1198,21 @@ onUnmounted(() => {
         <label class="flex items-center gap-2 sm:col-span-2">
           <input v-model="form.enabled" type="checkbox" /> {{ t('common.enabled') }}
         </label>
+        <label class="flex items-center gap-2 sm:col-span-2">
+          <input v-model="form.monitor_enabled" type="checkbox" /> {{ t('network.wanLinks.monitorEnabled') }}
+        </label>
+        <div v-if="form.monitor_enabled">
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.monitorAddr') }}</label>
+          <input v-model="form.monitor_addr" class="input-field mt-1 font-mono" />
+        </div>
+        <div v-if="form.monitor_enabled">
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.monitorInterval') }}</label>
+          <input v-model.number="form.monitor_interval_sec" type="number" class="input-field mt-1" />
+        </div>
+        <div v-if="form.monitor_enabled">
+          <label class="text-xs text-slate-500">{{ t('network.wanLinks.monitorLoss') }}</label>
+          <input v-model.number="form.monitor_loss_threshold" type="number" class="input-field mt-1" />
+        </div>
       </div>
       <button type="button" class="btn-primary" @click="add">{{ t('common.add') }}</button>
     </div>
@@ -1147,6 +1227,7 @@ onUnmounted(() => {
             <th>Tier</th>
             <th>Metric</th>
             <th>{{ t('network.wanLinks.weight') }}</th>
+            <th>{{ t('network.wanLinks.healthStatus') }}</th>
             <th></th>
           </tr>
         </thead>
@@ -1159,9 +1240,13 @@ onUnmounted(() => {
               <td><input v-model.number="editForm.tier" type="number" class="input-field text-xs w-16" /></td>
               <td><input v-model.number="editForm.metric" type="number" class="input-field text-xs w-16" /></td>
               <td><input v-model.number="editForm.weight" type="number" class="input-field text-xs w-16" /></td>
+              <td class="text-xs text-slate-400">—</td>
               <td class="space-x-2 whitespace-nowrap">
                 <label class="inline-flex items-center gap-1 text-xs">
                   <input v-model="editForm.enabled" type="checkbox" /> {{ t('common.enabled') }}
+                </label>
+                <label class="inline-flex items-center gap-1 text-xs">
+                  <input v-model="editForm.monitor_enabled" type="checkbox" /> {{ t('network.wanLinks.monitorEnabled') }}
                 </label>
                 <button type="button" class="text-indigo-600 text-xs" @click="saveEdit">{{ t('common.save') }}</button>
                 <button type="button" class="text-slate-500 text-xs" @click="cancelEdit">{{ t('common.cancel') }}</button>
@@ -1183,6 +1268,7 @@ onUnmounted(() => {
               <td>{{ w.tier }}</td>
               <td>{{ w.metric }}</td>
               <td>{{ w.weight }}</td>
+              <td class="text-xs whitespace-nowrap" :class="healthClass(w)">{{ healthLabel(w) }}</td>
               <td class="space-x-2 whitespace-nowrap">
                 <button
                   v-if="!w.warp_managed && !w.proxy_managed"
@@ -1202,7 +1288,7 @@ onUnmounted(() => {
             </template>
           </tr>
           <tr v-if="!links.length">
-            <td colspan="7" class="text-center text-slate-400 py-3">{{ t('network.wanLinks.noExtra') }}</td>
+            <td colspan="8" class="text-center text-slate-400 py-3">{{ t('network.wanLinks.noExtra') }}</td>
           </tr>
         </tbody>
       </table>

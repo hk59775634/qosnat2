@@ -50,6 +50,11 @@ const devLan = ref('')
 const devWan = ref('')
 const adminPort = ref('')
 const aliasNames = ref([])
+const portAliasNames = ref([])
+const schedules = ref([])
+const wanLinks = ref([])
+const logEntries = ref([])
+const counterEntries = ref([])
 const vpnMeta = ref({})
 const activeChain = ref('forward')
 const showRendered = ref(false)
@@ -84,6 +89,7 @@ const applyBusy = ref(false)
 const chains = [
   { id: 'forward', labelKey: 'security.firewall.tabForward' },
   { id: 'input', labelKey: 'security.firewall.tabInput' },
+  { id: 'output', labelKey: 'security.firewall.tabOutput' },
 ]
 
 const form = ref(emptyRuleForm())
@@ -122,7 +128,8 @@ const autoRulesInChain = computed(() => {
   )
 })
 
-const showOutCol = computed(() => activeChain.value === 'forward')
+const showOutCol = computed(() => activeChain.value === 'forward' || activeChain.value === 'output')
+const showInCol = computed(() => activeChain.value !== 'output')
 
 const tableColspan = computed(() => (showOutCol.value ? 13 : 12))
 
@@ -166,6 +173,10 @@ const hasAutoForwardRules = computed(() =>
 )
 
 const isInputChain = computed(() => form.value.chain === 'input')
+const isOutputChain = computed(() => form.value.chain === 'output')
+const addrAliasNames = computed(() =>
+  (aliasNames.value || []).filter((n) => !portAliasNames.value.includes(n)),
+)
 
 const formChainTabMismatch = computed(() => showForm.value && form.value.chain !== activeChain.value)
 
@@ -331,6 +342,19 @@ async function load() {
   devWan.value = d.dev_wan || ''
   adminPort.value = d.admin_port || ''
   aliasNames.value = d.alias_names || []
+  schedules.value = d.schedules || []
+  wanLinks.value = (d.wan_links || []).filter((w) => w.enabled)
+  try {
+    const al = await api.firewall.aliases.list()
+    portAliasNames.value = (al.aliases || [])
+      .filter((a) => (a.type || '') === 'port')
+      .map((a) => a.name)
+    aliasNames.value = (al.aliases || [])
+      .filter((a) => (a.type || '') !== 'port')
+      .map((a) => a.name)
+  } catch {
+    /* keep alias_names from rules API */
+  }
   vpnMeta.value = d.vpn || {}
   acmeTempAllow.value = !!d.acme_temp_allow_http01
   maxSessionsPerIP.value = d.max_sessions_per_ip || 0
@@ -511,12 +535,62 @@ async function previewNft() {
 }
 
 function runFormValidation() {
-  const problems = validateRuleForm(form.value, t, aliasNames.value)
+  const problems = validateRuleForm(form.value, t, addrAliasNames.value, portAliasNames.value)
   if (problems.length) {
     err.value = `${t('security.firewall.formErrors')} ${problems.join('；')}`
     return false
   }
   return true
+}
+
+const scheduleForm = ref({
+  name: '',
+  weekdays: '1,2,3,4,5',
+  start: '09:00',
+  end: '18:00',
+  enabled: true,
+})
+
+async function saveSchedule() {
+  err.value = ''
+  ok.value = ''
+  try {
+    await api.firewall.schedules.upsert({
+      name: scheduleForm.value.name.trim(),
+      enabled: scheduleForm.value.enabled !== false,
+      ranges: [
+        {
+          weekdays: scheduleForm.value.weekdays,
+          start: scheduleForm.value.start,
+          end: scheduleForm.value.end,
+        },
+      ],
+    })
+    ok.value = t('common.saved')
+    scheduleForm.value.name = ''
+    await load()
+  } catch (e) {
+    err.value = friendlyApiError(e)
+  }
+}
+
+async function removeSchedule(id) {
+  if (!confirm(t('common.delete') + '?')) return
+  try {
+    await api.firewall.schedules.del(id)
+    await load()
+  } catch (e) {
+    err.value = friendlyApiError(e)
+  }
+}
+
+async function loadCounters() {
+  try {
+    const d = await api.firewall.counters()
+    counterEntries.value = d.counters || []
+  } catch (e) {
+    err.value = friendlyApiError(e)
+  }
 }
 
 function openView(r) {
@@ -1012,11 +1086,11 @@ onMounted(() => {
               <td>
                 <span class="font-mono text-xs">{{ formatSource(r).label }}</span>
               </td>
-              <td class="text-center font-mono text-xs">{{ formatPort(r.src_port) }}</td>
+              <td class="text-center font-mono text-xs">{{ formatPort(r.src_port, r.src_ports, r.src_port_alias) }}</td>
               <td>
                 <span class="font-mono text-xs">{{ formatDestination(r).label }}</span>
               </td>
-              <td class="text-center font-mono text-xs">{{ formatPort(r.dst_port) }}</td>
+              <td class="text-center font-mono text-xs">{{ formatPort(r.dst_port, r.dst_ports, r.dst_port_alias) }}</td>
               <td class="text-center">
                 <span class="fw-status-on text-[10px]">{{ t('security.firewall.statusOn') }}</span>
               </td>
@@ -1107,7 +1181,7 @@ onMounted(() => {
                   <template v-else>{{ formatSource(r).label }}</template>
                 </span>
               </td>
-              <td class="text-center font-mono text-xs">{{ formatPort(r.src_port) }}</td>
+              <td class="text-center font-mono text-xs">{{ formatPort(r.src_port, r.src_ports, r.src_port_alias) }}</td>
               <td>
                 <span
                   class="font-mono text-xs"
@@ -1119,7 +1193,7 @@ onMounted(() => {
                   <template v-else>{{ formatDestination(r).label }}</template>
                 </span>
               </td>
-              <td class="text-center font-mono text-xs">{{ formatPort(r.dst_port) }}</td>
+              <td class="text-center font-mono text-xs">{{ formatPort(r.dst_port, r.dst_ports, r.dst_port_alias) }}</td>
               <td class="text-center">
                 <span
                   class="text-[10px] font-medium px-1.5 py-0.5 rounded"
@@ -1253,6 +1327,7 @@ onMounted(() => {
           <select v-model="form.chain" class="input-field mt-1">
             <option value="forward">{{ t('security.firewall.chainForward') }}</option>
             <option value="input">{{ t('security.firewall.chainInput') }}</option>
+            <option value="output">{{ t('security.firewall.tabOutput') }}</option>
           </select>
         </div>
         <div>
@@ -1263,7 +1338,7 @@ onMounted(() => {
             <option value="reject">{{ t('security.firewall.actionReject') }}</option>
           </select>
         </div>
-        <div>
+        <div v-if="!isOutputChain">
           <label class="text-xs text-slate-500">{{ t('security.firewall.inIface') }}</label>
           <select v-model="form.iif_mode" class="input-field mt-1">
             <option value="any">{{ t('security.firewall.optAny') }}</option>
@@ -1319,31 +1394,45 @@ onMounted(() => {
           <label class="text-xs text-slate-500">{{ t('security.firewall.srcPort') }}</label>
           <select v-model="form.src_port_mode" class="input-field mt-1">
             <option value="any">{{ t('security.firewall.optAny') }}</option>
-            <option value="custom">{{ t('security.firewall.optCustomPort') }}</option>
+            <option value="custom">{{ t('security.firewall.optPortRange') }}</option>
+            <option value="alias">{{ t('security.firewall.optPortAlias') }}</option>
           </select>
           <input
             v-if="form.src_port_mode === 'custom'"
             v-model="form.src_port_custom"
-            type="number"
-            min="1"
-            max="65535"
             class="input-field mt-1 font-mono"
+            placeholder="80,443,8000-8010"
           />
+          <select
+            v-if="form.src_port_mode === 'alias'"
+            v-model="form.src_port_alias"
+            class="input-field mt-1 font-mono text-xs"
+          >
+            <option value="">{{ t('security.firewall.pickAlias') }}</option>
+            <option v-for="a in portAliasNames" :key="'spa-' + a" :value="a">{{ a }}</option>
+          </select>
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('security.firewall.dstPort') }}</label>
           <select v-model="form.dst_port_mode" class="input-field mt-1">
             <option value="any">{{ t('security.firewall.optAny') }}</option>
-            <option value="custom">{{ t('security.firewall.optCustomPort') }}</option>
+            <option value="custom">{{ t('security.firewall.optPortRange') }}</option>
+            <option value="alias">{{ t('security.firewall.optPortAlias') }}</option>
           </select>
           <input
             v-if="form.dst_port_mode === 'custom'"
             v-model="form.dst_port_custom"
-            type="number"
-            min="1"
-            max="65535"
             class="input-field mt-1 font-mono"
+            placeholder="80,443,8000-8010"
           />
+          <select
+            v-if="form.dst_port_mode === 'alias'"
+            v-model="form.dst_port_alias"
+            class="input-field mt-1 font-mono text-xs"
+          >
+            <option value="">{{ t('security.firewall.pickAlias') }}</option>
+            <option v-for="a in portAliasNames" :key="'dpa-' + a" :value="a">{{ a }}</option>
+          </select>
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('security.firewall.srcAddr') }}</label>
@@ -1364,7 +1453,7 @@ onMounted(() => {
             class="input-field mt-1 font-mono text-xs"
           >
             <option value="">{{ t('security.firewall.pickAlias') }}</option>
-            <option v-for="a in aliasNames" :key="'s-' + a" :value="a">{{ a }}</option>
+            <option v-for="a in addrAliasNames" :key="'s-' + a" :value="a">{{ a }}</option>
           </select>
         </div>
         <div>
@@ -1385,18 +1474,51 @@ onMounted(() => {
             class="input-field mt-1 font-mono text-xs"
           >
             <option value="">{{ t('security.firewall.pickAlias') }}</option>
-            <option v-for="a in aliasNames" :key="'d-' + a" :value="a">{{ a }}</option>
+            <option v-for="a in addrAliasNames" :key="'d-' + a" :value="a">{{ a }}</option>
           </select>
         </div>
         <div class="sm:col-span-2 lg:col-span-3">
           <label class="text-xs text-slate-500">{{ t('security.firewall.colDescription') }}</label>
           <input v-model="form.comment" class="input-field mt-1" />
         </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('security.firewall.schedule') }}</label>
+          <select v-model="form.schedule_id" class="input-field mt-1">
+            <option value="">—</option>
+            <option v-for="s in schedules" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+        </div>
+        <div v-if="form.chain === 'forward'">
+          <label class="text-xs text-slate-500">{{ t('security.firewall.wanLink') }}</label>
+          <select v-model="form.wan_link_id" class="input-field mt-1">
+            <option value="">—</option>
+            <option v-for="w in wanLinks" :key="w.id" :value="w.id">{{ w.name || w.id }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('security.firewall.shaperDown') }}</label>
+          <input v-model="form.shaper_down" class="input-field mt-1 font-mono text-xs" placeholder="10mbit" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">{{ t('security.firewall.shaperUp') }}</label>
+          <input v-model="form.shaper_up" class="input-field mt-1 font-mono text-xs" placeholder="5mbit" />
+          <p class="text-xs text-slate-400 mt-1">{{ t('security.firewall.shaperHint') }}</p>
+        </div>
       </div>
-      <label class="flex items-center gap-2">
-        <input v-model="form.enabled" type="checkbox" />
-        {{ t('security.firewall.enabled') }}
-      </label>
+      <div class="flex flex-wrap gap-4">
+        <label class="flex items-center gap-2">
+          <input v-model="form.enabled" type="checkbox" />
+          {{ t('security.firewall.enabled') }}
+        </label>
+        <label class="flex items-center gap-2">
+          <input v-model="form.log" type="checkbox" />
+          {{ t('security.firewall.log') }}
+        </label>
+        <label class="flex items-center gap-2">
+          <input v-model="form.counter" type="checkbox" />
+          {{ t('security.firewall.counter') }}
+        </label>
+      </div>
       <div class="flex flex-wrap gap-2">
         <button v-if="!editing" type="button" class="btn-primary" @click="add">
           {{ t('security.firewall.addApply') }}
@@ -1418,6 +1540,47 @@ onMounted(() => {
         v-if="previewLine"
         class="text-xs bg-slate-900 text-emerald-200 p-3 rounded-lg overflow-auto"
       >{{ previewLine }}</pre>
+    </div>
+
+    <div class="card card-body space-y-2 text-sm">
+      <h3 class="font-medium text-slate-800">{{ t('security.firewall.schedulesTitle') }}</h3>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
+        <input v-model="scheduleForm.name" class="input-field text-xs" :placeholder="t('common.name')" />
+        <input v-model="scheduleForm.weekdays" class="input-field text-xs font-mono" placeholder="1,2,3,4,5" />
+        <input v-model="scheduleForm.start" class="input-field text-xs font-mono" placeholder="09:00" />
+        <input v-model="scheduleForm.end" class="input-field text-xs font-mono" placeholder="18:00" />
+        <button type="button" class="btn-primary text-xs" @click="saveSchedule">{{ t('common.add') }}</button>
+      </div>
+      <ul class="text-xs space-y-1">
+        <li v-for="s in schedules" :key="s.id" class="flex gap-2 items-center">
+          <span class="font-mono text-slate-700">{{ s.name }}</span>
+          <span class="text-slate-400">{{ (s.ranges || []).map((r) => `${r.weekdays || '*'} ${r.start}-${r.end}`).join('; ') }}</span>
+          <button type="button" class="text-red-600" @click="removeSchedule(s.id)">{{ t('common.delete') }}</button>
+        </li>
+      </ul>
+    </div>
+
+    <div class="card card-body space-y-2 text-sm">
+      <div class="flex flex-wrap items-center gap-2">
+        <h3 class="font-medium text-slate-800">{{ t('security.firewall.logsTitle') }}</h3>
+        <button type="button" class="btn-secondary text-xs" @click="loadLogs">{{ t('security.firewall.refreshLogs') }}</button>
+        <button type="button" class="btn-secondary text-xs" @click="loadCounters">{{ t('security.firewall.refreshCounters') }}</button>
+      </div>
+      <ul v-if="logEntries.length" class="text-xs font-mono space-y-1 max-h-40 overflow-auto">
+        <li v-for="(e, i) in logEntries" :key="'log-' + i" class="text-slate-700 truncate">
+          <span v-if="e.rule_id" class="text-indigo-600">[{{ e.rule_id }}]</span> {{ e.line }}
+        </li>
+      </ul>
+      <p v-else class="text-xs text-slate-400">—</p>
+      <h3 class="font-medium text-slate-800 pt-2">{{ t('security.firewall.countersTitle') }}</h3>
+      <ul v-if="counterEntries.length" class="text-xs font-mono space-y-1 max-h-40 overflow-auto">
+        <li v-for="(c, i) in counterEntries" :key="'ctr-' + i">
+          <span class="text-slate-500">{{ c.chain }}</span>
+          <span v-if="c.rule_id" class="text-indigo-600"> {{ c.rule_id }}</span>
+          · pkts {{ c.packets }} / bytes {{ c.bytes }}
+        </li>
+      </ul>
+      <p v-else class="text-xs text-slate-400">—</p>
     </div>
 
     <button type="button" class="text-sm text-slate-600 hover:text-slate-900" @click="showRendered = !showRendered">

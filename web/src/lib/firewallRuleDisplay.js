@@ -50,7 +50,9 @@ export function formatProto(proto) {
   return p.toUpperCase()
 }
 
-export function formatPort(port) {
+export function formatPort(port, ports, alias) {
+  if (alias) return '@' + alias
+  if (ports) return String(ports)
   const n = Number(port)
   if (!n || n <= 0) return '*'
   return String(n)

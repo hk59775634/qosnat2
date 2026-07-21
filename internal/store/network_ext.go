@@ -30,6 +30,12 @@ type WanLink struct {
 	Enabled      bool   `json:"enabled"`
 	WarpManaged  bool   `json:"warp_managed,omitempty"`  // true: 由 WARP 连接自动创建，不可手动删除
 	ProxyManaged bool   `json:"proxy_managed,omitempty"` // true: 由 ProxyEgress/sing-box 自动创建，不可手动删除
+
+	// 网关健康探测（failover）：不影响 Enabled 用户意图，仅运行时排除路由。
+	MonitorEnabled       bool   `json:"monitor_enabled,omitempty"`
+	MonitorAddr          string `json:"monitor_addr,omitempty"`           // 探测目标，空则用 Gateway
+	MonitorIntervalSec   int    `json:"monitor_interval_sec,omitempty"`   // 默认 5
+	MonitorLossThreshold int    `json:"monitor_loss_threshold,omitempty"` // 连续失败次数，默认 3
 }
 
 // IfaceConfig 由 qosnat 写入 netplan 的物理网卡（/etc/netplan/99-qosnat2.yaml）
@@ -144,6 +150,19 @@ func NormalizeWanLink(w *WanLink) error {
 	}
 	if w.Metric <= 0 {
 		w.Metric = 100 + w.Tier*10
+	}
+	w.MonitorAddr = strings.TrimSpace(w.MonitorAddr)
+	if w.MonitorIntervalSec < 0 {
+		w.MonitorIntervalSec = 0
+	}
+	if w.MonitorIntervalSec > 3600 {
+		w.MonitorIntervalSec = 3600
+	}
+	if w.MonitorLossThreshold < 0 {
+		w.MonitorLossThreshold = 0
+	}
+	if w.MonitorLossThreshold > 100 {
+		w.MonitorLossThreshold = 100
 	}
 	return nil
 }

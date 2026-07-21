@@ -248,12 +248,3 @@ func (srv *Server) getNatStackStatus() map[string]any {
 	return out
 }
 
-func firewallNftLines(rules []store.FilterRule) map[string]string {
-	out := make(map[string]string, len(rules))
-	for _, r := range rules {
-		if line := r.NftRuleLine(); line != "" {
-			out[r.ID] = line
-		}
-	}
-	return out
-}

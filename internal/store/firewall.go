@@ -5,24 +5,40 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // FilterRule 用户自定义 nft filter 规则
 type FilterRule struct {
 	ID      string `json:"id"`
-	Chain   string `json:"chain"`   // forward | input
-	Action  string `json:"action"`  // accept | drop | reject
+	Chain   string `json:"chain"`  // forward | input | output
+	Action  string `json:"action"` // accept | drop | reject
 	Iif     string `json:"iif,omitempty"`
 	Oif     string `json:"oif,omitempty"`
 	Proto   string `json:"proto,omitempty"`
-	SrcAddr   string `json:"src_addr,omitempty"`
-	DstAddr   string `json:"dst_addr,omitempty"`
-	SrcAlias  string `json:"src_alias,omitempty"`
-	DstAlias  string `json:"dst_alias,omitempty"`
-	SrcPort int    `json:"src_port,omitempty"`
-	DstPort int    `json:"dst_port,omitempty"`
+	SrcAddr  string `json:"src_addr,omitempty"`
+	DstAddr  string `json:"dst_addr,omitempty"`
+	SrcAlias string `json:"src_alias,omitempty"`
+	DstAlias string `json:"dst_alias,omitempty"`
+	SrcPort      int    `json:"src_port,omitempty"`
+	DstPort      int    `json:"dst_port,omitempty"`
+	SrcPorts     string `json:"src_ports,omitempty"`      // 多端口/范围，如 "80,443,8000-8010"
+	DstPorts     string `json:"dst_ports,omitempty"`
+	SrcPortAlias string `json:"src_port_alias,omitempty"` // type=port 别名
+	DstPortAlias string `json:"dst_port_alias,omitempty"`
 	Comment string `json:"comment,omitempty"`
 	Enabled bool   `json:"enabled"`
+	// Log 在动作前插入 nft log（prefix qosnat2-fw）。
+	Log bool `json:"log,omitempty"`
+	// Counter 在动作前插入 nft counter（便于命中统计）。
+	Counter bool `json:"counter,omitempty"`
+	// ScheduleID 引用 FirewallState.Schedules；不在窗口内则不写入 nft。
+	ScheduleID string `json:"schedule_id,omitempty"`
+	// WanLinkID accept+forward 时同步自动 EgressPolicy（不用 skb mark）。
+	WanLinkID string `json:"wan_link_id,omitempty"`
+	// ShaperDown/ShaperUp 与源匹配同步为 profile_lpm（tenant_id=fw:<id>）。
+	ShaperDown string `json:"shaper_down,omitempty"`
+	ShaperUp   string `json:"shaper_up,omitempty"`
 	// IPVersion 可选 ipv4|ipv6，影响 nft 中 ip/ip6 匹配（端口转发自动规则使用）。
 	IPVersion string `json:"ip_version,omitempty"`
 	// System 为 true 时表示平台内置/受管规则，禁止通过 API 修改或删除。
@@ -57,8 +73,8 @@ func NormalizeFilterRule(r *FilterRule) error {
 		return err
 	}
 	chain := strings.ToLower(strings.TrimSpace(r.Chain))
-	if chain != "forward" && chain != "input" {
-		return fmt.Errorf("chain must be forward or input")
+	if chain != "forward" && chain != "input" && chain != "output" {
+		return fmt.Errorf("chain must be forward, input, or output")
 	}
 	r.Chain = chain
 	act := strings.ToLower(strings.TrimSpace(r.Action))
@@ -72,6 +88,9 @@ func NormalizeFilterRule(r *FilterRule) error {
 	r.Oif = strings.TrimSpace(r.Oif)
 	if chain == "input" {
 		r.Oif = ""
+	}
+	if chain == "output" {
+		r.Iif = ""
 	}
 	if r.Iif != "" {
 		if err := ValidateIfaceName(r.Iif); err != nil {
@@ -96,6 +115,50 @@ func NormalizeFilterRule(r *FilterRule) error {
 	}
 	if err := validateFilterPort(r.DstPort, "dst_port"); err != nil {
 		return err
+	}
+	if spec, err := NormalizePortSpec(r.SrcPorts); err != nil {
+		return fmt.Errorf("src_ports: %w", err)
+	} else {
+		r.SrcPorts = spec
+	}
+	if spec, err := NormalizePortSpec(r.DstPorts); err != nil {
+		return fmt.Errorf("dst_ports: %w", err)
+	} else {
+		r.DstPorts = spec
+	}
+	r.SrcPortAlias = strings.TrimSpace(r.SrcPortAlias)
+	r.DstPortAlias = strings.TrimSpace(r.DstPortAlias)
+	if r.SrcPortAlias != "" {
+		if err := ValidateAliasName(r.SrcPortAlias); err != nil {
+			return fmt.Errorf("src_port_alias: %w", err)
+		}
+	}
+	if r.DstPortAlias != "" {
+		if err := ValidateAliasName(r.DstPortAlias); err != nil {
+			return fmt.Errorf("dst_port_alias: %w", err)
+		}
+	}
+	if r.SrcPortAlias != "" && (r.SrcPort > 0 || r.SrcPorts != "") {
+		return fmt.Errorf("src_port_alias conflicts with src_port/src_ports")
+	}
+	if r.DstPortAlias != "" && (r.DstPort > 0 || r.DstPorts != "") {
+		return fmt.Errorf("dst_port_alias conflicts with dst_port/dst_ports")
+	}
+	if r.SrcPorts != "" && r.SrcPort > 0 {
+		return fmt.Errorf("src_ports conflicts with src_port")
+	}
+	if r.DstPorts != "" && r.DstPort > 0 {
+		return fmt.Errorf("dst_ports conflicts with dst_port")
+	}
+	r.ScheduleID = strings.TrimSpace(r.ScheduleID)
+	r.WanLinkID = strings.TrimSpace(r.WanLinkID)
+	r.ShaperDown = strings.TrimSpace(r.ShaperDown)
+	r.ShaperUp = strings.TrimSpace(r.ShaperUp)
+	if r.WanLinkID != "" && act != "accept" {
+		return fmt.Errorf("wan_link_id requires action accept")
+	}
+	if (r.ShaperDown != "" || r.ShaperUp != "") && strings.TrimSpace(r.SrcAddr) == "" && strings.TrimSpace(r.SrcAlias) == "" {
+		return fmt.Errorf("shaper_down/up require src_addr or src_alias")
 	}
 	ver := strings.ToLower(strings.TrimSpace(r.IPVersion))
 	addrValidate := ValidateIPv4OrCIDR
@@ -173,7 +236,20 @@ func RepairFilterRuleIDs(rules []FilterRule) ([]FilterRule, bool) {
 
 // NftRuleLine 生成单行 nft 规则（不含前导空格）
 func (r FilterRule) NftRuleLine() string {
-	if !r.Enabled {
+	return r.NftRuleLineAt(nil, time.Time{})
+}
+
+// NftRuleLineAt 在指定时刻结合时间表生成 nft 规则行。
+// schedules 为 nil 且 now 为零值时，仅看 Enabled（兼容旧调用）。
+func (r FilterRule) NftRuleLineAt(schedules []Schedule, now time.Time) string {
+	if schedules != nil || !now.IsZero() {
+		if now.IsZero() {
+			now = time.Now()
+		}
+		if !RuleEffectivelyEnabled(r, schedules, now) {
+			return ""
+		}
+	} else if !r.Enabled {
 		return ""
 	}
 	var parts []string
@@ -201,11 +277,17 @@ func (r FilterRule) NftRuleLine() string {
 	if r.Proto != "" && r.Proto != "all" {
 		parts = append(parts, filterProtoNftClause(r.Proto))
 	}
-	if r.SrcPort > 0 {
-		parts = append(parts, fmt.Sprintf("sport %d", r.SrcPort))
+	if m := NftPortMatch("sport", r.SrcPort, r.SrcPorts, r.SrcPortAlias); m != "" {
+		parts = append(parts, m)
 	}
-	if r.DstPort > 0 {
-		parts = append(parts, fmt.Sprintf("dport %d", r.DstPort))
+	if m := NftPortMatch("dport", r.DstPort, r.DstPorts, r.DstPortAlias); m != "" {
+		parts = append(parts, m)
+	}
+	if r.Counter {
+		parts = append(parts, "counter")
+	}
+	if r.Log {
+		parts = append(parts, `log prefix "qosnat2-fw "`)
 	}
 	parts = append(parts, r.Action)
 	line := strings.Join(parts, " ")
