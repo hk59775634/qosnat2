@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { RouterLink } from 'vue-router'
 import { api } from '@/api/client'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -14,6 +15,7 @@ const staticMap = ref({})
 const prefixMap = ref({})
 const newCidr = ref('10.0.0.0/8')
 const newIP = ref('')
+const vipSuggestions = ref([])
 const staticInner = ref('')
 const staticOuter = ref('')
 const prefixInner = ref('')
@@ -23,12 +25,13 @@ const err = ref('')
 const natEnabled = ref(true)
 
 async function load() {
-  const [r, s, st, px, ipv4] = await Promise.all([
+  const [r, s, st, px, ipv4, vips] = await Promise.all([
     api.policyRoutes.list(),
     api.sharedIPs.list(),
     api.staticMappings.list(),
     api.prefixMappings.list(),
     api.nat.ipv4.get(),
+    api.network.virtualIPs.list().catch(() => ({ virtual_ips: [] })),
   ])
   routes.value = r || []
   shared.value = s?.ips || []
@@ -38,6 +41,15 @@ async function load() {
   staticMap.value = st || {}
   prefixMap.value = px || {}
   natEnabled.value = ipv4?.enabled !== false
+  vipSuggestions.value = (vips.virtual_ips || [])
+    .filter((v) => v.enabled !== false)
+    .map((v) => ({ host: v.host || String(v.address || '').split('/')[0], iface: v.interface, comment: v.comment }))
+    .filter((v) => v.host)
+}
+
+function pickVIP(host, target) {
+  if (target === 'shared') newIP.value = host
+  else if (target === 'static') staticOuter.value = host
 }
 
 async function saveNatEnabled() {
@@ -188,6 +200,19 @@ onMounted(load)
           <input v-model="newIP" class="input-field font-mono" :placeholder="t('nat.outbound.outerPlaceholder')" />
           <button type="button" class="btn-primary shrink-0" @click="addIP">{{ t('common.add') }}</button>
         </div>
+        <p v-if="vipSuggestions.length" class="text-xs text-slate-500 mt-2">
+          {{ t('nat.outbound.fromVIP') }}
+          <button
+            v-for="v in vipSuggestions"
+            :key="'s-' + v.host"
+            type="button"
+            class="font-mono text-blue-600 hover:underline ml-2"
+            @click="pickVIP(v.host, 'shared')"
+          >
+            {{ v.host }}
+          </button>
+          <RouterLink to="/network/virtual-ips" class="text-blue-600 hover:underline ml-2">{{ t('nav.virtualIps') }}</RouterLink>
+        </p>
       </section>
 
       <section class="card p-4">
@@ -204,6 +229,18 @@ onMounted(load)
           <input v-model="staticOuter" class="input-field font-mono text-xs" :placeholder="t('nat.outbound.outerPlaceholder')" />
         </div>
         <button type="button" class="btn-secondary text-sm" @click="addStatic">{{ t('nat.outbound.addMapping') }}</button>
+        <p v-if="vipSuggestions.length" class="text-xs text-slate-500 mt-2">
+          {{ t('nat.outbound.fromVIP') }}
+          <button
+            v-for="v in vipSuggestions"
+            :key="'st-' + v.host"
+            type="button"
+            class="font-mono text-blue-600 hover:underline ml-2"
+            @click="pickVIP(v.host, 'static')"
+          >
+            {{ v.host }}
+          </button>
+        </p>
       </section>
 
       <section class="card p-4">

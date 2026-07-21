@@ -8,6 +8,7 @@ import PageHeader from '@/components/PageHeader.vue'
 const { t } = useI18n()
 const list = ref([])
 const interfaces = ref([])
+const vipList = ref([])
 const defaults = ref({})
 const devLan = ref('')
 const devWan = ref('')
@@ -38,6 +39,26 @@ const ifaceAddrs = computed(() => {
   return iface?.addrs || []
 })
 
+const dstAddrOptions = computed(() => {
+  const seen = new Set()
+  const out = []
+  for (const a of ifaceAddrs.value) {
+    const s = typeof a === 'string' ? a : a?.cidr || ''
+    const host = s.split('/')[0]
+    if (!host || seen.has(host)) continue
+    seen.add(host)
+    out.push({ value: host, label: s })
+  }
+  for (const v of vipList.value) {
+    if (!v.enabled || v.interface !== bindIface.value) continue
+    const host = v.host || String(v.address || '').split('/')[0]
+    if (!host || seen.has(host)) continue
+    seen.add(host)
+    out.push({ value: host, label: `${host}/32 (VIP)` })
+  }
+  return out
+})
+
 const srcAddrPlaceholder = computed(() =>
   form.value.ip_version === 'ipv6' ? '::/0' : '0.0.0.0/0',
 )
@@ -63,12 +84,16 @@ watch(bindIface, (name) => {
 })
 
 async function load() {
-  const d = await api.wanForwards.list()
+  const [d, vips] = await Promise.all([
+    api.wanForwards.list(),
+    api.network.virtualIPs.list().catch(() => ({ virtual_ips: [] })),
+  ])
   list.value = d.forwards || []
   interfaces.value = d.interfaces || []
   defaults.value = d.defaults || {}
   devLan.value = d.dev_lan || ''
   devWan.value = d.dev_wan || ''
+  vipList.value = vips.virtual_ips || []
   if (!form.value.interface) {
     form.value.interface = defaults.value.interface || devWan.value
   }
@@ -196,8 +221,11 @@ onMounted(load)
           <label class="text-xs text-slate-500">dst</label>
           <select v-model="form.dst_addr" class="input-field font-mono">
             <option value="">{{ t('nat.forwards.anyDaddr') }}</option>
-            <option v-for="a in ifaceAddrs" :key="a" :value="a.split('/')[0]">{{ a }}</option>
+            <option v-for="a in dstAddrOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
           </select>
+          <p class="text-[11px] text-slate-400 mt-1">
+            <RouterLink to="/network/virtual-ips" class="text-blue-600 hover:underline">{{ t('nav.virtualIps') }}</RouterLink>
+          </p>
         </div>
         <div>
           <label class="text-xs text-slate-500">{{ t('nat.forwards.match') }}</label>

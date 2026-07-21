@@ -29,7 +29,7 @@ func TestParseOcctlStatusJSON(t *testing.T) {
 
 func TestParseOcctlUsersJSON(t *testing.T) {
 	raw := `[
-    {"Username": "alice", "ID": 1, "VPN IPv4": "10.250.0.2"}
+    {"Username": "alice", "ID": 1, "VPN IPv4": "198.18.250.2"}
   ]`
 	var users []map[string]any
 	if err := json.Unmarshal([]byte(raw), &users); err != nil {

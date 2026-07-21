@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+
+	"github.com/hk59775634/qosnat2/internal/linknet"
 )
 
 // FindWireGuardInstance 按 id 查找，返回下标与指针（state 需为可变切片元素地址时由调用方索引）
@@ -45,7 +47,7 @@ func NormalizeWireGuardInstance(inst *WireGuardInstance) {
 		inst.ListenPort = 51820
 	}
 	if strings.TrimSpace(inst.Address) == "" {
-		inst.Address = "10.200.0.1/24"
+		inst.Address = linknet.WireGuardDefaultAddress
 	}
 	if inst.Peers == nil {
 		inst.Peers = []WGPeer{}

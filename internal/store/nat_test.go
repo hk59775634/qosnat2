@@ -30,7 +30,7 @@ func TestLoadNatLegacyJSON(t *testing.T) {
 		"firewall": {},
 		"network": {},
 		"dhcp": {},
-		"vpn": {"wireguards":[{"id":"default","name":"default","mode":"server","interface":"wg0","listen_port":51820,"address":"10.200.0.1/24","peers":[]}]}
+		"vpn": {"wireguards":[{"id":"default","name":"default","mode":"server","interface":"wg0","listen_port":51820,"address":"198.19.0.1/24","peers":[]}]}
 	}`
 	var disk struct {
 		State

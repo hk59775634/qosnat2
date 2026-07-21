@@ -26,6 +26,11 @@ const saving = ref(false)
 const savingRoles = ref(false)
 
 const editDev = ref('')
+const netplanPath = ref('')
+const addrForm = ref({ ipv4: '', up: true, dhcp4: false })
+const addrManageable = ref(false)
+const addrManaged = ref(false)
+const savingAddrs = ref(false)
 const eth = ref(null)
 const ringRx = ref(0)
 const ringTx = ref(0)
@@ -117,6 +122,38 @@ async function saveRoles() {
   }
 }
 
+function parseIPv4(text) {
+  return text
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function liveIPv4Lines(iface) {
+  return (iface?.addrs || [])
+    .filter((a) => a.family === 'inet')
+    .map((a) => a.cidr)
+    .filter(Boolean)
+}
+
+function fillAddrForm(iface) {
+  addrManageable.value = !!iface?.netplan_manageable
+  addrManaged.value = !!iface?.managed
+  if (iface?.managed) {
+    addrForm.value = {
+      ipv4: (iface.managed.ipv4 || []).join('\n'),
+      up: iface.managed.up !== false,
+      dhcp4: !!iface.managed.dhcp4,
+    }
+    return
+  }
+  addrForm.value = {
+    ipv4: liveIPv4Lines(iface).join('\n'),
+    up: iface?.up !== false,
+    dhcp4: false,
+  }
+}
+
 async function loadInterfaces() {
   try {
     const d = await api.interfaces.list()
@@ -124,8 +161,13 @@ async function loadInterfaces() {
     devWan.value = d.dev_wan || ''
     roleLan.value = d.dev_lan || ''
     roleWan.value = d.dev_wan || ''
+    netplanPath.value = d.netplan_path || ''
     ifaces.value = d.interfaces || []
     trafficHistory.value = d.traffic_history || []
+    if (editDev.value) {
+      const found = ifaces.value.find((i) => i.name === editDev.value)
+      if (found) fillAddrForm(found)
+    }
     err.value = ''
   } catch (e) {
     err.value = e.message
@@ -182,7 +224,62 @@ async function loadEthtool(dev) {
 
 function selectEdit(iface) {
   editDev.value = iface.name
+  fillAddrForm(iface)
   loadEthtool(iface.name)
+}
+
+function importLiveAddrs() {
+  const iface = ifaces.value.find((i) => i.name === editDev.value)
+  if (!iface) return
+  addrForm.value.ipv4 = liveIPv4Lines(iface).join('\n')
+}
+
+async function saveAddrs() {
+  if (!editDev.value || !addrManageable.value) return
+  savingAddrs.value = true
+  err.value = ''
+  ok.value = ''
+  try {
+    await api.interfaces.update({
+      device: editDev.value,
+      ipv4: parseIPv4(addrForm.value.ipv4),
+      up: addrForm.value.up,
+      dhcp4: addrForm.value.dhcp4,
+    })
+    ok.value = t('network.interfaces.addrsSaved')
+    await loadInterfaces()
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    savingAddrs.value = false
+  }
+}
+
+async function clearManaged() {
+  if (!editDev.value || !addrManaged.value) return
+  if (!confirm(t('network.interfaces.clearManagedConfirm'))) return
+  savingAddrs.value = true
+  err.value = ''
+  ok.value = ''
+  try {
+    await api.interfaces.clear(editDev.value)
+    ok.value = t('network.interfaces.managedCleared')
+    await loadInterfaces()
+  } catch (e) {
+    err.value = e.message
+  } finally {
+    savingAddrs.value = false
+  }
+}
+
+async function previewNetplan() {
+  err.value = ''
+  try {
+    const d = await api.network.netplan.preview()
+    ok.value = `${t('network.interfaces.previewNetplan')} ${d.path || netplanPath.value}`
+  } catch (e) {
+    err.value = e.message
+  }
 }
 
 async function saveRing() {
@@ -336,7 +433,13 @@ onUnmounted(() => {
         </div>
 
         <dl class="mt-3 text-sm">
-          <dt class="text-slate-500 text-xs">{{ t('network.interfaces.address') }}</dt>
+          <dt class="text-slate-500 text-xs">
+            {{ t('network.interfaces.addressLive') }}
+            <span
+              v-if="iface.managed"
+              class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-sans"
+            >{{ t('network.interfaces.managedBadge') }}</span>
+          </dt>
           <dd class="font-mono text-xs break-all mt-0.5">{{ addrLines(iface) }}</dd>
         </dl>
 
@@ -439,6 +542,73 @@ onUnmounted(() => {
         </div>
       </div>
     </Teleport>
+
+    <div class="card p-4 mb-3">
+      <h3 class="text-sm font-semibold text-slate-800 mb-1">{{ t('network.interfaces.addressManaged') }}</h3>
+      <p v-if="netplanPath" class="text-xs text-slate-500 mb-3">
+        {{ t('network.interfaces.netplanPath') }}:
+        <span class="font-mono">{{ netplanPath }}</span>
+      </p>
+      <p v-if="!editDev" class="text-sm text-slate-500">{{ t('network.interfaces.selectIfaceHint') }}</p>
+      <template v-else>
+        <p class="text-sm text-slate-600 mb-3">
+          {{ t('network.interfaces.device') }}
+          <span class="font-mono font-semibold">{{ editDev }}</span>
+          <span
+            v-if="addrManaged"
+            class="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700"
+          >{{ t('network.interfaces.managedBadge') }}</span>
+        </p>
+        <p v-if="!addrManageable" class="text-sm text-amber-700 mb-2">{{ t('network.interfaces.notManageable') }}</p>
+        <div v-else class="space-y-3 text-sm max-w-2xl">
+          <div>
+            <label class="text-xs text-slate-500">{{ t('network.interfaces.addressManaged') }}</label>
+            <textarea
+              v-model="addrForm.ipv4"
+              class="input-field mt-1 font-mono h-24"
+              :placeholder="t('network.interfaces.ipv4Placeholder')"
+              :disabled="addrForm.dhcp4"
+            />
+            <p class="text-xs text-slate-400 mt-1">{{ t('network.interfaces.ipv4Hint') }}</p>
+          </div>
+          <div class="flex flex-wrap gap-4">
+            <label class="flex items-center gap-2">
+              <input v-model="addrForm.up" type="checkbox" />
+              {{ t('network.interfaces.linkUp') }}
+            </label>
+            <label class="flex items-center gap-2">
+              <input v-model="addrForm.dhcp4" type="checkbox" />
+              {{ t('network.interfaces.dhcp4') }}
+            </label>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="btn-primary"
+              :disabled="savingAddrs"
+              @click="saveAddrs"
+            >
+              {{ savingAddrs ? t('common.processing') : t('network.interfaces.saveAddrs') }}
+            </button>
+            <button type="button" class="btn-secondary" :disabled="savingAddrs" @click="importLiveAddrs">
+              {{ t('network.interfaces.importLive') }}
+            </button>
+            <button type="button" class="btn-secondary text-xs" @click="previewNetplan">
+              {{ t('network.interfaces.previewNetplan') }}
+            </button>
+            <button
+              v-if="addrManaged"
+              type="button"
+              class="btn-secondary text-xs text-red-600"
+              :disabled="savingAddrs"
+              @click="clearManaged"
+            >
+              {{ t('network.interfaces.clearManaged') }}
+            </button>
+          </div>
+        </div>
+      </template>
+    </div>
 
     <DashboardWidget v-if="editDev" id="iface-ethtool" :title="t('network.interfaces.ethtoolRing')" class="mb-3">
       <p class="text-sm text-slate-600 mb-3">

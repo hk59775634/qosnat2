@@ -51,7 +51,7 @@ func ApplyNetplan(net store.NetworkState) (applied bool, err error) {
 
 // RenderNetplan 生成 YAML；无托管项时返回空 body
 func RenderNetplan(net store.NetworkState) (body []byte, linkDown []string, err error) {
-	ifaces := net.Ifaces
+	ifaces := MergeVirtualIPsIntoIfaces(net.Ifaces, net.VirtualIPs)
 	vlans := net.VLANs
 	tunnels := net.VXLANTunnels
 	if ifaces == nil {
@@ -198,11 +198,12 @@ func normalizeNetplanAddrs(ipv4 []string) ([]string, error) {
 
 func isNetplanExcluded(dev string) bool {
 	switch dev {
-	case "lo":
+	case "lo", "CloudflareWARP":
 		return true
 	}
 	if strings.HasPrefix(dev, "ifb") || strings.HasPrefix(dev, "veth") ||
-		strings.HasPrefix(dev, "docker") || strings.HasPrefix(dev, "br-") {
+		strings.HasPrefix(dev, "docker") || strings.HasPrefix(dev, "br-") ||
+		strings.HasPrefix(dev, "qpe") || strings.HasPrefix(dev, "qwp") {
 		return true
 	}
 	return false

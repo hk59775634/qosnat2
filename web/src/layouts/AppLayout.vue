@@ -36,6 +36,7 @@ const menu = computed(() => [
     title: t('nav.network'),
     items: [
       { path: '/network/interfaces', label: t('nav.interfaces') },
+      { path: '/network/virtual-ips', label: t('nav.virtualIps') },
       { path: '/network/routes', label: t('nav.routes') },
       { path: '/network/dhcp', label: t('nav.dhcp') },
       { path: '/network/vlans', label: t('nav.vlans') },

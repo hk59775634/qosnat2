@@ -8,7 +8,7 @@ func TestNormalizeOCServ(t *testing.T) {
 	if err := NormalizeOCServ(&o); err != nil {
 		t.Fatal(err)
 	}
-	if o.TCPPort != 443 || o.IPv4Network != "10.250.0.0" {
+	if o.TCPPort != 443 || o.IPv4Network != "198.18.250.0" {
 		t.Fatalf("%+v", o)
 	}
 }
@@ -40,7 +40,7 @@ func TestNormalizeOCServRadiusDefaultsPool(t *testing.T) {
 	if err := NormalizeOCServ(&o); err != nil {
 		t.Fatal(err)
 	}
-	if o.IPv4Network != "10.250.0.0" || o.IPv4Netmask != "255.255.255.0" {
+	if o.IPv4Network != "198.18.250.0" || o.IPv4Netmask != "255.255.255.0" {
 		t.Fatalf("radius must default ipv4 pool: %+v", o)
 	}
 }

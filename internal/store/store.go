@@ -8,13 +8,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/hk59775634/qosnat2/internal/linknet"
 )
 
 // RateProfile 速率配置（API 字符串，如 8mbit）
 type RateProfile struct {
-	Down      string `json:"down"`
-	Up        string `json:"up"`
-	HostMask  int    `json:"host_mask,omitempty"`
+	Down     string `json:"down"`
+	Up       string `json:"up"`
+	HostMask int    `json:"host_mask,omitempty"`
 }
 
 // HostRate 单主机 /32 覆盖
@@ -25,18 +27,18 @@ type HostRate struct {
 
 // ShaperState 流量整形持久化（P1 起同步 BPF Map）
 type ShaperState struct {
-	Enabled         bool                   `json:"enabled"` // false = 纯 NAT，不加载 TC/eBPF 整形
-	Mode            string                 `json:"mode,omitempty"` // 省略即 EDT；旧 htb 在加载时自动清除
-	Device          string                 `json:"device,omitempty"` // 默认绑定网卡，空则 DEV_LAN
-	PolicyCIDR      string                 `json:"policy_cidr"`
-	DefaultProfile  RateProfile            `json:"default_profile,omitempty"` // 已废弃速率字段；QoS 仅以 profiles 为准
-	Profiles        []ProfileEntry         `json:"profiles"`
-	Tenants         []TenantEntry          `json:"tenants,omitempty"`
-	Hosts           map[string]HostRate    `json:"hosts,omitempty"` // 已废弃，启动时迁入 profiles
-	Leaf            string                 `json:"leaf"`
-	IdleTimeoutSec  int                    `json:"idle_timeout_sec"`
-	FQFlows         int                    `json:"fq_flows,omitempty"`
-	FQQuantum       int                    `json:"fq_quantum,omitempty"`
+	Enabled        bool                `json:"enabled"`          // false = 纯 NAT，不加载 TC/eBPF 整形
+	Mode           string              `json:"mode,omitempty"`   // 省略即 EDT；旧 htb 在加载时自动清除
+	Device         string              `json:"device,omitempty"` // 默认绑定网卡，空则 DEV_LAN
+	PolicyCIDR     string              `json:"policy_cidr"`
+	DefaultProfile RateProfile         `json:"default_profile,omitempty"` // 已废弃速率字段；QoS 仅以 profiles 为准
+	Profiles       []ProfileEntry      `json:"profiles"`
+	Tenants        []TenantEntry       `json:"tenants,omitempty"`
+	Hosts          map[string]HostRate `json:"hosts,omitempty"` // 已废弃，启动时迁入 profiles
+	Leaf           string              `json:"leaf"`
+	IdleTimeoutSec int                 `json:"idle_timeout_sec"`
+	FQFlows        int                 `json:"fq_flows,omitempty"`
+	FQQuantum      int                 `json:"fq_quantum,omitempty"`
 }
 
 // ProfileEntry LPM 网段模板（ID 越小优先级越高，仅影响管理排序；数据面仍 LPM 最长前缀优先）
@@ -46,8 +48,8 @@ type ProfileEntry struct {
 	Up       string `json:"up"`
 	Mask     int    `json:"mask,omitempty"`
 	ID       int    `json:"id"`
-	Priority int    `json:"priority,omitempty"` // 已废弃，启动时迁入 id
-	Device   string `json:"device,omitempty"`   // 绑定网卡，空则用 Shaper.Device 或 DEV_LAN
+	Priority int    `json:"priority,omitempty"`  // 已废弃，启动时迁入 id
+	Device   string `json:"device,omitempty"`    // 绑定网卡，空则用 Shaper.Device 或 DEV_LAN
 	TenantID string `json:"tenant_id,omitempty"` // P4 租户展开时标记，便于批量删除
 }
 
@@ -79,25 +81,25 @@ func EffectiveDisplayName(name string) string {
 
 // SystemState 系统可调项
 type SystemState struct {
-	Sysctl        map[string]string `json:"sysctl"`
-	Hostname      string            `json:"hostname,omitempty"`
-	DisplayName   string            `json:"display_name,omitempty"` // UI 品牌名，不影响服务标识
-	TxQueueLenLAN int               `json:"txqueuelen_lan,omitempty"`
-	TxQueueLenWAN int               `json:"txqueuelen_wan,omitempty"`
-	RpsLAN             bool   `json:"rps_lan,omitempty"`
-	RpsWAN             bool   `json:"rps_wan,omitempty"`
-	PerfPreset         bool   `json:"perf_preset,omitempty"`
-	TuningAutoApplied  bool   `json:"tuning_auto_applied,omitempty"`
-	TuningTier         string `json:"tuning_tier,omitempty"`
-	TLSEnabled            bool   `json:"tls_enabled,omitempty"`
-	TLSDomain             string `json:"tls_domain,omitempty"`
-	TLSAcmeEnabled        bool   `json:"tls_acme_enabled,omitempty"`
-	TLSAcmeEmail          string `json:"tls_acme_email,omitempty"`
-	TLSAcmeStaging        bool   `json:"tls_acme_staging,omitempty"`
-	TLSAcmeRenewDays      int    `json:"tls_acme_renew_days,omitempty"` // 到期前 N 天续期，默认 30
-	TLSAcmeLastOK         string `json:"tls_acme_last_ok,omitempty"`
-	TLSAcmeLastError      string `json:"tls_acme_last_error,omitempty"`
-	TLSManagedCertID      string `json:"tls_managed_cert_id,omitempty"`
+	Sysctl            map[string]string `json:"sysctl"`
+	Hostname          string            `json:"hostname,omitempty"`
+	DisplayName       string            `json:"display_name,omitempty"` // UI 品牌名，不影响服务标识
+	TxQueueLenLAN     int               `json:"txqueuelen_lan,omitempty"`
+	TxQueueLenWAN     int               `json:"txqueuelen_wan,omitempty"`
+	RpsLAN            bool              `json:"rps_lan,omitempty"`
+	RpsWAN            bool              `json:"rps_wan,omitempty"`
+	PerfPreset        bool              `json:"perf_preset,omitempty"`
+	TuningAutoApplied bool              `json:"tuning_auto_applied,omitempty"`
+	TuningTier        string            `json:"tuning_tier,omitempty"`
+	TLSEnabled        bool              `json:"tls_enabled,omitempty"`
+	TLSDomain         string            `json:"tls_domain,omitempty"`
+	TLSAcmeEnabled    bool              `json:"tls_acme_enabled,omitempty"`
+	TLSAcmeEmail      string            `json:"tls_acme_email,omitempty"`
+	TLSAcmeStaging    bool              `json:"tls_acme_staging,omitempty"`
+	TLSAcmeRenewDays  int               `json:"tls_acme_renew_days,omitempty"` // 到期前 N 天续期，默认 30
+	TLSAcmeLastOK     string            `json:"tls_acme_last_ok,omitempty"`
+	TLSAcmeLastError  string            `json:"tls_acme_last_error,omitempty"`
+	TLSManagedCertID  string            `json:"tls_managed_cert_id,omitempty"`
 	// AcmeTempAllowHTTP01 在执行 HTTP-01 验证期间临时放开 tcp/80 入站访问。
 	// 该值由服务端在完成 ACME obtain/renew 后会自动恢复，不建议手动修改。
 	AcmeTempAllowHTTP01 bool `json:"acme_temp_allow_http01,omitempty"`
@@ -124,20 +126,20 @@ type APIKey struct {
 
 // State 完整持久化（/var/lib/qosnat2/state.json）
 type State struct {
-	SetupComplete  bool              `json:"setup_complete"`
-	AdminUser     string `json:"admin_user,omitempty"`
-	AdminPassHash string `json:"admin_pass_hash,omitempty"`
-	Nat            NatState          `json:"nat"`
-	Routes          []RouteEntry          `json:"routes"`
-	DynamicRouting  DynamicRoutingState   `json:"dynamic_routing,omitempty"`
-	Shaper          ShaperState           `json:"shaper"`
-	Firewall       FirewallState     `json:"firewall"`
-	System         SystemState       `json:"system"`
-	DHCP           DHCPState         `json:"dhcp"`
-	SNMP           SNMPState         `json:"snmp,omitempty"`
-	LVS            LVSState          `json:"lvs,omitempty"`
-	Network        NetworkState      `json:"network"`
-	VPN            VPNState          `json:"vpn"`
+	SetupComplete  bool                 `json:"setup_complete"`
+	AdminUser      string               `json:"admin_user,omitempty"`
+	AdminPassHash  string               `json:"admin_pass_hash,omitempty"`
+	Nat            NatState             `json:"nat"`
+	Routes         []RouteEntry         `json:"routes"`
+	DynamicRouting DynamicRoutingState  `json:"dynamic_routing,omitempty"`
+	Shaper         ShaperState          `json:"shaper"`
+	Firewall       FirewallState        `json:"firewall"`
+	System         SystemState          `json:"system"`
+	DHCP           DHCPState            `json:"dhcp"`
+	SNMP           SNMPState            `json:"snmp,omitempty"`
+	LVS            LVSState             `json:"lvs,omitempty"`
+	Network        NetworkState         `json:"network"`
+	VPN            VPNState             `json:"vpn"`
 	APIKeys        []APIKey             `json:"api_keys"`
 	Certificates   []ManagedCertificate `json:"certificates,omitempty"`
 	Notifications  []UINotification     `json:"notifications,omitempty"`
@@ -153,9 +155,9 @@ type Store struct {
 // DefaultState 空状态默认值
 func DefaultState() State {
 	return State{
-		SetupComplete:  false,
-		Nat:    DefaultNat(),
-		Routes: []RouteEntry{},
+		SetupComplete: false,
+		Nat:           DefaultNat(),
+		Routes:        []RouteEntry{},
 		Shaper: ShaperState{
 			PolicyCIDR: "10.0.0.0/8",
 			DefaultProfile: RateProfile{
@@ -169,7 +171,7 @@ func DefaultState() State {
 		Firewall: FirewallState{
 			WanPortForwards: []WanPortForward{},
 			FilterRules:     []FilterRule{},
-			Aliases: []AliasSet{},
+			Aliases:         []AliasSet{},
 		},
 		System: SystemState{
 			Sysctl: map[string]string{},
@@ -177,7 +179,7 @@ func DefaultState() State {
 		DHCP:    DefaultDHCP(),
 		SNMP:    DefaultSNMP(),
 		LVS:     DefaultLVS(),
-		Network: NetworkState{Ifaces: []IfaceConfig{}, VLANs: []VLANIface{}, WanLinks: []WanLink{}, EgressPolicies: []EgressPolicy{}},
+		Network: NetworkState{Ifaces: []IfaceConfig{}, VLANs: []VLANIface{}, WanLinks: []WanLink{}, EgressPolicies: []EgressPolicy{}, VirtualIPs: []VirtualIP{}},
 		VPN: VPNState{
 			WireGuards: []WireGuardInstance{
 				{
@@ -188,14 +190,14 @@ func DefaultState() State {
 						Enabled:    false,
 						Interface:  "wg0",
 						ListenPort: 51820,
-						Address:    "10.200.0.1/24",
+						Address:    linknet.WireGuardDefaultAddress,
 						Peers:      []WGPeer{},
 					},
 				},
 			},
 			OCServ: DefaultOCServ(),
 		},
-		APIKeys:      []APIKey{},
+		APIKeys:       []APIKey{},
 		Certificates:  []ManagedCertificate{},
 		Notifications: []UINotification{},
 	}
@@ -427,6 +429,9 @@ func (s *Store) ensureDefaultsLocked() {
 	}
 	if s.State.Network.EgressPolicies == nil {
 		s.State.Network.EgressPolicies = []EgressPolicy{}
+	}
+	if s.State.Network.VirtualIPs == nil {
+		s.State.Network.VirtualIPs = []VirtualIP{}
 	}
 	MigrateWanForwards(&s.State.Firewall.WanPortForwards)
 	MigrateLVS(&s.State.LVS)

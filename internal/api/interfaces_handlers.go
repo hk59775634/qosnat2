@@ -17,6 +17,8 @@ func (srv *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
 		srv.handleInterfacesGet(w, r)
 	case http.MethodPut:
 		srv.handleInterfacesPut(w, r)
+	case http.MethodDelete:
+		srv.handleInterfacesDelete(w, r)
 	default:
 		writeMethodNotAllowed(w)
 	}
@@ -28,12 +30,19 @@ func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err.Error())
 		return
 	}
+	st := srv.store.Get()
+	managedByDev := map[string]store.IfaceConfig{}
+	for _, ic := range st.Network.Ifaces {
+		managedByDev[ic.Device] = ic
+	}
 	c := srv.collector()
 	type item struct {
 		netif.Detail
-		Role    string           `json:"role,omitempty"`
-		Traffic stats.IfaceRates `json:"traffic"`
-		Queues  int              `json:"rss_channels"`
+		Role              string             `json:"role,omitempty"`
+		Traffic           stats.IfaceRates   `json:"traffic"`
+		Queues            int                `json:"rss_channels"`
+		NetplanManageable bool               `json:"netplan_manageable"`
+		Managed           *store.IfaceConfig `json:"managed,omitempty"`
 	}
 	out := make([]item, 0, len(list))
 	for _, d := range list {
@@ -44,18 +53,25 @@ func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 			role = "WAN"
 		}
 		q := stats.IfaceQueues(d.Name)
-		out = append(out, item{
-			Detail:  d,
-			Role:    role,
-			Traffic: c.IfaceMbps(d.Name),
-			Queues:  q.Channels,
-		})
+		it := item{
+			Detail:            d,
+			Role:              role,
+			Traffic:           c.IfaceMbps(d.Name),
+			Queues:            q.Channels,
+			NetplanManageable: ifaceNetplanManageable(d.Name, st),
+		}
+		if mc, ok := managedByDev[d.Name]; ok {
+			cp := mc
+			it.Managed = &cp
+		}
+		out = append(out, it)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"dev_lan":         srv.env.DevLAN,
 		"dev_wan":         srv.env.DevWAN,
 		"netplan_path":    netif.NetplanConfigPathForAPI(),
 		"interfaces":      out,
+		"managed_ifaces":  st.Network.Ifaces,
 		"traffic_history": c.TrafficHistory(),
 	})
 }
@@ -65,6 +81,7 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		Device string   `json:"device"`
 		IPv4   []string `json:"ipv4"`
 		Up     *bool    `json:"up"`
+		DHCP4  *bool    `json:"dhcp4"`
 	}
 	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.Device) == "" {
 		writeBadRequest(w, "device required")
@@ -75,16 +92,17 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, err.Error())
 		return
 	}
-	if body.IPv4 == nil && body.Up == nil {
-		writeBadRequest(w, "ipv4 or up required")
+	if body.IPv4 == nil && body.Up == nil && body.DHCP4 == nil {
+		writeBadRequest(w, "ipv4, up or dhcp4 required")
 		return
 	}
-	if !netif.IsNetplanManagedDevice(dev) {
+	st := srv.store.Get()
+	if !ifaceNetplanManageable(dev, st) {
 		writeBadRequest(w, "interface cannot be managed via netplan")
 		return
 	}
 	if err := srv.applyNetplanWithRollback(func(st *store.State) error {
-		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, nil)
+		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, body.DHCP4)
 		return nil
 	}); err != nil {
 		writeBadRequest(w, err.Error())
@@ -99,11 +117,75 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	mc, _ := store.FindIfaceConfig(srv.store.Get(), dev)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":        true,
 		"device":    dev,
 		"interface": updated,
+		"managed":   mc,
 	})
+}
+
+func (srv *Server) handleInterfacesDelete(w http.ResponseWriter, r *http.Request) {
+	dev := strings.TrimSpace(r.URL.Query().Get("device"))
+	if dev == "" {
+		writeBadRequest(w, "device required")
+		return
+	}
+	if err := netif.ValidateIfaceName(dev); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	st := srv.store.Get()
+	if _, ok := store.FindIfaceConfig(st, dev); !ok {
+		writeNotFound(w, "managed iface not found")
+		return
+	}
+	if err := srv.applyNetplanWithRollback(func(st *store.State) error {
+		if !store.RemoveIfaceConfig(st, dev) {
+			return fmt.Errorf("managed iface not found")
+		}
+		return nil
+	}); err != nil {
+		writeBadRequest(w, err.Error())
+		return
+	}
+	srv.auditLog(r, "iface.netplan.clear", dev)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"device": dev,
+	})
+}
+
+// ifaceNetplanManageable 物理口可写入 99-qosnat2 ethernets；VLAN/VXLAN/虚拟口走各自 API。
+func ifaceNetplanManageable(dev string, st store.State) bool {
+	if !netif.IsNetplanManagedDevice(dev) {
+		return false
+	}
+	for _, v := range st.Network.VLANs {
+		name := strings.TrimSpace(v.Name)
+		if name == "" {
+			name = netif.VLANName(v.Parent, v.VID)
+		}
+		if name == dev {
+			return false
+		}
+	}
+	for _, t := range st.Network.VXLANTunnels {
+		name := strings.TrimSpace(t.Name)
+		if name == "" {
+			name = store.VXLANIfaceName(t.VNI)
+		}
+		if name == dev {
+			return false
+		}
+	}
+	for _, w := range st.Network.WanLinks {
+		if store.IsManagedWanLink(w) && strings.TrimSpace(w.Device) == dev {
+			return false
+		}
+	}
+	return true
 }
 
 func (srv *Server) handleInterfacesRoles(w http.ResponseWriter, r *http.Request) {

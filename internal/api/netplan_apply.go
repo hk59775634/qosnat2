@@ -71,5 +71,8 @@ func (srv *Server) applyNetplanWithRollback(beforeSave func(*store.State) error)
 		_ = netif.RestoreNetplanConfig(npBackup)
 		return err
 	}
+	if err := netif.ApplyVirtualIPs(srv.store.Get().Network); err != nil {
+		return err
+	}
 	return nil
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/hk59775634/qosnat2/internal/linknet"
 )
 
 // OCServAuthMethod 认证方式：plain（本地 ocpasswd）或 radius
@@ -40,28 +42,28 @@ type OCServUser struct {
 
 // OCServState ocserv 服务端配置（持久化在 state.json）
 type OCServState struct {
-	Enabled        bool         `json:"enabled"`
-	AuthMethod     string       `json:"auth_method,omitempty"` // plain | radius
-	Radius         OCServRadius `json:"radius,omitempty"`
-	TCPPort        int          `json:"tcp_port"`
-	UDPPort        int          `json:"udp_port"`
-	Device         string       `json:"device"` // tun 设备名前缀，默认 vpns
-	IPv4Network    string       `json:"ipv4_network"`
-	IPv4Netmask    string       `json:"ipv4_netmask"`
-	DNS            []string       `json:"dns,omitempty"`
-	Routes         []string       `json:"routes,omitempty"`    // 如 default、10.0.0.0/24
-	NoRoutes       []string       `json:"no_routes,omitempty"` // no-route
-	MaxClients     int            `json:"max_clients,omitempty"`
-	IsolateWorkers bool           `json:"isolate_workers,omitempty"` // 已迁移至 advanced，仅作旧 state 兼容
-	Advanced       OCServAdvanced `json:"advanced,omitempty"`
-	UseQoSnatTLS    bool   `json:"use_qosnat_tls,omitempty"`
-	ManagedCertID   string `json:"managed_cert_id,omitempty"`
-	ServerCertPath string         `json:"server_cert_path,omitempty"`
-	ServerKeyPath  string         `json:"server_key_path,omitempty"`
-	CaCertPath     string         `json:"ca_cert_path,omitempty"`
-	SocketFile     string         `json:"socket_file,omitempty"`
-	ServerCert     string         `json:"server_cert,omitempty"` // PEM 内联（少用）
-	ServerKey      string         `json:"server_key,omitempty"`
+	Enabled            bool           `json:"enabled"`
+	AuthMethod         string         `json:"auth_method,omitempty"` // plain | radius
+	Radius             OCServRadius   `json:"radius,omitempty"`
+	TCPPort            int            `json:"tcp_port"`
+	UDPPort            int            `json:"udp_port"`
+	Device             string         `json:"device"` // tun 设备名前缀，默认 vpns
+	IPv4Network        string         `json:"ipv4_network"`
+	IPv4Netmask        string         `json:"ipv4_netmask"`
+	DNS                []string       `json:"dns,omitempty"`
+	Routes             []string       `json:"routes,omitempty"`    // 如 default、10.0.0.0/24
+	NoRoutes           []string       `json:"no_routes,omitempty"` // no-route
+	MaxClients         int            `json:"max_clients,omitempty"`
+	IsolateWorkers     bool           `json:"isolate_workers,omitempty"` // 已迁移至 advanced，仅作旧 state 兼容
+	Advanced           OCServAdvanced `json:"advanced,omitempty"`
+	UseQoSnatTLS       bool           `json:"use_qosnat_tls,omitempty"`
+	ManagedCertID      string         `json:"managed_cert_id,omitempty"`
+	ServerCertPath     string         `json:"server_cert_path,omitempty"`
+	ServerKeyPath      string         `json:"server_key_path,omitempty"`
+	CaCertPath         string         `json:"ca_cert_path,omitempty"`
+	SocketFile         string         `json:"socket_file,omitempty"`
+	ServerCert         string         `json:"server_cert,omitempty"` // PEM 内联（少用）
+	ServerKey          string         `json:"server_key,omitempty"`
 	Users              []OCServUser   `json:"users"`
 	ConfigPerGroup     string         `json:"config_per_group,omitempty"`
 	ConfigPerUser      string         `json:"config_per_user,omitempty"`
@@ -75,27 +77,27 @@ type OCServState struct {
 
 func DefaultOCServ() OCServState {
 	return OCServState{
-		Enabled:        false,
-		AuthMethod:     OCServAuthPlain,
+		Enabled:    false,
+		AuthMethod: OCServAuthPlain,
 		Radius: OCServRadius{
 			AuthPort:        1812,
 			AcctPort:        1813,
 			GroupConfig:     true,
 			StatsReportTime: 360,
 		},
-		TCPPort:        443,
-		UDPPort:        443,
-		Device:         "vpns",
-		IPv4Network:    "10.250.0.0",
-		IPv4Netmask:    "255.255.255.0",
-		DNS:            []string{"8.8.8.8"},
-		Routes:         []string{"default"},
-		MaxClients:     128,
-		Advanced:       DefaultOCServAdvanced(),
-		UseQoSnatTLS:   true,
-		ServerCertPath: "/etc/ocserv/certs/server-cert.pem",
-		ServerKeyPath:  "/etc/ocserv/certs/server-key.pem",
-		SocketFile:     "/var/run/ocserv-socket",
+		TCPPort:            443,
+		UDPPort:            443,
+		Device:             "vpns",
+		IPv4Network:        linknet.OCServDefaultIPv4Network,
+		IPv4Netmask:        linknet.OCServDefaultIPv4Netmask,
+		DNS:                []string{"8.8.8.8"},
+		Routes:             []string{"default"},
+		MaxClients:         128,
+		Advanced:           DefaultOCServAdvanced(),
+		UseQoSnatTLS:       true,
+		ServerCertPath:     "/etc/ocserv/certs/server-cert.pem",
+		ServerKeyPath:      "/etc/ocserv/certs/server-key.pem",
+		SocketFile:         "/var/run/ocserv-socket",
 		Users:              []OCServUser{},
 		ConfigPerGroup:     "/etc/ocserv/config-per-group/",
 		DefaultGroupConfig: "/etc/ocserv/defaults/group.conf",
@@ -142,10 +144,10 @@ func NormalizeOCServ(o *OCServState) error {
 	o.IPv4Network = strings.TrimSpace(o.IPv4Network)
 	o.IPv4Netmask = strings.TrimSpace(o.IPv4Netmask)
 	if o.IPv4Network == "" {
-		o.IPv4Network = "10.250.0.0"
+		o.IPv4Network = linknet.OCServDefaultIPv4Network
 	}
 	if o.IPv4Netmask == "" {
-		o.IPv4Netmask = "255.255.255.0"
+		o.IPv4Netmask = linknet.OCServDefaultIPv4Netmask
 	}
 	if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
 		return err

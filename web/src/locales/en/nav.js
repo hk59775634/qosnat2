@@ -3,6 +3,7 @@ export default {
   dashboardHome: 'Overview',
   network: 'Network',
   interfaces: 'Interfaces',
+  virtualIps: 'Virtual IPs',
   routes: 'Routes',
   dhcp: 'DHCP',
   vlans: 'VLAN',

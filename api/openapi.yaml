@@ -562,6 +562,30 @@ components:
         role: { type: string, enum: [LAN, WAN] }
         traffic: { $ref: '#/components/schemas/IfaceTraffic' }
         rss_channels: { type: integer }
+        netplan_manageable: { type: boolean, description: 是否可经 PUT 写入 99-qosnat2.yaml ethernets }
+        managed:
+          allOf:
+            - $ref: '#/components/schemas/IfaceManagedConfig'
+          nullable: true
+          description: qosnat2 期望配置（持久化）；空表示尚未由本系统托管
+    IfaceManagedConfig:
+      type: object
+      properties:
+        device: { type: string }
+        ipv4: { type: array, items: { type: string } }
+        up: { type: boolean }
+        dhcp4: { type: boolean }
+    VirtualIP:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [ip_alias] }
+        interface: { type: string }
+        address: { type: string }
+        comment: { type: string }
+        enabled: { type: boolean }
+        host: { type: string, description: 主机 IP（不含前缀） }
+        assigned: { type: boolean, description: 当前是否已出现在接口地址中 }
     TrafficPoint:
       type: object
       properties:
@@ -2850,13 +2874,17 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/IfaceListItem'
+                  managed_ifaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IfaceManagedConfig'
                   traffic_history:
                     type: array
                     items:
                       $ref: '#/components/schemas/TrafficPoint'
     put:
       tags: [network]
-      summary: 修改网卡 IPv4 与 up/down
+      summary: 修改网卡 IPv4 / up / dhcp4（写入 state 与 netplan 并 apply）
       requestBody:
         content:
           application/json:
@@ -2867,14 +2895,31 @@ paths:
                 device:
                   type: string
                   description: Linux 网卡名（1–15 字符，字母数字与 `._-`，禁止 `/`）
-                ipv4: { type: array, items: { type: string } }
+                ipv4: { type: array, items: { type: string }, description: 完整替换托管地址列表；[] 清空静态地址 }
                 up: { type: boolean }
+                dhcp4: { type: boolean }
       responses:
         '200':
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [network]
+      summary: 停止托管指定网卡（从 99-qosnat2.yaml / state.ifaces 移除）
+      parameters:
+        - name: device
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+        '404':
+          description: 该网卡不在托管列表中
 
   /api/v1/interfaces/roles:
     put:
@@ -2956,6 +3001,85 @@ paths:
                   ok: { type: boolean }
                   ethtool:
                     $ref: '#/components/schemas/EthtoolInfo'
+
+  /api/v1/network/virtual-ips:
+    get:
+      tags: [network]
+      summary: 虚拟 IP（IP Alias）列表，供 NAT / 端口转发绑定
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  virtual_ips:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VirtualIP'
+                  dev_wan: { type: string }
+                  dev_lan: { type: string }
+                  netplan_path: { type: string }
+    post:
+      tags: [network]
+      summary: 添加虚拟 IP（绑定到接口 /32）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [interface, address]
+              properties:
+                type: { type: string, enum: [ip_alias], default: ip_alias }
+                interface: { type: string }
+                address: { type: string, description: 主机 IP 或 CIDR }
+                comment: { type: string }
+                enabled: { type: boolean, default: true }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    put:
+      tags: [network]
+      summary: 更新虚拟 IP
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type: { type: string }
+                interface: { type: string }
+                address: { type: string }
+                comment: { type: string }
+                enabled: { type: boolean }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
+    delete:
+      tags: [network]
+      summary: 删除虚拟 IP 并尝试卸下地址
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ok'
 
   /api/v1/network/vlans:
     get:

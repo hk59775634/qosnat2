@@ -75,7 +75,7 @@ export default {
   radiusHelpExampleTitle: 'FreeRADIUS 示例',
   radiusHelpExampleFreeradius: `# users 片段（需 groupconfig=true）
 vpnuser Cleartext-Password := "secret"
-    Framed-IP-Address = 10.250.0.50
+    Framed-IP-Address = 198.18.250.50
     Class = "OU=staff;vpn"
     Session-Timeout = 86400
     MS-Primary-DNS-Server = 8.8.8.8

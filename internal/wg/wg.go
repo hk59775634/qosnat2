@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/hk59775634/qosnat2/internal/linknet"
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
@@ -117,8 +118,8 @@ func ClientConf(server store.WireGuardState, peer store.WGPeer, serverEndpoint s
 	if peer.PrivateKey != "" {
 		b.WriteString(fmt.Sprintf("PrivateKey = %s\n", peer.PrivateKey))
 	}
-	// 客户端地址取 allowed 中第一个 /32 或默认
-	addr := "10.200.0.2/32"
+	// 客户端地址取 allowed 中第一个含前缀的项，否则按服务端隧道网段回退 .2/32
+	addr := linknet.WireGuardClientFallbackAddr(server.Address)
 	for _, a := range peer.AllowedIPs {
 		if strings.Contains(a, "/") {
 			addr = a

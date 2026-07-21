@@ -60,7 +60,7 @@ func TestRenderConfRadiusAlwaysWritesPool(t *testing.T) {
 		t.Fatal(err)
 	}
 	conf := RenderConf(o, nil)
-	if !strings.Contains(conf, "ipv4-network = 10.250.0.0") {
+	if !strings.Contains(conf, "ipv4-network = 198.18.250.0") {
 		t.Fatalf("ocserv.conf must always include ipv4-network:\n%s", conf)
 	}
 	if !strings.Contains(conf, "ipv4-netmask = 255.255.255.0") {

@@ -63,7 +63,7 @@ const egForm = ref({
   name: 'US exit',
   src_iface: '',
   src_mode: 'cidr',
-  src_cidr: '10.250.0.0/24',
+  src_cidr: '198.18.250.0/24',
   src_alias: '',
   dst_mode: 'none',
   dst_cidr: '',
@@ -1530,7 +1530,7 @@ onUnmounted(() => {
             v-if="egForm.src_mode === 'cidr'"
             v-model="egForm.src_cidr"
             class="input-field font-mono"
-            placeholder="10.250.0.0/24"
+            placeholder="198.18.250.0/24"
           />
           <select v-else-if="egForm.src_mode === 'alias'" v-model="egForm.src_alias" class="input-field font-mono">
             <option value="">{{ t('network.interfaces.choose') }}</option>

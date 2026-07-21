@@ -42,6 +42,17 @@ func TestRenderNetplanEmpty(t *testing.T) {
 	}
 }
 
+func TestIsNetplanManagedDevice(t *testing.T) {
+	if !IsNetplanManagedDevice("ens18") {
+		t.Fatal("ens18 should be manageable")
+	}
+	for _, bad := range []string{"lo", "ifb0", "veth0", "docker0", "br-abc", "qpe0", "qwp0", "CloudflareWARP"} {
+		if IsNetplanManagedDevice(bad) {
+			t.Fatalf("%s should be excluded", bad)
+		}
+	}
+}
+
 func TestApplyNetplanEmptySkipsGenerate(t *testing.T) {
 	if _, err := exec.LookPath("netplan"); err != nil {
 		t.Skip("netplan not installed")
@@ -54,3 +65,4 @@ func TestApplyNetplanEmptySkipsGenerate(t *testing.T) {
 		t.Fatal("expected no netplan apply for empty state")
 	}
 }
+

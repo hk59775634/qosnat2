@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hk59775634/qosnat2/internal/linknet"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/wg"
 	wgusertraffic "github.com/hk59775634/qosnat2/internal/wg/usertraffic"
@@ -73,7 +74,7 @@ func (srv *Server) handleWireGuardInstancesRoot(w http.ResponseWriter, r *http.R
 				if inst.Mode == store.WGModeServer {
 					inst.ListenPort = 51820 + n
 				}
-				inst.Address = fmt.Sprintf("10.200.%d.1/24", n)
+				inst.Address = linknet.WireGuardHostCIDR(n)
 			}
 			s.VPN.WireGuards = append(s.VPN.WireGuards, inst)
 			if msg := validateWireGuardInstancesUnique(s.VPN.WireGuards); msg != "" {
@@ -354,7 +355,15 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			return
 		}
 		if len(p.AllowedIPs) == 0 {
-			p.AllowedIPs = []string{"10.200.0.10/32"}
+			serverAddr := linknet.WireGuardDefaultAddress
+			if st := srv.store.Get(); true {
+				if idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id); ok {
+					if a := strings.TrimSpace(st.VPN.WireGuards[idx].Address); a != "" {
+						serverAddr = a
+					}
+				}
+			}
+			p.AllowedIPs = []string{linknet.WireGuardSuggestPeerAllowedIP(serverAddr)}
 		}
 		var errStr string
 		_ = srv.store.Update(func(s *store.State) {

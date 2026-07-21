@@ -205,6 +205,7 @@ func (srv *Server) routes() {
 	m.HandleFunc("/api/v1/network/netplan", srv.requireAuth(srv.handleNetworkNetplan))
 	m.HandleFunc("/api/v1/network/vxlan", srv.requireAuth(srv.handleNetworkVXLAN))
 	m.HandleFunc("/api/v1/network/vlans", srv.requireAuth(srv.handleNetworkVLANs))
+	m.HandleFunc("/api/v1/network/virtual-ips", srv.requireAuth(srv.handleNetworkVirtualIPs))
 	m.HandleFunc("/api/v1/network/wan-links", srv.requireAuth(srv.handleNetworkWanLinks))
 	m.HandleFunc("/api/v1/network/egress-policies", srv.requireAuth(srv.handleNetworkEgressPolicies))
 	m.HandleFunc("/api/v1/network/egress-policies/bulk", srv.requireAuth(srv.handleNetworkEgressPoliciesBulk))

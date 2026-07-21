@@ -259,6 +259,17 @@ export const api = {
         }),
       del: (id) => request(`/api/v1/network/vlans?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     },
+    virtualIPs: {
+      list: () => request('/api/v1/network/virtual-ips'),
+      add: (body) => request('/api/v1/network/virtual-ips', { method: 'POST', body: JSON.stringify(body) }),
+      put: (id, body) =>
+        request(`/api/v1/network/virtual-ips?id=${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(body),
+        }),
+      del: (id) =>
+        request(`/api/v1/network/virtual-ips?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    },
     netplan: {
       preview: () => request('/api/v1/network/netplan'),
       apply: () => request('/api/v1/network/netplan/apply', { method: 'POST', body: '{}' }),
@@ -380,6 +391,8 @@ export const api = {
   interfaces: {
     list: () => request('/api/v1/interfaces'),
     update: (body) => request('/api/v1/interfaces', { method: 'PUT', body: JSON.stringify(body) }),
+    clear: (device) =>
+      request(`/api/v1/interfaces?device=${encodeURIComponent(device)}`, { method: 'DELETE' }),
     setRoles: (body) =>
       request('/api/v1/interfaces/roles', { method: 'PUT', body: JSON.stringify(body) }),
   },

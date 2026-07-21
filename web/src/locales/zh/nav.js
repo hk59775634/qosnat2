@@ -3,6 +3,7 @@ export default {
   dashboardHome: '仪表盘',
   network: '网络',
   interfaces: '接口',
+  virtualIps: '虚拟 IP',
   routes: '路由',
   dhcp: 'DHCP',
   vlans: 'VLAN',

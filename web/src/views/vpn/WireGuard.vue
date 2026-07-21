@@ -17,7 +17,7 @@ const ok = ref('')
 function defaultPeerForm() {
   return {
     name: '',
-    allowed_ips: '10.200.0.10/32',
+    allowed_ips: '198.19.0.10/32',
     private_key: '',
     public_key: '',
     endpoint: '',
@@ -632,7 +632,7 @@ onUnmounted(() => {
               </div>
               <div>
                 <label class="text-xs text-slate-500">{{ t('vpn.wg.peerAllowedLabel') }}</label>
-                <input v-model="peerForm.allowed_ips" class="input-field font-mono text-xs" placeholder="10.200.0.10/32" />
+                <input v-model="peerForm.allowed_ips" class="input-field font-mono text-xs" placeholder="198.19.0.10/32" />
               </div>
               <div>
                 <label class="text-xs text-slate-500">{{ t('vpn.wg.rateDown') }}</label>

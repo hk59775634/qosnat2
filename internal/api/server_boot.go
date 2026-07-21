@@ -6,8 +6,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/frr"
+	"github.com/hk59775634/qosnat2/internal/netif"
+	"github.com/hk59775634/qosnat2/internal/nft"
 	"github.com/hk59775634/qosnat2/internal/route"
 )
 
@@ -42,10 +43,16 @@ func (srv *Server) ApplyAll() error {
 	srv.replayProxyEgressOnBoot()
 	srv.replayEgressOnBoot()
 	netplanApplied := srv.applyNetworkVLANs()
+	if err := netif.ApplyVirtualIPs(srv.store.Get().Network); err != nil {
+		log.Printf("virtual ips apply: %v", err)
+	}
 	srv.applyManagedRoutesWithRetry()
 	if netplanApplied {
 		time.Sleep(3 * time.Second)
 		srv.applyManagedRoutesWithRetry()
+		if err := netif.ApplyVirtualIPs(srv.store.Get().Network); err != nil {
+			log.Printf("virtual ips re-apply: %v", err)
+		}
 	}
 	srv.applyEgressPolicyRoutes()
 	if srv.shaperEnabled() {
