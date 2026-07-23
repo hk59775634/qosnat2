@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复启动后多 WAN 出站策略失效、需手动保存才能恢复的问题。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -17,11 +17,7 @@
 
 ## 修复
 
-- 修复 FRR 模式下因路由 metric 误判 missing，反复 ApplyManaged（先删后写）冲掉策略表默认路由，导致出站策略失效
-- 修复 `ip -json` 将 /32 显示为裸 IP 导致 route guard 误判 missing、周期性重放
-- 启动回放改为与 UI 保存相同的出站数据面路径（sync → routes → ip rule → nft）
-- 出站 ip rule 在 WAN/SNAT 暂未就绪时不再先删光再装失败，避免启动窗口策略空洞
-- 存在接口网关主默认路由时，不再为其它设备（如 wg0）写入无法装入 FIB 的 main default
+- （无）
 
 ## 删除
 
