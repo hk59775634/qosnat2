@@ -11,6 +11,8 @@ import (
 // PeerTransferStats 来自 `wg show IFACE dump` 单行 peer 统计
 type PeerTransferStats struct {
 	PublicKey     string
+	Endpoint      string // 运行时对端；"(none)" 归一为空
+	AllowedIPs    string // dump 中的 allowed-ips 原文
 	RxBytes       uint64
 	TxBytes       uint64
 	LastHandshake time.Time // 零值表示尚未握手
@@ -40,6 +42,14 @@ func ParseShowDumpOutput(output string) ([]PeerTransferStats, error) {
 		if pub == "" {
 			continue
 		}
+		endpoint := strings.TrimSpace(parts[2])
+		if endpoint == "(none)" {
+			endpoint = ""
+		}
+		allowed := strings.TrimSpace(parts[3])
+		if allowed == "(none)" {
+			allowed = ""
+		}
 		sec, err1 := strconv.ParseInt(strings.TrimSpace(parts[4]), 10, 64)
 		var nsec int64
 		var rx, tx uint64
@@ -64,6 +74,8 @@ func ParseShowDumpOutput(output string) ([]PeerTransferStats, error) {
 		}
 		out = append(out, PeerTransferStats{
 			PublicKey:     pub,
+			Endpoint:      endpoint,
+			AllowedIPs:    allowed,
 			RxBytes:       rx,
 			TxBytes:       tx,
 			LastHandshake: hs,

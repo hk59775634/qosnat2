@@ -125,6 +125,10 @@ func (srv *Server) handleWireGuardInstancesSubtree(w http.ResponseWriter, r *htt
 		srv.handleWireGuardInstancePeers(w, r, id)
 		return
 	}
+	if len(parts) == 3 && parts[1] == "peers" && parts[2] == "status" {
+		srv.handleWireGuardInstancePeersStatus(w, r, id)
+		return
+	}
 	if len(parts) == 3 && parts[1] == "peers" && parts[2] == "traffic" {
 		srv.handleWireGuardInstancePeerTraffic(w, r, id)
 		return
@@ -504,6 +508,95 @@ func (srv *Server) handleWireGuardInstancePeerConf(w http.ResponseWriter, r *htt
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename="+fn+".conf")
 	w.Write([]byte(conf))
+}
+
+func (srv *Server) handleWireGuardInstancePeersStatus(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w)
+		return
+	}
+	st := srv.store.Get()
+	idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id)
+	if !ok {
+		writeNotFound(w, "instance not found")
+		return
+	}
+	inst := st.VPN.WireGuards[idx]
+	iface := strings.TrimSpace(inst.Interface)
+	if iface == "" {
+		iface = "wg0"
+	}
+	ifaceStatus := wg.ShowStatus(iface)
+
+	type peerStatus struct {
+		Name                string   `json:"name"`
+		PublicKey           string   `json:"public_key,omitempty"`
+		Online              bool     `json:"online"`
+		Endpoint            string   `json:"endpoint,omitempty"`
+		ConfigEndpoint      string   `json:"config_endpoint,omitempty"`
+		AllowedIPs          []string `json:"allowed_ips,omitempty"`
+		LastHandshakeUnix   int64    `json:"last_handshake_unix,omitempty"`
+		LastHandshakeHuman  string   `json:"last_handshake,omitempty"`
+		RxBytes             uint64   `json:"rx_bytes"`
+		TxBytes             uint64   `json:"tx_bytes"`
+		PersistentKeepalive int      `json:"persistent_keepalive,omitempty"`
+		InKernel            bool     `json:"in_kernel"`
+	}
+
+	var dump map[string]wg.PeerTransferStats
+	if inst.Enabled && ifaceStatus.Up {
+		dump, _ = wg.DumpPeerStats(iface)
+	}
+	now := time.Now()
+	out := make([]peerStatus, 0, len(inst.Peers))
+	for _, p := range inst.Peers {
+		ps := peerStatus{
+			Name:                p.Name,
+			PublicKey:           strings.TrimSpace(p.PublicKey),
+			ConfigEndpoint:      strings.TrimSpace(p.Endpoint),
+			AllowedIPs:          append([]string(nil), p.AllowedIPs...),
+			PersistentKeepalive: p.PersistentKeepalive,
+		}
+		pub := ps.PublicKey
+		if pub != "" && dump != nil {
+			if row, ok := dump[pub]; ok {
+				ps.InKernel = true
+				ps.Online = wg.PeerLikelyOnline(row.LastHandshake, now, wgPeerOnlineHandshakeWindow)
+				ps.RxBytes = row.RxBytes
+				ps.TxBytes = row.TxBytes
+				if !row.LastHandshake.IsZero() {
+					ps.LastHandshakeUnix = row.LastHandshake.Unix()
+					ps.LastHandshakeHuman = row.LastHandshake.Local().Format("2006-01-02 15:04:05")
+				}
+				if row.Endpoint != "" {
+					ps.Endpoint = row.Endpoint
+				}
+				if len(ps.AllowedIPs) == 0 && row.AllowedIPs != "" {
+					for _, a := range strings.Split(row.AllowedIPs, ",") {
+						a = strings.TrimSpace(a)
+						if a != "" {
+							ps.AllowedIPs = append(ps.AllowedIPs, a)
+						}
+					}
+				}
+			}
+		}
+		if ps.Endpoint == "" {
+			ps.Endpoint = ps.ConfigEndpoint
+		}
+		out = append(out, ps)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":          id,
+		"interface":   iface,
+		"enabled":     inst.Enabled,
+		"installed":   ifaceStatus.Installed,
+		"up":          ifaceStatus.Up,
+		"raw":         ifaceStatus.Raw,
+		"peers":       out,
+		"online_hint": "handshake within 10 minutes",
+	})
 }
 
 func (srv *Server) handleWireGuardInstancePeerTraffic(w http.ResponseWriter, r *http.Request, id string) {

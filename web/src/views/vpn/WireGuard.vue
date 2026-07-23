@@ -50,10 +50,35 @@ const trafficLiveErr = ref('')
 const TRAFFIC_LIVE_POLL_MS = 2000
 const TRAFFIC_LIVE_WINDOW_SEC = 300
 
+const peerStatusByName = ref({})
+const peerStatusPoll = ref(null)
+const PEER_STATUS_POLL_MS = 5000
+const statusModalOpen = ref(false)
+const statusModalPeer = ref(null) // null = instance status; string = peer name
+const statusModalLoading = ref(false)
+const statusModalErr = ref('')
+const statusModalData = ref(null)
+
 const tabs = computed(() => [
   { id: 'server', label: t('vpn.wg.tabServer') },
   { id: 'peers', label: t('vpn.wg.tabPeers') },
 ])
+
+const selectedInstanceMeta = computed(() => instances.value.find((x) => x.id === selectedId.value) || null)
+
+const instanceRuntimeUp = computed(() => {
+  if (status.value?.up) return true
+  return !!selectedInstanceMeta.value?.status?.up
+})
+
+const instanceRuntimeInstalled = computed(() => {
+  if (status.value) return !!status.value.installed
+  return !!selectedInstanceMeta.value?.status?.installed
+})
+
+function peerRuntime(name) {
+  return peerStatusByName.value[name] || null
+}
 
 function instanceApiBase() {
   const id = encodeURIComponent(selectedId.value || 'default')
@@ -78,7 +103,123 @@ async function load() {
     rate: p.rate || { down: '', up: '' },
   }))
   serverEndpoint.value = d.config?.server_endpoint || ''
+  if (activeTab.value === 'peers') {
+    await loadPeerStatuses(true)
+  }
 }
+
+async function loadPeerStatuses(silent = false) {
+  if (!selectedId.value) return
+  try {
+    const d = await api.get(`${instanceApiBase()}/peers/status`)
+    if (d?.up != null || d?.installed != null) {
+      status.value = {
+        ...(status.value || {}),
+        installed: d.installed,
+        up: d.up,
+        raw: d.raw || status.value?.raw,
+      }
+    }
+    const map = {}
+    for (const p of d.peers || []) {
+      if (p?.name) map[p.name] = p
+    }
+    peerStatusByName.value = map
+    if (statusModalOpen.value && statusModalPeer.value) {
+      statusModalData.value = map[statusModalPeer.value] || statusModalData.value
+    }
+  } catch (e) {
+    if (!silent) err.value = e.message
+  }
+}
+
+function startPeerStatusPoll() {
+  stopPeerStatusPoll()
+  if (activeTab.value !== 'peers') return
+  peerStatusPoll.value = setInterval(() => loadPeerStatuses(true), PEER_STATUS_POLL_MS)
+}
+
+function stopPeerStatusPoll() {
+  if (peerStatusPoll.value) {
+    clearInterval(peerStatusPoll.value)
+    peerStatusPoll.value = null
+  }
+}
+
+async function openInstanceStatusModal() {
+  statusModalPeer.value = null
+  statusModalOpen.value = true
+  statusModalLoading.value = true
+  statusModalErr.value = ''
+  statusModalData.value = null
+  try {
+    const d = await api.get(`${instanceApiBase()}/peers/status`)
+    statusModalData.value = d
+    status.value = {
+      installed: d.installed,
+      up: d.up,
+      raw: d.raw,
+    }
+  } catch (e) {
+    statusModalErr.value = e.message
+  } finally {
+    statusModalLoading.value = false
+  }
+}
+
+async function openPeerStatusModal(name) {
+  statusModalPeer.value = name
+  statusModalOpen.value = true
+  statusModalLoading.value = true
+  statusModalErr.value = ''
+  statusModalData.value = peerRuntime(name)
+  try {
+    await loadPeerStatuses(true)
+    statusModalData.value = peerRuntime(name)
+    if (!statusModalData.value) {
+      statusModalErr.value = t('vpn.wg.peerStatusNotFound')
+    }
+  } catch (e) {
+    statusModalErr.value = e.message
+  } finally {
+    statusModalLoading.value = false
+  }
+}
+
+function closeStatusModal() {
+  statusModalOpen.value = false
+  statusModalPeer.value = null
+  statusModalData.value = null
+  statusModalErr.value = ''
+}
+
+function formatHandshake(unix) {
+  if (!unix || unix <= 0) return t('vpn.wg.handshakeNever')
+  try {
+    return new Date(unix * 1000).toLocaleString()
+  } catch {
+    return String(unix)
+  }
+}
+
+watch(selectedId, async () => {
+  err.value = ''
+  ok.value = ''
+  peerStatusByName.value = {}
+  closeStatusModal()
+  closePeerTraffic()
+  closePeerModal()
+  await load()
+})
+
+watch(activeTab, async (tab) => {
+  if (tab === 'peers') {
+    await loadPeerStatuses(true)
+    startPeerStatusPoll()
+  } else {
+    stopPeerStatusPoll()
+  }
+})
 
 async function createInstance() {
   err.value = ''
@@ -441,12 +582,6 @@ watch(trafficPeriod, () => {
   if (trafficModal.value && !trafficLiveEnabled.value) loadPeerTraffic()
 })
 
-watch(selectedId, () => {
-  closePeerTraffic()
-  closePeerModal()
-  load()
-})
-
 function openAddPeerModal() {
   peerModalErr.value = ''
   peerEditing.value = false
@@ -481,10 +616,14 @@ function closePeerModal() {
   peerHadPrivateKey.value = false
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  if (activeTab.value === 'peers') startPeerStatusPoll()
+})
 onUnmounted(() => {
   stopTrafficPoll()
   stopTrafficLivePoll()
+  stopPeerStatusPoll()
 })
 </script>
 
@@ -496,9 +635,32 @@ onUnmounted(() => {
       <label class="text-slate-600 shrink-0">{{ t('vpn.wg.instanceLabel') }}</label>
       <select v-model="selectedId" class="input-field w-auto min-w-[12rem]">
         <option v-for="x in instances" :key="x.id" :value="x.id">
-          {{ x.name || x.id }} · {{ x.interface }} {{ x.enabled ? '●' : '○' }}
+          {{ x.name || x.id }} · {{ x.interface }}
+          {{ x.enabled ? '●' : '○' }}
+          {{ x.status?.up ? t('vpn.wg.runtimeUpShort') : t('vpn.wg.runtimeDownShort') }}
         </option>
       </select>
+      <span
+        class="text-xs px-2 py-0.5 rounded font-medium"
+        :class="
+          instanceRuntimeUp
+            ? 'bg-emerald-100 text-emerald-800'
+            : instanceRuntimeInstalled
+              ? 'bg-amber-50 text-amber-800'
+              : 'bg-slate-100 text-slate-600'
+        "
+      >
+        {{
+          instanceRuntimeUp
+            ? t('vpn.wg.running')
+            : instanceRuntimeInstalled
+              ? t('vpn.wg.installedNotUp')
+              : t('vpn.wg.notInstalled')
+        }}
+      </span>
+      <button type="button" class="btn-secondary text-sm" @click="openInstanceStatusModal">
+        {{ t('vpn.wg.viewStatus') }}
+      </button>
       <button type="button" class="btn-secondary text-sm" @click="createInstance">{{ t('vpn.wg.newInstance') }}</button>
       <button
         v-if="instances.length > 1"
@@ -537,15 +699,34 @@ onUnmounted(() => {
               <option value="client">{{ t('vpn.wg.modeClient') }}</option>
             </select>
           </div>
-          <div>
-            <span class="text-slate-500">{{ t('vpn.wg.statusLabel') }}</span>
-            {{
-              status?.installed
-                ? status?.up
-                  ? t('vpn.wg.running')
-                  : t('vpn.wg.installed')
-                : t('vpn.wg.notInstalled')
-            }}
+          <div class="sm:col-span-2 flex flex-wrap items-center gap-3">
+            <div>
+              <span class="text-slate-500 mr-2">{{ t('vpn.wg.statusLabel') }}</span>
+              <span
+                class="text-xs px-2 py-0.5 rounded font-medium"
+                :class="
+                  instanceRuntimeUp
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : instanceRuntimeInstalled
+                      ? 'bg-amber-50 text-amber-800'
+                      : 'bg-slate-100 text-slate-600'
+                "
+              >
+                {{
+                  instanceRuntimeUp
+                    ? t('vpn.wg.running')
+                    : instanceRuntimeInstalled
+                      ? t('vpn.wg.installedNotUp')
+                      : t('vpn.wg.notInstalled')
+                }}
+              </span>
+              <span class="text-xs text-slate-500 ml-2">
+                {{ cfg.enabled ? t('vpn.wg.configEnabled') : t('vpn.wg.configDisabled') }}
+              </span>
+            </div>
+            <button type="button" class="btn-secondary text-xs" @click="openInstanceStatusModal">
+              {{ t('vpn.wg.viewStatus') }}
+            </button>
           </div>
           <div>
             <label class="text-xs text-slate-500">{{ t('vpn.wg.iface') }}</label>
@@ -582,6 +763,8 @@ onUnmounted(() => {
           <thead>
             <tr>
               <th>{{ t('vpn.wg.colName') }}</th>
+              <th>{{ t('vpn.wg.colStatus') }}</th>
+              <th>{{ t('vpn.wg.colEndpoint') }}</th>
               <th>{{ t('vpn.wg.colPubkey') }}</th>
               <th>{{ t('vpn.wg.colAllowed') }}</th>
               <th>{{ t('vpn.wg.colTotalRx') }}</th>
@@ -594,6 +777,25 @@ onUnmounted(() => {
           <tbody>
             <tr v-for="p in peers" :key="p.name">
               <td>{{ p.name }}</td>
+              <td>
+                <span
+                  class="text-xs px-2 py-0.5 rounded"
+                  :class="
+                    peerRuntime(p.name)?.online
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-100 text-slate-600'
+                  "
+                >
+                  {{
+                    peerRuntime(p.name)?.online
+                      ? t('ocserv.onlineNow')
+                      : t('ocserv.offlineNow')
+                  }}
+                </span>
+              </td>
+              <td class="font-mono text-xs max-w-[10rem] truncate">
+                {{ peerRuntime(p.name)?.endpoint || p.endpoint || '—' }}
+              </td>
               <td class="font-mono text-xs max-w-xs truncate">{{ p.public_key }}</td>
               <td class="font-mono text-xs">{{ (p.allowed_ips || []).join(', ') }}</td>
               <td class="font-mono text-xs whitespace-nowrap">{{ formatBytes(p.total_rx_bytes) }}</td>
@@ -615,6 +817,9 @@ onUnmounted(() => {
                 />
               </td>
               <td class="whitespace-nowrap">
+                <button type="button" class="text-sky-700 text-xs mr-2" @click="openPeerStatusModal(p.name)">
+                  {{ t('vpn.wg.viewStatus') }}
+                </button>
                 <button type="button" class="text-indigo-600 text-xs mr-2" @click="openEditPeerModal(p)">{{ t('common.edit') }}</button>
                 <button type="button" class="text-emerald-700 text-xs mr-2" @click="openPeerTraffic(p.name)">{{ t('vpn.wg.traffic') }}</button>
                 <button type="button" class="text-blue-600 text-xs mr-2" @click="downloadConf(p.name)">{{ t('vpn.wg.downloadConf') }}</button>
@@ -629,6 +834,114 @@ onUnmounted(() => {
       </div>
       </template>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="statusModalOpen"
+        class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+        role="presentation"
+        @click.self="closeStatusModal"
+      >
+        <div
+          class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200"
+          role="dialog"
+          aria-modal="true"
+          @click.stop
+        >
+          <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white z-10">
+            <h3 class="font-medium">
+              {{
+                statusModalPeer
+                  ? t('vpn.wg.peerStatusTitle', { peer: statusModalPeer })
+                  : t('vpn.wg.instanceStatusTitle')
+              }}
+            </h3>
+            <button type="button" class="text-slate-500 hover:text-slate-800 text-xl leading-none px-2" @click="closeStatusModal">
+              ×
+            </button>
+          </div>
+          <div class="p-4 space-y-4 text-sm">
+            <p v-if="statusModalErr" class="text-red-600">{{ statusModalErr }}</p>
+            <p v-else-if="statusModalLoading" class="text-slate-500">{{ t('common.loading') }}</p>
+            <template v-else-if="!statusModalPeer && statusModalData">
+              <dl class="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <dt class="text-xs text-slate-500">{{ t('vpn.wg.iface') }}</dt>
+                  <dd class="font-mono">{{ statusModalData.interface || '—' }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">{{ t('vpn.wg.statusLabel') }}</dt>
+                  <dd>
+                    <span
+                      class="text-xs px-2 py-0.5 rounded"
+                      :class="statusModalData.up ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'"
+                    >
+                      {{ statusModalData.up ? t('vpn.wg.running') : statusModalData.installed ? t('vpn.wg.installedNotUp') : t('vpn.wg.notInstalled') }}
+                    </span>
+                    <span class="text-xs text-slate-500 ml-2">
+                      {{ statusModalData.enabled ? t('vpn.wg.configEnabled') : t('vpn.wg.configDisabled') }}
+                    </span>
+                  </dd>
+                </div>
+                <div class="sm:col-span-2">
+                  <dt class="text-xs text-slate-500 mb-1">{{ t('vpn.wg.peerOnlineCount') }}</dt>
+                  <dd>
+                    {{ (statusModalData.peers || []).filter((p) => p.online).length }}
+                    /
+                    {{ (statusModalData.peers || []).length }}
+                  </dd>
+                </div>
+              </dl>
+              <div>
+                <p class="text-xs text-slate-500 mb-1">{{ t('vpn.wg.wgShowRaw') }}</p>
+                <pre class="text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap max-h-80">{{ statusModalData.raw || '—' }}</pre>
+              </div>
+            </template>
+            <template v-else-if="statusModalPeer && statusModalData">
+              <div class="flex items-center gap-2">
+                <span
+                  class="text-xs px-2 py-0.5 rounded"
+                  :class="statusModalData.online ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'"
+                >
+                  {{ statusModalData.online ? t('ocserv.onlineNow') : t('ocserv.offlineNow') }}
+                </span>
+                <span v-if="statusModalData.in_kernel" class="text-xs text-slate-500">{{ t('vpn.wg.inKernel') }}</span>
+                <span v-else class="text-xs text-amber-700">{{ t('vpn.wg.notInKernel') }}</span>
+              </div>
+              <dl class="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <dt class="text-xs text-slate-500">{{ t('vpn.wg.peerEndpoint') }}</dt>
+                  <dd class="font-mono text-xs break-all">{{ statusModalData.endpoint || '—' }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">{{ t('vpn.wg.lastHandshake') }}</dt>
+                  <dd class="font-mono text-xs">
+                    {{ statusModalData.last_handshake || formatHandshake(statusModalData.last_handshake_unix) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">RX</dt>
+                  <dd class="font-mono">{{ formatBytes(statusModalData.rx_bytes) }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs text-slate-500">TX</dt>
+                  <dd class="font-mono">{{ formatBytes(statusModalData.tx_bytes) }}</dd>
+                </div>
+                <div class="sm:col-span-2">
+                  <dt class="text-xs text-slate-500">{{ t('vpn.wg.peerAllowed') }}</dt>
+                  <dd class="font-mono text-xs break-all">{{ (statusModalData.allowed_ips || []).join(', ') || '—' }}</dd>
+                </div>
+                <div class="sm:col-span-2">
+                  <dt class="text-xs text-slate-500">{{ t('vpn.wg.peerPubkey') }}</dt>
+                  <dd class="font-mono text-xs break-all">{{ statusModalData.public_key || '—' }}</dd>
+                </div>
+              </dl>
+              <p class="text-xs text-slate-400">{{ t('vpn.wg.peerStatusHint') }}</p>
+            </template>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <Teleport to="body">
       <div

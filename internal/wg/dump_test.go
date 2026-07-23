@@ -27,6 +27,12 @@ func TestParseShowDumpOutput(t *testing.T) {
 	if r.LastHandshake.Unix() != 1690000000 {
 		t.Fatalf("handshake sec: %d", r.LastHandshake.Unix())
 	}
+	if r.Endpoint != "" {
+		t.Fatalf("endpoint want empty, got %q", r.Endpoint)
+	}
+	if r.AllowedIPs != "10.200.0.2/32" {
+		t.Fatalf("allowed: %q", r.AllowedIPs)
+	}
 }
 
 func TestParseShowDumpOutputEightColumns(t *testing.T) {
@@ -50,6 +56,9 @@ func TestParseShowDumpOutputEightColumns(t *testing.T) {
 	}
 	if r.LastHandshake.Unix() != 1779890846 {
 		t.Fatalf("handshake sec: %d", r.LastHandshake.Unix())
+	}
+	if r.Endpoint != "157.15.107.3:43879" {
+		t.Fatalf("endpoint: %q", r.Endpoint)
 	}
 }
 

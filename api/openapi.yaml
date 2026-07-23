@@ -4128,6 +4128,48 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ok'
 
+  /api/v1/vpn/wireguard/instances/{id}/peers/status:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [vpn]
+      summary: WireGuard 实例与 Peer 运行状态
+      description: |
+        返回实例 `wg show` 运行状态，以及各 Peer 在线/握手/Endpoint/transfer（来自 `wg show IFACE dump`）。
+        在线判定：最近握手在 10 分钟内。
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  interface: { type: string }
+                  enabled: { type: boolean }
+                  installed: { type: boolean }
+                  up: { type: boolean }
+                  raw: { type: string, description: wg show 原文 }
+                  peers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        public_key: { type: string }
+                        online: { type: boolean }
+                        endpoint: { type: string }
+                        config_endpoint: { type: string }
+                        allowed_ips: { type: array, items: { type: string } }
+                        last_handshake_unix: { type: integer }
+                        last_handshake: { type: string }
+                        rx_bytes: { type: integer }
+                        tx_bytes: { type: integer }
+                        in_kernel: { type: boolean }
+
   /api/v1/vpn/wireguard/instances/{id}/peers/traffic:
     parameters:
       - name: id
