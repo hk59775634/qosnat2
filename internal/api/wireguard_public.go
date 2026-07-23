@@ -19,6 +19,7 @@ func wireGuardInstancePublic(inst store.WireGuardInstance) map[string]any {
 			"endpoint":             p.Endpoint,
 			"persistent_keepalive": p.PersistentKeepalive,
 			"rate":                 p.Rate,
+			"route_allowed_ips":    store.PeerRouteAllowedIPs(p),
 			"private_key_set":      strings.TrimSpace(p.PrivateKey) != "",
 			"preshared_key_set":    strings.TrimSpace(p.PresharedKey) != "",
 			"total_rx_bytes":       rx,

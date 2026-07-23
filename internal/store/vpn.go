@@ -10,7 +10,21 @@ type WGPeer struct {
 	PersistentKeepalive int       `json:"persistent_keepalive,omitempty"`
 	PresharedKey        string    `json:"preshared_key,omitempty"`
 	Rate                *HostRate `json:"rate,omitempty"` // 隧道 /32 限速（host_exact + HTB）
+	// RouteAllowedIPs 是否将 AllowedIPs 写入系统路由表（wg-quick）。
+	// nil 表示默认 true（兼容旧配置）；false 时仍用于加密路由，但不装系统路由。
+	RouteAllowedIPs *bool `json:"route_allowed_ips,omitempty"`
 }
+
+// PeerRouteAllowedIPs 是否将 Peer 的 AllowedIPs 加入系统路由表（默认 true）。
+func PeerRouteAllowedIPs(p WGPeer) bool {
+	if p.RouteAllowedIPs == nil {
+		return true
+	}
+	return *p.RouteAllowedIPs
+}
+
+// BoolPtr 返回 bool 指针（便于构造 WGPeer.RouteAllowedIPs）。
+func BoolPtr(v bool) *bool { return &v }
 
 // WireGuardState 单实例 WG 配置（嵌入 WireGuardInstance）
 type WireGuardState struct {

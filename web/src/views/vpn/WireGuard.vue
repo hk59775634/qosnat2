@@ -22,6 +22,7 @@ function defaultPeerForm() {
     public_key: '',
     endpoint: '',
     persistent_keepalive: 25,
+    route_allowed_ips: true,
     rate: { down: '8mbit', up: '8mbit' },
   }
 }
@@ -327,6 +328,7 @@ async function savePeer() {
         .map((s) => s.trim())
         .filter(Boolean),
       persistent_keepalive: peerForm.value.persistent_keepalive,
+      route_allowed_ips: peerForm.value.route_allowed_ips !== false,
       rate: peerForm.value.rate,
     }
     const priv = String(peerForm.value.private_key || '').trim()
@@ -601,6 +603,7 @@ function openEditPeerModal(p) {
     public_key: p.public_key || '',
     endpoint: p.endpoint || '',
     persistent_keepalive: p.persistent_keepalive || 25,
+    route_allowed_ips: p.route_allowed_ips !== false,
     rate: {
       down: p.rate?.down || '',
       up: p.rate?.up || '',
@@ -767,6 +770,7 @@ onUnmounted(() => {
               <th>{{ t('vpn.wg.colEndpoint') }}</th>
               <th>{{ t('vpn.wg.colPubkey') }}</th>
               <th>{{ t('vpn.wg.colAllowed') }}</th>
+              <th>{{ t('vpn.wg.colRoute') }}</th>
               <th>{{ t('vpn.wg.colTotalRx') }}</th>
               <th>{{ t('vpn.wg.colTotalTx') }}</th>
               <th>{{ t('vpn.wg.colDown') }}</th>
@@ -798,6 +802,14 @@ onUnmounted(() => {
               </td>
               <td class="font-mono text-xs max-w-xs truncate">{{ p.public_key }}</td>
               <td class="font-mono text-xs">{{ (p.allowed_ips || []).join(', ') }}</td>
+              <td class="text-xs whitespace-nowrap">
+                <span
+                  class="px-1.5 py-0.5 rounded"
+                  :class="p.route_allowed_ips !== false ? 'bg-sky-50 text-sky-800' : 'bg-slate-100 text-slate-500'"
+                >
+                  {{ p.route_allowed_ips !== false ? t('vpn.wg.routeOn') : t('vpn.wg.routeOff') }}
+                </span>
+              </td>
               <td class="font-mono text-xs whitespace-nowrap">{{ formatBytes(p.total_rx_bytes) }}</td>
               <td class="font-mono text-xs whitespace-nowrap">{{ formatBytes(p.total_tx_bytes) }}</td>
               <td>
@@ -988,6 +1000,11 @@ onUnmounted(() => {
               <div>
                 <label class="text-xs text-slate-500">{{ t('vpn.wg.peerAllowedLabel') }}</label>
                 <input v-model="peerForm.allowed_ips" class="input-field font-mono text-xs" placeholder="198.19.0.10/32" />
+                <label class="flex items-center gap-2 mt-2 text-xs text-slate-600">
+                  <input v-model="peerForm.route_allowed_ips" type="checkbox" />
+                  {{ t('vpn.wg.routeAllowedIps') }}
+                </label>
+                <p class="text-xs text-slate-400 mt-1">{{ t('vpn.wg.routeAllowedIpsHint') }}</p>
               </div>
               <div>
                 <label class="text-xs text-slate-500">{{ t('vpn.wg.rateDown') }}</label>

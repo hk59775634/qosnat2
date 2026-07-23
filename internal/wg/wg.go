@@ -75,7 +75,8 @@ func wgPubkeyFromPrivate(privStr string) (string, error) {
 	return strings.TrimSpace(string(pub)), nil
 }
 
-// RenderConf 生成 wg-quick 配置
+// RenderConf 生成 wg-quick 配置。
+// 若存在 RouteAllowedIPs=false 的 Peer，则 Table=off，仅为需要路由的 AllowedIPs 写 PostUp/PreDown。
 func RenderConf(wg store.WireGuardState) string {
 	var b bytes.Buffer
 	iface := wg.Interface
@@ -91,6 +92,10 @@ func RenderConf(wg store.WireGuardState) string {
 	}
 	for _, d := range wg.DNS {
 		b.WriteString(fmt.Sprintf("DNS = %s\n", d))
+	}
+	if peersNeedSelectiveRouting(wg.Peers) {
+		b.WriteString("Table = off\n")
+		writeAllowedIPRouteHooks(&b, wg.Peers)
 	}
 	for _, p := range wg.Peers {
 		b.WriteString("\n[Peer]\n")
@@ -109,6 +114,65 @@ func RenderConf(wg store.WireGuardState) string {
 		}
 	}
 	return b.String()
+}
+
+func peersNeedSelectiveRouting(peers []store.WGPeer) bool {
+	for _, p := range peers {
+		if !store.PeerRouteAllowedIPs(p) {
+			return true
+		}
+	}
+	return false
+}
+
+func writeAllowedIPRouteHooks(b *bytes.Buffer, peers []store.WGPeer) {
+	var ups, downs []string
+	for _, p := range peers {
+		if !store.PeerRouteAllowedIPs(p) {
+			continue
+		}
+		for _, raw := range p.AllowedIPs {
+			cidr, fam, ok := normalizeRouteCIDR(raw)
+			if !ok {
+				continue
+			}
+			ups = append(ups, fmt.Sprintf("ip %s route add %s dev %%i", fam, cidr))
+			downs = append(downs, fmt.Sprintf("ip %s route del %s dev %%i", fam, cidr))
+		}
+	}
+	if len(ups) == 0 {
+		return
+	}
+	b.WriteString("PostUp = " + strings.Join(ups, "; ") + "\n")
+	b.WriteString("PreDown = " + strings.Join(downs, "; ") + "\n")
+}
+
+// normalizeRouteCIDR 校验并规范路由 CIDR，返回 iproute fam（-4/-6）。
+func normalizeRouteCIDR(s string) (cidr, fam string, ok bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.ContainsAny(s, "\n\r\t;|&`$\"'\\") {
+		return "", "", false
+	}
+	if !strings.Contains(s, "/") {
+		ip := net.ParseIP(s)
+		if ip == nil {
+			return "", "", false
+		}
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String() + "/32", "-4", true
+		}
+		return ip.String() + "/128", "-6", true
+	}
+	ip, n, err := net.ParseCIDR(s)
+	if err != nil {
+		return "", "", false
+	}
+	ones, bits := n.Mask.Size()
+	if v4 := ip.To4(); v4 != nil {
+		return fmt.Sprintf("%s/%d", v4.String(), ones), "-4", true
+	}
+	_ = bits
+	return fmt.Sprintf("%s/%d", ip.String(), ones), "-6", true
 }
 
 // ClientConf 生成客户端配置（需 peer 含 private key）

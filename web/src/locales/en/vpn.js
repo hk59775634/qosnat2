@@ -55,6 +55,12 @@ export default {
     peerFormHint: 'Enter client keys manually or auto-generate; public key only imports an existing client (no .conf download).',
     peerName: 'Name',
     peerAllowedLabel: 'Tunnel address (AllowedIPs)',
+    routeAllowedIps: 'Add to system routing table',
+    routeAllowedIpsHint:
+      'When checked, AllowedIPs are installed by wg-quick. When unchecked they remain crypto routes only (no system routes). Save & apply afterward.',
+    routeOn: 'routed',
+    routeOff: 'no route',
+    colRoute: 'Sys route',
     rateDown: 'Download rate limit',
     rateUp: 'Upload rate limit',
     keepaliveSec: 'Keepalive (seconds)',

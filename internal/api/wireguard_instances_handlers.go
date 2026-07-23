@@ -373,6 +373,9 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 				cp := *prev.Rate
 				p.Rate = &cp
 			}
+			if p.RouteAllowedIPs == nil {
+				p.RouteAllowedIPs = prev.RouteAllowedIPs
+			}
 		}
 
 		if p.PublicKey == "" && p.PrivateKey != "" {

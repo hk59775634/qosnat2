@@ -782,6 +782,9 @@ components:
         allowed_ips:
           type: array
           items: { type: string }
+        route_allowed_ips:
+          type: boolean
+          description: 是否将 AllowedIPs 写入系统路由表；默认 true。false 时仍用于加密路由，但不装系统路由
         endpoint: { type: string }
         persistent_keepalive: { type: integer }
         preshared_key: { type: string }
@@ -4098,6 +4101,7 @@ paths:
       summary: 添加/更新 Peer（同名覆盖）
       description: |
         按 name upsert。更新时若 private_key / public_key / preshared_key / allowed_ips 为空，保留原 Peer 对应字段，不会重新生成密钥。
+        `route_allowed_ips` 控制是否将 AllowedIPs 写入系统路由表（默认 true）；存在 false 的 Peer 时 wg-quick 使用 Table=off 并仅为 true 的 Peer 生成 PostUp 路由。
         仅写入 state；需再调用实例 apply 才能同步到内核。
       requestBody:
         content:
