@@ -51,6 +51,8 @@ func (srv *Server) applyAllCore() error {
 	srv.replayWanLinksOnBoot()
 	srv.replayProxyEgressOnBoot()
 	srv.replayEgressOnBoot()
+	srv.syncWireGuardEndpointRoutes()
+	_ = srv.persistStateOrLog("sync wg endpoint routes on boot")
 	netplanApplied := srv.applyNetworkVLANs()
 	if err := netif.ApplyVirtualIPs(srv.store.Get().Network); err != nil {
 		log.Printf("virtual ips apply: %v", err)
@@ -197,6 +199,7 @@ func (srv *Server) startServiceBackground() {
 		srv.startManagedCertsBackground(ctx)
 		srv.startAliasRefreshBackground(ctx)
 		srv.startRouteGuardBackground(ctx)
+		srv.startWireGuardEndpointPinBackground(ctx)
 		srv.startAuxServicesBackground(ctx)
 		srv.startWanHealthBackground(ctx)
 		srv.startScheduleBackground(ctx)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -309,6 +310,14 @@ func (srv *Server) handleWireGuardInstanceApply(w http.ResponseWriter, r *http.R
 	if err := wg.Apply(inst.WireGuardState, up); err != nil {
 		writeInternalError(w, err.Error())
 		return
+	}
+	if up {
+		srv.syncWireGuardEndpointRoutes()
+		_ = srv.persistStateOrLog("wg apply endpoint routes")
+		srv.applyManagedRoutes()
+		if _, err := wg.PinConfiguredEndpoints(inst.Interface, inst.Peers); err != nil {
+			log.Printf("wg endpoint pin after apply: %v", err)
+		}
 	}
 	srv.setupWGShaper()
 	nftWarn := srv.tryReloadNft()
