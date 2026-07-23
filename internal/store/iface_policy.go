@@ -14,6 +14,8 @@ const (
 	IfacePolicyEgressPrio    = 90
 	IfacePolicyWanMetric     = 500
 	IfacePolicyWanTier       = 99
+	ifaceGwRouteCommentPrefix = "qosnat-iface-gw:"
+	IfaceMainGatewayMetric    = 100
 )
 
 // IsIfacePolicyWanLink 是否为接口页策略路由自动托管的 WanLink。
@@ -127,8 +129,9 @@ func ValidateIfacePolicyRouting(ic IfaceConfig) error {
 	return nil
 }
 
-// SyncIfacePolicyRouting 根据 IfaceConfig 重建接口派生的 WanLink + 源地址 EgressPolicy。
-// 不写入 main default，仅 PolicyOnly 表 + from <IP/32> lookup（由 SyncEgressRoutes / policyroute 落地）。
+// SyncIfacePolicyRouting 根据 IfaceConfig 重建：
+// 1) 策略路由口 → PolicyOnly WanLink + from/32 EgressPolicy
+// 2) 非策略口 Gateway → 主表 default（RouteEntry，供 FRR/route guard 与 netplan 双保险）
 func SyncIfacePolicyRouting(st *State) {
 	if st == nil {
 		return
@@ -187,4 +190,39 @@ func SyncIfacePolicyRouting(st *State) {
 	}
 	st.Network.WanLinks = keepLinks
 	st.Network.EgressPolicies = keepPolicies
+	syncIfaceMainGatewayRoutes(st)
+}
+
+// syncIfaceMainGatewayRoutes 为未勾选策略路由的接口 Gateway 写入主表 default。
+func syncIfaceMainGatewayRoutes(st *State) {
+	keep := make([]RouteEntry, 0, len(st.Routes))
+	for _, r := range st.Routes {
+		if strings.HasPrefix(r.Comment, ifaceGwRouteCommentPrefix) {
+			continue
+		}
+		keep = append(keep, r)
+	}
+	for _, ic := range st.Network.Ifaces {
+		if ic.PolicyRouting || ic.DHCP4 {
+			continue
+		}
+		gw := strings.TrimSpace(ic.Gateway)
+		dev := strings.TrimSpace(ic.Device)
+		if gw == "" || dev == "" {
+			continue
+		}
+		keep = append(keep, RouteEntry{
+			ID:         "iface-gw-" + sanitizeIfacePolicyIDPart(dev),
+			Dest:       "default",
+			Gateway:    gw,
+			Device:     dev,
+			Metric:     IfaceMainGatewayMetric,
+			Comment:    ifaceGwRouteCommentPrefix + dev,
+			Enabled:    true,
+			Source:     RouteSourceWan,
+			Locked:     true,
+			SourceNote: "接口网关 · " + dev,
+		})
+	}
+	st.Routes = keep
 }

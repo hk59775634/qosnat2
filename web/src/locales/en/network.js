@@ -21,10 +21,11 @@ export default {
     dhcp4: 'DHCP for IPv4',
     gateway: 'Gateway (IPv4)',
     gatewayPlaceholder: '198.51.100.1',
-    gatewayHint: 'Uplink gateway for this NIC; not installed as main-table default (won’t steal primary WAN)',
+    gatewayHint:
+      'Uplink gateway. Without policy routing this becomes the main-table default; with policy routing it is source-based only (won’t steal primary WAN).',
     policyRouting: 'Source policy routing',
     policyRoutingHint:
-      'When enabled: install from IP/32 → via this NIC’s gateway for each static IPv4 (symmetric return when the Internet hits this NIC’s IP). Requires static addresses; incompatible with DHCP.',
+      'When enabled: install from IP/32 → via this NIC’s gateway for each static IPv4 (symmetric return when the Internet hits this NIC’s IP). Do not enable on the primary WAN—set gateway only. Requires static addresses; incompatible with DHCP.',
     linkUp: 'Interface up',
     importLive: 'Fill from live addresses',
     saveAddrs: 'Save & apply',

@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestIfaceHostIPv4s(t *testing.T) {
 	got := IfaceHostIPv4s([]string{"10.0.0.1/24", "10.0.0.1/32", " 203.0.113.5 ", "bad", "2001:db8::1/64"})
@@ -66,6 +69,54 @@ func TestSyncIfacePolicyRouting(t *testing.T) {
 		if IsIfacePolicyEgress(p) {
 			t.Fatalf("should remove derived egress: %+v", p)
 		}
+	}
+}
+
+func TestSyncIfaceMainGatewayRoutes(t *testing.T) {
+	st := &State{}
+	up := true
+	dhcp := false
+	gwMain := "103.127.237.21"
+	prOff := false
+	UpsertIfaceConfig(st, "ens18", []string{"103.127.237.22/30"}, &up, &dhcp, &gwMain, &prOff)
+	gwPR := "109.244.68.1"
+	prOn := true
+	UpsertIfaceConfig(st, "ens20", []string{"109.244.68.67/24"}, &up, &dhcp, &gwPR, &prOn)
+
+	SyncIfacePolicyRouting(st)
+
+	var mainDefault, policyTable int
+	for _, r := range st.Routes {
+		if strings.HasPrefix(r.Comment, ifaceGwRouteCommentPrefix) {
+			mainDefault++
+			if r.Dest != "default" || r.Gateway != gwMain || r.Device != "ens18" || r.Metric != IfaceMainGatewayMetric {
+				t.Fatalf("main gw route: %+v", r)
+			}
+		}
+	}
+	if mainDefault != 1 {
+		t.Fatalf("main gateway routes=%d %+v", mainDefault, st.Routes)
+	}
+	for _, r := range st.Routes {
+		if r.Table == 201 || strings.Contains(r.Comment, "egress") {
+			policyTable++
+		}
+	}
+	_ = policyTable
+	SyncWanRoutes(st)
+	SyncEgressRoutes(st)
+	foundMain := false
+	for _, r := range st.Routes {
+		if strings.HasPrefix(r.Comment, ifaceGwRouteCommentPrefix) {
+			foundMain = true
+		}
+		// 策略口不得再写一条主表 default
+		if r.Dest == "default" && r.Device == "ens20" && r.Table == 0 {
+			t.Fatalf("ens20 must not own main default: %+v", r)
+		}
+	}
+	if !foundMain {
+		t.Fatal("iface main gateway should survive SyncWanRoutes/SyncEgressRoutes")
 	}
 }
 

@@ -97,6 +97,13 @@ func RenderNetplan(net store.NetworkState) (body []byte, linkDown []string, err 
 						b.WriteString(fmt.Sprintf("        - %s\n", a))
 					}
 				}
+				// 非策略路由口：把 Gateway 写入主表 default，避免 99-qosnat2 覆盖地址时冲掉原网关。
+				// 策略路由口仅走 ip rule/表，不在此安装主表 default，以免抢主 WAN。
+				if gw := strings.TrimSpace(ic.Gateway); gw != "" && !ic.PolicyRouting {
+					b.WriteString("      routes:\n")
+					b.WriteString("        - to: default\n")
+					b.WriteString(fmt.Sprintf("          via: %s\n", gw))
+				}
 			}
 		}
 	}

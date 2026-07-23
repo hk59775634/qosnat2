@@ -21,10 +21,10 @@ export default {
     dhcp4: 'DHCP 获取 IPv4',
     gateway: '网关 (IPv4)',
     gatewayPlaceholder: '198.51.100.1',
-    gatewayHint: '该口上行网关；不写入主表默认路由，避免抢占主 WAN',
+    gatewayHint: '该口上行网关。未勾选策略路由时写入主表默认路由；勾选后仅做源地址策略路由（不抢主 WAN）',
     policyRouting: '源地址策略路由',
     policyRoutingHint:
-      '勾选后：为该口每个静态 IPv4 安装 from IP/32 → 经本口网关回程（外网访问该口 IP 时可对称返回）。需静态地址，不可与 DHCP 同时启用。',
+      '勾选后：为该口每个静态 IPv4 安装 from IP/32 → 经本口网关回程（外网访问该口 IP 时可对称返回）。主 WAN 不要勾选，只填网关即可。需静态地址，不可与 DHCP 同时启用。',
     linkUp: '接口启用 (up)',
     importLive: '从当前地址填入',
     saveAddrs: '保存并应用',

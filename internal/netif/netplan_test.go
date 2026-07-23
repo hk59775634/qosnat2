@@ -32,6 +32,45 @@ func TestRenderNetplan(t *testing.T) {
 	}
 }
 
+func TestRenderNetplanGatewayRoutes(t *testing.T) {
+	body, _, err := RenderNetplan(store.NetworkState{
+		Ifaces: []store.IfaceConfig{
+			{
+				Device:  "ens18",
+				IPv4:    []string{"103.127.237.22/30"},
+				Up:      true,
+				Gateway: "103.127.237.21",
+			},
+			{
+				Device:        "ens20",
+				IPv4:          []string{"109.244.68.67/24"},
+				Up:            true,
+				Gateway:       "109.244.68.1",
+				PolicyRouting: true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(body)
+	if !strings.Contains(s, "ens18:") || !strings.Contains(s, "via: 103.127.237.21") {
+		t.Fatalf("ens18 main gateway missing: %s", s)
+	}
+	// ens20 策略路由口不得写入主表 default
+	ens20Idx := strings.Index(s, "ens20:")
+	if ens20Idx < 0 {
+		t.Fatalf("missing ens20: %s", s)
+	}
+	ens20Block := s[ens20Idx:]
+	if next := strings.Index(ens20Block[6:], "\n    "); next >= 0 {
+		ens20Block = ens20Block[:6+next]
+	}
+	if strings.Contains(ens20Block, "via: 109.244.68.1") || strings.Contains(ens20Block, "to: default") {
+		t.Fatalf("policy iface must not install main default: %s", ens20Block)
+	}
+}
+
 func TestRenderNetplanEmpty(t *testing.T) {
 	body, _, err := RenderNetplan(store.NetworkState{})
 	if err != nil {
