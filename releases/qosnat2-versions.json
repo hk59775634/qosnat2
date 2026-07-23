@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072303",
+      "tag": "v2026072303",
+      "published_at": "2026-07-23T09:29:23Z",
+      "summary": "WireGuard 增加实例与 Peer 运行状态查看"
+    },
+    {
       "id": "2026072302",
       "tag": "v2026072302",
       "published_at": "2026-07-23T03:31:01Z",
@@ -25,12 +31,6 @@
       "tag": "v2026072101",
       "published_at": "2026-07-21T05:29:40Z",
       "summary": "接口 IP 可经 netplan 持久化管理，新增 NAT/转发用虚拟 IP，WireGuard/OCServ 默认地址迁出 10.0.0.0/8"
-    },
-    {
-      "id": "2026072011",
-      "tag": "v2026072011",
-      "published_at": "2026-07-20T10:41:32Z",
-      "summary": "修复独立 IP 代理出站策略：源 CIDR 经 ProxyEgress TUN 可正常上网"
     }
   ]
 }

@@ -5,17 +5,15 @@
 
 ## 概要
 
-WireGuard 增加实例与 Peer 运行状态查看
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- WireGuard：实例栏与服务端页展示运行状态徽章，并提供「状态」按钮查看 `wg show` 详情与在线 Peer 数
-- WireGuard Peer 管理：列表增加状态 / Endpoint 列；「状态」按钮查看在线、握手、实时 Endpoint、RX/TX
-- API：`GET /api/v1/vpn/wireguard/instances/{id}/peers/status`（含实例 up 与各 Peer dump 统计）
+- （无）
 
 ## 优化
 
-- Peer 管理页在打开时每 5 秒自动刷新运行状态
+- （无）
 
 ## 修复
 
@@ -27,4 +25,4 @@ WireGuard 增加实例与 Peer 运行状态查看
 
 ## 其他
 
-- 在线判定：最近握手在 10 分钟内；未 apply 到内核的 Peer 显示为离线/未加载
+- （无）
