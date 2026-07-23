@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/hk59775634/qosnat2/internal/frr"
@@ -12,8 +13,16 @@ import (
 	"github.com/hk59775634/qosnat2/internal/route"
 )
 
-// ApplyAll 启动/回放：sysctl → nft(NAT) → tc → 路由（未完成引导时跳过）
+// ApplyAll 启动/回放：sysctl → nft → tc → 路由；外部辅助组件（dnsmasq/jool/unbound）由后台 reconcile。
 func (srv *Server) ApplyAll() error {
+	if err := srv.applyAllCore(); err != nil {
+		return err
+	}
+	srv.applyAuxNatStack()
+	return nil
+}
+
+func (srv *Server) applyAllCore() error {
 	if !srv.setupComplete() {
 		log.Printf("apply skipped: initial setup not complete")
 		return nil
@@ -31,7 +40,7 @@ func (srv *Server) ApplyAll() error {
 	} else if auto {
 		log.Printf("shared_ips: using WAN %s address %s", srv.env.DevWAN, ips[0])
 	}
-	if err := srv.applyNatStackLenient(); err != nil {
+	if err := srv.applyNatStackCore(); err != nil {
 		return err
 	}
 	if srv.shaperEnabled() {
@@ -61,7 +70,6 @@ func (srv *Server) ApplyAll() error {
 	if err := srv.applyLVSFromStore(); err != nil {
 		log.Printf("lvs apply: %v", err)
 	}
-	srv.applyManagedDHCP()
 	return nil
 }
 
@@ -69,8 +77,9 @@ func (srv *Server) applyManagedRoutesWithRetry() {
 	delays := []time.Duration{0, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 12 * time.Second}
 	st := srv.store.Get()
 	if route.NormalizeBackend(st.System.RouteBackend) == route.BackendFRR && frr.PackageInstalled() {
-		if !frr.WaitActive(30 * time.Second) {
-			log.Printf("routes apply: frr not active after 30s")
+		if !frr.ServiceActive() {
+			log.Printf("routes apply: frr not active, deferred to route guard")
+			return
 		}
 	}
 	for i, d := range delays {
@@ -78,16 +87,31 @@ func (srv *Server) applyManagedRoutesWithRetry() {
 			time.Sleep(d)
 		}
 		st = srv.store.Get()
-		res, err := route.ApplyFromState(st)
+		ready, deferred := route.PartitionByDeviceReady(st.Routes)
+		if len(deferred) > 0 && i == 0 {
+			log.Printf("routes apply: deferring %d route(s) until device exists (%s)",
+				len(deferred), strings.Join(route.DeferredRouteDevices(deferred), ", "))
+		}
+		res, err := route.ApplyManagedRoutesWithDynamic(ready, st.System.RouteBackend, st.DynamicRouting)
 		if err != nil {
 			log.Printf("routes apply (attempt %d/%d): %v", i+1, len(delays), err)
 			continue
 		}
-		if missing, merr := route.MissingManaged(st.Routes); merr == nil && len(missing) > 0 {
+		if missing, merr := route.MissingManaged(ready); merr == nil && len(missing) > 0 {
+			if len(deferred) > 0 {
+				log.Printf("routes apply: partial ok backend=%s applied=%d skipped=%d missing=%d deferred=%d",
+					res.Backend, res.Applied, res.Skipped, len(missing), len(deferred))
+				return
+			}
 			log.Printf("routes apply (attempt %d/%d): still missing %d route(s)", i+1, len(delays), len(missing))
 			continue
 		}
-		log.Printf("routes apply: ok backend=%s applied=%d skipped=%d", res.Backend, res.Applied, res.Skipped)
+		if len(deferred) > 0 {
+			log.Printf("routes apply: ok backend=%s applied=%d skipped=%d deferred=%d",
+				res.Backend, res.Applied, res.Skipped, len(deferred))
+		} else {
+			log.Printf("routes apply: ok backend=%s applied=%d skipped=%d", res.Backend, res.Applied, res.Skipped)
+		}
 		return
 	}
 	log.Printf("routes apply: retries exhausted")
@@ -102,10 +126,10 @@ func (srv *Server) applyNetworkVLANs() bool {
 	return applied
 }
 
-// ApplyAllOnBoot 同步首次 apply；失败或 nft 表缺失时在后台重试；已引导完成则触发 qos-nat oneshot。
+// ApplyAllOnBoot 后台回放核心数据面；失败或 nft 表缺失时在后台重试；辅助组件由 aux reconcile 负责。
 func (srv *Server) ApplyAllOnBoot() {
 	var bootErr error
-	if err := srv.ApplyAll(); err != nil {
+	if err := srv.applyAllCore(); err != nil {
 		bootErr = err
 		log.Printf("apply on start: %v", err)
 	} else if !nft.TableExists() {
@@ -134,7 +158,7 @@ func (srv *Server) bootApplyRetryLoop(ctx context.Context) {
 			return
 		case <-time.After(d):
 		}
-		if err := srv.ApplyAll(); err != nil {
+		if err := srv.applyAllCore(); err != nil {
 			log.Printf("apply on start retry %d/%d: %v", i+1, len(delays), err)
 			continue
 		}
@@ -162,6 +186,7 @@ func (srv *Server) startServiceBackground() {
 		srv.startManagedCertsBackground(ctx)
 		srv.startAliasRefreshBackground(ctx)
 		srv.startRouteGuardBackground(ctx)
+		srv.startAuxServicesBackground(ctx)
 		srv.startWanHealthBackground(ctx)
 		srv.startScheduleBackground(ctx)
 	})

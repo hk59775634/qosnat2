@@ -13,12 +13,99 @@ import (
 	"github.com/hk59775634/qosnat2/internal/unbound"
 )
 
+// applyNatStackCore 启动/核心回放：sysctl + nft，不启动 jool/unbound/dnsmasq 等外部组件。
+func (srv *Server) applyNatStackCore() error {
+	return srv.withNftApply(func() error {
+		return srv.applyNatStackCoreLocked()
+	})
+}
+
+func (srv *Server) applyNatStackCoreLocked() error {
+	st := srv.store.Get()
+	status := map[string]any{
+		"nft": false, "jool": false, "unbound": false, "dnsmasq": false,
+	}
+	defer func() {
+		srv.setNatStackStatus(status)
+	}()
+
+	if st.Nat.Nat64Enabled || st.Nat.Nptv6Enabled {
+		_ = srv.store.Update(func(s *store.State) {
+			if s.System.Sysctl == nil {
+				s.System.Sysctl = map[string]string{}
+			}
+			s.System.Sysctl["net.ipv6.conf.all.forwarding"] = "1"
+			s.System.Sysctl["net.ipv6.conf.default.forwarding"] = "1"
+		})
+		if err := srv.store.Save(); err != nil {
+			status["last_error"] = err.Error()
+			return fmt.Errorf("save sysctl: %w", err)
+		}
+		st = srv.store.Get()
+		if err := srv.applySystemTuning(st); err != nil {
+			log.Printf("ipv6 forwarding sysctl: %v", err)
+		}
+	}
+	if err := srv.reloadNftLocked(); err != nil {
+		status["last_error"] = err.Error()
+		return fmt.Errorf("nft: %w", err)
+	}
+	status["nft"] = true
+	return nil
+}
+
+// applyAuxNatStack jool + unbound + dnsmasq（可异步；API 变更时也可同步调用）。
+func (srv *Server) applyAuxNatStack() {
+	if !srv.setupComplete() {
+		return
+	}
+	st := srv.store.Get()
+	status := srv.getNatStackStatus()
+	if status == nil {
+		status = map[string]any{"nft": true, "jool": false, "unbound": false, "dnsmasq": false}
+	}
+
+	joolOK := true
+	if err := jool.Apply(st.Nat); err != nil {
+		log.Printf("aux jool: %v", err)
+		status["last_error"] = err.Error()
+		joolOK = false
+	} else {
+		status["jool"] = true
+	}
+
+	unboundOK := true
+	opts := srv.unboundOpts(st)
+	if err := unbound.Apply(st.Nat, opts); err != nil {
+		log.Printf("aux unbound: %v", err)
+		status["last_error"] = err.Error()
+		unboundOK = false
+	} else {
+		status["unbound"] = true
+	}
+
+	dnsmasqOK := true
+	if err := srv.applyDNSMasqNAT(st); err != nil {
+		log.Printf("aux dnsmasq: %v", err)
+		status["last_error"] = err.Error()
+		dnsmasqOK = false
+	} else {
+		status["dnsmasq"] = true
+	}
+	srv.applyManagedDHCP()
+
+	if joolOK && unboundOK && dnsmasqOK {
+		status["last_error"] = ""
+		srv.recordNatStackSuccess(st)
+	}
+	srv.setNatStackStatus(status)
+}
+
 // applyNatStack nft + Jool + Unbound + dnsmasq（NAT64/NPTv6/DNS64 变更时；辅助组件失败则返回 error）
 func (srv *Server) applyNatStack() error {
 	return srv.applyNatStackWithRollbackOpts(nil, false)
 }
 
-// applyNatStackLenient 启动回放：nft 成功后 jool/unbound/dnsmasq 失败不阻断 NAT。
 func (srv *Server) applyNatStackLenient() error {
 	return srv.applyNatStackWithRollbackOpts(nil, true)
 }

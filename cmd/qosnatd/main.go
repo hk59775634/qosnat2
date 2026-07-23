@@ -86,8 +86,8 @@ func runServer() {
 	}
 	srv := api.New(env, st, bpfM)
 	srv.ReconcileTLSOnBoot()
-	srv.ApplyAllOnBoot()
 	srv.StartBackground()
+	go srv.ApplyAllOnBoot()
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

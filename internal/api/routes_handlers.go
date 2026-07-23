@@ -44,7 +44,13 @@ func (srv *Server) routeBackend() string {
 }
 
 func (srv *Server) applyManagedRoutesErr() error {
-	_, err := route.ApplyFromState(srv.store.Get())
+	st := srv.store.Get()
+	ready, deferred := route.PartitionByDeviceReady(st.Routes)
+	if len(deferred) > 0 {
+		log.Printf("routes apply: deferring %d route(s) until device exists (%s)",
+			len(deferred), strings.Join(route.DeferredRouteDevices(deferred), ", "))
+	}
+	_, err := route.ApplyManagedRoutesWithDynamic(ready, st.System.RouteBackend, st.DynamicRouting)
 	return err
 }
 

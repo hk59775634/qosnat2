@@ -78,7 +78,12 @@ func (srv *Server) routeGuardTick(ctx context.Context, mu *sync.Mutex, lastRepla
 			return
 		}
 	}
-	res, err := route.ApplyFromState(st)
+	ready, deferred := route.PartitionByDeviceReady(st.Routes)
+	if len(deferred) > 0 {
+		log.Printf("route guard: deferring %d route(s) until device exists (%s)",
+			len(deferred), strings.Join(route.DeferredRouteDevices(deferred), ", "))
+	}
+	res, err := route.ApplyManagedRoutesWithDynamic(ready, st.System.RouteBackend, st.DynamicRouting)
 	if err != nil {
 		log.Printf("route guard: replay failed (%s): %v", formatMissingRoutes(missing), err)
 		return
