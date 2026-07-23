@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072308",
+      "tag": "v2026072308",
+      "published_at": "2026-07-23T10:55:14Z",
+      "summary": "完善 WireGuard Endpoint 钉回：接口名为空时也能正确检测并纠正运行态。"
+    },
+    {
       "id": "2026072307",
       "tag": "v2026072307",
       "published_at": "2026-07-23T10:50:47Z",
@@ -25,12 +31,6 @@
       "tag": "v2026072304",
       "published_at": "2026-07-23T09:49:08Z",
       "summary": "WireGuard Peer 支持可选是否将 AllowedIPs 加载到系统路由表"
-    },
-    {
-      "id": "2026072303",
-      "tag": "v2026072303",
-      "published_at": "2026-07-23T09:29:23Z",
-      "summary": "WireGuard 增加实例与 Peer 运行状态查看"
     }
   ]
 }
