@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072301",
+      "tag": "v2026072301",
+      "published_at": "2026-07-23T02:51:22Z",
+      "summary": "防火墙运维能力增强、接口网关源策略路由、ocserv 1.5.0 动态分流，以及 WireGuard Peer 可编辑"
+    },
+    {
       "id": "2026072102",
       "tag": "v2026072102",
       "published_at": "2026-07-21T05:42:16Z",
@@ -25,12 +31,6 @@
       "tag": "v2026072010",
       "published_at": "2026-07-20T09:56:27Z",
       "summary": "WARP 与 ProxyEgress 内部链路改用 198.18.0.0/15，避免与 VPN 用户池 10.0.0.0/8 冲突"
-    },
-    {
-      "id": "2026072009",
-      "tag": "v2026072009",
-      "published_at": "2026-07-20T09:31:09Z",
-      "summary": "修复 sing-box 1.11 因弃用 inet4_address 导致 ProxyEgress TUN 无法创建的问题"
     }
   ]
 }
