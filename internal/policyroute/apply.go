@@ -11,16 +11,29 @@ import (
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
-// Apply 根据 state 安装/更新 ip rule（先清理当前策略条目，再写入启用的规则）
+// Apply 根据 state 安装/更新 ip rule。
+// 仅清理「已禁用」或「本次可解析并重装」的策略；启用但暂时无法解析（如 WAN/SNAT 未就绪）的规则保留，
+// 避免启动窗口先删后装失败导致多 WAN 出站策略空洞，需手动保存才能恢复。
 func Apply(st store.State) error {
 	aliases := store.AliasByName(st.Firewall.Aliases)
+	resolved := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
+	resolvedIDs := make(map[string]struct{}, len(resolved))
+	for _, re := range resolved {
+		resolvedIDs[re.Policy.ID] = struct{}{}
+	}
 	for _, p := range st.Network.EgressPolicies {
 		tbl := store.WanLinkRouteTable(p.WanLinkID, st.Network.WanLinks)
-		if tbl > 0 {
+		if tbl <= 0 {
+			continue
+		}
+		if !p.Enabled {
+			deleteExpandedPolicy(p, tbl, aliases)
+			continue
+		}
+		if _, ok := resolvedIDs[p.ID]; ok {
 			deleteExpandedPolicy(p, tbl, aliases)
 		}
 	}
-	resolved := store.ResolveEgressPolicies(st, netif.PrimaryIPv4)
 	for _, re := range resolved {
 		rules, err := store.ExpandEgressIPRules(re.Policy, re.Table, aliases)
 		if err != nil {

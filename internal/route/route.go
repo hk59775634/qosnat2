@@ -61,6 +61,8 @@ func ListLive(table int) ([]LiveRoute, error) {
 		dest := r.Dst
 		if dest == "" {
 			dest = "default"
+		} else if n, err := store.NormalizeRouteDest(dest); err == nil {
+			dest = n
 		}
 		list = append(list, LiveRoute{
 			Dest: dest, Gateway: r.Gateway, Device: r.Dev,

@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSyncWanRoutesNexthopWeight(t *testing.T) {
 	st := &State{
@@ -27,16 +30,23 @@ func TestSyncWanRoutesNexthopWeight(t *testing.T) {
 	}
 }
 
-func TestSyncWanRoutesSkipPolicyOnly(t *testing.T) {
+func TestSyncWanRoutesSkipWhenIfaceGatewayCoversMain(t *testing.T) {
 	st := &State{
+		Routes: []RouteEntry{{
+			ID: "iface-gw-ens18", Dest: "default", Gateway: "103.127.237.21", Device: "ens18",
+			Metric: 100, Comment: ifaceGwRouteCommentPrefix + "ens18", Enabled: true,
+		}},
 		Network: NetworkState{
 			WanLinks: []WanLink{
-				{ID: "warp", Device: "wgcf", Metric: 90, Enabled: true, PolicyOnly: true},
+				{ID: "wan-wg-a", Gateway: "100.64.1.1", Device: "wg0", Metric: 100, Enabled: true},
+				{ID: "wan-wg-b", Gateway: "100.64.1.2", Device: "wg0", Metric: 200, Enabled: true},
 			},
 		},
 	}
 	SyncWanRoutes(st)
-	if len(st.Routes) != 0 {
-		t.Fatalf("policy_only wan should not create main default route: %+v", st.Routes)
+	for _, r := range st.Routes {
+		if strings.HasPrefix(r.Comment, wanRouteCommentPrefix) {
+			t.Fatalf("wg0 wan should not create main default when iface-gw exists: %+v", r)
+		}
 	}
 }

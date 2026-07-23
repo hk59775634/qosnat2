@@ -47,6 +47,15 @@ func buildLiveIndex(routes []store.RouteEntry) (liveIndex, error) {
 	return idx, nil
 }
 
+func metricCompatible(want, live int) bool {
+	// FRR/zebra 常把未指定 metric 的静态路由装成 metric 20；netplan 可能写成 0。
+	// 任一侧为 0 时只按 dest/gw/dev/table 判断是否存在，避免误判 missing 导致反复 ApplyManaged 冲掉策略表。
+	if want == 0 || live == 0 {
+		return true
+	}
+	return want == live
+}
+
 func routeAlreadyApplied(r store.RouteEntry, idx liveIndex) bool {
 	dest, err := store.NormalizeRouteDest(r.Dest)
 	if err != nil {
@@ -57,13 +66,13 @@ func routeAlreadyApplied(r store.RouteEntry, idx liveIndex) bool {
 		table = 254
 	}
 	if len(r.Nexthops) > 0 {
-		// ECMP：内核常展开为多条同 dest/metric；metric 一致且 nexthop 集合匹配则跳过。
+		// ECMP：内核常展开为多条同 dest/metric；metric 兼容且 nexthop 集合匹配则跳过。
 		var matches int
 		for _, nh := range r.Nexthops {
 			gw := strings.TrimSpace(nh.Gateway)
 			dev := strings.TrimSpace(nh.Device)
 			k := store.RouteKey(dest, gw, dev, table)
-			if lr, ok := idx.byKey[k]; ok && lr.Metric == r.Metric {
+			if lr, ok := idx.byKey[k]; ok && metricCompatible(r.Metric, lr.Metric) {
 				matches++
 			}
 		}
@@ -76,7 +85,7 @@ func routeAlreadyApplied(r store.RouteEntry, idx liveIndex) bool {
 	if !ok {
 		return false
 	}
-	return lr.Metric == r.Metric
+	return metricCompatible(r.Metric, lr.Metric)
 }
 
 func needsInfer(r store.RouteEntry) bool {

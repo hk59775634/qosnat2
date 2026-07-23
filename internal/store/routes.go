@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"strings"
 )
 
@@ -54,11 +55,27 @@ func NewRouteID() string {
 	return "rt-" + hex.EncodeToString(b[:])
 }
 
-// NormalizeRouteDest 规范化目标
+// NormalizeRouteDest 规范化目标：default、裸 IPv4→/32、裸 IPv6→/128，便于与 ip -json 对齐。
 func NormalizeRouteDest(dest string) (string, error) {
 	dest = trim(dest)
-	if dest == "" || dest == "0.0.0.0/0" {
+	if dest == "" || dest == "0.0.0.0/0" || dest == "::/0" {
 		return "default", nil
+	}
+	if ip := net.ParseIP(dest); ip != nil {
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String() + "/32", nil
+		}
+		return ip.String() + "/128", nil
+	}
+	if ip, ipnet, err := net.ParseCIDR(dest); err == nil {
+		ones, bits := ipnet.Mask.Size()
+		if v4 := ip.To4(); v4 != nil && bits == 32 && ones == 32 {
+			return v4.String() + "/32", nil
+		}
+		if bits == 128 && ones == 128 {
+			return ip.String() + "/128", nil
+		}
+		return ipnet.String(), nil
 	}
 	return dest, nil
 }

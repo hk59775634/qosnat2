@@ -63,7 +63,10 @@ func (srv *Server) applyAllCore() error {
 			log.Printf("virtual ips re-apply: %v", err)
 		}
 	}
-	srv.applyEgressPolicyRoutes()
+	// 与 UI 保存出站策略一致：sync → routes → ip rule → nft，避免启动时 nft 早于 SyncEgress 导致策略空洞。
+	if err := srv.applyEgressDataPlane(); err != nil {
+		log.Printf("egress dataplane on boot: %v", err)
+	}
 	if srv.shaperEnabled() {
 		srv.applyEBPF(st)
 	}
@@ -76,11 +79,10 @@ func (srv *Server) applyAllCore() error {
 func (srv *Server) applyManagedRoutesWithRetry() {
 	delays := []time.Duration{0, 2 * time.Second, 3 * time.Second, 5 * time.Second, 8 * time.Second, 12 * time.Second}
 	st := srv.store.Get()
-	if route.NormalizeBackend(st.System.RouteBackend) == route.BackendFRR && frr.PackageInstalled() {
-		if !frr.ServiceActive() {
-			log.Printf("routes apply: frr not active, deferred to route guard")
-			return
-		}
+	frrBackend := route.NormalizeBackend(st.System.RouteBackend) == route.BackendFRR && frr.PackageInstalled()
+	if frrBackend && !frr.ServiceActive() {
+		log.Printf("routes apply: frr not active, deferred to route guard")
+		return
 	}
 	for i, d := range delays {
 		if i > 0 {
@@ -96,6 +98,15 @@ func (srv *Server) applyManagedRoutesWithRetry() {
 		if err != nil {
 			log.Printf("routes apply (attempt %d/%d): %v", i+1, len(delays), err)
 			continue
+		}
+		// FRR ApplyManaged 已完整重写托管项；勿因 FIB metric/未选中路由误判 missing 而反复 no+add 冲掉策略表。
+		if frrBackend {
+			if len(deferred) > 0 {
+				log.Printf("routes apply: ok backend=%s applied=%d deferred=%d", res.Backend, res.Applied, len(deferred))
+			} else {
+				log.Printf("routes apply: ok backend=%s applied=%d", res.Backend, res.Applied)
+			}
+			return
 		}
 		if missing, merr := route.MissingManaged(ready); merr == nil && len(missing) > 0 {
 			if len(deferred) > 0 {

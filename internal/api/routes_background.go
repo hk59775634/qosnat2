@@ -73,7 +73,7 @@ func (srv *Server) routeGuardTick(ctx context.Context, mu *sync.Mutex, lastRepla
 	}
 	st = srv.store.Get()
 	if route.NormalizeBackend(st.System.RouteBackend) == route.BackendFRR {
-		if !frr.WaitActive(20 * time.Second) {
+		if !frr.ServiceActive() {
 			log.Printf("route guard: frr not active, skip replay (%s)", formatMissingRoutes(missing))
 			return
 		}
@@ -83,7 +83,12 @@ func (srv *Server) routeGuardTick(ctx context.Context, mu *sync.Mutex, lastRepla
 		log.Printf("route guard: deferring %d route(s) until device exists (%s)",
 			len(deferred), strings.Join(route.DeferredRouteDevices(deferred), ", "))
 	}
-	res, err := route.ApplyManagedRoutesWithDynamic(ready, st.System.RouteBackend, st.DynamicRouting)
+	// FRR：始终下发完整托管集（含 deferred 项写入配置），避免 ApplyManaged(ready-only) 把未就绪设备路由从 frr.conf 删掉。
+	applySet := ready
+	if route.NormalizeBackend(st.System.RouteBackend) == route.BackendFRR {
+		applySet = st.Routes
+	}
+	res, err := route.ApplyManagedRoutesWithDynamic(applySet, st.System.RouteBackend, st.DynamicRouting)
 	if err != nil {
 		log.Printf("route guard: replay failed (%s): %v", formatMissingRoutes(missing), err)
 		return

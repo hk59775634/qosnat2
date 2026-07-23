@@ -24,9 +24,36 @@ func SyncWanRoutes(st *State) {
 		metric int
 	}
 	var enabled []linkMetric
+	ifaceMainDevs := map[string]struct{}{}
+	for _, r := range keep {
+		if !r.Enabled || !strings.HasPrefix(r.Comment, ifaceGwRouteCommentPrefix) {
+			continue
+		}
+		dest, _ := NormalizeRouteDest(r.Dest)
+		if dest != "default" {
+			continue
+		}
+		tbl := r.Table
+		if tbl == 0 {
+			tbl = 254
+		}
+		if tbl != 254 {
+			continue
+		}
+		if dev := strings.TrimSpace(r.Device); dev != "" {
+			ifaceMainDevs[dev] = struct{}{}
+		}
+	}
 	for _, w := range st.Network.WanLinks {
 		if !w.Enabled || WanLinkUsesPolicyTableOnly(w, st.Network.WanLinks) || strings.TrimSpace(w.Device) == "" {
 			continue
+		}
+		// 主表 default 已由接口网关（iface-gw）提供时，其它设备上的 WanLink 只走策略表，
+		// 避免再写入无法装入 FIB 的 main default（如 wg0），触发 FRR 反复 no+add 冲掉出站策略路由。
+		if len(ifaceMainDevs) > 0 {
+			if _, ok := ifaceMainDevs[strings.TrimSpace(w.Device)]; !ok {
+				continue
+			}
 		}
 		m := w.Metric
 		if m <= 0 {
