@@ -5,12 +5,11 @@
 
 ## 概要
 
-WireGuard Peer 支持可选是否将 AllowedIPs 加载到系统路由表
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
-- WireGuard Peer：「加载到系统路由表」选项（默认开启）；不勾选时 AllowedIPs 仅用于加密路由，不写入系统路由
-- 存在未勾选 Peer 时，wg-quick 使用 `Table = off`，并为仍需路由的 Peer 生成 PostUp/PreDown
+- （无）
 
 ## 优化
 
@@ -26,4 +25,4 @@ WireGuard Peer 支持可选是否将 AllowedIPs 加载到系统路由表
 
 ## 其他
 
-- 修改后需「保存并 wg-quick apply」生效
+- （无）

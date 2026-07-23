@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072304",
+      "tag": "v2026072304",
+      "published_at": "2026-07-23T09:49:08Z",
+      "summary": "WireGuard Peer 支持可选是否将 AllowedIPs 加载到系统路由表"
+    },
+    {
       "id": "2026072303",
       "tag": "v2026072303",
       "published_at": "2026-07-23T09:29:23Z",
@@ -25,12 +31,6 @@
       "tag": "v2026072102",
       "published_at": "2026-07-21T05:42:16Z",
       "summary": "按功能重排侧边导航：虚拟 IP 归入安全/NAT，网络组按链路层次排序"
-    },
-    {
-      "id": "2026072101",
-      "tag": "v2026072101",
-      "published_at": "2026-07-21T05:29:40Z",
-      "summary": "接口 IP 可经 netplan 持久化管理，新增 NAT/转发用虚拟 IP，WireGuard/OCServ 默认地址迁出 10.0.0.0/8"
     }
   ]
 }
