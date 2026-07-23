@@ -39,6 +39,10 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeBadJSON(w)
 			return
 		}
+		if store.IsIfacePolicyEgress(body) {
+			writeBadRequest(w, "interface policy egress cannot be created manually; edit via Interfaces page")
+			return
+		}
 		if err := store.NormalizeEgressPolicy(&body); err != nil {
 			writeBadRequest(w, err.Error())
 			return
@@ -71,6 +75,10 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			writeBadRequest(w, "id required")
+			return
+		}
+		if store.IsIfacePolicyEgress(store.EgressPolicy{ID: id}) {
+			writeBadRequest(w, "interface policy egress cannot be modified manually; edit via Interfaces page")
 			return
 		}
 		var body store.EgressPolicy
@@ -137,6 +145,10 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			writeBadRequest(w, "id required")
+			return
+		}
+		if store.IsIfacePolicyEgress(store.EgressPolicy{ID: id}) {
+			writeBadRequest(w, "interface policy egress cannot be deleted manually; edit via Interfaces page")
 			return
 		}
 		found := false
@@ -312,11 +324,16 @@ func egressPoliciesUsingWanLink(st store.State, wanID string) []store.EgressPoli
 }
 
 func validateWanLinkDeletable(st store.State, wanID string) error {
-	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok && store.IsManagedWanLink(w) {
-		if store.IsWarpWanLink(w) {
-			return errWarpWanLinkLocked{}
+	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok {
+		if store.IsIfacePolicyWanLink(w) {
+			return errIfacePolicyWanLinkLocked{}
 		}
-		return errProxyWanLinkLocked{}
+		if store.IsManagedWanLink(w) {
+			if store.IsWarpWanLink(w) {
+				return errWarpWanLinkLocked{}
+			}
+			return errProxyWanLinkLocked{}
+		}
 	}
 	if len(egressPoliciesUsingWanLink(st, wanID)) > 0 {
 		return errWanLinkInUse{wanID: wanID}
@@ -325,13 +342,24 @@ func validateWanLinkDeletable(st store.State, wanID string) error {
 }
 
 func validateWanLinkMutable(st store.State, wanID string) error {
-	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok && store.IsManagedWanLink(w) {
-		if store.IsWarpWanLink(w) {
-			return errWarpWanLinkLocked{}
+	if w, ok := store.FindWanLink(st.Network.WanLinks, wanID); ok {
+		if store.IsIfacePolicyWanLink(w) {
+			return errIfacePolicyWanLinkLocked{}
 		}
-		return errProxyWanLinkLocked{}
+		if store.IsManagedWanLink(w) {
+			if store.IsWarpWanLink(w) {
+				return errWarpWanLinkLocked{}
+			}
+			return errProxyWanLinkLocked{}
+		}
 	}
 	return nil
+}
+
+type errIfacePolicyWanLinkLocked struct{}
+
+func (errIfacePolicyWanLinkLocked) Error() string {
+	return "interface policy WAN link cannot be modified manually; edit via Interfaces page"
 }
 
 type errWarpWanLinkLocked struct{}

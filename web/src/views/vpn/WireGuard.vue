@@ -29,6 +29,8 @@ function defaultPeerForm() {
 const peerForm = ref(defaultPeerForm())
 const peerModalOpen = ref(false)
 const peerModalErr = ref('')
+const peerEditing = ref(false)
+const peerHadPrivateKey = ref(false)
 const serverEndpoint = ref('')
 const activeTab = ref('server')
 
@@ -168,7 +170,7 @@ async function genPeerKeys() {
   }
 }
 
-async function addPeer() {
+async function savePeer() {
   peerModalErr.value = ''
   err.value = ''
   ok.value = ''
@@ -179,7 +181,10 @@ async function addPeer() {
     }
     const body = {
       name: peerForm.value.name.trim(),
-      allowed_ips: [String(peerForm.value.allowed_ips || '').trim()].filter(Boolean),
+      allowed_ips: String(peerForm.value.allowed_ips || '')
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean),
       persistent_keepalive: peerForm.value.persistent_keepalive,
       rate: peerForm.value.rate,
     }
@@ -189,12 +194,15 @@ async function addPeer() {
     if (pub) body.public_key = pub
     if (peerForm.value.endpoint?.trim()) {
       body.endpoint = peerForm.value.endpoint.trim()
+    } else if (peerEditing.value) {
+      body.endpoint = ''
     }
-    await api.post(`${instanceApiBase()}/peers`, body)
+    const wasEditing = peerEditing.value
+    const res = await api.post(`${instanceApiBase()}/peers`, body)
     peerForm.value = defaultPeerForm()
-    closeAddPeerModal()
+    closePeerModal()
     await load()
-    ok.value = t('vpn.wg.peerAdded')
+    ok.value = wasEditing || res?.updated ? t('vpn.wg.peerUpdated') : t('vpn.wg.peerAdded')
   } catch (e) {
     peerModalErr.value = e.message
   }
@@ -202,6 +210,7 @@ async function addPeer() {
 
 async function delPeer(name) {
   err.value = ''
+  if (!window.confirm(t('vpn.wg.confirmDelete', { name }))) return
   try {
     await api.del(`${instanceApiBase()}/peers?name=${encodeURIComponent(name)}`)
     await load()
@@ -434,19 +443,42 @@ watch(trafficPeriod, () => {
 
 watch(selectedId, () => {
   closePeerTraffic()
-  closeAddPeerModal()
+  closePeerModal()
   load()
 })
 
 function openAddPeerModal() {
   peerModalErr.value = ''
+  peerEditing.value = false
+  peerHadPrivateKey.value = false
   peerForm.value = defaultPeerForm()
   peerModalOpen.value = true
 }
 
-function closeAddPeerModal() {
+function openEditPeerModal(p) {
+  peerModalErr.value = ''
+  peerEditing.value = true
+  peerHadPrivateKey.value = !!p.private_key_set
+  peerForm.value = {
+    name: p.name || '',
+    allowed_ips: (p.allowed_ips || []).join(', ') || '',
+    private_key: '',
+    public_key: p.public_key || '',
+    endpoint: p.endpoint || '',
+    persistent_keepalive: p.persistent_keepalive || 25,
+    rate: {
+      down: p.rate?.down || '',
+      up: p.rate?.up || '',
+    },
+  }
+  peerModalOpen.value = true
+}
+
+function closePeerModal() {
   peerModalOpen.value = false
   peerModalErr.value = ''
+  peerEditing.value = false
+  peerHadPrivateKey.value = false
 }
 
 onMounted(load)
@@ -583,6 +615,7 @@ onUnmounted(() => {
                 />
               </td>
               <td class="whitespace-nowrap">
+                <button type="button" class="text-indigo-600 text-xs mr-2" @click="openEditPeerModal(p)">{{ t('common.edit') }}</button>
                 <button type="button" class="text-emerald-700 text-xs mr-2" @click="openPeerTraffic(p.name)">{{ t('vpn.wg.traffic') }}</button>
                 <button type="button" class="text-blue-600 text-xs mr-2" @click="downloadConf(p.name)">{{ t('vpn.wg.downloadConf') }}</button>
                 <button type="button" class="text-red-600 text-xs" @click="delPeer(p.name)">{{ t('common.delete') }}</button>
@@ -602,33 +635,42 @@ onUnmounted(() => {
         v-if="peerModalOpen"
         class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
         role="presentation"
-        @click.self="closeAddPeerModal"
+        @click.self="closePeerModal"
       >
         <div
           class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-slate-200"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="wg-add-peer-modal-title"
+          aria-labelledby="wg-peer-modal-title"
           @click.stop
         >
           <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white z-10">
-            <h3 id="wg-add-peer-modal-title" class="font-medium">{{ t('vpn.wg.addPeerModalTitle') }}</h3>
+            <h3 id="wg-peer-modal-title" class="font-medium">
+              {{ peerEditing ? t('vpn.wg.editPeerModalTitle') : t('vpn.wg.addPeerModalTitle') }}
+            </h3>
             <button
               type="button"
               class="text-slate-500 hover:text-slate-800 text-xl leading-none px-2"
               :aria-label="t('common.cancel')"
-              @click="closeAddPeerModal"
+              @click="closePeerModal"
             >
               ×
             </button>
           </div>
           <div class="p-4 space-y-4">
-            <p class="text-xs text-slate-500">{{ t('vpn.wg.peerFormHint') }}</p>
+            <p class="text-xs text-slate-500">
+              {{ peerEditing ? t('vpn.wg.editPeerFormHint') : t('vpn.wg.peerFormHint') }}
+            </p>
             <p v-if="peerModalErr" class="text-sm text-red-600">{{ peerModalErr }}</p>
             <div class="grid sm:grid-cols-2 gap-3 text-sm">
               <div>
                 <label class="text-xs text-slate-500">{{ t('vpn.wg.peerName') }} *</label>
-                <input v-model="peerForm.name" class="input-field" placeholder="client-1" />
+                <input
+                  v-model="peerForm.name"
+                  class="input-field"
+                  placeholder="client-1"
+                  :disabled="peerEditing"
+                />
               </div>
               <div>
                 <label class="text-xs text-slate-500">{{ t('vpn.wg.peerAllowedLabel') }}</label>
@@ -655,9 +697,16 @@ onUnmounted(() => {
                 <textarea
                   v-model="peerForm.private_key"
                   class="input-field font-mono text-xs min-h-[4rem]"
-                  :placeholder="t('vpn.wg.privKeyPh')"
+                  :placeholder="
+                    peerEditing
+                      ? peerHadPrivateKey
+                        ? t('vpn.wg.privKeyKeepPh')
+                        : t('vpn.wg.privKeyPh')
+                      : t('vpn.wg.privKeyPh')
+                  "
                   spellcheck="false"
                 />
+                <p v-if="peerEditing && peerHadPrivateKey" class="text-xs text-slate-500 mt-1">{{ t('vpn.wg.peerKeyKeepHint') }}</p>
               </div>
               <div class="sm:col-span-2">
                 <label class="text-xs text-slate-500">{{ t('vpn.wg.clientPubKey') }}</label>
@@ -670,9 +719,11 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
-              <button type="button" class="btn-secondary" @click="closeAddPeerModal">{{ t('common.cancel') }}</button>
+              <button type="button" class="btn-secondary" @click="closePeerModal">{{ t('common.cancel') }}</button>
               <button type="button" class="btn-secondary" @click="genPeerKeys">{{ t('vpn.wg.autoKeypair') }}</button>
-              <button type="button" class="btn-primary" @click="addPeer">{{ t('vpn.wg.addPeerSubmit') }}</button>
+              <button type="button" class="btn-primary" @click="savePeer">
+                {{ peerEditing ? t('vpn.wg.editPeerSubmit') : t('vpn.wg.addPeerSubmit') }}
+              </button>
             </div>
           </div>
         </div>

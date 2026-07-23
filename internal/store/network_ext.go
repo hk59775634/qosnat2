@@ -30,6 +30,7 @@ type WanLink struct {
 	Enabled      bool   `json:"enabled"`
 	WarpManaged  bool   `json:"warp_managed,omitempty"`  // true: 由 WARP 连接自动创建，不可手动删除
 	ProxyManaged bool   `json:"proxy_managed,omitempty"` // true: 由 ProxyEgress/sing-box 自动创建，不可手动删除
+	IfaceManaged bool   `json:"iface_managed,omitempty"` // true: 由接口页策略路由自动创建，不可手动改删
 
 	// 网关健康探测（failover）：不影响 Enabled 用户意图，仅运行时排除路由。
 	MonitorEnabled       bool   `json:"monitor_enabled,omitempty"`
@@ -44,6 +45,10 @@ type IfaceConfig struct {
 	IPv4   []string `json:"ipv4,omitempty"`
 	Up     bool     `json:"up"`
 	DHCP4  bool     `json:"dhcp4,omitempty"`
+	// Gateway 该口默认网关（主机 IPv4）。不写入 netplan default，避免抢主 WAN。
+	Gateway string `json:"gateway,omitempty"`
+	// PolicyRouting 为 true 时，为该口托管 IPv4 安装源地址策略路由（经 Gateway 回程）。
+	PolicyRouting bool `json:"policy_routing,omitempty"`
 }
 
 // NetworkState VLAN / VXLAN / 多 WAN / netplan 托管接口 / 虚拟 IP
@@ -70,8 +75,9 @@ func FindIfaceConfig(st State, device string) (IfaceConfig, bool) {
 	return IfaceConfig{}, false
 }
 
-// UpsertIfaceConfig 按设备名更新或追加托管网卡配置
-func UpsertIfaceConfig(st *State, device string, ipv4 []string, up *bool, dhcp4 *bool) {
+// UpsertIfaceConfig 按设备名更新或追加托管网卡配置。
+// gateway / policyRouting 为 nil 时保留原值；传入空字符串可清空 gateway。
+func UpsertIfaceConfig(st *State, device string, ipv4 []string, up *bool, dhcp4 *bool, gateway *string, policyRouting *bool) {
 	device = strings.TrimSpace(device)
 	if device == "" {
 		return
@@ -87,6 +93,12 @@ func UpsertIfaceConfig(st *State, device string, ipv4 []string, up *bool, dhcp4 
 			if dhcp4 != nil {
 				st.Network.Ifaces[i].DHCP4 = *dhcp4
 			}
+			if gateway != nil {
+				st.Network.Ifaces[i].Gateway = strings.TrimSpace(*gateway)
+			}
+			if policyRouting != nil {
+				st.Network.Ifaces[i].PolicyRouting = *policyRouting
+			}
 			return
 		}
 	}
@@ -99,6 +111,12 @@ func UpsertIfaceConfig(st *State, device string, ipv4 []string, up *bool, dhcp4 
 	}
 	if dhcp4 != nil {
 		entry.DHCP4 = *dhcp4
+	}
+	if gateway != nil {
+		entry.Gateway = strings.TrimSpace(*gateway)
+	}
+	if policyRouting != nil {
+		entry.PolicyRouting = *policyRouting
 	}
 	st.Network.Ifaces = append(st.Network.Ifaces, entry)
 }

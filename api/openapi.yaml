@@ -588,6 +588,10 @@ components:
         ipv4: { type: array, items: { type: string } }
         up: { type: boolean }
         dhcp4: { type: boolean }
+        gateway: { type: string, description: 该口上行网关（主机 IPv4）；不写入主表 default }
+        policy_routing:
+          type: boolean
+          description: 为该口静态 IPv4 安装源地址策略路由（from IP/32 → 经 gateway 回程）
     VirtualIP:
       type: object
       properties:
@@ -679,6 +683,7 @@ components:
         enabled: { type: boolean }
         warp_managed: { type: boolean }
         proxy_managed: { type: boolean, description: '由 ProxyEgress/sing-box 自动创建' }
+        iface_managed: { type: boolean, description: '由接口页策略路由自动创建，不可手动改删' }
         monitor_enabled: { type: boolean, description: 启用网关健康探测与 failover }
         monitor_addr: { type: string, description: 探测目标；空则用 gateway }
         monitor_interval_sec: { type: integer, description: 探测间隔秒；默认 5 }
@@ -3059,7 +3064,7 @@ paths:
                       $ref: '#/components/schemas/TrafficPoint'
     put:
       tags: [network]
-      summary: 修改网卡 IPv4 / up / dhcp4（写入 state 与 netplan 并 apply）
+      summary: 修改网卡 IPv4 / up / dhcp4 / gateway / policy_routing（netplan + 可选策略路由）
       requestBody:
         content:
           application/json:
@@ -3073,6 +3078,10 @@ paths:
                 ipv4: { type: array, items: { type: string }, description: '完整替换托管地址列表；[] 清空静态地址' }
                 up: { type: boolean }
                 dhcp4: { type: boolean }
+                gateway: { type: string, description: 上行网关主机 IPv4；空字符串清空 }
+                policy_routing:
+                  type: boolean
+                  description: 启用后为每个静态 IPv4 安装 from/32 源策略路由（需 gateway，不可与 dhcp4 同时）
       responses:
         '200':
           content:
@@ -4086,7 +4095,10 @@ paths:
                   $ref: '#/components/schemas/WGPeer'
     post:
       tags: [vpn]
-      summary: 添加/更新 Peer
+      summary: 添加/更新 Peer（同名覆盖）
+      description: |
+        按 name upsert。更新时若 private_key / public_key / preshared_key / allowed_ips 为空，保留原 Peer 对应字段，不会重新生成密钥。
+        仅写入 state；需再调用实例 apply 才能同步到内核。
       requestBody:
         content:
           application/json:
@@ -4097,7 +4109,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Ok'
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  updated: { type: boolean, description: true 表示覆盖已有 Peer }
     delete:
       tags: [vpn]
       summary: 删除 Peer

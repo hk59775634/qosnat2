@@ -5,11 +5,16 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+防火墙运维能力增强、接口网关源策略路由、ocserv 1.5.0 动态分流，以及 WireGuard Peer 可编辑
 
 ## 新增
 
-- （无）
+- 防火墙：规则日志与计数器、最近拦截查看；端口别名与端口范围；计划任务按时段启停；Output 链与按接口视图
+- 别名：GeoIP（ipdeny）、ASN；FQDN 保持可用
+- 多 WAN：网关健康探测与 failover；规则可绑定 WanLink 出口与 Shaper profile
+- 网络 → 接口：可配置网关；可选「源地址策略路由」，为该口静态 IPv4 安装 from/32 回程（外网访问副口 IP 时可对称返回，不抢主 WAN 默认路由）
+- ocserv：升级至官方 1.5.0，含 SPEC-01 与动态分流（DST）域名列表（存储 / 配置渲染 / UI）
+- WireGuard：Peer 支持编辑（更新时空密钥/AllowedIPs 保留原值，避免误清空）
 
 ## 优化
 
@@ -25,4 +30,5 @@
 
 ## 其他
 
-- （无）
+- 接口策略路由派生的 WanLink / 出站策略由接口页托管，勿在多 WAN / 出站策略页手动改删
+- WireGuard Peer 写入 state 后仍需「保存并 wg-quick 应用」才会生效到内核

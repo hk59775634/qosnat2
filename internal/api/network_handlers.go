@@ -156,8 +156,10 @@ func (srv *Server) handleNetworkWanLinks(w http.ResponseWriter, r *http.Request)
 			writeBadRequest(w, err.Error())
 			return
 		}
-		if body.ID == store.WanLinkIDWarp || body.WarpManaged || body.ProxyManaged || strings.HasPrefix(body.ID, store.ProxyEgressWanLinkPrefix) {
-			writeBadRequest(w, "use Proxy Egress / WARP APIs to create managed WAN links")
+		if body.ID == store.WanLinkIDWarp || body.WarpManaged || body.ProxyManaged || body.IfaceManaged ||
+			strings.HasPrefix(body.ID, store.ProxyEgressWanLinkPrefix) ||
+			strings.HasPrefix(body.ID, store.IfacePolicyWanLinkPrefix) {
+			writeBadRequest(w, "use Proxy Egress / WARP / Interfaces APIs to create managed WAN links")
 			return
 		}
 		if !route.LinkExists(body.Device) {
@@ -281,6 +283,7 @@ func (srv *Server) replayWanLinksOnBoot() {
 				}
 			}
 			store.UpsertWarpWanLink(st, iface)
+			store.SyncIfacePolicyRouting(st)
 			store.SyncWanRoutes(st)
 			store.SyncEgressRoutes(st)
 		})
@@ -290,7 +293,7 @@ func (srv *Server) replayWanLinksOnBoot() {
 		}
 		return
 	}
-	if len(st.Network.WanLinks) == 0 && !warpnetns.IsConnected() {
+	if len(st.Network.WanLinks) == 0 && !warpnetns.IsConnected() && !ifacePolicyRoutingConfigured(st) {
 		return
 	}
 	_ = srv.store.Update(func(st *store.State) {
@@ -302,8 +305,18 @@ func (srv *Server) replayWanLinksOnBoot() {
 		} else {
 			store.RemoveWarpWanLink(st)
 		}
+		store.SyncIfacePolicyRouting(st)
 		store.SyncWanRoutes(st)
 		store.SyncEgressRoutes(st)
 	})
 	_ = srv.persistStateOrLog("replay wan links on boot")
+}
+
+func ifacePolicyRoutingConfigured(st store.State) bool {
+	for _, ic := range st.Network.Ifaces {
+		if ic.PolicyRouting && strings.TrimSpace(ic.Gateway) != "" {
+			return true
+		}
+	}
+	return false
 }

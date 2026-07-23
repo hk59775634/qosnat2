@@ -78,10 +78,12 @@ func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Device string   `json:"device"`
-		IPv4   []string `json:"ipv4"`
-		Up     *bool    `json:"up"`
-		DHCP4  *bool    `json:"dhcp4"`
+		Device        string   `json:"device"`
+		IPv4          []string `json:"ipv4"`
+		Up            *bool    `json:"up"`
+		DHCP4         *bool    `json:"dhcp4"`
+		Gateway       *string  `json:"gateway"`
+		PolicyRouting *bool    `json:"policy_routing"`
 	}
 	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.Device) == "" {
 		writeBadRequest(w, "device required")
@@ -92,8 +94,8 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, err.Error())
 		return
 	}
-	if body.IPv4 == nil && body.Up == nil && body.DHCP4 == nil {
-		writeBadRequest(w, "ipv4, up or dhcp4 required")
+	if body.IPv4 == nil && body.Up == nil && body.DHCP4 == nil && body.Gateway == nil && body.PolicyRouting == nil {
+		writeBadRequest(w, "ipv4, up, dhcp4, gateway or policy_routing required")
 		return
 	}
 	st := srv.store.Get()
@@ -102,10 +104,22 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := srv.applyNetplanWithRollback(func(st *store.State) error {
-		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, body.DHCP4)
+		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, body.DHCP4, body.Gateway, body.PolicyRouting)
+		ic, ok := store.FindIfaceConfig(*st, dev)
+		if !ok {
+			return fmt.Errorf("managed iface not found after upsert")
+		}
+		if err := store.ValidateIfacePolicyRouting(ic); err != nil {
+			return err
+		}
+		store.SyncIfacePolicyRouting(st)
 		return nil
 	}); err != nil {
 		writeBadRequest(w, err.Error())
+		return
+	}
+	if err := srv.syncIfacePolicyDataPlane(); err != nil {
+		writeInternalError(w, err.Error())
 		return
 	}
 	srv.auditLog(r, "iface.netplan", dev)
@@ -145,9 +159,14 @@ func (srv *Server) handleInterfacesDelete(w http.ResponseWriter, r *http.Request
 		if !store.RemoveIfaceConfig(st, dev) {
 			return fmt.Errorf("managed iface not found")
 		}
+		store.SyncIfacePolicyRouting(st)
 		return nil
 	}); err != nil {
 		writeBadRequest(w, err.Error())
+		return
+	}
+	if err := srv.syncIfacePolicyDataPlane(); err != nil {
+		writeInternalError(w, err.Error())
 		return
 	}
 	srv.auditLog(r, "iface.netplan.clear", dev)
@@ -155,6 +174,20 @@ func (srv *Server) handleInterfacesDelete(w http.ResponseWriter, r *http.Request
 		"ok":     true,
 		"device": dev,
 	})
+}
+
+// syncIfacePolicyDataPlane 接口策略路由变更后同步 Routes / ip rule / nft。
+func (srv *Server) syncIfacePolicyDataPlane() error {
+	_ = srv.store.Update(func(st *store.State) {
+		store.SyncIfacePolicyRouting(st)
+		store.SyncWanRoutes(st)
+		store.SyncEgressRoutes(st)
+	})
+	if err := srv.store.Save(); err != nil {
+		return fmt.Errorf("save state: %w", err)
+	}
+	srv.applyManagedRoutes()
+	return srv.applyWanLinkDataPlane()
 }
 
 // ifaceNetplanManageable 物理口可写入 99-qosnat2 ethernets；VLAN/VXLAN/虚拟口走各自 API。

@@ -27,7 +27,7 @@ const savingRoles = ref(false)
 
 const editDev = ref('')
 const netplanPath = ref('')
-const addrForm = ref({ ipv4: '', up: true, dhcp4: false })
+const addrForm = ref({ ipv4: '', up: true, dhcp4: false, gateway: '', policy_routing: false })
 const addrManageable = ref(false)
 const addrManaged = ref(false)
 const savingAddrs = ref(false)
@@ -144,6 +144,8 @@ function fillAddrForm(iface) {
       ipv4: (iface.managed.ipv4 || []).join('\n'),
       up: iface.managed.up !== false,
       dhcp4: !!iface.managed.dhcp4,
+      gateway: iface.managed.gateway || '',
+      policy_routing: !!iface.managed.policy_routing,
     }
     return
   }
@@ -151,6 +153,8 @@ function fillAddrForm(iface) {
     ipv4: liveIPv4Lines(iface).join('\n'),
     up: iface?.up !== false,
     dhcp4: false,
+    gateway: '',
+    policy_routing: false,
   }
 }
 
@@ -245,6 +249,8 @@ async function saveAddrs() {
       ipv4: parseIPv4(addrForm.value.ipv4),
       up: addrForm.value.up,
       dhcp4: addrForm.value.dhcp4,
+      gateway: (addrForm.value.gateway || '').trim(),
+      policy_routing: !!addrForm.value.policy_routing,
     })
     ok.value = t('network.interfaces.addrsSaved')
     await loadInterfaces()
@@ -439,8 +445,16 @@ onUnmounted(() => {
               v-if="iface.managed"
               class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-sans"
             >{{ t('network.interfaces.managedBadge') }}</span>
+            <span
+              v-if="iface.managed?.policy_routing"
+              class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-sans"
+            >{{ t('network.interfaces.policyRouting') }}</span>
           </dt>
           <dd class="font-mono text-xs break-all mt-0.5">{{ addrLines(iface) }}</dd>
+          <template v-if="iface.managed?.gateway">
+            <dt class="text-slate-500 text-xs mt-2">{{ t('network.interfaces.gateway') }}</dt>
+            <dd class="font-mono text-xs mt-0.5">{{ iface.managed.gateway }}</dd>
+          </template>
         </dl>
 
         <div v-if="historyFields(iface).ok" class="mt-3 grid grid-cols-2 gap-3" @click.stop>
@@ -571,16 +585,35 @@ onUnmounted(() => {
             />
             <p class="text-xs text-slate-400 mt-1">{{ t('network.interfaces.ipv4Hint') }}</p>
           </div>
+          <div>
+            <label class="text-xs text-slate-500">{{ t('network.interfaces.gateway') }}</label>
+            <input
+              v-model="addrForm.gateway"
+              type="text"
+              class="input-field mt-1 font-mono"
+              :placeholder="t('network.interfaces.gatewayPlaceholder')"
+            />
+            <p class="text-xs text-slate-400 mt-1">{{ t('network.interfaces.gatewayHint') }}</p>
+          </div>
           <div class="flex flex-wrap gap-4">
             <label class="flex items-center gap-2">
               <input v-model="addrForm.up" type="checkbox" />
               {{ t('network.interfaces.linkUp') }}
             </label>
             <label class="flex items-center gap-2">
-              <input v-model="addrForm.dhcp4" type="checkbox" />
+              <input v-model="addrForm.dhcp4" type="checkbox" :disabled="addrForm.policy_routing" />
               {{ t('network.interfaces.dhcp4') }}
             </label>
+            <label class="flex items-center gap-2">
+              <input
+                v-model="addrForm.policy_routing"
+                type="checkbox"
+                :disabled="addrForm.dhcp4"
+              />
+              {{ t('network.interfaces.policyRouting') }}
+            </label>
           </div>
+          <p class="text-xs text-slate-400">{{ t('network.interfaces.policyRoutingHint') }}</p>
           <div class="flex flex-wrap gap-2">
             <button
               type="button"

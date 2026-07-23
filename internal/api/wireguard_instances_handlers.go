@@ -331,8 +331,46 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			writeBadRequest(w, "name required")
 			return
 		}
+		p.Name = strings.TrimSpace(p.Name)
 		p.PrivateKey = strings.TrimSpace(p.PrivateKey)
 		p.PublicKey = strings.TrimSpace(p.PublicKey)
+		p.PresharedKey = strings.TrimSpace(p.PresharedKey)
+		p.Endpoint = strings.TrimSpace(p.Endpoint)
+
+		st := srv.store.Get()
+		idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id)
+		if !ok {
+			writeNotFound(w, "instance not found")
+			return
+		}
+		var prev *store.WGPeer
+		for i := range st.VPN.WireGuards[idx].Peers {
+			if st.VPN.WireGuards[idx].Peers[i].Name == p.Name {
+				prev = &st.VPN.WireGuards[idx].Peers[i]
+				break
+			}
+		}
+		updating := prev != nil
+		if updating {
+			// 编辑：空密钥/空 AllowedIPs 保留原值，避免误清空或重新生成
+			if p.PrivateKey == "" {
+				p.PrivateKey = prev.PrivateKey
+			}
+			if p.PublicKey == "" {
+				p.PublicKey = prev.PublicKey
+			}
+			if p.PresharedKey == "" {
+				p.PresharedKey = prev.PresharedKey
+			}
+			if len(p.AllowedIPs) == 0 {
+				p.AllowedIPs = append([]string(nil), prev.AllowedIPs...)
+			}
+			if p.Rate == nil && prev.Rate != nil {
+				cp := *prev.Rate
+				p.Rate = &cp
+			}
+		}
+
 		if p.PublicKey == "" && p.PrivateKey != "" {
 			pub, err := wg.PublicKeyFromPrivate(p.PrivateKey)
 			if err != nil {
@@ -341,7 +379,7 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			}
 			p.PublicKey = pub
 		}
-		if p.PrivateKey == "" && p.PublicKey == "" {
+		if !updating && p.PrivateKey == "" && p.PublicKey == "" {
 			kp, err := wg.GenKeyPair()
 			if err != nil {
 				writeInternalError(w, err.Error())
@@ -356,23 +394,17 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 		}
 		if len(p.AllowedIPs) == 0 {
 			serverAddr := linknet.WireGuardDefaultAddress
-			if st := srv.store.Get(); true {
-				if idx, ok := store.FindWireGuardInstance(st.VPN.WireGuards, id); ok {
-					if a := strings.TrimSpace(st.VPN.WireGuards[idx].Address); a != "" {
-						serverAddr = a
-					}
-				}
+			if a := strings.TrimSpace(st.VPN.WireGuards[idx].Address); a != "" {
+				serverAddr = a
 			}
 			p.AllowedIPs = []string{linknet.WireGuardSuggestPeerAllowedIP(serverAddr)}
 		}
-		var errStr string
 		_ = srv.store.Update(func(s *store.State) {
-			idx, ok := store.FindWireGuardInstance(s.VPN.WireGuards, id)
+			i, ok := store.FindWireGuardInstance(s.VPN.WireGuards, id)
 			if !ok {
-				errStr = "instance not found"
 				return
 			}
-			peers := s.VPN.WireGuards[idx].Peers
+			peers := s.VPN.WireGuards[i].Peers
 			var out []store.WGPeer
 			replaced := false
 			for _, e := range peers {
@@ -386,17 +418,13 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			if !replaced {
 				out = append(out, p)
 			}
-			s.VPN.WireGuards[idx].Peers = out
+			s.VPN.WireGuards[i].Peers = out
 		})
-		if errStr != "" {
-			writeNotFound(w, errStr)
-			return
-		}
 		if !srv.persistState(w) {
 			return
 		}
 		srv.syncAllWGPeerRates()
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "updated": updating})
 	case http.MethodDelete:
 		name := r.URL.Query().Get("name")
 		if name == "" {
