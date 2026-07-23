@@ -36,12 +36,12 @@ func (srv *Server) pinWireGuardEndpoints(reason string) {
 	}
 	st := srv.store.Get()
 	for _, inst := range st.VPN.WireGuards {
-		if !inst.Enabled || !netif.LinkExists(inst.Interface) {
-			continue
-		}
 		iface := strings.TrimSpace(inst.Interface)
 		if iface == "" {
 			iface = "wg0"
+		}
+		if !inst.Enabled || !netif.LinkExists(iface) {
+			continue
 		}
 		fixed, err := wg.PinConfiguredEndpoints(iface, inst.Peers)
 		if err != nil {
