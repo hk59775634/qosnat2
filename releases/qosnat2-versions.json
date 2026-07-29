@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026072901",
+      "tag": "v2026072901",
+      "published_at": "2026-07-29T04:06:19Z",
+      "summary": "独立「出站 / 策略路由」页面：按 WanLink 分标签管理策略路由，新建时自动选用最优 WAN 与 SNAT 默认值。"
+    },
+    {
       "id": "2026072308",
       "tag": "v2026072308",
       "published_at": "2026-07-23T10:55:14Z",
@@ -25,12 +31,6 @@
       "tag": "v2026072305",
       "published_at": "2026-07-23T10:12:46Z",
       "summary": "显著缩短 qosnatd 启动时间：Web 管理面立即可用，dnsmasq/jool/unbound 等外部组件改为后台异步拉起。"
-    },
-    {
-      "id": "2026072304",
-      "tag": "v2026072304",
-      "published_at": "2026-07-23T09:49:08Z",
-      "summary": "WireGuard Peer 支持可选是否将 AllowedIPs 加载到系统路由表"
     }
   ]
 }
