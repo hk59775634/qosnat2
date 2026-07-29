@@ -41,6 +41,7 @@ const menu = computed(() => [
       { path: '/network/dhcp', label: t('nav.dhcp') },
       { path: '/network/routes', label: t('nav.routes') },
       { path: '/network/wan-links', label: t('nav.wanLinks') },
+      { path: '/network/egress-policies', label: t('nav.egressPolicies') },
     ],
   },
   {

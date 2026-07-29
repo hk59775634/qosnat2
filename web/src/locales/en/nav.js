@@ -9,6 +9,7 @@ export default {
   vlans: 'VLAN',
   vxlan: 'VXLAN',
   wanLinks: 'Multi-WAN',
+  egressPolicies: 'Egress / Policy routing',
   rssQueues: 'RSS / Queues',
   security: 'Security',
   outboundNat: 'Outbound NAT',

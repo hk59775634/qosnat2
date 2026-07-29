@@ -35,6 +35,8 @@ const routes = [
       { path: 'network/virtual-ips', name: 'network-virtual-ips', component: () => import('@/views/network/VirtualIps.vue'), meta: { pageWidth: 'full' } },
       { path: 'network/vxlan', name: 'network-vxlan', component: () => import('@/views/network/Vxlan.vue'), meta: { pageWidth: 'full' } },
       { path: 'network/wan-links', name: 'network-wan-links', component: () => import('@/views/network/WanLinks.vue'), meta: { pageWidth: 'full' } },
+      { path: 'network/egress-policies', name: 'network-egress-policies', component: () => import('@/views/network/EgressPolicies.vue'), meta: { pageWidth: 'full' } },
+      { path: 'network/egress', redirect: { name: 'network-egress-policies' } },
       { path: 'vpn/wireguard', name: 'vpn-wg', component: () => import('@/views/vpn/WireGuard.vue'), meta: { pageWidth: 'full' } },
       { path: 'vpn/ocserv', name: 'vpn-ocserv', component: () => import('@/views/vpn/OCServ.vue'), meta: { pageWidth: 'full' } },
       {
