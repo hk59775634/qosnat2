@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/netif"
+	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/route"
 	"github.com/hk59775634/qosnat2/internal/stats"
 	"github.com/hk59775634/qosnat2/internal/store"
@@ -178,6 +179,15 @@ func (srv *Server) handleInterfacesDelete(w http.ResponseWriter, r *http.Request
 
 // syncIfacePolicyDataPlane 接口策略路由变更后同步 Routes / ip rule / nft。
 func (srv *Server) syncIfacePolicyDataPlane() error {
+	stBefore := srv.store.Get()
+	aliases := store.AliasByName(stBefore.Firewall.Aliases)
+	links := append([]store.WanLink(nil), stBefore.Network.WanLinks...)
+	// SyncIfacePolicyRouting 会先丢掉旧的 auto-iface-pr 策略再重建；Apply 看不到已删除项，须先清内核 ip rule。
+	for _, p := range stBefore.Network.EgressPolicies {
+		if store.IsIfacePolicyEgress(p) {
+			policyroute.DeletePolicy(p, links, aliases)
+		}
+	}
 	_ = srv.store.Update(func(st *store.State) {
 		store.SyncIfacePolicyRouting(st)
 		store.SyncWanRoutes(st)

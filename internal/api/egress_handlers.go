@@ -107,24 +107,31 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 				return
 			}
 		}
+		var old store.EgressPolicy
 		found := false
-		backup := store.CloneEgressPolicies(stBefore.Network.EgressPolicies)
-		_ = srv.store.Update(func(st *store.State) {
-			for i, p := range st.Network.EgressPolicies {
-				if p.ID == id {
-					st.Network.EgressPolicies[i] = body
-					found = true
-					break
-				}
+		for _, p := range stBefore.Network.EgressPolicies {
+			if p.ID == id {
+				old = p
+				found = true
+				break
 			}
-			if found {
-				store.SyncEgressRoutes(st)
-			}
-		})
+		}
 		if !found {
 			writeNotFound(w, "egress policy not found")
 			return
 		}
+		backup := store.CloneEgressPolicies(stBefore.Network.EgressPolicies)
+		linksSnapshot := append([]store.WanLink(nil), stBefore.Network.WanLinks...)
+		aliasesSnapshot := store.AliasByName(stBefore.Firewall.Aliases)
+		_ = srv.store.Update(func(st *store.State) {
+			for i, p := range st.Network.EgressPolicies {
+				if p.ID == id {
+					st.Network.EgressPolicies[i] = body
+					break
+				}
+			}
+			store.SyncEgressRoutes(st)
+		})
 		proposed := srv.store.Get()
 		if err := srv.checkNftForState(proposed); err != nil {
 			srv.setEgressPolicies(backup)
@@ -135,6 +142,8 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			srv.setEgressPolicies(backup)
 			return
 		}
+		// Apply 只认当前 state；修改前先按旧策略清掉已安装的 ip rule，避免 selector/priority/WAN 变更残留。
+		policyroute.DeletePolicy(old, linksSnapshot, aliasesSnapshot)
 		if err := srv.reloadNftAfterEgressRevert(backup); err != nil {
 			writeApplyError(w, err)
 			return
@@ -151,26 +160,34 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			writeBadRequest(w, "interface policy egress cannot be deleted manually; edit via Interfaces page")
 			return
 		}
+		stBefore := srv.store.Get()
+		var removed store.EgressPolicy
 		found := false
-		backup := store.CloneEgressPolicies(srv.store.Get().Network.EgressPolicies)
-		_ = srv.store.Update(func(st *store.State) {
-			var out []store.EgressPolicy
-			for _, p := range st.Network.EgressPolicies {
-				if p.ID == id {
-					found = true
-					continue
-				}
-				out = append(out, p)
+		for _, p := range stBefore.Network.EgressPolicies {
+			if p.ID == id {
+				removed = p
+				found = true
+				break
 			}
-			if found {
-				st.Network.EgressPolicies = out
-				store.SyncEgressRoutes(st)
-			}
-		})
+		}
 		if !found {
 			writeNotFound(w, "egress policy not found")
 			return
 		}
+		backup := store.CloneEgressPolicies(stBefore.Network.EgressPolicies)
+		linksSnapshot := append([]store.WanLink(nil), stBefore.Network.WanLinks...)
+		aliasesSnapshot := store.AliasByName(stBefore.Firewall.Aliases)
+		_ = srv.store.Update(func(st *store.State) {
+			var out []store.EgressPolicy
+			for _, p := range st.Network.EgressPolicies {
+				if p.ID == id {
+					continue
+				}
+				out = append(out, p)
+			}
+			st.Network.EgressPolicies = out
+			store.SyncEgressRoutes(st)
+		})
 		proposed := srv.store.Get()
 		if err := srv.checkNftForState(proposed); err != nil {
 			srv.setEgressPolicies(backup)
@@ -181,6 +198,8 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			srv.setEgressPolicies(backup)
 			return
 		}
+		// Apply 看不到已删除的策略，必须先按旧策略删除内核 ip rule。
+		policyroute.DeletePolicy(removed, linksSnapshot, aliasesSnapshot)
 		if err := srv.reloadNftAfterEgressRevert(backup); err != nil {
 			writeApplyError(w, err)
 			return
