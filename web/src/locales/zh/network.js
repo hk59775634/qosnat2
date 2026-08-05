@@ -311,6 +311,9 @@ export default {
     tabAddWan: '添加 WAN 链路',
     egressPoliciesHint: '按源接口/地址绑定出口 WAN、策略路由与可选 SNAT：',
     egressPoliciesLink: '出站 / 策略路由',
+    policyOnly: '仅策略路由（不写入主表默认路由）',
+    policyOnlyShort: 'policy-only',
+    policyOnlyHint: '勾选后该 WanLink 不参与 main 表 default，仅供出站/策略路由使用（适用于 WARP、隧道、远端 NAT 等出口）。',
     proxyTitle: '独立 IP 代理出口',
     proxyHint:
       '通过 sing-box TUN 接入 HTTP / HTTPS / SOCKS5 代理，自动创建策略专用 WanLink（不改主表默认路由）。连接后在「出站 / 策略路由」中把源网段或 VPN 池绑定到对应 WanLink。',

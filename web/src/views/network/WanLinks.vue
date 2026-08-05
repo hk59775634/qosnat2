@@ -55,6 +55,7 @@ const form = ref({
   tier: 2,
   weight: 1,
   enabled: true,
+  policy_only: false,
   monitor_enabled: false,
   monitor_addr: '',
   monitor_interval_sec: 5,
@@ -69,6 +70,7 @@ const editForm = ref({
   tier: 2,
   weight: 1,
   enabled: true,
+  policy_only: false,
 })
 
 const warpInstallRunning = computed(() => installingWarp.value || warpInstallJob.value?.state === 'running')
@@ -866,6 +868,7 @@ function startEdit(w) {
     tier: w.tier,
     weight: w.weight,
     enabled: w.enabled,
+    policy_only: !!w.policy_only,
     monitor_enabled: !!w.monitor_enabled,
     monitor_addr: w.monitor_addr || '',
     monitor_interval_sec: w.monitor_interval_sec || 5,
@@ -962,6 +965,12 @@ onUnmounted(() => {
         <label class="flex items-center gap-2 sm:col-span-2">
           <input v-model="form.enabled" type="checkbox" /> {{ t('common.enabled') }}
         </label>
+        <div class="sm:col-span-2 space-y-1">
+          <label class="flex items-center gap-2">
+            <input v-model="form.policy_only" type="checkbox" /> {{ t('network.wanLinks.policyOnly') }}
+          </label>
+          <p class="text-[11px] text-slate-400 leading-snug">{{ t('network.wanLinks.policyOnlyHint') }}</p>
+        </div>
         <label class="flex items-center gap-2 sm:col-span-2">
           <input v-model="form.monitor_enabled" type="checkbox" /> {{ t('network.wanLinks.monitorEnabled') }}
         </label>
@@ -1008,6 +1017,9 @@ onUnmounted(() => {
               <td class="space-x-2 whitespace-nowrap">
                 <label class="inline-flex items-center gap-1 text-xs">
                   <input v-model="editForm.enabled" type="checkbox" /> {{ t('common.enabled') }}
+                </label>
+                <label class="inline-flex items-center gap-1 text-xs" :title="t('network.wanLinks.policyOnlyHint')">
+                  <input v-model="editForm.policy_only" type="checkbox" /> {{ t('network.wanLinks.policyOnlyShort') }}
                 </label>
                 <label class="inline-flex items-center gap-1 text-xs">
                   <input v-model="editForm.monitor_enabled" type="checkbox" /> {{ t('network.wanLinks.monitorEnabled') }}

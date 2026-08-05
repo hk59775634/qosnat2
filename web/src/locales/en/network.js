@@ -314,6 +314,9 @@ export default {
     tabAddWan: 'Add WAN link',
     egressPoliciesHint: 'Bind source iface/address to an egress WAN (policy routing, optional SNAT):',
     egressPoliciesLink: 'Egress / Policy routing',
+    policyOnly: 'Policy routing only (skip main-table default)',
+    policyOnlyShort: 'policy-only',
+    policyOnlyHint: 'When enabled, this WanLink is not added to the main default route and is only used by egress / policy routing (WARP, tunnels, remote NAT, etc.).',
     proxyTitle: 'Independent proxy egress',
     proxyHint:
       'Use sing-box TUN to attach HTTP / HTTPS / SOCKS5 proxies as policy-only WanLinks (host default route unchanged). After connect, bind source CIDRs or VPN pools under Egress / Policy routing.',
