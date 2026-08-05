@@ -262,8 +262,10 @@ async function genKeys() {
   try {
     const kp = await api.post(`${instanceApiBase()}/keys`, {})
     if (!cfg.value) await load()
+    // 生成接口已写入 state；填入表单便于核对，保存时留空则保留。
     cfg.value.private_key = kp.private_key
     cfg.value.public_key = kp.public_key
+    cfg.value.server_private_key_set = true
     ok.value = t('vpn.wg.keysGenerated')
   } catch (e) {
     err.value = e.message
@@ -274,9 +276,15 @@ async function save() {
   err.value = ''
   ok.value = ''
   try {
-    cfg.value.server_endpoint = serverEndpoint.value
-    cfg.value.peers = peers.value
-    await api.put(instanceApiBase(), cfg.value)
+    const body = { ...cfg.value }
+    body.server_endpoint = serverEndpoint.value
+    body.peers = peers.value
+    // GET 不回显私钥；空字符串表示保留原密钥，勿把 UI 占位字段误清空。
+    const priv = String(body.private_key || '').trim()
+    if (priv) body.private_key = priv
+    else delete body.private_key
+    delete body.server_private_key_set
+    await api.put(instanceApiBase(), body)
     ok.value = t('vpn.wg.configSaved')
     if (cfg.value.enabled) {
       try {
@@ -747,13 +755,33 @@ onUnmounted(() => {
             <label class="text-xs text-slate-500">{{ t('vpn.wg.serverEndpointPublic') }}</label>
             <input v-model="serverEndpoint" class="input-field font-mono" placeholder="157.15.107.249:51820" />
           </div>
+          <div class="sm:col-span-2">
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.serverPrivKey') }}</label>
+            <textarea
+              v-model="cfg.private_key"
+              class="input-field font-mono text-xs min-h-[4rem]"
+              :placeholder="
+                cfg.server_private_key_set ? t('vpn.wg.privKeyKeepPh') : t('vpn.wg.serverPrivKeyPh')
+              "
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <p class="text-xs text-slate-500 mt-1">{{ t('vpn.wg.serverKeyHint') }}</p>
+          </div>
+          <div class="sm:col-span-2">
+            <label class="text-xs text-slate-500">{{ t('vpn.wg.serverPubkey') }}</label>
+            <input
+              :value="cfg.public_key || ''"
+              class="input-field font-mono text-xs"
+              readonly
+              :placeholder="t('vpn.wg.serverPubkeyDerived')"
+            />
+          </div>
         </div>
         <div class="flex gap-2 mt-4">
           <button type="button" class="btn-secondary" @click="genKeys">{{ t('vpn.wg.genKeys') }}</button>
           <button type="button" class="btn-primary" @click="save">{{ t('vpn.wg.saveApply') }}</button>
         </div>
-        <p class="text-xs text-slate-400 mt-2 font-mono truncate">{{ t('vpn.wg.serverPubkey') }}: {{ cfg.public_key || '—' }}</p>
-        <p v-if="cfg.server_private_key_set" class="text-xs text-slate-500 mt-1">{{ t('vpn.wg.serverKeyHint') }}</p>
       </section>
 
       <template v-if="activeTab === 'peers'">

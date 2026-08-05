@@ -176,6 +176,10 @@ func (srv *Server) handleWireGuardInstanceOne(w http.ResponseWriter, r *http.Req
 			prev := s.VPN.WireGuards[idx]
 			mergeWireGuardInstanceSecrets(&body, prev)
 			store.NormalizeWireGuardInstance(&body)
+			if err := deriveWireGuardPublicKey(&body.WireGuardState); err != nil {
+				errStr = err.Error()
+				return
+			}
 			if err := store.ValidateWireGuardInstancePatch(body); err != nil {
 				errStr = err.Error()
 				return

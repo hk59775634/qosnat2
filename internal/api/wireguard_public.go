@@ -1,9 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/hk59775634/qosnat2/internal/store"
+	"github.com/hk59775634/qosnat2/internal/wg"
 	wgusertraffic "github.com/hk59775634/qosnat2/internal/wg/usertraffic"
 )
 
@@ -67,4 +69,21 @@ func mergeWireGuardSecrets(body *store.WireGuardState, prev store.WireGuardState
 
 func mergeWireGuardInstanceSecrets(body *store.WireGuardInstance, prev store.WireGuardInstance) {
 	mergeWireGuardSecrets(&body.WireGuardState, prev.WireGuardState)
+}
+
+// deriveWireGuardPublicKey 在已有私钥时重算公钥（便于粘贴恢复旧配置）。
+func deriveWireGuardPublicKey(st *store.WireGuardState) error {
+	if st == nil {
+		return nil
+	}
+	priv := strings.TrimSpace(st.PrivateKey)
+	if priv == "" {
+		return nil
+	}
+	pub, err := wg.PublicKeyFromPrivate(priv)
+	if err != nil {
+		return fmt.Errorf("private_key: %w", err)
+	}
+	st.PublicKey = pub
+	return nil
 }
