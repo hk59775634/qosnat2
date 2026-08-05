@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026080503",
+      "tag": "v2026080503",
+      "published_at": "2026-08-05T06:10:26Z",
+      "summary": "修复 src+dst（mode=both）出站策略因 main 旁路同向而永不生效，并确保策略型 WanLink 不写入 main default。"
+    },
+    {
       "id": "2026080502",
       "tag": "v2026080502",
       "published_at": "2026-08-05T06:04:30Z",
@@ -25,12 +31,6 @@
       "tag": "v2026072308",
       "published_at": "2026-07-23T10:55:14Z",
       "summary": "完善 WireGuard Endpoint 钉回：接口名为空时也能正确检测并纠正运行态。"
-    },
-    {
-      "id": "2026072307",
-      "tag": "v2026072307",
-      "published_at": "2026-07-23T10:50:47Z",
-      "summary": "修复 WireGuard 静态 Endpoint 运行时漫游到隧道地址的问题。"
     }
   ]
 }

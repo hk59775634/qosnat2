@@ -5,7 +5,7 @@
 
 ## 概要
 
-修复 src+dst（mode=both）出站策略因 main 旁路同向而永不生效，并确保策略型 WanLink 不写入 main default。
+（一句话概括本版重点，将写入版本清单 summary 字段）
 
 ## 新增
 
@@ -17,8 +17,7 @@
 
 ## 修复
 
-- `mode=both` 的 main 旁路改为回程方向（from/to 对调、不加 iif），并清理历史错误的同向 main 规则
-- `PrimaryWanLinkID` / `SyncWanRoutes` 跳过 `policy_only` 策略型 WanLink，避免其写入或抢占主表 default
+- （无）
 
 ## 删除
 
