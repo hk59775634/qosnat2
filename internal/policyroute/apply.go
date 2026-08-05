@@ -141,27 +141,40 @@ func addPolicyRuleLookup(from, to, iif, lookup string, priority int) error {
 	return nil
 }
 
-func addMainBypass(r store.EgressIPRule, toPrio int) error {
+// mainBypassSelector 计算 main 表旁路规则的 from/to/iif。
+// 旁路用于回程流量走 main，避免与出站策略同向匹配导致策略表永远不生效。
+// mode=both 使用回程方向（from/to 对调），且不加 iif（回程入接口不同）。
+func mainBypassSelector(r store.EgressIPRule) (from, to, iif string, ok bool) {
 	switch r.Mode {
 	case "source":
 		if r.From == "" && r.Iif == "" {
-			return nil
+			return "", "", "", false
 		}
 		if r.From != "" {
-			return addPolicyRuleLookup("", r.From, r.Iif, "main", toPrio)
+			return "", r.From, r.Iif, true
 		}
-		return addPolicyRuleLookup("", "", r.Iif, "main", toPrio)
+		return "", "", r.Iif, true
 	case "destination":
 		if r.To == "" {
-			return nil
+			return "", "", "", false
 		}
-		return addPolicyRuleLookup(r.To, "", r.Iif, "main", toPrio)
+		return r.To, "", r.Iif, true
 	case "both":
-		if r.From != "" && r.To != "" {
-			return addPolicyRuleLookup(r.From, r.To, r.Iif, "main", toPrio)
+		if r.From == "" || r.To == "" {
+			return "", "", "", false
 		}
+		// 回程：原目的→原源；不含 iif
+		return r.To, r.From, "", true
 	}
-	return nil
+	return "", "", "", false
+}
+
+func addMainBypass(r store.EgressIPRule, toPrio int) error {
+	from, to, iif, ok := mainBypassSelector(r)
+	if !ok {
+		return nil
+	}
+	return addPolicyRuleLookup(from, to, iif, "main", toPrio)
 }
 
 func delExpandedRule(r store.EgressIPRule) {
@@ -170,21 +183,13 @@ func delExpandedRule(r store.EgressIPRule) {
 		toPrio = 1
 	}
 	delRuleLoop(r.From, r.To, r.Iif, strconv.Itoa(r.Table), r.Priority)
-	switch r.Mode {
-	case "source":
-		if r.From != "" {
-			delRuleLoop("", r.From, r.Iif, "main", toPrio)
-		} else if r.Iif != "" {
-			delRuleLoop("", "", r.Iif, "main", toPrio)
-		}
-	case "destination":
-		if r.To != "" {
-			delRuleLoop(r.To, "", r.Iif, "main", toPrio)
-		}
-	case "both":
-		if r.From != "" && r.To != "" {
-			delRuleLoop(r.From, r.To, r.Iif, "main", toPrio)
-		}
+	if from, to, iif, ok := mainBypassSelector(r); ok {
+		delRuleLoop(from, to, iif, "main", toPrio)
+	}
+	// 清理历史错误：mode=both 曾用与策略相同的 from/to 写 main，导致出站策略永不命中。
+	if r.Mode == "both" && r.From != "" && r.To != "" {
+		delRuleLoop(r.From, r.To, r.Iif, "main", toPrio)
+		delRuleLoop(r.From, r.To, "", "main", toPrio)
 	}
 }
 

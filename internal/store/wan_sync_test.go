@@ -50,3 +50,23 @@ func TestSyncWanRoutesSkipWhenIfaceGatewayCoversMain(t *testing.T) {
 		}
 	}
 }
+
+func TestSyncWanRoutesSkipPolicyOnly(t *testing.T) {
+	st := &State{
+		Network: NetworkState{
+			WanLinks: []WanLink{
+				{ID: "wan-po", Gateway: "100.64.0.1", Device: "wg0", Metric: 50, Enabled: true, PolicyOnly: true},
+				{ID: "wan-main", Gateway: "203.0.113.1", Device: "eth0", Metric: 100, Enabled: true},
+			},
+		},
+	}
+	SyncWanRoutes(st)
+	for _, r := range st.Routes {
+		if strings.HasPrefix(r.Comment, wanRouteCommentPrefix) && r.Device == "wg0" {
+			t.Fatalf("policy_only wan must not write main default: %+v", r)
+		}
+	}
+	if len(st.Routes) != 1 || st.Routes[0].Device != "eth0" {
+		t.Fatalf("want only eth0 main default, got %+v", st.Routes)
+	}
+}

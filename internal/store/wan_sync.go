@@ -45,7 +45,8 @@ func SyncWanRoutes(st *State) {
 		}
 	}
 	for _, w := range st.Network.WanLinks {
-		if !w.Enabled || WanLinkUsesPolicyTableOnly(w, st.Network.WanLinks) || strings.TrimSpace(w.Device) == "" {
+		// PolicyOnly / 非主 WAN：绝不写入 main default。
+		if !w.Enabled || w.PolicyOnly || WanLinkUsesPolicyTableOnly(w, st.Network.WanLinks) || strings.TrimSpace(w.Device) == "" {
 			continue
 		}
 		// 主表 default 已由接口网关（iface-gw）提供时，其它设备上的 WanLink 只走策略表，

@@ -25,18 +25,22 @@ type wanLinkRank struct {
 }
 
 // PrimaryWanLinkID 多 WAN 时主表 default 使用的链路（metric 最小，其次 tier，其次 id）。
+// 显式跳过 PolicyOnly（策略型）链路，避免其成为「主 WAN」或被写入 main default。
 func PrimaryWanLinkID(links []WanLink) string {
 	enabled := EnabledWanLinks(links)
-	if len(enabled) == 0 {
-		return ""
-	}
 	ranks := make([]wanLinkRank, 0, len(enabled))
 	for _, w := range enabled {
+		if w.PolicyOnly {
+			continue
+		}
 		m := w.Metric
 		if m <= 0 {
 			m = 100 + w.Tier*10
 		}
 		ranks = append(ranks, wanLinkRank{id: w.ID, metric: m, tier: w.Tier})
+	}
+	if len(ranks) == 0 {
+		return ""
 	}
 	sort.Slice(ranks, func(i, j int) bool {
 		if ranks[i].metric != ranks[j].metric {
@@ -55,8 +59,13 @@ func WanLinkUsesPolicyTableOnly(w WanLink, links []WanLink) bool {
 	if w.PolicyOnly {
 		return true
 	}
-	enabled := EnabledWanLinks(links)
-	if len(enabled) <= 1 {
+	var normal int
+	for _, x := range EnabledWanLinks(links) {
+		if !x.PolicyOnly {
+			normal++
+		}
+	}
+	if normal <= 1 {
 		return false
 	}
 	primary := PrimaryWanLinkID(links)

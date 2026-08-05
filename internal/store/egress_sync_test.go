@@ -12,6 +12,16 @@ func TestPrimaryWanLinkID(t *testing.T) {
 	}
 }
 
+func TestPrimaryWanLinkIDSkipsPolicyOnly(t *testing.T) {
+	links := []WanLink{
+		{ID: "wan-warp", Device: "CloudflareWARP", Metric: 50, Enabled: true, PolicyOnly: true},
+		{ID: "wan-a", Device: "eth0", Metric: 100, Enabled: true},
+	}
+	if got := PrimaryWanLinkID(links); got != "wan-a" {
+		t.Fatalf("primary=%q want wan-a (skip policy_only)", got)
+	}
+}
+
 func TestWanLinkUsesPolicyTableOnly(t *testing.T) {
 	links := []WanLink{
 		{ID: "wan-a", Device: "eth0", Metric: 100, Enabled: true},
@@ -22,6 +32,19 @@ func TestWanLinkUsesPolicyTableOnly(t *testing.T) {
 	}
 	if !WanLinkUsesPolicyTableOnly(links[1], links) {
 		t.Fatal("secondary should use policy table only")
+	}
+}
+
+func TestWanLinkUsesPolicyTableOnly_policyOnlyFlag(t *testing.T) {
+	links := []WanLink{
+		{ID: "wan-po", Device: "wg0", Metric: 50, Enabled: true, PolicyOnly: true},
+		{ID: "wan-a", Device: "eth0", Metric: 100, Enabled: true},
+	}
+	if !WanLinkUsesPolicyTableOnly(links[0], links) {
+		t.Fatal("policy_only must use policy table only")
+	}
+	if WanLinkUsesPolicyTableOnly(links[1], links) {
+		t.Fatal("sole normal WAN should still use main when other links are policy_only")
 	}
 }
 

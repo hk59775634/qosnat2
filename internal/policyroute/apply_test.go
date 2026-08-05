@@ -38,6 +38,36 @@ func TestDelRulesSymmetricWithAddRules(t *testing.T) {
 	}
 }
 
+func TestMainBypassSelector_bothUsesReturnPath(t *testing.T) {
+	r := store.EgressIPRule{
+		From: "10.0.0.0/8",
+		To:   "8.8.8.0/24",
+		Iif:  "wg0",
+		Mode: "both",
+	}
+	from, to, iif, ok := mainBypassSelector(r)
+	if !ok {
+		t.Fatal("expected bypass")
+	}
+	if from != "8.8.8.0/24" || to != "10.0.0.0/8" {
+		t.Fatalf("both bypass want return path from=dst to=src, got from=%q to=%q", from, to)
+	}
+	if iif != "" {
+		t.Fatalf("both bypass must omit iif, got %q", iif)
+	}
+}
+
+func TestMainBypassSelector_sourceAndDestination(t *testing.T) {
+	from, to, iif, ok := mainBypassSelector(store.EgressIPRule{From: "10.0.0.0/8", Iif: "lan0", Mode: "source"})
+	if !ok || from != "" || to != "10.0.0.0/8" || iif != "lan0" {
+		t.Fatalf("source bypass: from=%q to=%q iif=%q ok=%v", from, to, iif, ok)
+	}
+	from, to, iif, ok = mainBypassSelector(store.EgressIPRule{To: "8.8.8.0/24", Mode: "destination"})
+	if !ok || from != "8.8.8.0/24" || to != "" || iif != "" {
+		t.Fatalf("destination bypass: from=%q to=%q iif=%q ok=%v", from, to, iif, ok)
+	}
+}
+
 func TestCheckUnresolvedEgress_missingSNATIP(t *testing.T) {
 	st := store.State{
 		Network: store.NetworkState{
