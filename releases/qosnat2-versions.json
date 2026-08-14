@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026081402",
+      "tag": "v2026081402",
+      "published_at": "2026-08-14T09:02:51Z",
+      "summary": "修复一键拦截 Google WebRTC 因非法 nft「udp counter」语法导致应用失败。"
+    },
+    {
       "id": "2026081401",
       "tag": "v2026081401",
       "published_at": "2026-08-14T07:08:07Z",
@@ -25,12 +31,6 @@
       "tag": "v2026080502",
       "published_at": "2026-08-05T06:04:30Z",
       "summary": "修复删除/修改出站策略后内核 `ip rule` 残留的问题。"
-    },
-    {
-      "id": "2026080501",
-      "tag": "v2026080501",
-      "published_at": "2026-08-05T05:00:21Z",
-      "summary": "多 WAN 添加/编辑支持勾选 policy_only（仅策略路由，不写入主表默认路由）。"
     }
   ]
 }
