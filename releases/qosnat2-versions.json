@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026081403",
+      "tag": "v2026081403",
+      "published_at": "2026-08-14T09:48:29Z",
+      "summary": "修复 WARP 网关模式回程黑洞，并避免 systemd 私有 mount ns 导致 qwp0 netns 针脚失效。"
+    },
+    {
       "id": "2026081402",
       "tag": "v2026081402",
       "published_at": "2026-08-14T09:02:51Z",
@@ -25,12 +31,6 @@
       "tag": "v2026080503",
       "published_at": "2026-08-05T06:10:26Z",
       "summary": "修复 src+dst（mode=both）出站策略因 main 旁路同向而永不生效，并确保策略型 WanLink 不写入 main default。"
-    },
-    {
-      "id": "2026080502",
-      "tag": "v2026080502",
-      "published_at": "2026-08-05T06:04:30Z",
-      "summary": "修复删除/修改出站策略后内核 `ip rule` 残留的问题。"
     }
   ]
 }
