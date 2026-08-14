@@ -107,6 +107,9 @@ func netnsExecUsable() bool {
 	if !netnsExists() {
 		return false
 	}
+	if _, err := runInInitMount("ip", "netns", "exec", NetnsName, "true"); err == nil {
+		return true
+	}
 	_, err := run("ip", "netns", "exec", NetnsName, "true")
 	return err == nil
 }
@@ -124,10 +127,12 @@ func forceRemoveNetnsPin() bool {
 	killAllWarpProcs()
 	killProcsInNamedNetns()
 	for i := 0; i < 6; i++ {
+		_, _ = runInInitMount("ip", "netns", "delete", NetnsName)
 		_, _ = run("ip", "netns", "delete", NetnsName)
 		if !netnsExists() {
 			return true
 		}
+		_, _ = runInInitMount("ip", "netns", "del", NetnsName)
 		_, _ = run("ip", "netns", "del", NetnsName)
 		if !netnsExists() {
 			return true
@@ -137,11 +142,14 @@ func forceRemoveNetnsPin() bool {
 	pin := netnsPinPath()
 	_ = os.Chmod(pin, 0644)
 	if netnsPinMounted() {
+		_, _ = runInInitMount("umount", "-l", pin)
 		_, _ = run("umount", "-l", pin)
+		_, _ = runInInitMount("umount", "-f", pin)
 		_, _ = run("umount", "-f", pin)
 	}
 	_ = os.Remove(pin)
 	if netnsExists() {
+		_, _ = runInInitMount("rm", "-f", pin)
 		_, _ = run("rm", "-f", pin)
 	}
 	return !netnsExists()
@@ -383,9 +391,34 @@ func run(args ...string) ([]byte, error) {
 	return out, err
 }
 
+// runInInitMount 在 PID 1 的 mount ns 中执行命令。
+// systemd 的 PrivateTmp/ProtectHome/ProtectControlGroups 会给 qosnatd 私有 mount ns；
+// `ip netns add` 必须在主机 mount ns 打 nsfs 针脚，否则主机侧看到空文件、qwp0 对端失效。
+func runInInitMount(args ...string) ([]byte, error) {
+	full := append([]string{"-t", "1", "-m", "--"}, args...)
+	return run(append([]string{"nsenter"}, full...)...)
+}
+
 func netnsExec(args ...string) ([]byte, error) {
 	full := append([]string{"netns", "exec", NetnsName}, args...)
+	// 优先走主机 mount ns，避免服务私有 mount ns 下 pin 不可见。
+	if out, err := runInInitMount(append([]string{"ip"}, full...)...); err == nil || !isNetnsPinMissing(err, out) {
+		if err == nil {
+			return out, nil
+		}
+		// pin 在 init 可见但 exec 失败时，再回退到当前 mount ns（兼容旧布局）。
+	}
 	return run(append([]string{"ip"}, full...)...)
+}
+
+func isNetnsPinMissing(err error, out []byte) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(string(out) + " " + err.Error()))
+	return strings.Contains(msg, "no such file") ||
+		strings.Contains(msg, "invalid argument") ||
+		strings.Contains(msg, "cannot open network namespace")
 }
 
 func nftEnsureHostWarpUplinkMasq(uplink string) {
@@ -560,7 +593,7 @@ func recreateNetnsPin() error {
 			return fmt.Errorf("stale netns pin %s could not be removed", netnsPinPath())
 		}
 	}
-	out, err := run("ip", "netns", "add", NetnsName)
+	out, err := runInInitMount("ip", "netns", "add", NetnsName)
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		if strings.Contains(msg, "File exists") || strings.Contains(err.Error(), "exists") {
@@ -568,7 +601,7 @@ func recreateNetnsPin() error {
 			if !forceRemoveNetnsPin() && netnsExists() {
 				return fmt.Errorf("stale netns pin %s could not be removed", netnsPinPath())
 			}
-			out, err = run("ip", "netns", "add", NetnsName)
+			out, err = runInInitMount("ip", "netns", "add", NetnsName)
 			msg = strings.TrimSpace(string(out))
 		}
 		if err != nil {
@@ -656,6 +689,20 @@ func ensureNetnsBypassRules() {
 		}
 		time.Sleep(120 * time.Millisecond)
 	}
+	ensureNetnsVethReturnRoute()
+}
+
+// ensureNetnsVethReturnRoute 保证网关 NAT 回程能回到 qwp1。
+// WARP 会安装 `not fwmark 0x100cf lookup 65743`，表 65743 含 192.0.0.0/3 等大段，
+// 会把目的为 198.18.0.0/30（宿主机 qwp0）的回复再次送进 CloudflareWARP，导致 SYN-ACK 黑洞。
+func ensureNetnsVethReturnRoute() {
+	if !netnsUsable() {
+		return
+	}
+	_, _ = netnsExec("ip", "route", "replace", linknet.WarpVethSubnet, "dev", VethNS, "table", "65743")
+	// 高优先级 to-main，避免依赖 WARP 自定义表号是否始终为 65743。
+	_, _ = netnsExec("ip", "rule", "del", "to", linknet.WarpVethSubnet, "lookup", "main", "priority", "90")
+	_, _ = netnsExec("ip", "rule", "add", "to", linknet.WarpVethSubnet, "lookup", "main", "priority", "90")
 }
 
 func enforceNetnsBaseline() {
@@ -1040,6 +1087,7 @@ func ensureNetnsGatewayNAT(warpIface string) {
 	if exec.Command("ip", "netns", "exec", NetnsName, "iptables", "-C", "FORWARD", "-i", warpIface, "-o", VethNS, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run() != nil {
 		_, _ = netnsExec("iptables", "-A", "FORWARD", "-i", warpIface, "-o", VethNS, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 	}
+	ensureNetnsVethReturnRoute()
 }
 
 // Teardown 删除 WARP 隧道、veth 与 netns。

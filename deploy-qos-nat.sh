@@ -275,10 +275,12 @@ EnvironmentFile=${CONFIG_DIR}/env
 ExecStart=${QOSNATD_BIN}
 Restart=on-failure
 RestartSec=3
-# 控制面需 root 写 TC/nft/sysctl；仅启用不影响数据面的轻量加固
-PrivateTmp=yes
-ProtectHome=read-only
-ProtectControlGroups=yes
+# 控制面需 root 写 TC/nft/sysctl；仅启用不影响数据面的轻量加固。
+# 不可 PrivateTmp/ProtectHome/ProtectControlGroups：它们会给服务私有 mount ns，
+# 导致 `ip netns add` 的 /run/netns 针脚对主机不可见，WARP qwp0 对端失效。
+PrivateTmp=no
+ProtectHome=no
+ProtectControlGroups=no
 LimitNOFILE=65535
 
 [Install]
