@@ -274,14 +274,19 @@ func (r FilterRule) NftRuleLineAt(schedules []Schedule, now time.Time) string {
 		parts = append(parts, addrFam+" daddr "+r.DstAddr)
 	}
 	// L4 协议与端口须在 ip/ip6 地址匹配之后（nft 语法要求）。
+	// 裸 tcp/udp 后若无 sport/dport，不能再跟 counter/log/action（nft 会期待端口字段），
+	// 故无端口时改用 meta l4proto。
+	sport := NftPortMatch("sport", r.SrcPort, r.SrcPorts, r.SrcPortAlias)
+	dport := NftPortMatch("dport", r.DstPort, r.DstPorts, r.DstPortAlias)
+	hasPort := sport != "" || dport != ""
 	if r.Proto != "" && r.Proto != "all" {
-		parts = append(parts, filterProtoNftClause(r.Proto))
+		parts = append(parts, filterProtoNftClause(r.Proto, hasPort))
 	}
-	if m := NftPortMatch("sport", r.SrcPort, r.SrcPorts, r.SrcPortAlias); m != "" {
-		parts = append(parts, m)
+	if sport != "" {
+		parts = append(parts, sport)
 	}
-	if m := NftPortMatch("dport", r.DstPort, r.DstPorts, r.DstPortAlias); m != "" {
-		parts = append(parts, m)
+	if dport != "" {
+		parts = append(parts, dport)
 	}
 	if r.Counter {
 		parts = append(parts, "counter")
@@ -299,14 +304,21 @@ func (r FilterRule) NftRuleLineAt(schedules []Schedule, now time.Time) string {
 
 // filterProtoNftClause 将 UI/API 协议名转为 inet filter 链合法 nft 匹配子句。
 // 裸 icmp/icmpv6 在 inet 表 filter 链非法，须用 meta l4proto。
-func filterProtoNftClause(proto string) string {
-	switch strings.ToLower(strings.TrimSpace(proto)) {
+// tcp/udp/sctp/udplite 在无端口匹配时也须用 meta l4proto，否则 "udp counter drop" 语法非法。
+func filterProtoNftClause(proto string, hasPort bool) string {
+	p := strings.ToLower(strings.TrimSpace(proto))
+	switch p {
 	case "icmp":
 		return "meta l4proto icmp"
 	case "icmpv6":
 		return "meta l4proto ipv6-icmp"
+	case "tcp", "udp", "sctp", "udplite":
+		if !hasPort {
+			return "meta l4proto " + p
+		}
+		return p
 	default:
-		return proto
+		return p
 	}
 }
 

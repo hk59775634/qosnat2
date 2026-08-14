@@ -66,14 +66,15 @@ func GoogleWebRTCBlockAliases() []AliasSet {
 func GoogleWebRTCBlockRules() []FilterRule {
 	return []FilterRule{
 		{
-			ID:       RuleIDGoogleWebRTCStun,
-			Chain:    "forward",
-			Action:   "drop",
-			Proto:    "udp",
-			DstAlias: AliasGoogleWebRTCStun,
-			Comment:  "Block Google STUN (WebRTC leak / Gemini)",
-			Enabled:  true,
-			Counter:  true,
+			ID:           RuleIDGoogleWebRTCStun,
+			Chain:        "forward",
+			Action:       "drop",
+			Proto:        "udp",
+			DstAlias:     AliasGoogleWebRTCStun,
+			DstPortAlias: AliasGoogleWebRTCPorts,
+			Comment:      "Block Google STUN (WebRTC leak / Gemini)",
+			Enabled:      true,
+			Counter:      true,
 		},
 		{
 			ID:           RuleIDGoogleWebRTCMedia,

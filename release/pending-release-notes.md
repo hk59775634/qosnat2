@@ -5,7 +5,7 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+修复一键拦截 Google WebRTC 因非法 nft「udp counter」语法导致应用失败。
 
 ## 新增
 
@@ -17,7 +17,8 @@
 
 ## 修复
 
-- （无）
+- 防火墙规则在仅匹配 tcp/udp 且无端口时改为 `meta l4proto`，避免 `udp counter drop` 触发 FIREWALL_NFT_INVALID
+- Google WebRTC STUN 预置规则补上 UDP 端口别名匹配，与媒体规则一致
 
 ## 删除
 

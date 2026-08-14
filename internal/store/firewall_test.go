@@ -49,6 +49,34 @@ func TestFilterRuleNftLineIcmpv6(t *testing.T) {
 	}
 }
 
+func TestFilterRuleNftLineUdpWithoutPortUsesMetaL4proto(t *testing.T) {
+	r := FilterRule{
+		ID: "fr-udp-any", Chain: "forward", Action: "drop",
+		DstAlias: "stun", Proto: "udp", Enabled: true, Counter: true,
+	}
+	line := r.NftRuleLine()
+	if !containsAll(line, "ip daddr @alias_stun", "meta l4proto udp", "counter", "drop") {
+		t.Fatalf("unexpected: %s", line)
+	}
+	if strings.Contains(line, " udp counter") && !strings.Contains(line, "meta l4proto udp counter") {
+		t.Fatalf("bare udp before counter is invalid nft: %s", line)
+	}
+}
+
+func TestFilterRuleNftLineUdpWithPortKeepsProtoKeyword(t *testing.T) {
+	r := FilterRule{
+		ID: "fr-udp-port", Chain: "forward", Action: "drop",
+		DstAlias: "stun", Proto: "udp", DstPort: 19302, Enabled: true, Counter: true,
+	}
+	line := r.NftRuleLine()
+	if !containsAll(line, "udp", "dport 19302", "counter", "drop") {
+		t.Fatalf("unexpected: %s", line)
+	}
+	if strings.Contains(line, "meta l4proto udp") {
+		t.Fatalf("with dport should keep udp keyword: %s", line)
+	}
+}
+
 func TestFilterRuleNftLineComment(t *testing.T) {
 	r := FilterRule{
 		ID: "fr-1", Chain: "input", Action: "accept", Iif: "ens18", Proto: "tcp", DstPort: 443,
