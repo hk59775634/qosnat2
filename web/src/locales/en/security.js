@@ -222,6 +222,14 @@ export default {
     presetBlockWanHint:
       'Matches before auto WAN default drop. Admin TCP/{port} and VPN ports stay allowed (auto rules run first). Each WAN already has a default drop — add only if you need extra restrictions.',
     presetAllowTcp: 'Allow TCP port',
+    presetGoogleWebRTC: 'Block Google WebRTC',
+    presetGoogleWebRTCHint:
+      'Creates STUN/media aliases and drops Google WebRTC UDP to reduce VPN+NAT WebRTC leaks that can break Gemini. Does not affect normal HTTPS.',
+    presetGoogleWebRTCOk:
+      'Google WebRTC blocked (aliases +{aliasAdded}/~{aliasUpdated}, rules +{ruleAdded}/~{ruleUpdated})',
+    presetGoogleWebRTCStaged:
+      'Aliases updated; rules staged but not applied — review pending changes and click Apply',
+    presetGoogleWebRTCBusy: 'Configuring Google WebRTC block…',
     formChainTabMismatch:
       'Form chain is «{formChain}» but you are viewing «{tabChain}» tab — saved rule applies to {formChain}.',
     formWanDropHint:

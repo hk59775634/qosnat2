@@ -848,6 +848,51 @@ func TryRepairConnectedNetns() error {
 	return nil
 }
 
+// TrySoftReconnect 看门狗用的非破坏性重连：修 veth、必要时拉起 warp-svc，再 warp-cli connect。
+// 不调用 PrepareForConnect / scrub，避免瞬时探测失败触发整栈拆除抖动。
+func TrySoftReconnect() error {
+	if OpActive() {
+		return fmt.Errorf("warp operation already active")
+	}
+	if !NetnsExists() {
+		return fmt.Errorf("warp netns missing")
+	}
+	if err := TryRepairConnectedNetns(); err != nil {
+		return fmt.Errorf("repair veth: %w", err)
+	}
+	EnsureHostNATOnly()
+	if _, err := startSvcInNetns(); err != nil {
+		return fmt.Errorf("start warp-svc: %w", err)
+	}
+	_, _ = netnsExec(warpCLI, "--accept-tos", "debug", "connectivity-check", "disable")
+	_, _ = netnsExec(warpCLI, "--accept-tos", "mode", "warp")
+	if err := connectWarpWithRecovery(); err != nil {
+		return err
+	}
+	uplink := mainUplinkDev()
+	if err := restoreVethIfBroken(uplink); err != nil {
+		return fmt.Errorf("restore veth after soft reconnect: %w", err)
+	}
+	iface := warpIfaceInNetns()
+	if iface == "" {
+		return fmt.Errorf("warp interface not found after soft reconnect")
+	}
+	_, _ = netnsExec("ip", "route", "replace", "default", "via", NSVethGW, "dev", VethNS)
+	ensureNetnsGatewayNAT(iface)
+	enforceNetnsBaseline()
+	if !probeConnectedRuntime() {
+		return fmt.Errorf("warp still not connected after soft reconnect")
+	}
+	st := loadState()
+	st.HostIface = VethHost
+	st.Connected = true
+	if strings.TrimSpace(st.UplinkDev) == "" {
+		st.UplinkDev = uplink
+	}
+	saveState(st)
+	return nil
+}
+
 // Reconcile 检测并修复损坏 netns，flush ruleset 后回补 NAT/bypass，并清理虚假 connected 状态。
 func Reconcile() {
 	if OpActive() {

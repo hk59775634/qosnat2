@@ -246,6 +246,15 @@ export const api = {
       put: (body) =>
         request('/api/v1/firewall/session-limit', { method: 'PUT', body: JSON.stringify(body) }),
     },
+    presets: {
+      googleWebRTCBlock: (opts = {}) => {
+        const apply = opts.apply === false ? '0' : '1'
+        return request(`/api/v1/firewall/presets/google-webrtc-block?apply=${apply}`, {
+          method: 'POST',
+          body: '{}',
+        })
+      },
+    },
   aliases: {
     list: () => request('/api/v1/firewall/aliases'),
     add: (body) => request('/api/v1/firewall/aliases', { method: 'POST', body: JSON.stringify(body) }),

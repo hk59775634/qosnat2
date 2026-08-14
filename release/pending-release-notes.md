@@ -5,15 +5,16 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+一键拦截 Google WebRTC，并加固 WARP 看门狗防抖以避免误拆隧道导致抖动。
 
 ## 新增
 
-- （无）
+- 防火墙预置「一键拦截 Google WebRTC」：创建 STUN/媒体别名与 forward 丢弃规则，缓解 VPN+NAT 下 WebRTC 泄漏导致 Gemini 等服务异常（`POST /api/v1/firewall/presets/google-webrtc-block`）
 
 ## 优化
 
-- （无）
+- WARP 看门狗改为连续 5 次探测失败（约 100s）才动作；优先 veth 修复与 `warp-cli connect` 软重连，仅在 netns 缺失时才全量重建
+- 看门狗不再因瞬时 `NeedsReset` 自动 `ResetBroken` / scrub，降低误判导致的隧道抖动
 
 ## 修复
 

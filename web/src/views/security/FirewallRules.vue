@@ -85,6 +85,7 @@ const canApplyChanges = ref(false)
 const changeIssues = ref([])
 const changeDiff = ref({ added: [], modified: [], removed: [] })
 const applyBusy = ref(false)
+const webrtcPresetBusy = ref(false)
 
 const chains = [
   { id: 'forward', labelKey: 'security.firewall.tabForward' },
@@ -645,6 +646,45 @@ function applyPreset(kind) {
   showForm.value = true
 }
 
+async function addGoogleWebRTCBlock() {
+  if (webrtcPresetBusy.value) return
+  webrtcPresetBusy.value = true
+  err.value = ''
+  ok.value = ''
+  warn.value = ''
+  try {
+    const res = await api.firewall.presets.googleWebRTCBlock({ apply: true })
+    applyStageResponse(res)
+    if (res?.rules) rules.value = res.rules
+    await load()
+    activeChain.value = 'forward'
+    if (res?.applied) {
+      ok.value = t('security.firewall.presetGoogleWebRTCOk', {
+        aliasAdded: res.alias_added || 0,
+        aliasUpdated: res.alias_updated || 0,
+        ruleAdded: res.rule_added || 0,
+        ruleUpdated: res.rule_updated || 0,
+      })
+    } else if (res?.staged) {
+      ok.value = t('security.firewall.presetGoogleWebRTCStaged')
+    } else {
+      ok.value = t('security.firewall.presetGoogleWebRTCOk', {
+        aliasAdded: res.alias_added || 0,
+        aliasUpdated: res.alias_updated || 0,
+        ruleAdded: res.rule_added || 0,
+        ruleUpdated: res.rule_updated || 0,
+      })
+    }
+    if (res?.resolve_warnings?.length) {
+      warn.value = res.resolve_warnings.join('; ')
+    }
+  } catch (e) {
+    err.value = friendlyApiError(e)
+  } finally {
+    webrtcPresetBusy.value = false
+  }
+}
+
 async function add() {
   if (!runFormValidation()) return
   err.value = ''
@@ -951,6 +991,15 @@ onMounted(() => {
       </button>
       <button type="button" class="btn-secondary text-xs" @click="applyPreset('tcp-allow')">
         {{ t('security.firewall.presetAllowTcp') }}
+      </button>
+      <button
+        type="button"
+        class="btn-secondary text-xs"
+        :disabled="webrtcPresetBusy"
+        :title="t('security.firewall.presetGoogleWebRTCHint')"
+        @click="addGoogleWebRTCBlock"
+      >
+        {{ webrtcPresetBusy ? t('security.firewall.presetGoogleWebRTCBusy') : t('security.firewall.presetGoogleWebRTC') }}
       </button>
     </div>
 

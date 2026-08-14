@@ -222,6 +222,14 @@ export default {
     presetBlockWanHint:
       '在自动 WAN 默认丢弃之前匹配。管理端口 TCP/{port} 与 VPN 端口仍由自动规则优先放行。每个 WAN 口已有默认丢弃，仅在需要额外限制时再添加。',
     presetAllowTcp: '放行 TCP 端口',
+    presetGoogleWebRTC: '一键拦截 Google WebRTC',
+    presetGoogleWebRTCHint:
+      '创建 STUN/媒体别名并丢弃 Google WebRTC UDP，缓解 VPN+NAT 下 WebRTC 泄漏导致 Gemini 等服务异常。不影响普通 HTTPS。',
+    presetGoogleWebRTCOk:
+      '已拦截 Google WebRTC（别名 +{aliasAdded}/更新 {aliasUpdated}，规则 +{ruleAdded}/更新 {ruleUpdated}）',
+    presetGoogleWebRTCStaged:
+      '别名已更新，规则已暂存但未应用（请检查待应用变更后点「应用」）',
+    presetGoogleWebRTCBusy: '正在配置 Google WebRTC 拦截…',
     formChainTabMismatch:
       '表单链为「{formChain}」，当前查看的是「{tabChain}」标签 — 保存后规则生效于 {formChain} 链。',
     formWanDropHint:

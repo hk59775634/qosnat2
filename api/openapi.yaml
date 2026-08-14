@@ -2649,6 +2649,51 @@ paths:
       tags: [system]
       summary: 审计日志最近条目
 
+  /api/v1/firewall/presets/google-webrtc-block:
+    post:
+      tags: [nat]
+      summary: 一键拦截 Google WebRTC（STUN/TURN/媒体 UDP）
+      description: |
+        创建/更新别名 google_webrtc_stun、google_webrtc_media、google_webrtc_ports，
+        并添加 forward 丢弃规则，缓解 VPN+NAT 下 WebRTC 泄漏导致 Gemini 等服务异常。
+        默认立即应用；`apply=0` 时仅暂存规则。
+      parameters:
+        - name: apply
+          in: query
+          schema: { type: string, enum: ['0', '1'], default: '1' }
+          description: 为 0 时仅暂存防火墙规则，不立即 apply
+      responses:
+        '200':
+          description: 预置已创建或更新
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  applied: { type: boolean }
+                  staged: { type: boolean }
+                  alias_added: { type: integer }
+                  alias_updated: { type: integer }
+                  rule_added: { type: integer }
+                  rule_updated: { type: integer }
+                  aliases:
+                    type: array
+                    items: { type: string }
+                  rule_ids:
+                    type: array
+                    items: { type: string }
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /api/v1/firewall/apply:
     post:
       tags: [nat]
