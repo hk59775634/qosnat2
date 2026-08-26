@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026082601",
+      "tag": "v2026082601",
+      "published_at": "2026-08-26T07:28:54Z",
+      "summary": "修复 WireGuard 启用并保存后重启不随开机启动的问题。"
+    },
+    {
       "id": "2026081403",
       "tag": "v2026081403",
       "published_at": "2026-08-14T09:48:29Z",
@@ -25,12 +31,6 @@
       "tag": "v2026080504",
       "published_at": "2026-08-05T10:03:51Z",
       "summary": "WireGuard 服务端支持手动粘贴本机私钥以恢复旧配置，保存时自动推导公钥。"
-    },
-    {
-      "id": "2026080503",
-      "tag": "v2026080503",
-      "published_at": "2026-08-05T06:10:26Z",
-      "summary": "修复 src+dst（mode=both）出站策略因 main 旁路同向而永不生效，并确保策略型 WanLink 不写入 main default。"
     }
   ]
 }
