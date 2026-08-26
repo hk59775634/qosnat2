@@ -247,6 +247,21 @@ func wgQuickUp(iface string) error {
 	return nil
 }
 
+// setSystemdBootEnabled 启用/禁用 wg-quick@iface，使启用态在重启后随 multi-user 启动。
+func setSystemdBootEnabled(iface string, enable bool) error {
+	unit := "wg-quick@" + iface
+	if enable {
+		out, err := exec.Command("systemctl", "enable", unit).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("systemctl enable %s: %s %w", unit, strings.TrimSpace(string(out)), err)
+		}
+		return nil
+	}
+	// disable 失败不阻断 down：单元可能本就未 enable
+	_ = exec.Command("systemctl", "disable", unit).Run()
+	return nil
+}
+
 // normalizeAddressCIDR 将 Address 条目规范为 ip/prefix（裸 IP 按 /32 或 /128）
 func normalizeAddressCIDR(s string) (string, error) {
 	s = strings.TrimSpace(s)
@@ -363,7 +378,7 @@ func addressNeedsRecycle(iface, desired string) bool {
 	return !cidrSetsEqual(want, have)
 }
 
-// Apply up|down wg-quick
+// Apply up|down wg-quick，并同步 systemctl enable/disable wg-quick@iface 以保证开机自启。
 func Apply(wg store.WireGuardState, up bool) error {
 	if !wgInstalled() {
 		return fmt.Errorf("wireguard-tools not installed")
@@ -379,7 +394,9 @@ func Apply(wg store.WireGuardState, up bool) error {
 		return err
 	}
 	if !up {
-		return wgQuickDown(iface)
+		err := wgQuickDown(iface)
+		_ = setSystemdBootEnabled(iface, false)
+		return err
 	}
 	// 已存在接口时：Address 等 wg-quick 字段只能靠 down/up；密钥/peer 可用 syncconf 热更新
 	if netif.LinkExists(iface) {
@@ -387,7 +404,10 @@ func Apply(wg store.WireGuardState, up bool) error {
 			if err := wgQuickDown(iface); err != nil {
 				return err
 			}
-			return wgQuickUp(iface)
+			if err := wgQuickUp(iface); err != nil {
+				return err
+			}
+			return setSystemdBootEnabled(iface, true)
 		}
 		stripped, err := exec.Command("wg-quick", "strip", iface).Output()
 		if err != nil {
@@ -399,9 +419,12 @@ func Apply(wg store.WireGuardState, up bool) error {
 		if err != nil {
 			return fmt.Errorf("wg syncconf: %s %w", strings.TrimSpace(string(out)), err)
 		}
-		return nil
+		return setSystemdBootEnabled(iface, true)
 	}
-	return wgQuickUp(iface)
+	if err := wgQuickUp(iface); err != nil {
+		return err
+	}
+	return setSystemdBootEnabled(iface, true)
 }
 
 // ShowStatus wg show

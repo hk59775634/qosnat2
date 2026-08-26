@@ -68,3 +68,23 @@ func (srv *Server) syncWireGuardEndpointRoutes() {
 		wg.SyncEndpointRoutes(st)
 	})
 }
+
+// replayWireGuardOnBoot 按 state 回放已启用实例（写 conf + wg-quick up + systemctl enable），
+// 避免仅运行时 up 未 enable 时重启后接口缺失。
+func (srv *Server) replayWireGuardOnBoot() {
+	st := srv.store.Get()
+	for _, inst := range st.VPN.WireGuards {
+		if !inst.Enabled {
+			continue
+		}
+		iface := strings.TrimSpace(inst.Interface)
+		if iface == "" {
+			iface = "wg0"
+		}
+		if err := wg.Apply(inst.WireGuardState, true); err != nil {
+			log.Printf("wireguard apply on boot %s (%s): %v", inst.ID, iface, err)
+			continue
+		}
+		log.Printf("wireguard apply on boot: %s (%s) up", inst.ID, iface)
+	}
+}

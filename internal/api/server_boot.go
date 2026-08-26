@@ -51,6 +51,7 @@ func (srv *Server) applyAllCore() error {
 	srv.replayWanLinksOnBoot()
 	srv.replayProxyEgressOnBoot()
 	srv.replayEgressOnBoot()
+	srv.replayWireGuardOnBoot()
 	srv.syncWireGuardEndpointRoutes()
 	_ = srv.persistStateOrLog("sync wg endpoint routes on boot")
 	netplanApplied := srv.applyNetworkVLANs()
