@@ -75,15 +75,9 @@ func (srv *Server) upsertShaperProfile(cidr, down, up string, mask int, device s
 			if st.Shaper.PolicyCIDR == "" {
 				st.Shaper.PolicyCIDR = cidr
 			}
-			hasRoute := false
-			for _, c := range st.Nat.IPv4.PolicyRoutes {
-				if c == cidr {
-					hasRoute = true
-					break
-				}
-			}
+			hasRoute := store.CIDRCoveredByExisting(st.Nat.IPv4.PolicyRoutes, cidr)
 			if !hasRoute {
-				st.Nat.IPv4.PolicyRoutes = append(st.Nat.IPv4.PolicyRoutes, cidr)
+				store.AddPolicyRouteManual(&st.Nat.IPv4, cidr)
 			}
 		}
 	})

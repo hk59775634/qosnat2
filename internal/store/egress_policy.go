@@ -313,18 +313,14 @@ func ValidateEgressPolicyAliases(p EgressPolicy, aliases []AliasSet) error {
 	return nil
 }
 
-// FilterPolicyRoutesForWAN 从 policy_routes 中去掉已由出站策略接管的 CIDR
+// FilterPolicyRoutesForWAN 从 policy_routes 中去掉已由出站策略接管的 CIDR（含被出站网段覆盖的项）。
 func FilterPolicyRoutesForWAN(policyRoutes, egressCIDRs []string) []string {
 	if len(egressCIDRs) == 0 {
 		return policyRoutes
 	}
-	egressSet := map[string]struct{}{}
-	for _, c := range egressCIDRs {
-		egressSet[c] = struct{}{}
-	}
 	var out []string
 	for _, c := range policyRoutes {
-		if _, skip := egressSet[c]; skip {
+		if CIDRCoveredByExisting(egressCIDRs, c) {
 			continue
 		}
 		out = append(out, c)

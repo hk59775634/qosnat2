@@ -97,6 +97,7 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 		}
 		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			st.Nat.IPv4.StaticMappings[body.Inner] = body.Outer
+			_ = store.RefreshMappingPolicyRoutes(&st.Nat.IPv4)
 		}) {
 			return
 		}
@@ -112,6 +113,9 @@ func (srv *Server) handleStaticMappings(w http.ResponseWriter, r *http.Request) 
 			if _, ok := st.Nat.IPv4.StaticMappings[inner]; ok {
 				delete(st.Nat.IPv4.StaticMappings, inner)
 				found = true
+			}
+			if found {
+				_ = store.RefreshMappingPolicyRoutes(&st.Nat.IPv4)
 			}
 		}) {
 			return
@@ -155,6 +159,7 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 		}
 		if !srv.commitNatIPv4Change(w, func(st *store.State) {
 			st.Nat.IPv4.PrefixMappings[body.Inner] = body.Outer
+			_ = store.RefreshMappingPolicyRoutes(&st.Nat.IPv4)
 		}) {
 			return
 		}
@@ -170,6 +175,9 @@ func (srv *Server) handlePrefixMappings(w http.ResponseWriter, r *http.Request) 
 			if _, ok := st.Nat.IPv4.PrefixMappings[inner]; ok {
 				delete(st.Nat.IPv4.PrefixMappings, inner)
 				found = true
+			}
+			if found {
+				_ = store.RefreshMappingPolicyRoutes(&st.Nat.IPv4)
 			}
 		}) {
 			return
@@ -231,13 +239,12 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 		}
 		dup := false
 		if !srv.commitNatIPv4Change(w, func(st *store.State) {
-			for _, c := range st.Nat.IPv4.PolicyRoutes {
-				if c == body.CIDR {
-					dup = true
-					return
-				}
+			if store.CIDRCoveredByExisting(st.Nat.IPv4.PolicyRoutes, body.CIDR) {
+				dup = true
+				st.Nat.IPv4.PolicyRoutes = store.PruneContainedPolicyRoutes(st.Nat.IPv4.PolicyRoutes)
+				return
 			}
-			st.Nat.IPv4.PolicyRoutes = append(st.Nat.IPv4.PolicyRoutes, body.CIDR)
+			store.AddPolicyRouteManual(&st.Nat.IPv4, body.CIDR)
 		}) {
 			return
 		}
@@ -253,13 +260,7 @@ func (srv *Server) handlePolicyRoutes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !srv.commitNatIPv4Change(w, func(st *store.State) {
-			var out []string
-			for _, c := range st.Nat.IPv4.PolicyRoutes {
-				if c != cidr {
-					out = append(out, c)
-				}
-			}
-			st.Nat.IPv4.PolicyRoutes = out
+			store.RemovePolicyRouteManual(&st.Nat.IPv4, cidr)
 		}) {
 			return
 		}
