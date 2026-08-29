@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026082901",
+      "tag": "v2026082901",
+      "published_at": "2026-08-29T09:56:13Z",
+      "summary": "补全 ocserv IPv4/IPv6 双栈：会话级限速共用一条管道，Apply 自动转发与 IPv6 masquerade。"
+    },
+    {
       "id": "2026082801",
       "tag": "v2026082801",
       "published_at": "2026-08-28T08:27:45Z",
@@ -25,12 +31,6 @@
       "tag": "v2026081402",
       "published_at": "2026-08-14T09:02:51Z",
       "summary": "修复一键拦截 Google WebRTC 因非法 nft「udp counter」语法导致应用失败。"
-    },
-    {
-      "id": "2026081401",
-      "tag": "v2026081401",
-      "published_at": "2026-08-14T07:08:07Z",
-      "summary": "一键拦截 Google WebRTC，并加固 WARP 看门狗防抖以避免误拆隧道导致抖动。"
     }
   ]
 }
