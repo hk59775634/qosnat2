@@ -19,12 +19,14 @@ type OCServGroup struct {
 	NoRoutes     []string `json:"no_routes,omitempty"`
 	DynamicSplitIncludeDomains []string `json:"dynamic_split_include_domains,omitempty"`
 	DynamicSplitExcludeDomains []string `json:"dynamic_split_exclude_domains,omitempty"`
-	IPv4Network  string   `json:"ipv4_network,omitempty"`
-	IPv4Netmask  string   `json:"ipv4_netmask,omitempty"`
-	RxDataPerSec int      `json:"rx_data_per_sec,omitempty"`
-	TxDataPerSec int      `json:"tx_data_per_sec,omitempty"`
-	MTU          int      `json:"mtu,omitempty"`
-	TunnelAllDNS bool     `json:"tunnel_all_dns,omitempty"`
+	IPv4Network      string `json:"ipv4_network,omitempty"`
+	IPv4Netmask      string `json:"ipv4_netmask,omitempty"`
+	IPv6Network      string `json:"ipv6_network,omitempty"`
+	IPv6SubnetPrefix int    `json:"ipv6_subnet_prefix,omitempty"`
+	RxDataPerSec     int    `json:"rx_data_per_sec,omitempty"`
+	TxDataPerSec     int    `json:"tx_data_per_sec,omitempty"`
+	MTU              int    `json:"mtu,omitempty"`
+	TunnelAllDNS     bool   `json:"tunnel_all_dns,omitempty"`
 }
 
 func normalizeOCServGroupName(name string) (string, error) {
@@ -73,6 +75,16 @@ func NormalizeOCServGroups(groups *[]OCServGroup) error {
 		g.NoRoutes = trimStringList(g.NoRoutes)
 		g.DynamicSplitIncludeDomains = trimStringList(g.DynamicSplitIncludeDomains)
 		g.DynamicSplitExcludeDomains = trimStringList(g.DynamicSplitExcludeDomains)
+		g.IPv6Network = strings.TrimSpace(g.IPv6Network)
+		if g.IPv6Network != "" {
+			if err := ValidateOCServIPv6Pool(g.IPv6Network, 0, g.IPv6SubnetPrefix); err != nil {
+				return fmt.Errorf("group %s: %w", n, err)
+			}
+			g.IPv6SubnetPrefix = OCServIPv6SubnetPrefix(g.IPv6Network, g.IPv6SubnetPrefix)
+			g.IPv6Network = FormatOCServIPv6Network(g.IPv6Network, 0)
+		} else {
+			g.IPv6SubnetPrefix = 0
+		}
 		out = append(out, g)
 	}
 	*groups = out
@@ -142,6 +154,19 @@ func NormalizeOCServVhosts(vhosts *[]OCServVhost, authMethod string) error {
 		v.DynamicSplitIncludeDomains = trimStringList(v.DynamicSplitIncludeDomains)
 		v.DynamicSplitExcludeDomains = trimStringList(v.DynamicSplitExcludeDomains)
 		v.SelectGroups = trimStringList(v.SelectGroups)
+		v.IPv6Network = strings.TrimSpace(v.IPv6Network)
+		if v.IPv6Network != "" {
+			if err := ValidateOCServIPv6Pool(v.IPv6Network, v.IPv6Prefix, v.IPv6SubnetPrefix); err != nil {
+				return fmt.Errorf("vhost %s: %w", d, err)
+			}
+			v.IPv6SubnetPrefix = OCServIPv6SubnetPrefix(v.IPv6Network, v.IPv6SubnetPrefix)
+			formatted := FormatOCServIPv6Network(v.IPv6Network, v.IPv6Prefix)
+			v.IPv6Network = formatted
+			v.IPv6Prefix = 0 // 已并入 CIDR
+		} else {
+			v.IPv6Prefix = 0
+			v.IPv6SubnetPrefix = 0
+		}
 		if v.Users == nil {
 			v.Users = []OCServUser{}
 		}

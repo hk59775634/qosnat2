@@ -97,6 +97,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("    chain postrouting {\n")
 	b.WriteString("        type nat hook postrouting priority srcnat; policy accept;\n")
 	writeNPTv6Postrouting(&b, cfg, st.Nat)
+	writeOCServIPv6Masquerade(&b, cfg, st)
 	if natOn {
 		writeIPv4PostroutingNAT(&b, cfg, st, routes, ips, egress, st.Firewall.WanPortForwards)
 	}

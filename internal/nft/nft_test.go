@@ -297,6 +297,38 @@ func TestRenderNPTv6(t *testing.T) {
 	}
 }
 
+func TestRenderOCServIPv6Masquerade(t *testing.T) {
+	st := store.DefaultState()
+	st.VPN.OCServ.Enabled = true
+	st.VPN.OCServ.IPv6Network = "fd12:198:18:250::/64"
+	body, err := Render(Config{DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `ip6 saddr fd12:198:18:250::/64 oifname "ens18" masquerade comment "qosnat2-ocserv-ipv6"`
+	if !strings.Contains(body, want) {
+		t.Fatalf("missing ocserv ipv6 masquerade:\n%s", body)
+	}
+}
+
+func TestRenderOCServIPv6MasqueradeSkippedWhenNPTv6(t *testing.T) {
+	st := store.DefaultState()
+	st.VPN.OCServ.Enabled = true
+	st.VPN.OCServ.IPv6Network = "fd12:198:18:250::/64"
+	st.Nat.Nptv6Enabled = true
+	st.Nat.Nptv6Rules = []store.Nptv6Rule{{
+		InternalPrefix: "fd12:198:18:250::/64",
+		ExternalPrefix: "2001:db8:1::/64",
+	}}
+	body, err := Render(Config{DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "qosnat2-ocserv-ipv6") {
+		t.Fatalf("masquerade should be skipped when NPTv6 covers pool:\n%s", body)
+	}
+}
+
 func TestRenderWANOnly(t *testing.T) {
 	st := store.DefaultState()
 	body, err := Render(Config{DevWAN: "ens18"}, st)

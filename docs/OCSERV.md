@@ -54,8 +54,18 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.5.0
 
 - **概览**：安装/运行状态、版本、在线人数及 occtl `show status` 统计。
 - **在线会话**：已连接客户端列表，可断开；约每 8 秒自动刷新。
-- **服务器**：启用、端口、地址池（默认 `198.18.250.0/24`）、认证、DNS/路由、**DST 域名列表**、保存并 Apply。
+- **服务器**：启用、端口、**IPv4/IPv6 地址池**、认证、DNS/路由、**DST 域名列表**、保存并 Apply。
+- **限速**：使用高级/组/vhost 的 **会话限速**（`rx-data-per-sec` / `tx-data-per-sec`）。双栈时 IPv4+IPv6 **共用一条管道**；不要用 EDT per-IP 做双栈统一限速。
 - 其余标签见界面说明。
+
+### 双栈（IPv4 + IPv6）
+
+1. 在 **服务器**（或组/虚拟主机）填写 **IPv6 地址池**（建议 ULA，默认示例 `fd12:198:18:250::/64`）与 **每客户端前缀**（默认 `128`）。
+2. 推送路由含 `default` 时，生成配置会自动补 `route = ::/0`。
+3. **Apply** 会：写入 `ipv6-network` / `ipv6-subnet-prefix`、开启 `net.ipv6.conf.*.forwarding`、为该池生成 WAN `ip6 … masquerade`（若 NPTv6 已覆盖同前缀则跳过）。
+4. 带宽在「高级」设下行/上行（Mbps）；映射为会话级 `tx`/`rx-data-per-sec`，双栈流量合计计数。
+
+空 IPv6 池 = 仅 IPv4（兼容旧配置）。
 
 ### 运维面板与 occtl
 
@@ -92,5 +102,7 @@ sudo /opt/qosnat2/scripts/install-ocserv.sh --version 1.5.0
 
 ## 排错
 
-- 与 WireGuard（默认 `198.19.0.0/24`）地址池错开；ocserv 默认 `198.18.250.0/24`（同属 `198.18.0.0/15`，避开客户 LAN 的 `10.0.0.0/8`）
+- 与 WireGuard（默认 `198.19.0.0/24`）地址池错开；ocserv 默认 IPv4 `198.18.250.0/24`（同属 `198.18.0.0/15`，避开客户 LAN 的 `10.0.0.0/8`）
+- IPv6 建议使用独立 ULA（如 `fd12:198:18:250::/64`），勿与 LAN GUA/ULA 冲突
+- 双栈能连通但 IPv6 无网：检查 WAN 是否有 IPv6、nft 中是否有 `qosnat2-ocserv-ipv6` masquerade，或改用 NPTv6
 - 编译安装需 root，且目标机具备足够磁盘与编译依赖

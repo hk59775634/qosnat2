@@ -40,6 +40,9 @@ func CollectDNS64AccessAllow(st State) []string {
 	if c := ocservPoolCIDR(st.VPN.OCServ); c != "" {
 		add(c)
 	}
+	if c := ocservIPv6PoolCIDR(st.VPN.OCServ); c != "" {
+		add(c)
+	}
 	if len(out) == 0 {
 		add("10.0.0.0/8")
 		add("100.64.0.0/10")

@@ -69,7 +69,15 @@ func renderGroupConf(g store.OCServGroup) string {
 	for _, d := range g.DNS {
 		fmt.Fprintf(&b, "dns = %s\n", d)
 	}
-	for _, r := range g.Routes {
+	if n := strings.TrimSpace(g.IPv4Network); n != "" {
+		fmt.Fprintf(&b, "ipv4-network = %s\n", n)
+	}
+	if m := strings.TrimSpace(g.IPv4Netmask); m != "" {
+		fmt.Fprintf(&b, "ipv4-netmask = %s\n", m)
+	}
+	writeIPv6Pool(&b, g.IPv6Network, 0, g.IPv6SubnetPrefix)
+	routes := appendIPv6DefaultRoute(g.Routes, strings.TrimSpace(g.IPv6Network) != "")
+	for _, r := range routes {
 		fmt.Fprintf(&b, "route = %s\n", r)
 	}
 	for _, r := range g.NoRoutes {
@@ -80,12 +88,6 @@ func renderGroupConf(g store.OCServGroup) string {
 	}
 	for _, d := range g.DynamicSplitExcludeDomains {
 		fmt.Fprintf(&b, "dynamic-split-exclude-domains = %s\n", d)
-	}
-	if n := strings.TrimSpace(g.IPv4Network); n != "" {
-		fmt.Fprintf(&b, "ipv4-network = %s\n", n)
-	}
-	if m := strings.TrimSpace(g.IPv4Netmask); m != "" {
-		fmt.Fprintf(&b, "ipv4-netmask = %s\n", m)
 	}
 	if g.RxDataPerSec > 0 {
 		fmt.Fprintf(&b, "rx-data-per-sec = %d\n", g.RxDataPerSec)

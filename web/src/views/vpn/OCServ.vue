@@ -116,6 +116,8 @@ function emptyGroupForm() {
     comment: '',
     ipv4_network: '',
     ipv4_netmask: '',
+    ipv6_network: '',
+    ipv6_subnet_prefix: 128,
     mtu: 0,
     tunnel_all_dns: false,
     down_mbps: 0,
@@ -635,6 +637,8 @@ function buildGroupPayload(form, dnsT, routesT, noRoutesT, dstIncT, dstExcT) {
     dynamic_split_exclude_domains: textToList(dstExcT),
     ipv4_network: form.ipv4_network,
     ipv4_netmask: form.ipv4_netmask,
+    ipv6_network: form.ipv6_network,
+    ipv6_subnet_prefix: form.ipv6_network ? Number(form.ipv6_subnet_prefix) || 128 : 0,
     mtu: form.mtu || 0,
     tunnel_all_dns: !!form.tunnel_all_dns,
     omit_select_group: !form.list_in_select_group,
@@ -651,6 +655,8 @@ function startEditGroup(g) {
     comment: g.comment || '',
     ipv4_network: g.ipv4_network || '',
     ipv4_netmask: g.ipv4_netmask || '',
+    ipv6_network: g.ipv6_network || '',
+    ipv6_subnet_prefix: g.ipv6_subnet_prefix || 128,
     mtu: g.mtu || 0,
     tunnel_all_dns: !!g.tunnel_all_dns,
     down_mbps: caps.downMbps,
@@ -1361,6 +1367,7 @@ onUnmounted(() => {
               <th>{{ t('ocserv.colUser') }}</th>
               <th>{{ t('ocserv.colId') }}</th>
               <th>{{ t('ocserv.colIp') }}</th>
+              <th>{{ t('ocserv.colIp6') }}</th>
               <th>{{ t('ocserv.colRemote') }}</th>
               <th>{{ t('ocserv.colDevice') }}</th>
               <th>{{ t('ocserv.colRx') }}</th>
@@ -1382,6 +1389,7 @@ onUnmounted(() => {
               <td>{{ sessVal(s, 'Username', 'username') }}</td>
               <td class="font-mono">{{ sessVal(s, 'ID', 'id') }}</td>
               <td class="font-mono">{{ sessVal(s, 'VPN IPv4', 'IPv4', 'ip') }}</td>
+              <td class="font-mono text-xs">{{ sessVal(s, 'VPN IPv6', 'IPv6', 'ipv6') || '—' }}</td>
               <td class="font-mono">{{ sessRemoteIp(s) }}</td>
               <td>{{ sessVal(s, 'Device', 'device') }}</td>
               <td>{{ sessTraffic(s, 'rx') }}</td>
@@ -1409,7 +1417,7 @@ onUnmounted(() => {
               </td>
             </tr>
             <tr v-if="!paginatedSessions.length">
-              <td colspan="11" class="text-center text-slate-400 py-6">
+              <td colspan="12" class="text-center text-slate-400 py-6">
                 {{ sessions.length && sessionSearch.trim() ? t('ocserv.noSessionsMatch') : t('ocserv.noSessions') }}
               </td>
             </tr>
@@ -1493,6 +1501,14 @@ onUnmounted(() => {
             <label>
               {{ t('ocserv.groupMask') }}
               <input v-model="groupForm.ipv4_netmask" class="input w-full mt-1 font-mono" placeholder="255.255.255.0" />
+            </label>
+            <label>
+              {{ t('ocserv.ipv6Net') }}
+              <input v-model="groupForm.ipv6_network" class="input w-full mt-1 font-mono" placeholder="fd12:198:18:251::/64" />
+            </label>
+            <label>
+              {{ t('ocserv.ipv6SubnetPrefix') }}
+              <input v-model.number="groupForm.ipv6_subnet_prefix" type="number" class="input w-full mt-1" min="0" max="128" :disabled="!groupForm.ipv6_network" />
             </label>
             <label>
               MTU
@@ -1589,7 +1605,11 @@ onUnmounted(() => {
                     :title="t('ocserv.groupSelectGroupYes')"
                   >{{ t('ocserv.groupSelectGroupListed') }}</span>
                 </td>
-                <td class="font-mono text-xs">{{ g.ipv4_network ? `${g.ipv4_network}/${g.ipv4_netmask || ''}` : '—' }}</td>
+                <td class="font-mono text-xs">
+                  <div v-if="g.ipv4_network">{{ g.ipv4_network }}/{{ g.ipv4_netmask || '' }}</div>
+                  <div v-if="g.ipv6_network" class="text-slate-600">{{ g.ipv6_network }}</div>
+                  <span v-if="!g.ipv4_network && !g.ipv6_network">—</span>
+                </td>
                 <td>{{ g.comment || '—' }}</td>
                 <td class="whitespace-nowrap space-x-2">
                   <button type="button" class="text-blue-600 text-sm" @click="startEditGroup(g)">{{ t('common.edit') }}</button>
@@ -1652,7 +1672,11 @@ onUnmounted(() => {
               <td class="font-mono text-xs max-w-[14rem] truncate" :title="vhostConnectUrl(v.domain)">
                 {{ vhostConnectUrl(v.domain) || '—' }}
               </td>
-              <td class="font-mono text-xs">{{ v.ipv4_network ? `${v.ipv4_network}/${v.ipv4_netmask || ''}` : '—' }}</td>
+              <td class="font-mono text-xs">
+                <div v-if="v.ipv4_network">{{ v.ipv4_network }}/{{ v.ipv4_netmask || '' }}</div>
+                <div v-if="v.ipv6_network" class="text-slate-600">{{ v.ipv6_network }}</div>
+                <span v-if="!v.ipv4_network && !v.ipv6_network">—</span>
+              </td>
               <td>{{ v.comment || '—' }}</td>
               <td class="whitespace-nowrap space-x-2">
                 <button type="button" class="text-blue-600 text-sm font-medium" @click="openVhostAdvanced(v)">
@@ -1842,6 +1866,16 @@ onUnmounted(() => {
           {{ t('ocserv.ipv4Mask') }}
           <input v-model="cfg.ipv4_netmask" class="input w-full mt-1" />
         </label>
+        <label class="text-sm">
+          {{ t('ocserv.ipv6Net') }}
+          <input v-model="cfg.ipv6_network" class="input w-full mt-1 font-mono" placeholder="fd12:198:18:250::/64" />
+          <span class="text-xs text-slate-500 block mt-1">{{ t('ocserv.ipv6NetHint') }}</span>
+        </label>
+        <label class="text-sm">
+          {{ t('ocserv.ipv6SubnetPrefix') }}
+          <input v-model.number="cfg.ipv6_subnet_prefix" type="number" class="input w-full mt-1" min="0" max="128" :disabled="!cfg.ipv6_network" />
+          <span class="text-xs text-slate-500 block mt-1">{{ t('ocserv.ipv6SubnetHint') }}</span>
+        </label>
         <label class="text-sm">{{ t('ocserv.device') }} <input v-model="cfg.device" class="input w-full mt-1" /></label>
         <label class="text-sm">{{ t('ocserv.maxClients') }} <input v-model.number="cfg.max_clients" type="number" class="input w-full mt-1" /></label>
         <label class="text-sm col-span-2">
@@ -1853,7 +1887,7 @@ onUnmounted(() => {
 
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <label class="text-sm">{{ t('ocserv.dnsLines') }}<textarea v-model="dnsText" class="input w-full mt-1 font-mono text-xs" rows="3" /></label>
-        <label class="text-sm">{{ t('ocserv.pushRoutes') }}<textarea v-model="routesText" class="input w-full mt-1 font-mono text-xs" rows="3" placeholder="default" /><span class="text-xs text-slate-500">route</span></label>
+        <label class="text-sm">{{ t('ocserv.pushRoutes') }}<textarea v-model="routesText" class="input w-full mt-1 font-mono text-xs" rows="3" placeholder="default" /><span class="text-xs text-slate-500">route · {{ t('ocserv.ipv6RouteHint') }}</span></label>
         <label class="text-sm">{{ t('ocserv.excludeRoutes') }}<textarea v-model="noRoutesText" class="input w-full mt-1 font-mono text-xs" rows="3" /><span class="text-xs text-slate-500">no-route</span></label>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1950,6 +1984,7 @@ onUnmounted(() => {
           <span class="text-xs text-slate-500">{{ t('ocserv.capHint0') }} · rx-data-per-sec</span>
         </label>
         <p class="text-xs text-slate-500 col-span-2">{{ t('ocserv.capDirectionHint') }}</p>
+        <p class="text-xs text-slate-500 col-span-2">{{ t('ocserv.ipv6DualStackHint') }}</p>
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <label v-for="n in numericAdvanced" v-show="!n.show || n.show()" :key="n.key" class="text-sm">

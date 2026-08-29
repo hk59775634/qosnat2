@@ -94,10 +94,12 @@ func RenderConf(o store.OCServState, managed []store.ManagedCertificate) string 
 	}
 	b.WriteString(fmt.Sprintf("ipv4-network = %s\n", o.IPv4Network))
 	b.WriteString(fmt.Sprintf("ipv4-netmask = %s\n", o.IPv4Netmask))
+	writeIPv6Pool(&b, o.IPv6Network, 0, o.IPv6SubnetPrefix)
 	for _, d := range o.DNS {
 		b.WriteString(fmt.Sprintf("dns = %s\n", strings.TrimSpace(d)))
 	}
-	for _, r := range o.Routes {
+	routes := appendIPv6DefaultRoute(o.Routes, strings.TrimSpace(o.IPv6Network) != "")
+	for _, r := range routes {
 		b.WriteString(fmt.Sprintf("route = %s\n", strings.TrimSpace(r)))
 	}
 	for _, r := range o.NoRoutes {

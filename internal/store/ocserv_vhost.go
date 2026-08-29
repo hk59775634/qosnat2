@@ -35,7 +35,8 @@ type OCServVhost struct {
 	IPv4Network   string   `json:"ipv4_network,omitempty"`
 	IPv4Netmask   string   `json:"ipv4_netmask,omitempty"`
 	IPv6Network   string   `json:"ipv6_network,omitempty"`
-	IPv6Prefix    int      `json:"ipv6_prefix,omitempty"`
+	IPv6Prefix    int      `json:"ipv6_prefix,omitempty"` // 池前缀：network 无 "/" 时拼进 ipv6-network
+	IPv6SubnetPrefix int   `json:"ipv6_subnet_prefix,omitempty"` // ocserv ipv6-subnet-prefix（每客户端）
 	DNS           []string `json:"dns,omitempty"`
 	NBNS          []string `json:"nbns,omitempty"`
 	DefaultDomain string   `json:"default_domain,omitempty"`

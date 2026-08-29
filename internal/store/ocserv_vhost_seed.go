@@ -28,6 +28,8 @@ func VhostFromGlobal(o OCServState, domain, comment, authMethod string) OCServVh
 		CaCertPath:         o.CaCertPath,
 		IPv4Network:        o.IPv4Network,
 		IPv4Netmask:        o.IPv4Netmask,
+		IPv6Network:        o.IPv6Network,
+		IPv6SubnetPrefix:   o.IPv6SubnetPrefix,
 		DNS:                append([]string(nil), o.DNS...),
 		Routes:             append([]string(nil), o.Routes...),
 		NoRoutes:           append([]string(nil), o.NoRoutes...),

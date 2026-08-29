@@ -866,6 +866,8 @@ components:
           description: AnyConnect DST exclude domains (SPEC-02)
         ipv4_network: { type: string }
         ipv4_netmask: { type: string }
+        ipv6_network: { type: string, description: IPv6 地址池（CIDR）；空=不覆盖 }
+        ipv6_subnet_prefix: { type: integer, description: 每客户端 IPv6 前缀长度（ipv6-subnet-prefix），默认 128 }
         rx_data_per_sec: { type: integer, description: 服务端下行限速（字节/秒，0=不限） }
         tx_data_per_sec: { type: integer, description: 服务端上行限速（限制客户端上传） }
         mtu: { type: integer }
@@ -921,8 +923,9 @@ components:
         cert_group_oid: { type: string }
         ipv4_network: { type: string }
         ipv4_netmask: { type: string }
-        ipv6_network: { type: string }
-        ipv6_prefix: { type: integer }
+        ipv6_network: { type: string, description: IPv6 地址池 CIDR（如 fd12:198:18:250::/64） }
+        ipv6_prefix: { type: integer, description: 遗留：裸地址时的池前缀；规范化后并入 ipv6_network }
+        ipv6_subnet_prefix: { type: integer, description: 每客户端前缀（ipv6-subnet-prefix），默认 128 }
         dns:
           type: array
           items: { type: string }
@@ -1062,6 +1065,14 @@ components:
         device: { type: string, example: vpns }
         ipv4_network: { type: string, example: 10.250.0.0 }
         ipv4_netmask: { type: string, example: 255.255.255.0 }
+        ipv6_network:
+          type: string
+          example: fd12:198:18:250::/64
+          description: IPv6 地址池；空=仅 IPv4。Apply 时启用转发并为该池做 WAN masquerade（NPTv6 已覆盖则跳过）
+        ipv6_subnet_prefix:
+          type: integer
+          example: 128
+          description: 每客户端 IPv6 前缀（ocserv ipv6-subnet-prefix）；双栈时与会话 rx/tx-data-per-sec 共用一条限速管道
         dns:
           type: array
           items: { type: string }

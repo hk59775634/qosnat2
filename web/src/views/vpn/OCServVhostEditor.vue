@@ -512,11 +512,12 @@ function patchRadius(partial) {
       </label>
       <label>
         {{ t('ocserv.vhostFields.ipv6Network') }}
-        <input :value="v.ipv6_network" class="input w-full mt-1 font-mono" @input="patch({ ipv6_network: $event.target.value })" />
+        <input :value="v.ipv6_network" class="input w-full mt-1 font-mono" placeholder="fd12:198:18:250::/64" @input="patch({ ipv6_network: $event.target.value })" />
       </label>
       <label>
-        {{ t('ocserv.vhostFields.ipv6Prefix') }}
-        <input :value="v.ipv6_prefix" type="number" class="input w-full mt-1" @input="patch({ ipv6_prefix: Number($event.target.value) })" />
+        {{ t('ocserv.vhostFields.ipv6SubnetPrefix') }}
+        <input :value="v.ipv6_subnet_prefix || 128" type="number" class="input w-full mt-1" min="0" max="128" :disabled="!v.ipv6_network" @input="patch({ ipv6_subnet_prefix: Number($event.target.value) })" />
+        <span class="text-xs text-slate-500">{{ t('ocserv.ipv6SubnetHint') }}</span>
       </label>
       <label class="sm:col-span-2">
         {{ t('ocserv.vhostFields.defaultDomain') }}

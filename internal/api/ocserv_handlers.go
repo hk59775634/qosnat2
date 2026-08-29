@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -102,6 +103,21 @@ func (srv *Server) handleOCServApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	up := o.Enabled
+	if up && store.OCServHasIPv6(o) {
+		_ = srv.store.Update(func(s *store.State) {
+			if s.System.Sysctl == nil {
+				s.System.Sysctl = map[string]string{}
+			}
+			s.System.Sysctl["net.ipv6.conf.all.forwarding"] = "1"
+			s.System.Sysctl["net.ipv6.conf.default.forwarding"] = "1"
+		})
+		_ = srv.store.Save()
+		st = srv.store.Get()
+		o = st.VPN.OCServ
+		if err := srv.applySystemTuning(st); err != nil {
+			log.Printf("ocserv ipv6 forwarding sysctl: %v", err)
+		}
+	}
 	mode, err := ocserv.Apply(o, st.Certificates, up)
 	if err != nil {
 		writeInternalError(w, err.Error())

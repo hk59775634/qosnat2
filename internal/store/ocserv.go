@@ -50,8 +50,11 @@ type OCServState struct {
 	Device             string         `json:"device"` // tun 设备名前缀，默认 vpns
 	IPv4Network        string         `json:"ipv4_network"`
 	IPv4Netmask        string         `json:"ipv4_netmask"`
+	// IPv6Network 地址池（CIDR 或裸地址）；空=仅 IPv4。IPv6SubnetPrefix 为每客户端分配前缀（ocserv ipv6-subnet-prefix）。
+	IPv6Network      string `json:"ipv6_network,omitempty"`
+	IPv6SubnetPrefix int    `json:"ipv6_subnet_prefix,omitempty"`
 	DNS                []string       `json:"dns,omitempty"`
-	Routes             []string       `json:"routes,omitempty"`    // 如 default、10.0.0.0/24
+	Routes             []string       `json:"routes,omitempty"`    // 如 default、10.0.0.0/24、::/0
 	NoRoutes           []string       `json:"no_routes,omitempty"` // no-route
 	// DynamicSplitIncludeDomains / DynamicSplitExcludeDomains：AnyConnect DST（SPEC-02）
 	DynamicSplitIncludeDomains []string `json:"dynamic_split_include_domains,omitempty"`
@@ -154,6 +157,16 @@ func NormalizeOCServ(o *OCServState) error {
 	}
 	if err := validateIPv4Pool(o.IPv4Network, o.IPv4Netmask); err != nil {
 		return err
+	}
+	o.IPv6Network = strings.TrimSpace(o.IPv6Network)
+	if o.IPv6Network != "" {
+		if err := ValidateOCServIPv6Pool(o.IPv6Network, 0, o.IPv6SubnetPrefix); err != nil {
+			return err
+		}
+		o.IPv6SubnetPrefix = OCServIPv6SubnetPrefix(o.IPv6Network, o.IPv6SubnetPrefix)
+		o.IPv6Network = FormatOCServIPv6Network(o.IPv6Network, 0)
+	} else {
+		o.IPv6SubnetPrefix = 0
 	}
 	if o.DNS == nil {
 		o.DNS = []string{"8.8.8.8"}

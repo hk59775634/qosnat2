@@ -30,6 +30,10 @@ const (
 	OCServDefaultIPv4Network = "198.18.250.0"
 	OCServDefaultIPv4Netmask = "255.255.255.0"
 	OCServDefaultIPv4CIDR    = "198.18.250.0/24"
+
+	// OCServ 默认 IPv6 ULA 池（与 IPv4 198.18.250/24 对应规划）；未配置 ipv6_network 时不启用双栈。
+	OCServDefaultIPv6Network      = "fd12:198:18:250::/64"
+	OCServDefaultIPv6SubnetPrefix = 128 // 每客户端一个地址，便于 SNAT/masquerade
 )
 
 // ProxyTunHostCIDR 返回 ProxyEgress TUN 主机侧地址 198.18.(index+1).1/30（index 0..63；0.0/30 预留给 WARP）。

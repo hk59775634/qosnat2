@@ -120,13 +120,7 @@ func renderVhostBlock(b *bytes.Buffer, v store.OCServVhost, global store.OCServS
 	if m := strings.TrimSpace(v.IPv4Netmask); m != "" {
 		fmt.Fprintf(b, "ipv4-netmask = %s\n", m)
 	}
-	if n := strings.TrimSpace(v.IPv6Network); n != "" {
-		if v.IPv6Prefix > 0 {
-			fmt.Fprintf(b, "ipv6-network = %s/%d\n", n, v.IPv6Prefix)
-		} else {
-			fmt.Fprintf(b, "ipv6-network = %s\n", n)
-		}
-	}
+	writeIPv6Pool(b, v.IPv6Network, v.IPv6Prefix, v.IPv6SubnetPrefix)
 	for _, d := range v.DNS {
 		fmt.Fprintf(b, "dns = %s\n", d)
 	}
@@ -142,7 +136,8 @@ func renderVhostBlock(b *bytes.Buffer, v store.OCServVhost, global store.OCServS
 	if v.MTU > 0 {
 		fmt.Fprintf(b, "mtu = %d\n", v.MTU)
 	}
-	for _, r := range v.Routes {
+	routes := appendIPv6DefaultRoute(v.Routes, strings.TrimSpace(v.IPv6Network) != "")
+	for _, r := range routes {
 		fmt.Fprintf(b, "route = %s\n", r)
 	}
 	for _, r := range v.NoRoutes {
