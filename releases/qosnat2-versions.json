@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026083101",
+      "tag": "v2026083101",
+      "published_at": "2026-08-31T02:40:55Z",
+      "summary": "WireGuard Peer 列表支持多选批量删除。"
+    },
+    {
       "id": "2026082901",
       "tag": "v2026082901",
       "published_at": "2026-08-29T09:56:13Z",
@@ -25,12 +31,6 @@
       "tag": "v2026081403",
       "published_at": "2026-08-14T09:48:29Z",
       "summary": "修复 WARP 网关模式回程黑洞，并避免 systemd 私有 mount ns 导致 qwp0 netns 针脚失效。"
-    },
-    {
-      "id": "2026081402",
-      "tag": "v2026081402",
-      "published_at": "2026-08-14T09:02:51Z",
-      "summary": "修复一键拦截 Google WebRTC 因非法 nft「udp counter」语法导致应用失败。"
     }
   ]
 }
