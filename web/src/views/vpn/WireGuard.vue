@@ -54,6 +54,7 @@ const TRAFFIC_LIVE_WINDOW_SEC = 300
 const peerStatusByName = ref({})
 const peerStatusPoll = ref(null)
 const PEER_STATUS_POLL_MS = 5000
+const selectedPeerNames = ref([])
 const statusModalOpen = ref(false)
 const statusModalPeer = ref(null) // null = instance status; string = peer name
 const statusModalLoading = ref(false)
@@ -76,6 +77,34 @@ const instanceRuntimeInstalled = computed(() => {
   if (status.value) return !!status.value.installed
   return !!selectedInstanceMeta.value?.status?.installed
 })
+
+const allPeersSelected = computed(
+  () => peers.value.length > 0 && peers.value.every((p) => selectedPeerNames.value.includes(p.name)),
+)
+const somePeersSelected = computed(() => selectedPeerNames.value.length > 0)
+
+function clearPeerSelection() {
+  selectedPeerNames.value = []
+}
+
+function isPeerSelected(name) {
+  return selectedPeerNames.value.includes(name)
+}
+
+function togglePeerSelected(name) {
+  const set = new Set(selectedPeerNames.value)
+  if (set.has(name)) set.delete(name)
+  else set.add(name)
+  selectedPeerNames.value = [...set]
+}
+
+function toggleSelectAllPeers() {
+  if (allPeersSelected.value) {
+    clearPeerSelection()
+    return
+  }
+  selectedPeerNames.value = peers.value.map((p) => p.name)
+}
 
 function peerRuntime(name) {
   return peerStatusByName.value[name] || null
@@ -103,6 +132,7 @@ async function load() {
     ...p,
     rate: p.rate || { down: '', up: '' },
   }))
+  clearPeerSelection()
   serverEndpoint.value = d.config?.server_endpoint || ''
   if (activeTab.value === 'peers') {
     await loadPeerStatuses(true)
@@ -207,6 +237,7 @@ watch(selectedId, async () => {
   err.value = ''
   ok.value = ''
   peerStatusByName.value = {}
+  clearPeerSelection()
   closeStatusModal()
   closePeerTraffic()
   closePeerModal()
@@ -364,8 +395,25 @@ async function delPeer(name) {
   if (!window.confirm(t('vpn.wg.confirmDelete', { name }))) return
   try {
     await api.del(`${instanceApiBase()}/peers?name=${encodeURIComponent(name)}`)
+    clearPeerSelection()
     await load()
     ok.value = t('vpn.wg.peerDeleted')
+  } catch (e) {
+    err.value = e.message
+  }
+}
+
+async function delSelectedPeers() {
+  const names = [...selectedPeerNames.value]
+  if (!names.length) return
+  err.value = ''
+  if (!window.confirm(t('vpn.wg.confirmBatchDelete', { n: names.length }))) return
+  try {
+    const res = await api.post(`${instanceApiBase()}/peers/batch-delete`, { names })
+    const n = Array.isArray(res?.deleted) ? res.deleted.length : names.length
+    clearPeerSelection()
+    await load()
+    ok.value = t('vpn.wg.peersBatchDeleted', { n })
   } catch (e) {
     err.value = e.message
   }
@@ -788,11 +836,32 @@ onUnmounted(() => {
       <section class="card table-wrap p-4">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h3 class="font-medium">{{ t('vpn.wg.peerList') }}</h3>
-          <button type="button" class="btn-primary text-sm" @click="openAddPeerModal">{{ t('vpn.wg.addPeer') }}</button>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              v-if="somePeersSelected"
+              type="button"
+              class="btn-secondary text-sm text-red-700 border-red-200"
+              @click="delSelectedPeers"
+            >
+              {{ t('vpn.wg.batchDeleteSelected', { n: selectedPeerNames.length }) }}
+            </button>
+            <button type="button" class="btn-primary text-sm" @click="openAddPeerModal">{{ t('vpn.wg.addPeer') }}</button>
+          </div>
         </div>
         <table class="data w-full">
           <thead>
             <tr>
+              <th class="w-10">
+                <input
+                  type="checkbox"
+                  class="rounded"
+                  :checked="allPeersSelected"
+                  :indeterminate="somePeersSelected && !allPeersSelected"
+                  :disabled="!peers.length"
+                  :aria-label="t('vpn.wg.selectAllPeers')"
+                  @change="toggleSelectAllPeers"
+                />
+              </th>
               <th>{{ t('vpn.wg.colName') }}</th>
               <th>{{ t('vpn.wg.colStatus') }}</th>
               <th>{{ t('vpn.wg.colEndpoint') }}</th>
@@ -808,6 +877,15 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr v-for="p in peers" :key="p.name">
+              <td>
+                <input
+                  type="checkbox"
+                  class="rounded"
+                  :checked="isPeerSelected(p.name)"
+                  :aria-label="p.name"
+                  @change="togglePeerSelected(p.name)"
+                />
+              </td>
               <td>{{ p.name }}</td>
               <td>
                 <span

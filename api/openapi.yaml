@@ -4188,6 +4188,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/Ok'
 
+  /api/v1/vpn/wireguard/instances/{id}/peers/batch-delete:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [vpn]
+      summary: 批量删除 Peer
+      description: 按名称批量删除；未找到的 Peer 列在 not_found，不影响其余删除。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [names]
+              properties:
+                names:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  deleted:
+                    type: array
+                    items: { type: string }
+                  not_found:
+                    type: array
+                    items: { type: string }
+
   /api/v1/vpn/wireguard/instances/{id}/peers/status:
     parameters:
       - name: id

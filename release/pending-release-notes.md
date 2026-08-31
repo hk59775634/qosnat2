@@ -5,11 +5,12 @@
 
 ## 概要
 
-（一句话概括本版重点，将写入版本清单 summary 字段）
+WireGuard Peer 列表支持多选批量删除。
 
 ## 新增
 
-- （无）
+- API `POST /api/v1/vpn/wireguard/instances/{id}/peers/batch-delete`（body：`names[]`）
+- Web：Peer 表格复选框、全选与「删除选中」按钮
 
 ## 优化
 

@@ -126,6 +126,10 @@ func (srv *Server) handleWireGuardInstancesSubtree(w http.ResponseWriter, r *htt
 		srv.handleWireGuardInstancePeers(w, r, id)
 		return
 	}
+	if len(parts) == 3 && parts[1] == "peers" && parts[2] == "batch-delete" {
+		srv.handleWireGuardInstancePeersBatchDelete(w, r, id)
+		return
+	}
 	if len(parts) == 3 && parts[1] == "peers" && parts[2] == "status" {
 		srv.handleWireGuardInstancePeersStatus(w, r, id)
 		return
@@ -451,41 +455,112 @@ func (srv *Server) handleWireGuardInstancePeers(w http.ResponseWriter, r *http.R
 			writeBadRequest(w, "name required")
 			return
 		}
-		var removed *store.WGPeer
-		var instSnapshot store.WireGuardInstance
-		var errStr string
-		_ = srv.store.Update(func(s *store.State) {
-			idx, ok := store.FindWireGuardInstance(s.VPN.WireGuards, id)
-			if !ok {
-				errStr = "instance not found"
-				return
-			}
-			instSnapshot = s.VPN.WireGuards[idx]
-			var out []store.WGPeer
-			for _, e := range s.VPN.WireGuards[idx].Peers {
-				if e.Name == name {
-					cp := e
-					removed = &cp
-					continue
-				}
-				out = append(out, e)
-			}
-			s.VPN.WireGuards[idx].Peers = out
-		})
+		deleted, notFound, removed, instSnapshot, errStr := srv.deleteWireGuardPeers(id, []string{name})
 		if errStr != "" {
-			writeNotFound(w, errStr)
+			if errStr == "instance not found" {
+				writeNotFound(w, errStr)
+			} else {
+				writeBadRequest(w, errStr)
+			}
 			return
 		}
+		if len(deleted) == 0 {
+			writeNotFound(w, "peer not found")
+			return
+		}
+		_ = notFound
 		if !srv.persistState(w) {
 			return
 		}
-		if removed != nil {
-			srv.removeWGPeerShaper(instSnapshot, *removed)
+		for _, p := range removed {
+			srv.removeWGPeerShaper(instSnapshot, p)
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		writeMethodNotAllowed(w)
 	}
+}
+
+func (srv *Server) handleWireGuardInstancePeersBatchDelete(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w)
+		return
+	}
+	var body struct {
+		Names []string `json:"names"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeBadJSON(w)
+		return
+	}
+	deleted, notFound, removed, instSnapshot, errStr := srv.deleteWireGuardPeers(id, body.Names)
+	if errStr != "" {
+		if errStr == "instance not found" {
+			writeNotFound(w, errStr)
+		} else {
+			writeBadRequest(w, errStr)
+		}
+		return
+	}
+	if len(deleted) == 0 {
+		writeBadRequest(w, "no peers deleted")
+		return
+	}
+	if !srv.persistState(w) {
+		return
+	}
+	for _, p := range removed {
+		srv.removeWGPeerShaper(instSnapshot, p)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":        true,
+		"deleted":   deleted,
+		"not_found": notFound,
+	})
+}
+
+// deleteWireGuardPeers 从 state 移除指定 Peer。返回实际删除名、未找到名及被删 Peer（供清理 QoS）。
+func (srv *Server) deleteWireGuardPeers(id string, names []string) (deleted, notFound []string, removed []store.WGPeer, instSnapshot store.WireGuardInstance, errStr string) {
+	want := map[string]struct{}{}
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		want[n] = struct{}{}
+	}
+	if len(want) == 0 {
+		return nil, nil, nil, store.WireGuardInstance{}, "name required"
+	}
+	_ = srv.store.Update(func(s *store.State) {
+		idx, ok := store.FindWireGuardInstance(s.VPN.WireGuards, id)
+		if !ok {
+			errStr = "instance not found"
+			return
+		}
+		instSnapshot = s.VPN.WireGuards[idx]
+		var out []store.WGPeer
+		for _, e := range s.VPN.WireGuards[idx].Peers {
+			if _, del := want[e.Name]; del {
+				removed = append(removed, e)
+				delete(want, e.Name)
+				continue
+			}
+			out = append(out, e)
+		}
+		for n := range want {
+			notFound = append(notFound, n)
+		}
+		s.VPN.WireGuards[idx].Peers = out
+	})
+	if errStr != "" {
+		return nil, nil, nil, store.WireGuardInstance{}, errStr
+	}
+	deleted = make([]string, 0, len(removed))
+	for _, p := range removed {
+		deleted = append(deleted, p.Name)
+	}
+	return deleted, notFound, removed, instSnapshot, ""
 }
 
 func (srv *Server) handleWireGuardInstancePeerConf(w http.ResponseWriter, r *http.Request, id, name string) {
