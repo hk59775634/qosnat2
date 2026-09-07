@@ -123,7 +123,7 @@ func ensureNatDefaults(n *NatState) {
 	}
 	n.IPv4.PolicyRoutes = PruneContainedPolicyRoutes(n.IPv4.PolicyRoutes)
 	_ = RefreshMappingPolicyRoutes(&n.IPv4)
-	// 允许空 policy_routes（纯三层 / 仅 oif masquerade）；勿再回填默认 10.0.0.0/8。
+	// 允许空 policy_routes（未列入的流量走三层转发、不做出站 SNAT）；勿再回填默认 10.0.0.0/8。
 	if n.IPv4.SharedIPs == nil {
 		n.IPv4.SharedIPs = []string{}
 	}

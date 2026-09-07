@@ -224,7 +224,7 @@ func writeIPv4PostroutingNAT(b *strings.Builder, cfg Config, st store.State, rou
 			continue
 		}
 		if e.NoSNAT {
-			// 跳出 postrouting，避免后续 catch-all masquerade 仍对本机做 SNAT。
+			// 跳出 postrouting，避免后续策略网段 / hairpin SNAT 仍匹配本源。
 			b.WriteString(fmt.Sprintf(
 				"        %s return comment \"qosnat2-egress-no-snat\"\n",
 				match,
@@ -263,7 +263,8 @@ func writeIPv4PostroutingNAT(b *strings.Builder, cfg Config, st store.State, rou
 		}
 	}
 	writeWanForwardHairpinSNAT(b, cfg, forwards)
-	b.WriteString(fmt.Sprintf("        oifname \"%s\" masquerade\n", cfg.DevWAN))
+	// 出站 IPv4 NAT 仅覆盖显式目标：策略网段、1:1/网段映射、出站策略、hairpin。
+	// 禁止 WAN catch-all masquerade，否则三层公网源也被 SNAT，破坏纯路由出口 IP。
 }
 
 // writeEgressSameIfaceForward LAN 与 WanLink 同口时，转发路径为 iif=oif=LAN，需显式放行出站策略匹配流量。

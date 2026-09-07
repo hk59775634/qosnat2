@@ -70,8 +70,26 @@ func TestRenderPureL3EmptyPolicyRoutes(t *testing.T) {
 	if strings.Contains(body, `ip saddr 10.0.0.0/8 oifname "ens18"`) {
 		t.Fatal("empty policy_routes must not SNAT 10.0.0.0/8 from shaper fallback")
 	}
-	if !strings.Contains(body, `oifname "ens18" masquerade`) {
-		t.Fatal("missing catch-all WAN masquerade for pure L3")
+	if strings.Contains(body, "\n        oifname \"ens18\" masquerade\n") {
+		t.Fatal("catch-all WAN masquerade must not be present; L3 public sources must pass without SNAT")
+	}
+}
+
+func TestRenderPolicyScopedMasqueradeNoCatchAll(t *testing.T) {
+	st := store.DefaultState()
+	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8", "198.18.250.0/24"}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cidr := range []string{"10.0.0.0/8", "198.18.250.0/24"} {
+		want := fmt.Sprintf(`ip saddr %s oifname "ens18"`, cidr)
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing policy-scoped SNAT for %q in:\n%s", cidr, body)
+		}
+	}
+	if strings.Contains(body, "\n        oifname \"ens18\" masquerade\n") {
+		t.Fatal("catch-all WAN masquerade must not be present")
 	}
 }
 
@@ -80,6 +98,7 @@ func TestRenderSNATAndFilter(t *testing.T) {
 	st.Firewall.FilterRules = []store.FilterRule{{
 		ID: "fr-1", Chain: "forward", Action: "drop", Iif: "ens18", Enabled: true,
 	}}
+	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8"}
 	st.Nat.IPv4.SharedIPs = []string{"203.0.113.10"}
 	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
 	if err != nil {
@@ -91,12 +110,12 @@ func TestRenderSNATAndFilter(t *testing.T) {
 	if strings.Contains(body, "flush ruleset") {
 		t.Fatal("must not flush entire ruleset")
 	}
-	for _, want := range []string{"table inet qosnat", "masquerade", "ens18", "fr-1", "drop"} {
-		if !strings.Contains(body, want) && want != "fr-1" {
-			if !strings.Contains(body, "drop") {
-				t.Fatalf("missing %q in render", want)
-			}
-		}
+	wantSNAT := `ip saddr 10.0.0.0/8 oifname "ens18" snat to numgen inc mod 1 map { 0 : 203.0.113.10 }`
+	if !strings.Contains(body, wantSNAT) {
+		t.Fatalf("missing policy-scoped shared SNAT:\n%s", body)
+	}
+	if strings.Contains(body, "\n        oifname \"ens18\" masquerade\n") {
+		t.Fatal("catch-all WAN masquerade must not be present")
 	}
 	if !strings.Contains(body, "drop") {
 		t.Fatal("missing filter drop rule")
@@ -331,6 +350,7 @@ func TestRenderOCServIPv6MasqueradeSkippedWhenNPTv6(t *testing.T) {
 
 func TestRenderWANOnly(t *testing.T) {
 	st := store.DefaultState()
+	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8"}
 	body, err := Render(Config{DevWAN: "ens18"}, st)
 	if err != nil {
 		t.Fatal(err)
@@ -338,8 +358,11 @@ func TestRenderWANOnly(t *testing.T) {
 	if strings.Contains(body, "ens19") {
 		t.Fatal("WAN-only render should not reference LAN")
 	}
-	if !strings.Contains(body, `oifname "ens18" masquerade`) {
-		t.Fatal("missing WAN masquerade")
+	if !strings.Contains(body, `ip saddr 10.0.0.0/8 oifname "ens18"`) {
+		t.Fatal("missing policy-scoped WAN SNAT")
+	}
+	if strings.Contains(body, "\n        oifname \"ens18\" masquerade\n") {
+		t.Fatal("catch-all WAN masquerade must not be present")
 	}
 }
 
