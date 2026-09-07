@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026090701",
+      "tag": "v2026090701",
+      "published_at": "2026-09-07T05:37:12Z",
+      "summary": "出站 IPv4 NAT 去掉 WAN catch-all masquerade，仅对策略网段等显式目标做 SNAT，避免三层公网源被改写出口 IP。"
+    },
+    {
       "id": "2026083101",
       "tag": "v2026083101",
       "published_at": "2026-08-31T02:40:55Z",
@@ -25,12 +31,6 @@
       "tag": "v2026082601",
       "published_at": "2026-08-26T07:28:54Z",
       "summary": "修复 WireGuard 启用并保存后重启不随开机启动的问题。"
-    },
-    {
-      "id": "2026081403",
-      "tag": "v2026081403",
-      "published_at": "2026-08-14T09:48:29Z",
-      "summary": "修复 WARP 网关模式回程黑洞，并避免 systemd 私有 mount ns 导致 qwp0 netns 针脚失效。"
     }
   ]
 }
