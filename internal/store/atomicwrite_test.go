@@ -38,4 +38,8 @@ func TestCloneNatIPv4(t *testing.T) {
 	if src.PolicyRoutes[0] != "10.0.0.0/8" {
 		t.Fatal("clone must not alias slices")
 	}
+	cl.AutoVPNPolicyRoutes = append(cl.AutoVPNPolicyRoutes, "198.18.250.0/24")
+	if len(src.AutoVPNPolicyRoutes) != 0 {
+		t.Fatal("clone must not alias auto vpn slices")
+	}
 }

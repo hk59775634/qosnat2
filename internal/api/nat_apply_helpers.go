@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/hk59775634/qosnat2/internal/conntrack"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -26,6 +27,7 @@ func (srv *Server) commitNatIPv4Change(w http.ResponseWriter, mutate func(*store
 		writeApplyError(w, err)
 		return false
 	}
+	conntrack.FlushByCIDRs(natIPv4ConntrackCIDRs(backup, proposed.Nat.IPv4))
 	return true
 }
 
@@ -58,4 +60,56 @@ func (srv *Server) commitNatStackChange(w http.ResponseWriter, mutate func(*stor
 		return false
 	}
 	return true
+}
+
+func natIPv4ConntrackCIDRs(oldN, newN store.NatIPv4State) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	add := func(c string) {
+		if c == "" {
+			return
+		}
+		if _, ok := seen[c]; ok {
+			return
+		}
+		seen[c] = struct{}{}
+		out = append(out, c)
+	}
+	oldR := map[string]struct{}{}
+	for _, c := range oldN.PolicyRoutes {
+		oldR[c] = struct{}{}
+	}
+	newR := map[string]struct{}{}
+	for _, c := range newN.PolicyRoutes {
+		newR[c] = struct{}{}
+		if _, ok := oldR[c]; !ok {
+			add(c)
+		}
+	}
+	for _, c := range oldN.PolicyRoutes {
+		if _, ok := newR[c]; !ok {
+			add(c)
+		}
+	}
+	for inner := range oldN.StaticMappings {
+		if newN.StaticMappings[inner] != oldN.StaticMappings[inner] {
+			add(inner)
+		}
+	}
+	for inner := range newN.StaticMappings {
+		if _, ok := oldN.StaticMappings[inner]; !ok {
+			add(inner)
+		}
+	}
+	for inner := range oldN.PrefixMappings {
+		if newN.PrefixMappings[inner] != oldN.PrefixMappings[inner] {
+			add(inner)
+		}
+	}
+	for inner := range newN.PrefixMappings {
+		if _, ok := oldN.PrefixMappings[inner]; !ok {
+			add(inner)
+		}
+	}
+	return out
 }

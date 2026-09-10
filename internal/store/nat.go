@@ -20,12 +20,13 @@ const (
 // NatIPv4State IPv4 出站 SNAT / 策略路由
 type NatIPv4State struct {
 	// Enabled 出站 IPv4 NAT 总开关；nil/省略视为 true（兼容旧 state）。
-	Enabled          *bool             `json:"enabled,omitempty"`
-	PolicyRoutes     []string          `json:"policy_routes"`
-	AutoPolicyRoutes []string          `json:"auto_policy_routes,omitempty"` // 1:1/网段映射自动同步项
-	SharedIPs        []string          `json:"shared_ips"`
-	StaticMappings   map[string]string `json:"static_mappings"`
-	PrefixMappings   map[string]string `json:"prefix_mappings"`
+	Enabled             *bool             `json:"enabled,omitempty"`
+	PolicyRoutes        []string          `json:"policy_routes"`
+	AutoPolicyRoutes    []string          `json:"auto_policy_routes,omitempty"`     // 1:1/网段映射自动同步项
+	AutoVPNPolicyRoutes []string          `json:"auto_vpn_policy_routes,omitempty"` // VPN 地址池自动同步项
+	SharedIPs           []string          `json:"shared_ips"`
+	StaticMappings      map[string]string `json:"static_mappings"`
+	PrefixMappings      map[string]string `json:"prefix_mappings"`
 }
 
 // NatIPv4Enabled 是否应用 IPv4 出站 NAT（策略网段、共享 IP、1:1、masquerade 等）。
@@ -51,8 +52,8 @@ type DNS64Config struct {
 	Upstream       []string `json:"upstream,omitempty"`
 	UnboundListen  string   `json:"unbound_listen,omitempty"` // relay: 127.0.0.1:5353；直连: 网关:53 或 0.0.0.0:53
 	Forwarders     []string `json:"forwarders,omitempty"`
-	ServeToClients bool     `json:"serve_to_clients"`         // true=经 dnsmasq/DHCP 下发；false=VPN/静态 DNS（直连 Unbound 或公网 DNS64）
-	AccessAllow    []string `json:"access_allow,omitempty"`   // Unbound 直连时允许的查询源 CIDR
+	ServeToClients bool     `json:"serve_to_clients"`       // true=经 dnsmasq/DHCP 下发；false=VPN/静态 DNS（直连 Unbound 或公网 DNS64）
+	AccessAllow    []string `json:"access_allow,omitempty"` // Unbound 直连时允许的查询源 CIDR
 }
 
 // NatState NAT / NPTv6 / NAT64 / DNS64
@@ -120,6 +121,9 @@ func ensureNatDefaults(n *NatState) {
 	}
 	if n.IPv4.AutoPolicyRoutes == nil {
 		n.IPv4.AutoPolicyRoutes = []string{}
+	}
+	if n.IPv4.AutoVPNPolicyRoutes == nil {
+		n.IPv4.AutoVPNPolicyRoutes = []string{}
 	}
 	n.IPv4.PolicyRoutes = PruneContainedPolicyRoutes(n.IPv4.PolicyRoutes)
 	_ = RefreshMappingPolicyRoutes(&n.IPv4)

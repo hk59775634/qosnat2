@@ -10,7 +10,15 @@ import (
 )
 
 func (srv *Server) persistAutoFirewallRules() {
-	srv.syncAutoFirewallRules()
+	st := srv.store.Get()
+	wanDevs := store.CollectWanInputDevices(srv.env.DevWAN, srv.env.DevLAN, st)
+	synced, changed := store.SyncAutoFilterRules(st.Firewall.FilterRules, wanDevs, srv.env.AdminPort, nft.AutoInputFromState(st), st.Firewall.WanPortForwards, st.LVS, srv.env.DevLAN, srv.env.DevWAN, nft.HairpinAddrResolver(srv.env.DevLAN, srv.env.DevWAN))
+	if !changed {
+		return
+	}
+	_ = srv.store.Update(func(s *store.State) {
+		s.Firewall.FilterRules = synced
+	})
 	if err := srv.store.Save(); err != nil {
 		log.Printf("save state: %v", err)
 	}
@@ -59,9 +67,6 @@ func (srv *Server) reloadNft() error {
 }
 
 func (srv *Server) reloadNftLocked() error {
-	if warns := srv.refreshDynamicAliasesLocked(); len(warns) > 0 {
-		log.Printf("url alias refresh: %v", warns)
-	}
 	return srv.applyNftLocked()
 }
 
@@ -82,9 +87,6 @@ func (srv *Server) applyNftLocked() error {
 // applyWanLinkDataPlane 多 WAN 变更后同步策略路由与 nft（在 nftApplyMu 内原子执行）。
 func (srv *Server) applyWanLinkDataPlane() error {
 	return srv.withNftApply(func() error {
-		if warns := srv.refreshDynamicAliasesLocked(); len(warns) > 0 {
-			log.Printf("url alias refresh: %v", warns)
-		}
 		if err := srv.applyEgressPolicyRoutes(); err != nil {
 			return err
 		}

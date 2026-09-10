@@ -72,6 +72,11 @@ func (srv *Server) handleOCServ(w http.ResponseWriter, r *http.Request) {
 		}
 		srv.updateOcservRestartHints(prev, srv.store.Get().VPN.OCServ)
 		srv.auditLog(r, "vpn.ocserv.save", "")
+		nftWarn := srv.tryReloadNft()
+		if nftWarn != "" {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "nft_warning": nftWarn})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	default:
 		writeMethodNotAllowed(w)

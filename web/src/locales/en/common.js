@@ -41,6 +41,7 @@ export default {
   noData: 'No data',
   noMatch: 'No matches',
   saved: 'Saved',
+  savingApply: 'Saving and applying…',
   failed: 'Failed',
   required: 'Required',
   optional: 'Optional',

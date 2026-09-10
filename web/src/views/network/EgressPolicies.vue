@@ -31,6 +31,7 @@ const ifaces = ref([])
 const devWan = ref('')
 const err = ref('')
 const ok = ref('')
+const saving = ref(false)
 const showForm = ref(true)
 const activeWan = ref(WAN_TAB_ALL)
 const editingId = ref(null)
@@ -105,6 +106,12 @@ function applyOptimalDefaults(preferWanId) {
     enabled: true,
     snat_ip: '',
   })
+}
+
+function revealPolicyWan(wanId) {
+  if (!wanId) return
+  if (activeWan.value === WAN_TAB_ALL) return
+  if (activeWan.value !== wanId) setActiveWan(wanId)
 }
 
 function setActiveWan(wanId) {
@@ -186,26 +193,37 @@ async function load() {
 }
 
 async function addEgress() {
+  if (saving.value) return
   err.value = ''
   ok.value = ''
+  saving.value = true
+  ok.value = t('common.savingApply')
   try {
     const body = buildEgressBody(egForm.value)
     await api.network.egressPolicies.add(body)
-    ok.value = t('common.saved')
+    const wanId = body.wan_link_id
     await load()
+    revealPolicyWan(wanId)
     applyOptimalDefaults(
       activeWan.value && activeWan.value !== WAN_TAB_ALL ? activeWan.value : '',
     )
+    ok.value = t('common.saved')
   } catch (e) {
     err.value = e.message
+    ok.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
 async function addGooglePreset() {
-  if (!egForm.value.wan_link_id) return
+  if (!egForm.value.wan_link_id || saving.value) return
   err.value = ''
   ok.value = ''
+  saving.value = true
+  ok.value = t('common.savingApply')
   const url = googleIpv4Url.value
+  const wanId = egForm.value.wan_link_id
   try {
     await api.firewall.aliases.add({
       name: 'google_ipv4',
@@ -216,21 +234,25 @@ async function addGooglePreset() {
     await api.network.egressPolicies.add({
       name: 'Google IPv4',
       dst_alias: 'google_ipv4',
-      wan_link_id: egForm.value.wan_link_id,
+      wan_link_id: wanId,
       snat_ip: egForm.value.snat_ip || undefined,
       no_snat: !!egForm.value.no_snat || undefined,
       priority: egForm.value.priority || 100,
       enabled: true,
     })
-    ok.value = t('network.egressPolicies.googlePresetOk')
     await load()
+    revealPolicyWan(wanId)
+    ok.value = t('network.egressPolicies.googlePresetOk')
   } catch (e) {
     err.value = e.message
+    ok.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
 async function addCloudflarePreset() {
-  if (!egForm.value.wan_link_id) return
+  if (!egForm.value.wan_link_id || saving.value) return
   err.value = ''
   ok.value = ''
   const prefixes = cloudflareCIDRs.value || []
@@ -238,11 +260,14 @@ async function addCloudflarePreset() {
     err.value = t('network.egressPolicies.cloudflareEmpty')
     return
   }
+  saving.value = true
+  ok.value = t('common.savingApply')
+  const wanId = egForm.value.wan_link_id
   const policies = prefixes.map((cidr) => ({
     name: `Cloudflare CDN ${cidr}`,
     cidr,
     match: 'destination',
-    wan_link_id: egForm.value.wan_link_id,
+    wan_link_id: wanId,
     snat_ip: egForm.value.snat_ip || undefined,
     no_snat: !!egForm.value.no_snat || undefined,
     priority: egForm.value.priority || 100,
@@ -250,13 +275,17 @@ async function addCloudflarePreset() {
   }))
   try {
     const res = await api.network.egressPolicies.bulkAdd(policies, true)
+    await load()
+    revealPolicyWan(wanId)
     ok.value = t('network.egressPolicies.cloudflarePresetOk', {
       added: res.added || 0,
       skipped: res.skipped || 0,
     })
-    await load()
   } catch (e) {
     err.value = e.message
+    ok.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
@@ -272,28 +301,42 @@ function cancelEdit() {
 }
 
 async function saveEdit() {
-  if (!editingId.value) return
+  if (!editingId.value || saving.value) return
   err.value = ''
+  saving.value = true
+  ok.value = t('common.savingApply')
   try {
     const body = buildEgressBody(egEditForm.value)
-    await api.network.egressPolicies.put(editingId.value, body)
+    const id = editingId.value
+    await api.network.egressPolicies.put(id, body)
     editingId.value = null
-    ok.value = t('common.saved')
     await load()
+    revealPolicyWan(body.wan_link_id)
+    ok.value = t('common.saved')
   } catch (e) {
     err.value = e.message
+    ok.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
 async function remove(id) {
+  if (saving.value) return
   if (!confirm(t('common.delete') + '?')) return
   err.value = ''
+  saving.value = true
+  ok.value = t('common.savingApply')
   try {
     await api.network.egressPolicies.del(id)
     if (editingId.value === id) editingId.value = null
     await load()
+    ok.value = t('common.saved')
   } catch (e) {
     err.value = e.message
+    ok.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
@@ -451,18 +494,18 @@ onMounted(load)
         </label>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button type="button" class="btn-primary" :disabled="!egForm.wan_link_id" @click="addEgress">
-          {{ t('common.add') }}
+        <button type="button" class="btn-primary" :disabled="saving || !egForm.wan_link_id" @click="addEgress">
+          {{ saving ? t('common.savingApply') : t('common.add') }}
         </button>
         <button
           type="button"
           class="btn-secondary"
-          :disabled="!egForm.wan_link_id || !cloudflareCIDRs.length"
+          :disabled="saving || !egForm.wan_link_id || !cloudflareCIDRs.length"
           @click="addCloudflarePreset"
         >
           {{ t('network.egressPolicies.cloudflarePreset') }}
         </button>
-        <button type="button" class="btn-secondary" :disabled="!egForm.wan_link_id" @click="addGooglePreset">
+        <button type="button" class="btn-secondary" :disabled="saving || !egForm.wan_link_id" @click="addGooglePreset">
           {{ t('network.egressPolicies.googlePreset') }}
         </button>
       </div>
@@ -536,8 +579,8 @@ onMounted(load)
                 <label class="inline-flex items-center gap-1 text-xs">
                   <input v-model="egEditForm.enabled" type="checkbox" /> {{ t('common.enabled') }}
                 </label>
-                <button type="button" class="text-indigo-600 text-xs" @click="saveEdit">{{ t('common.save') }}</button>
-                <button type="button" class="text-slate-500 text-xs" @click="cancelEdit">{{ t('common.cancel') }}</button>
+                <button type="button" class="text-indigo-600 text-xs" :disabled="saving" @click="saveEdit">{{ t('common.save') }}</button>
+                <button type="button" class="text-slate-500 text-xs" :disabled="saving" @click="cancelEdit">{{ t('common.cancel') }}</button>
               </td>
             </template>
             <template v-else>
@@ -565,8 +608,8 @@ onMounted(load)
                   <span class="text-xs text-slate-400">{{ t('network.egressPolicies.autoManaged') }}</span>
                 </template>
                 <template v-else>
-                  <button type="button" class="text-indigo-600 text-xs" @click="startEdit(p)">{{ t('common.edit') }}</button>
-                  <button type="button" class="text-red-600 text-xs" @click="remove(p.id)">{{ t('common.delete') }}</button>
+                  <button type="button" class="text-indigo-600 text-xs" :disabled="saving" @click="startEdit(p)">{{ t('common.edit') }}</button>
+                  <button type="button" class="text-red-600 text-xs" :disabled="saving" @click="remove(p.id)">{{ t('common.delete') }}</button>
                 </template>
               </td>
             </template>

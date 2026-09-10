@@ -456,6 +456,7 @@ func (s *Store) ensureDefaultsLocked() {
 	if s.State.VPN.OCServ.Users == nil {
 		s.State.VPN.OCServ.Users = []OCServUser{}
 	}
+	RefreshVPNPolicyRoutes(&s.State)
 	MigrateHostsToProfiles(&s.State.Shaper.Profiles, s.State.Shaper.Hosts)
 	s.State.Shaper.Hosts = nil
 	NormalizeProfileIDs(&s.State.Shaper.Profiles)

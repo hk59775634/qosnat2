@@ -75,6 +75,24 @@ func TestRenderPureL3EmptyPolicyRoutes(t *testing.T) {
 	}
 }
 
+func TestRenderVPNDefaultPoolsAfterRefresh(t *testing.T) {
+	st := store.DefaultState()
+	store.RefreshVPNPolicyRoutes(&st)
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cidr := range []string{"198.18.250.0/24", "198.19.0.0/24"} {
+		want := fmt.Sprintf(`ip saddr %s oifname "ens18"`, cidr)
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing VPN pool SNAT for %q in:\n%s", cidr, body)
+		}
+	}
+	if strings.Contains(body, "\n        oifname \"ens18\" masquerade\n") {
+		t.Fatal("catch-all WAN masquerade must not be present")
+	}
+}
+
 func TestRenderPolicyScopedMasqueradeNoCatchAll(t *testing.T) {
 	st := store.DefaultState()
 	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8", "198.18.250.0/24"}

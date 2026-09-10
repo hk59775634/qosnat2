@@ -62,6 +62,7 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		srv.auditLog(r, "vpn.ocserv.group.save", body.Name)
+		_ = srv.tryReloadNft()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case http.MethodDelete:
 		name := strings.TrimSpace(r.URL.Query().Get("name"))
@@ -107,6 +108,7 @@ func (srv *Server) handleOCServGroups(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		srv.auditLog(r, "vpn.ocserv.group.delete", name)
+		_ = srv.tryReloadNft()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:
 		writeMethodNotAllowed(w)
@@ -192,6 +194,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		}
 		srv.updateOcservRestartHints(prevFull, srv.store.Get().VPN.OCServ)
 		srv.auditLog(r, "vpn.ocserv.vhost.save", body.Domain)
+		_ = srv.tryReloadNft()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	case http.MethodDelete:
 		domain := strings.TrimSpace(r.URL.Query().Get("domain"))
@@ -226,6 +229,7 @@ func (srv *Server) handleOCServVhosts(w http.ResponseWriter, r *http.Request) {
 		}
 		srv.updateOcservRestartHints(prevFull, srv.store.Get().VPN.OCServ)
 		srv.auditLog(r, "vpn.ocserv.vhost.delete", domain)
+		_ = srv.tryReloadNft()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	default:
 		writeMethodNotAllowed(w)

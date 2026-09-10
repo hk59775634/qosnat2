@@ -22,6 +22,7 @@ const prefixInner = ref('')
 const prefixOuter = ref('')
 const msg = ref('')
 const err = ref('')
+const saving = ref(false)
 const natEnabled = ref(true)
 
 async function load() {
@@ -53,8 +54,10 @@ function pickVIP(host, target) {
 }
 
 async function saveNatEnabled() {
+  if (saving.value) return
   err.value = ''
   msg.value = ''
+  saving.value = true
   try {
     await api.nat.ipv4.put({ enabled: natEnabled.value })
     msg.value = t('common.saved')
@@ -62,28 +65,51 @@ async function saveNatEnabled() {
   } catch (e) {
     err.value = e.message
     await load()
+  } finally {
+    saving.value = false
   }
 }
 
 async function addRoute() {
+  if (saving.value) return
   err.value = ''
+  msg.value = t('common.savingApply')
+  saving.value = true
   try {
     await api.policyRoutes.add(newCidr.value)
     msg.value = t('common.saved')
     await load()
   } catch (e) {
     err.value = e.message
+    msg.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
 async function delRoute(cidr) {
+  if (saving.value) return
   if (!confirm(`${t('common.delete')} ${cidr}?`)) return
-  await api.policyRoutes.del(cidr)
-  await load()
+  err.value = ''
+  msg.value = t('common.savingApply')
+  saving.value = true
+  try {
+    await api.policyRoutes.del(cidr)
+    await load()
+    msg.value = t('common.saved')
+  } catch (e) {
+    err.value = e.message
+    msg.value = ''
+  } finally {
+    saving.value = false
+  }
 }
 
 async function addIP() {
+  if (saving.value) return
   err.value = ''
+  msg.value = t('common.savingApply')
+  saving.value = true
   try {
     await api.sharedIPs.add(newIP.value)
     msg.value = t('common.saved')
@@ -91,17 +117,35 @@ async function addIP() {
     await load()
   } catch (e) {
     err.value = e.message
+    msg.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
 async function delIP(ip) {
+  if (saving.value) return
   if (!confirm(`${t('common.delete')} ${ip}?`)) return
-  await api.sharedIPs.del(ip)
-  await load()
+  err.value = ''
+  msg.value = t('common.savingApply')
+  saving.value = true
+  try {
+    await api.sharedIPs.del(ip)
+    await load()
+    msg.value = t('common.saved')
+  } catch (e) {
+    err.value = e.message
+    msg.value = ''
+  } finally {
+    saving.value = false
+  }
 }
 
 async function addStatic() {
+  if (saving.value) return
   err.value = ''
+  msg.value = t('common.savingApply')
+  saving.value = true
   try {
     await api.staticMappings.add(staticInner.value, staticOuter.value)
     msg.value = t('common.saved')
@@ -110,16 +154,34 @@ async function addStatic() {
     await load()
   } catch (e) {
     err.value = e.message
+    msg.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
 async function delStatic(inner) {
-  await api.staticMappings.del(inner)
-  await load()
+  if (saving.value) return
+  err.value = ''
+  msg.value = t('common.savingApply')
+  saving.value = true
+  try {
+    await api.staticMappings.del(inner)
+    await load()
+    msg.value = t('common.saved')
+  } catch (e) {
+    err.value = e.message
+    msg.value = ''
+  } finally {
+    saving.value = false
+  }
 }
 
 async function addPrefix() {
+  if (saving.value) return
   err.value = ''
+  msg.value = t('common.savingApply')
+  saving.value = true
   try {
     await api.prefixMappings.add(prefixInner.value, prefixOuter.value)
     msg.value = t('common.saved')
@@ -128,12 +190,27 @@ async function addPrefix() {
     await load()
   } catch (e) {
     err.value = e.message
+    msg.value = ''
+  } finally {
+    saving.value = false
   }
 }
 
 async function delPrefix(inner) {
-  await api.prefixMappings.del(inner)
-  await load()
+  if (saving.value) return
+  err.value = ''
+  msg.value = t('common.savingApply')
+  saving.value = true
+  try {
+    await api.prefixMappings.del(inner)
+    await load()
+    msg.value = t('common.saved')
+  } catch (e) {
+    err.value = e.message
+    msg.value = ''
+  } finally {
+    saving.value = false
+  }
 }
 
 onMounted(load)
@@ -151,7 +228,7 @@ onMounted(load)
           <p class="text-sm text-slate-600 mt-1">{{ t('nat.outbound.masterSwitchHint') }}</p>
         </div>
         <label class="inline-flex items-center gap-2 cursor-pointer">
-          <input v-model="natEnabled" type="checkbox" class="rounded" @change="saveNatEnabled" />
+          <input v-model="natEnabled" type="checkbox" class="rounded" :disabled="saving" @change="saveNatEnabled" />
           <span>{{ t('nat.outbound.enabled') }}</span>
         </label>
       </div>
@@ -166,13 +243,13 @@ onMounted(load)
         <ul class="mb-4 space-y-1">
           <li v-for="c in routes" :key="c" class="flex justify-between items-center text-sm font-mono">
             {{ c }}
-            <button type="button" class="text-red-600 text-xs" @click="delRoute(c)">{{ t('common.delete') }}</button>
+            <button type="button" class="text-red-600 text-xs" :disabled="saving" @click="delRoute(c)">{{ t('common.delete') }}</button>
           </li>
           <li v-if="!routes.length" class="text-slate-400 text-sm">{{ t('nat.outbound.noPolicy') }}</li>
         </ul>
         <div class="flex gap-2">
           <input v-model="newCidr" class="input-field font-mono" placeholder="10.0.0.0/8" />
-          <button type="button" class="btn-primary shrink-0" @click="addRoute">{{ t('common.add') }}</button>
+          <button type="button" class="btn-primary shrink-0" :disabled="saving" @click="addRoute">{{ t('common.add') }}</button>
         </div>
       </section>
 
@@ -189,6 +266,7 @@ onMounted(load)
               v-if="sharedConfigured.includes(ip)"
               type="button"
               class="text-red-600 text-xs"
+              :disabled="saving"
               @click="delIP(ip)"
             >
               {{ t('common.delete') }}
@@ -198,7 +276,7 @@ onMounted(load)
         </ul>
         <div class="flex gap-2">
           <input v-model="newIP" class="input-field font-mono" :placeholder="t('nat.outbound.outerPlaceholder')" />
-          <button type="button" class="btn-primary shrink-0" @click="addIP">{{ t('common.add') }}</button>
+          <button type="button" class="btn-primary shrink-0" :disabled="saving" @click="addIP">{{ t('common.add') }}</button>
         </div>
         <p v-if="vipSuggestions.length" class="text-xs text-slate-500 mt-2">
           {{ t('nat.outbound.fromVIP') }}
@@ -220,7 +298,7 @@ onMounted(load)
         <ul class="mb-4 space-y-1 text-sm font-mono">
           <li v-for="(outer, inner) in staticMap" :key="inner" class="flex justify-between">
             <span>{{ inner }} → {{ outer }}</span>
-            <button type="button" class="text-red-600 text-xs" @click="delStatic(inner)">{{ t('common.delete') }}</button>
+            <button type="button" class="text-red-600 text-xs" :disabled="saving" @click="delStatic(inner)">{{ t('common.delete') }}</button>
           </li>
           <li v-if="!Object.keys(staticMap).length" class="text-slate-400">{{ t('nat.outbound.noStatic') }}</li>
         </ul>
@@ -228,7 +306,7 @@ onMounted(load)
           <input v-model="staticInner" class="input-field font-mono text-xs" :placeholder="t('nat.outbound.innerPlaceholder')" />
           <input v-model="staticOuter" class="input-field font-mono text-xs" :placeholder="t('nat.outbound.outerPlaceholder')" />
         </div>
-        <button type="button" class="btn-secondary text-sm" @click="addStatic">{{ t('nat.outbound.addMapping') }}</button>
+        <button type="button" class="btn-secondary text-sm" :disabled="saving" @click="addStatic">{{ t('nat.outbound.addMapping') }}</button>
         <p v-if="vipSuggestions.length" class="text-xs text-slate-500 mt-2">
           {{ t('nat.outbound.fromVIP') }}
           <button
@@ -248,7 +326,7 @@ onMounted(load)
         <ul class="mb-4 space-y-1 text-sm font-mono">
           <li v-for="(outer, inner) in prefixMap" :key="inner" class="flex justify-between">
             <span>{{ inner }} → {{ outer }}</span>
-            <button type="button" class="text-red-600 text-xs" @click="delPrefix(inner)">{{ t('common.delete') }}</button>
+            <button type="button" class="text-red-600 text-xs" :disabled="saving" @click="delPrefix(inner)">{{ t('common.delete') }}</button>
           </li>
           <li v-if="!Object.keys(prefixMap).length" class="text-slate-400">{{ t('nat.outbound.noPrefix') }}</li>
         </ul>
@@ -256,7 +334,7 @@ onMounted(load)
           <input v-model="prefixInner" class="input-field font-mono text-xs" placeholder="10.0.0.0/24" />
           <input v-model="prefixOuter" class="input-field font-mono text-xs" placeholder="203.0.113.0/24" />
         </div>
-        <button type="button" class="btn-secondary text-sm" @click="addPrefix">{{ t('nat.outbound.addMapping') }}</button>
+        <button type="button" class="btn-secondary text-sm" :disabled="saving" @click="addPrefix">{{ t('nat.outbound.addMapping') }}</button>
       </section>
     </div>
   </div>

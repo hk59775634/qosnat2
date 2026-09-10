@@ -5,8 +5,11 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/hk59775634/qosnat2/internal/conntrack"
 	"github.com/hk59775634/qosnat2/internal/nft"
+	"github.com/hk59775634/qosnat2/internal/policyroute"
 	"github.com/hk59775634/qosnat2/internal/store"
 )
 
@@ -192,7 +195,7 @@ func (srv *Server) setNatIPv4(ipv4 store.NatIPv4State) {
 
 func (srv *Server) reloadNftAfterEgressRevert(backupPolicies []store.EgressPolicy) error {
 	return srv.withNftApply(func() error {
-		if err := srv.applyEgressDataPlaneLocked(); err != nil {
+		if err := srv.applyEgressDeltaLocked(backupPolicies); err != nil {
 			srv.setEgressPolicies(backupPolicies)
 			if !srv.persistStateOrLog("nft revert save") {
 			}
@@ -204,6 +207,33 @@ func (srv *Server) reloadNftAfterEgressRevert(backupPolicies []store.EgressPolic
 		}
 		return nil
 	})
+}
+
+func (srv *Server) applyEgressDeltaLocked(prev []store.EgressPolicy) error {
+	if !srv.store.Get().SetupComplete {
+		return nil
+	}
+	st := srv.store.Get()
+	next := st.Network.EgressPolicies
+	delta := policyroute.PlanDelta(prev, next)
+	if policyroute.ReferencedWansChanged(prev, next) {
+		srv.applyManagedRoutes()
+	}
+	if delta.IPRules {
+		start := time.Now()
+		err := policyroute.ApplyDelta(st, prev, next)
+		srv.dataplaneMetrics.recordEgressRoutes(time.Since(start), err)
+		if err != nil {
+			return err
+		}
+	}
+	if delta.NFT {
+		if err := srv.applyNftLocked(); err != nil {
+			return err
+		}
+	}
+	conntrack.FlushByCIDRs(policyroute.ChangedCIDRs(st, prev, next))
+	return nil
 }
 
 func (srv *Server) applyEgressDataPlaneLocked() error {
@@ -220,7 +250,7 @@ func (srv *Server) applyEgressDataPlaneLocked() error {
 	if err := srv.applyEgressPolicyRoutes(); err != nil {
 		return err
 	}
-	return srv.reloadNftLocked()
+	return srv.applyNftLocked()
 }
 
 func (srv *Server) applyEgressDataPlane() error {
@@ -247,4 +277,3 @@ func (srv *Server) getNatStackStatus() map[string]any {
 	}
 	return out
 }
-

@@ -41,6 +41,7 @@ export default {
   noData: '暂无数据',
   noMatch: '无匹配',
   saved: '已保存',
+  savingApply: '正在保存并应用…',
   failed: '失败',
   required: '必填',
   optional: '可选',

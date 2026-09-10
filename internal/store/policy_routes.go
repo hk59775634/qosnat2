@@ -132,6 +132,14 @@ func mappingPolicyCIDRs(n NatIPv4State) ([]string, error) {
 	return out, nil
 }
 
+func policyRouteManual(n NatIPv4State) []string {
+	return subtractPolicyRoutes(subtractPolicyRoutes(n.PolicyRoutes, n.AutoPolicyRoutes), n.AutoVPNPolicyRoutes)
+}
+
+func rebuildPolicyRoutes(n *NatIPv4State, manual []string) {
+	n.PolicyRoutes = PruneContainedPolicyRoutes(append(append(append([]string(nil), manual...), n.AutoPolicyRoutes...), n.AutoVPNPolicyRoutes...))
+}
+
 // RefreshMappingPolicyRoutes 根据 1:1 / 网段映射同步 auto_policy_routes，并清理冗余策略网段。
 func RefreshMappingPolicyRoutes(n *NatIPv4State) error {
 	if n == nil {
@@ -140,21 +148,110 @@ func RefreshMappingPolicyRoutes(n *NatIPv4State) error {
 	if n.AutoPolicyRoutes == nil {
 		n.AutoPolicyRoutes = []string{}
 	}
+	if n.AutoVPNPolicyRoutes == nil {
+		n.AutoVPNPolicyRoutes = []string{}
+	}
 	needed, err := mappingPolicyCIDRs(*n)
 	if err != nil {
 		return err
 	}
-	manual := subtractPolicyRoutes(n.PolicyRoutes, n.AutoPolicyRoutes)
+	manual := policyRouteManual(*n)
 	var nextAuto []string
 	for _, cidr := range needed {
-		if CIDRCoveredByExisting(manual, cidr) || CIDRCoveredByExisting(nextAuto, cidr) {
+		if CIDRCoveredByExisting(manual, cidr) || CIDRCoveredByExisting(n.AutoVPNPolicyRoutes, cidr) || CIDRCoveredByExisting(nextAuto, cidr) {
 			continue
 		}
 		nextAuto = append(nextAuto, cidr)
 	}
 	n.AutoPolicyRoutes = nextAuto
-	n.PolicyRoutes = PruneContainedPolicyRoutes(append(append([]string(nil), manual...), nextAuto...))
+	rebuildPolicyRoutes(n, manual)
 	return nil
+}
+
+func appendIPv4PolicyCIDR(seen map[string]struct{}, out *[]string, raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+	var cidr string
+	if ip, n, err := net.ParseCIDR(raw); err == nil && ip != nil && n != nil && n.IP.To4() != nil {
+		cidr = n.String()
+	} else if ip := net.ParseIP(raw); ip != nil && ip.To4() != nil {
+		cidr = ip.String() + "/32"
+	} else {
+		c, err := NormalizeIPv4PolicyCIDR(raw)
+		if err != nil {
+			return
+		}
+		_, n, err := net.ParseCIDR(c)
+		if err != nil || n == nil || n.IP.To4() == nil {
+			return
+		}
+		cidr = n.String()
+	}
+	if sessionLimitCIDRIgnored(cidr) {
+		return
+	}
+	if _, ok := seen[cidr]; ok {
+		return
+	}
+	seen[cidr] = struct{}{}
+	*out = append(*out, cidr)
+}
+
+// vpnIPv4PolicyCIDRs 收集 ocserv / WireGuard 当前 IPv4 地址池（含组、vhost 与各 WG 实例）。
+func vpnIPv4PolicyCIDRs(st State) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	appendIPv4PolicyCIDR(seen, &out, ocservPoolCIDR(st.VPN.OCServ))
+	for _, g := range st.VPN.OCServ.Groups {
+		appendIPv4PolicyCIDR(seen, &out, ipv4NetworkMaskCIDR(g.IPv4Network, g.IPv4Netmask))
+	}
+	for _, v := range st.VPN.OCServ.Vhosts {
+		if !v.Enabled {
+			continue
+		}
+		appendIPv4PolicyCIDR(seen, &out, ipv4NetworkMaskCIDR(v.IPv4Network, v.IPv4Netmask))
+	}
+	for _, w := range st.VPN.WireGuards {
+		appendIPv4PolicyCIDR(seen, &out, strings.TrimSpace(w.Address))
+	}
+	return out
+}
+
+// RefreshVPNPolicyRoutes 按当前 VPN IPv4 池同步 auto_vpn_policy_routes；池变更时替换旧网段。
+func RefreshVPNPolicyRoutes(st *State) {
+	if st == nil {
+		return
+	}
+	n := &st.Nat.IPv4
+	if n.AutoPolicyRoutes == nil {
+		n.AutoPolicyRoutes = []string{}
+	}
+	if n.AutoVPNPolicyRoutes == nil {
+		n.AutoVPNPolicyRoutes = []string{}
+	}
+	needed := vpnIPv4PolicyCIDRs(*st)
+	neededSet := map[string]struct{}{}
+	for _, c := range needed {
+		neededSet[c] = struct{}{}
+	}
+	var keptManual []string
+	for _, c := range policyRouteManual(*n) {
+		if _, isVPN := neededSet[c]; isVPN {
+			continue
+		}
+		keptManual = append(keptManual, c)
+	}
+	var nextVPN []string
+	for _, cidr := range needed {
+		if CIDRCoveredByExisting(keptManual, cidr) || CIDRCoveredByExisting(n.AutoPolicyRoutes, cidr) || CIDRCoveredByExisting(nextVPN, cidr) {
+			continue
+		}
+		nextVPN = append(nextVPN, cidr)
+	}
+	n.AutoVPNPolicyRoutes = nextVPN
+	rebuildPolicyRoutes(n, keptManual)
 }
 
 func subtractPolicyRoutes(all, remove []string) []string {
@@ -184,6 +281,9 @@ func AddPolicyRouteManual(n *NatIPv4State, cidr string) {
 	if n.AutoPolicyRoutes == nil {
 		n.AutoPolicyRoutes = []string{}
 	}
+	if n.AutoVPNPolicyRoutes == nil {
+		n.AutoVPNPolicyRoutes = []string{}
+	}
 	cidr = strings.TrimSpace(cidr)
 	if CIDRCoveredByExisting(n.PolicyRoutes, cidr) {
 		n.PolicyRoutes = PruneContainedPolicyRoutes(n.PolicyRoutes)
@@ -198,8 +298,8 @@ func RemovePolicyRouteManual(n *NatIPv4State, cidr string) {
 		return
 	}
 	cidr = strings.TrimSpace(cidr)
-	manual := subtractPolicyRoutes(n.PolicyRoutes, n.AutoPolicyRoutes)
-	var keptManual, keptAuto []string
+	manual := policyRouteManual(*n)
+	var keptManual, keptAuto, keptVPN []string
 	for _, c := range manual {
 		if c != cidr {
 			keptManual = append(keptManual, c)
@@ -210,6 +310,12 @@ func RemovePolicyRouteManual(n *NatIPv4State, cidr string) {
 			keptAuto = append(keptAuto, c)
 		}
 	}
+	for _, c := range n.AutoVPNPolicyRoutes {
+		if c != cidr {
+			keptVPN = append(keptVPN, c)
+		}
+	}
 	n.AutoPolicyRoutes = keptAuto
-	n.PolicyRoutes = PruneContainedPolicyRoutes(append(keptManual, keptAuto...))
+	n.AutoVPNPolicyRoutes = keptVPN
+	rebuildPolicyRoutes(n, keptManual)
 }

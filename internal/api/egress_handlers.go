@@ -107,11 +107,9 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 				return
 			}
 		}
-		var old store.EgressPolicy
 		found := false
 		for _, p := range stBefore.Network.EgressPolicies {
 			if p.ID == id {
-				old = p
 				found = true
 				break
 			}
@@ -121,8 +119,6 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			return
 		}
 		backup := store.CloneEgressPolicies(stBefore.Network.EgressPolicies)
-		linksSnapshot := append([]store.WanLink(nil), stBefore.Network.WanLinks...)
-		aliasesSnapshot := store.AliasByName(stBefore.Firewall.Aliases)
 		_ = srv.store.Update(func(st *store.State) {
 			for i, p := range st.Network.EgressPolicies {
 				if p.ID == id {
@@ -142,8 +138,7 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			srv.setEgressPolicies(backup)
 			return
 		}
-		// Apply 只认当前 state；修改前先按旧策略清掉已安装的 ip rule，避免 selector/priority/WAN 变更残留。
-		policyroute.DeletePolicy(old, linksSnapshot, aliasesSnapshot)
+		// Apply 只认当前 state；ip rule 由 ApplyDelta 按 prev→next 增删，避免全量重放。
 		if err := srv.reloadNftAfterEgressRevert(backup); err != nil {
 			writeApplyError(w, err)
 			return
@@ -161,11 +156,9 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			return
 		}
 		stBefore := srv.store.Get()
-		var removed store.EgressPolicy
 		found := false
 		for _, p := range stBefore.Network.EgressPolicies {
 			if p.ID == id {
-				removed = p
 				found = true
 				break
 			}
@@ -175,8 +168,6 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			return
 		}
 		backup := store.CloneEgressPolicies(stBefore.Network.EgressPolicies)
-		linksSnapshot := append([]store.WanLink(nil), stBefore.Network.WanLinks...)
-		aliasesSnapshot := store.AliasByName(stBefore.Firewall.Aliases)
 		_ = srv.store.Update(func(st *store.State) {
 			var out []store.EgressPolicy
 			for _, p := range st.Network.EgressPolicies {
@@ -198,8 +189,6 @@ func (srv *Server) handleNetworkEgressPolicies(w http.ResponseWriter, r *http.Re
 			srv.setEgressPolicies(backup)
 			return
 		}
-		// Apply 看不到已删除的策略，必须先按旧策略删除内核 ip rule。
-		policyroute.DeletePolicy(removed, linksSnapshot, aliasesSnapshot)
 		if err := srv.reloadNftAfterEgressRevert(backup); err != nil {
 			writeApplyError(w, err)
 			return

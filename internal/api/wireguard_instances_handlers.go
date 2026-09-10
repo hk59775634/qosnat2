@@ -90,6 +90,11 @@ func (srv *Server) handleWireGuardInstancesRoot(w http.ResponseWriter, r *http.R
 		if !srv.persistState(w) {
 			return
 		}
+		nftWarn := srv.tryReloadNft()
+		if nftWarn != "" {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id, "nft_warning": nftWarn})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
 	default:
 		writeMethodNotAllowed(w)

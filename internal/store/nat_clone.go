@@ -3,11 +3,12 @@ package store
 // CloneNatIPv4 deep-copies IPv4 NAT state maps and slices.
 func CloneNatIPv4(n NatIPv4State) NatIPv4State {
 	out := NatIPv4State{
-		PolicyRoutes:     append([]string(nil), n.PolicyRoutes...),
-		AutoPolicyRoutes: append([]string(nil), n.AutoPolicyRoutes...),
-		SharedIPs:        append([]string(nil), n.SharedIPs...),
-		StaticMappings: make(map[string]string, len(n.StaticMappings)),
-		PrefixMappings: make(map[string]string, len(n.PrefixMappings)),
+		PolicyRoutes:        append([]string(nil), n.PolicyRoutes...),
+		AutoPolicyRoutes:    append([]string(nil), n.AutoPolicyRoutes...),
+		AutoVPNPolicyRoutes: append([]string(nil), n.AutoVPNPolicyRoutes...),
+		SharedIPs:           append([]string(nil), n.SharedIPs...),
+		StaticMappings:      make(map[string]string, len(n.StaticMappings)),
+		PrefixMappings:      make(map[string]string, len(n.PrefixMappings)),
 	}
 	if n.Enabled != nil {
 		v := *n.Enabled
