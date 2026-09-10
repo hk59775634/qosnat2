@@ -166,6 +166,36 @@ func TestRenderEgressSNAT(t *testing.T) {
 	}
 }
 
+func TestRenderEgressDestRestrictedKeepsWANPolicySNAT(t *testing.T) {
+	st := store.DefaultState()
+	st.Nat.IPv4.PolicyRoutes = []string{"10.0.0.0/8"}
+	st.Nat.IPv4.SharedIPs = []string{"203.0.113.10"}
+	st.Firewall.Aliases = []store.AliasSet{{
+		Name: "google", Type: "ipv4_addr", Members: []string{"8.8.8.0/24"},
+	}}
+	st.Network.WanLinks = []store.WanLink{
+		{ID: "wan-tk", Device: "wg1", Gateway: "198.19.1.1", Enabled: true, PolicyOnly: true},
+	}
+	st.Network.EgressPolicies = []store.EgressPolicy{
+		{
+			ID: "eg-g", Name: "google", SrcCIDR: "10.0.0.0/8", DstAlias: "google",
+			SrcIface: "ens19", WanLinkID: "wan-tk", SNATIP: "198.19.1.2", Enabled: true,
+		},
+	}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWAN := `ip saddr 10.0.0.0/8 oifname "ens18" snat to numgen inc mod 1 map { 0 : 203.0.113.10 }`
+	if !strings.Contains(body, wantWAN) {
+		t.Fatalf("dest-restricted egress must keep WAN policy SNAT:\n%s", body)
+	}
+	wantEg := `iifname "ens19" ip saddr 10.0.0.0/8 ip daddr @alias_google oifname "wg1"`
+	if !strings.Contains(body, wantEg) {
+		t.Fatalf("missing egress SNAT match:\n%s", body)
+	}
+}
+
 func TestRenderEgressDestinationSNAT(t *testing.T) {
 	st := store.DefaultState()
 	st.Network.WanLinks = []store.WanLink{

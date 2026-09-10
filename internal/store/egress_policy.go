@@ -192,13 +192,39 @@ func EnabledEgressPolicies(policies []EgressPolicy) []EgressPolicy {
 	return out
 }
 
-// EgressPolicyCIDRs 返回 source 匹配出站策略的 CIDR（从主 WAN SNAT / 非对称回程中排除）。
-// destination 匹配（如 Cloudflare CDN）由策略路由与专用 SNAT 规则处理，不应进入主 WAN 排除集。
-func EgressPolicyCIDRs(policies []EgressPolicy) []string {
-	return EgressPolicySourceMatchCIDRs(policies)
+// egressPolicyHasDestinationMatch 目的受限：只分流部分流量，不能当作源网段已被出站策略完全接管。
+func egressPolicyHasDestinationMatch(p EgressPolicy) bool {
+	if strings.TrimSpace(p.DstCIDR) != "" || strings.TrimSpace(p.DstAlias) != "" {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(p.Match), "destination") && strings.TrimSpace(p.CIDR) != ""
 }
 
-// EgressPolicySourceMatchCIDRs 仅 source 侧 CIDR（用于主 WAN SNAT 排除）；别名在运行时展开。
+// EgressPolicyCIDRs 返回「源侧已完全由出站策略接管」的 CIDR，从主 WAN SNAT 中排除。
+// 带目的限制（dst_cidr / dst_alias / match=destination）的策略不得排除源网段，否则未命中该策略的流量会失去兜底 WAN NAT。
+func EgressPolicyCIDRs(policies []EgressPolicy) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, p := range EnabledEgressPolicies(policies) {
+		if egressPolicyHasDestinationMatch(p) {
+			continue
+		}
+		for _, c := range []string{p.SrcCIDR, legacySourceCIDR(p)} {
+			c = strings.TrimSpace(c)
+			if c == "" || p.SrcAlias != "" {
+				continue
+			}
+			if _, ok := seen[c]; ok {
+				continue
+			}
+			seen[c] = struct{}{}
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// EgressPolicySourceMatchCIDRs 仅 source 侧 CIDR（别名在运行时展开；非对称回程等）。
 func EgressPolicySourceMatchCIDRs(policies []EgressPolicy) []string {
 	return egressPolicySourceMatchCIDRs(policies, false)
 }
@@ -313,7 +339,8 @@ func ValidateEgressPolicyAliases(p EgressPolicy, aliases []AliasSet) error {
 	return nil
 }
 
-// FilterPolicyRoutesForWAN 从 policy_routes 中去掉已由出站策略接管的 CIDR（含被出站网段覆盖的项）。
+// FilterPolicyRoutesForWAN 从 policy_routes 中去掉已被出站策略完全接管的 CIDR（含被其覆盖的项）。
+// egressCIDRs 应由 EgressPolicyCIDRs 提供（已排除目的受限策略）。
 func FilterPolicyRoutesForWAN(policyRoutes, egressCIDRs []string) []string {
 	if len(egressCIDRs) == 0 {
 		return policyRoutes

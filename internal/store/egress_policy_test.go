@@ -117,6 +117,27 @@ func TestExpandEgressIPRules_both(t *testing.T) {
 	}
 }
 
+func TestEgressPolicyCIDRs_skipsDestinationRestrictedSource(t *testing.T) {
+	policies := []EgressPolicy{
+		{ID: "eg-g", SrcCIDR: "10.0.0.0/8", DstAlias: "google", Enabled: true},
+		{ID: "eg-dst", DstCIDR: "1.1.1.1/32", SrcCIDR: "10.0.0.0/8", Enabled: true},
+		{ID: "eg-full", SrcCIDR: "10.250.0.0/24", Enabled: true},
+	}
+	got := EgressPolicyCIDRs(policies)
+	if len(got) != 1 || got[0] != "10.250.0.0/24" {
+		t.Fatalf("EgressPolicyCIDRs got %v", got)
+	}
+	out := FilterPolicyRoutesForWAN([]string{"10.0.0.0/8", "10.250.0.0/24"}, got)
+	if len(out) != 1 || out[0] != "10.0.0.0/8" {
+		t.Fatalf("FilterPolicyRoutesForWAN got %v", out)
+	}
+	// 非对称回程仍要覆盖做了本机 SNAT 的源，含目的受限策略。
+	snat := EgressPolicySnatSourceCIDRs(policies)
+	if !CIDRCoveredByExisting(snat, "10.0.0.0/8") || !CIDRCoveredByExisting(snat, "10.250.0.0/24") {
+		t.Fatalf("SnatSourceCIDRs got %v", snat)
+	}
+}
+
 func TestEgressPolicySourceMatchCIDRs_skipsDestination(t *testing.T) {
 	policies := []EgressPolicy{
 		{ID: "eg-src", CIDR: "10.250.0.0/24", Match: "source", Enabled: true},
