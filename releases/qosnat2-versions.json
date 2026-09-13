@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026091301",
+      "tag": "v2026091301",
+      "published_at": "2026-09-13T09:59:45Z",
+      "summary": "出站 NAT 策略网段默认覆盖 10/8、CGNAT、172.16/12 与 198.18/15；新建 VXLAN 自动放行 VTEP UDP 与 LAN 叠加层转发。"
+    },
+    {
       "id": "2026091002",
       "tag": "v2026091002",
       "published_at": "2026-09-10T07:19:00Z",
@@ -25,12 +31,6 @@
       "tag": "v2026083101",
       "published_at": "2026-08-31T02:40:55Z",
       "summary": "WireGuard Peer 列表支持多选批量删除。"
-    },
-    {
-      "id": "2026082901",
-      "tag": "v2026082901",
-      "published_at": "2026-08-29T09:56:13Z",
-      "summary": "补全 ocserv IPv4/IPv6 双栈：会话级限速共用一条管道，Apply 自动转发与 IPv6 masquerade。"
     }
   ]
 }
