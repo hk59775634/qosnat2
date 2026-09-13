@@ -239,7 +239,8 @@ onMounted(load)
 
     <div class="grid lg:grid-cols-2 gap-6">
       <section class="card p-4">
-        <h3 class="font-medium mb-3">{{ t('nat.outbound.policyCidrs') }}</h3>
+        <h3 class="font-medium mb-1">{{ t('nat.outbound.policyCidrs') }}</h3>
+        <p class="text-xs text-slate-500 mb-3">{{ t('nat.outbound.policyCidrsHint') }}</p>
         <ul class="mb-4 space-y-1">
           <li v-for="c in routes" :key="c" class="flex justify-between items-center text-sm font-mono">
             {{ c }}

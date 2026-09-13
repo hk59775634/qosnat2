@@ -82,10 +82,16 @@ func TestRenderVPNDefaultPoolsAfterRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, cidr := range []string{"198.18.250.0/24", "198.19.0.0/24"} {
+	for _, cidr := range store.DefaultOutboundPolicyCIDRs {
 		want := fmt.Sprintf(`ip saddr %s oifname "ens18"`, cidr)
 		if !strings.Contains(body, want) {
-			t.Fatalf("missing VPN pool SNAT for %q in:\n%s", cidr, body)
+			t.Fatalf("missing default policy SNAT for %q in:\n%s", cidr, body)
+		}
+	}
+	for _, cidr := range []string{"198.18.250.0/24", "198.19.0.0/24"} {
+		dup := fmt.Sprintf(`ip saddr %s oifname "ens18"`, cidr)
+		if strings.Contains(body, dup) {
+			t.Fatalf("covered VPN /24 %q must not duplicate SNAT under 198.18.0.0/15:\n%s", cidr, body)
 		}
 	}
 	if strings.Contains(body, "\n        oifname \"ens18\" masquerade\n") {

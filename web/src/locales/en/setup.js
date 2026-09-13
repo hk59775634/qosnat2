@@ -21,6 +21,7 @@ export default {
   hostname: 'Hostname',
   dhcpAfterSetup: 'Enable DHCP on LAN after setup',
   policyCidrs: 'Policy-route CIDRs (one per line)',
+  policyCidrsHint: 'Defaults: 10.0.0.0/8, 100.64.0.0/10, 172.16.0.0/12, 198.18.0.0/15 (not 192.168.0.0/16). Submitting an empty list still writes those defaults.',
   sharedIps: 'Shared SNAT public IPs (one per line)',
   sharedEmpty: 'Leave empty to use WAN IP',
   applyNow: 'Apply sysctl / TC / nft now (recommended)',

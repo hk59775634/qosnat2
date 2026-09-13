@@ -156,6 +156,8 @@ func Render(cfg Config, st store.State) (string, error) {
 	b.WriteString("        oifname \"wg*\" accept comment \"qosnat2-forward-vpn-wg\"\n")
 	b.WriteString("        iifname \"vpns*\" accept comment \"qosnat2-forward-vpn-ocserv\"\n")
 	b.WriteString("        oifname \"vpns*\" accept comment \"qosnat2-forward-vpn-ocserv\"\n")
+	b.WriteString("        iifname \"vxlan*\" accept comment \"qosnat2-forward-vxlan\"\n")
+	b.WriteString("        oifname \"vxlan*\" accept comment \"qosnat2-forward-vxlan\"\n")
 	// 除已建立连接、用户/自动规则、LAN↔WAN、VPN 隧道外，其余转发默认丢弃。
 	b.WriteString("        drop comment \"qosnat2-forward-default-deny\"\n")
 	b.WriteString("    }\n\n")
@@ -192,6 +194,7 @@ func Render(cfg Config, st store.State) (string, error) {
 	// VPN 隧道口：客户端访问隧道网关/DNS（控制面接入仍由 WAN auto 规则处理）。
 	b.WriteString("        iifname \"wg*\" accept comment \"qosnat2-vpn-wg\"\n")
 	b.WriteString("        iifname \"vpns*\" accept comment \"qosnat2-vpn-ocserv\"\n")
+	b.WriteString("        iifname \"vxlan*\" accept comment \"qosnat2-input-vxlan\"\n")
 	// WAN 管理/VPN 放行 → 用户 input 规则 → WAN 按口丢弃：由 SyncAutoFilterRules 顺序写入 filter_rules。
 	// 除 lo、LAN、ifb0 及已匹配的 WAN 放行项外，其余网卡入站一律丢弃。
 	b.WriteString("        drop comment \"qosnat2-input-default-deny\"\n")

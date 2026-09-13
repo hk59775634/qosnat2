@@ -56,11 +56,13 @@ async function submit() {
   }
   try {
     if (editing.value) {
-      await api.network.vxlan.put(editing.value, body)
+      const res = await api.network.vxlan.put(editing.value, body)
       ok.value = t('common.saved')
+      if (res?.nft_warning) err.value = res.nft_warning
     } else {
-      await api.network.vxlan.add(body)
+      const res = await api.network.vxlan.add(body)
       ok.value = t('common.saved')
+      if (res?.nft_warning) err.value = res.nft_warning
     }
     reset()
     await load()

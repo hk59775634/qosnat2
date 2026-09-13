@@ -17,6 +17,20 @@ const (
 	GoogleDNS64Secondary = "2001:4860:4860::6464"
 )
 
+// DefaultOutboundPolicyCIDRs 出站 NAT 策略路由默认网段：RFC1918 的 10/8 与 172.16/12、CGNAT 100.64/10、WARP/VPN 实验网 198.18/15。
+// 不含 192.168.0.0/16（常见客户 LAN 直通）。空列表仍表示三层转发、不做 SNAT。
+var DefaultOutboundPolicyCIDRs = []string{
+	"10.0.0.0/8",
+	"100.64.0.0/10",
+	"172.16.0.0/12",
+	"198.18.0.0/15",
+}
+
+// CloneDefaultOutboundPolicyCIDRs 返回默认策略网段的副本，避免调用方改写包级切片。
+func CloneDefaultOutboundPolicyCIDRs() []string {
+	return append([]string(nil), DefaultOutboundPolicyCIDRs...)
+}
+
 // NatIPv4State IPv4 出站 SNAT / 策略路由
 type NatIPv4State struct {
 	// Enabled 出站 IPv4 NAT 总开关；nil/省略视为 true（兼容旧 state）。
@@ -73,7 +87,7 @@ func DefaultNat() NatState {
 	return NatState{
 		IPv4: NatIPv4State{
 			Enabled:        &enabled,
-			PolicyRoutes:   []string{},
+			PolicyRoutes:   CloneDefaultOutboundPolicyCIDRs(),
 			SharedIPs:      nil,
 			StaticMappings: map[string]string{},
 			PrefixMappings: map[string]string{},
@@ -117,7 +131,7 @@ func MigrateNatFromLegacy(st *State, leg natLegacyFields) {
 func ensureNatDefaults(n *NatState) {
 	def := DefaultNat()
 	if n.IPv4.PolicyRoutes == nil {
-		n.IPv4.PolicyRoutes = []string{}
+		n.IPv4.PolicyRoutes = CloneDefaultOutboundPolicyCIDRs()
 	}
 	if n.IPv4.AutoPolicyRoutes == nil {
 		n.IPv4.AutoPolicyRoutes = []string{}
@@ -127,7 +141,7 @@ func ensureNatDefaults(n *NatState) {
 	}
 	n.IPv4.PolicyRoutes = PruneContainedPolicyRoutes(n.IPv4.PolicyRoutes)
 	_ = RefreshMappingPolicyRoutes(&n.IPv4)
-	// 允许空 policy_routes（未列入的流量走三层转发、不做出站 SNAT）；勿再回填默认 10.0.0.0/8。
+	// 允许显式空 policy_routes（未列入的流量走三层转发、不做出站 SNAT）；勿把 [] 回填为默认网段。
 	if n.IPv4.SharedIPs == nil {
 		n.IPv4.SharedIPs = []string{}
 	}

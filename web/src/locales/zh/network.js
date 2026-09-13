@@ -281,7 +281,7 @@ export default {
   },
   vxlan: {
     title: 'VXLAN',
-    description: 'L2 VXLAN 隧道',
+    description: 'L2 VXLAN 隧道。保存后自动放行对端 VTEP 的 UDP 端口，并允许 LAN↔隧道转发；对端内网路由仍需在「路由」中添加。',
     udpPort: 'UDP 端口',
     localVtep: '本端 VTEP',
     remoteVtep: '对端 VTEP',

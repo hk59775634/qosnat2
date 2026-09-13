@@ -15,6 +15,10 @@ func TestCIDRCoveredByExisting(t *testing.T) {
 	if CIDRCoveredByExisting(routes, "192.168.1.5/32") {
 		t.Fatal("192.168.1.5/32 should not be covered by 10.0.0.0/8")
 	}
+	exp := []string{"198.18.0.0/15"}
+	if !CIDRCoveredByExisting(exp, "198.18.250.0/24") || !CIDRCoveredByExisting(exp, "198.19.0.0/24") {
+		t.Fatal("198.18.0.0/15 should cover ocserv and wireguard default pools")
+	}
 }
 
 func TestPruneContainedPolicyRoutes(t *testing.T) {
@@ -101,11 +105,11 @@ func TestRefreshVPNPolicyRoutesDefaultPools(t *testing.T) {
 	if !CIDRCoveredByExisting(st.Nat.IPv4.PolicyRoutes, "198.19.0.0/24") {
 		t.Fatalf("missing wireguard default pool in %v", st.Nat.IPv4.PolicyRoutes)
 	}
-	if !containsCIDR(st.Nat.IPv4.AutoVPNPolicyRoutes, linknet.OCServDefaultIPv4CIDR) {
-		t.Fatalf("ocserv pool should be auto-vpn, got %v", st.Nat.IPv4.AutoVPNPolicyRoutes)
+	if containsCIDR(st.Nat.IPv4.AutoVPNPolicyRoutes, linknet.OCServDefaultIPv4CIDR) {
+		t.Fatalf("ocserv pool is covered by 198.18.0.0/15, auto-vpn must not duplicate: %v", st.Nat.IPv4.AutoVPNPolicyRoutes)
 	}
-	if !containsCIDR(st.Nat.IPv4.AutoVPNPolicyRoutes, "198.19.0.0/24") {
-		t.Fatalf("wg pool should be auto-vpn, got %v", st.Nat.IPv4.AutoVPNPolicyRoutes)
+	if containsCIDR(st.Nat.IPv4.AutoVPNPolicyRoutes, "198.19.0.0/24") {
+		t.Fatalf("wg pool is covered by 198.18.0.0/15, auto-vpn must not duplicate: %v", st.Nat.IPv4.AutoVPNPolicyRoutes)
 	}
 }
 

@@ -12,6 +12,7 @@ func AutoInputFromState(st store.State) store.AutoInputVPN {
 		OCServTCP:     vp.OCServTCP,
 		OCServUDP:     vp.OCServUDP,
 		WGPorts:       vp.WGPorts,
+		VXLAN:         store.CollectVXLANAutoEndpoints(st.Network.VXLANTunnels),
 	}
 	cfg := st.SNMP
 	if err := store.NormalizeSNMP(&cfg); err != nil {

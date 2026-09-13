@@ -20,12 +20,19 @@ const err = ref('')
 const ifaces = ref([])
 const adminUser = ref('admin')
 
+const defaultPolicyRoutes = [
+  '10.0.0.0/8',
+  '100.64.0.0/10',
+  '172.16.0.0/12',
+  '198.18.0.0/15',
+]
+
 const form = ref({
   admin_pass: '',
   admin_pass2: '',
   dev_lan: '',
   dev_wan: '',
-  policy_routes: '10.0.0.0/8',
+  policy_routes: defaultPolicyRoutes.join('\n'),
   shared_ip: '',
   hostname: 'qosnat2',
   enable_dhcp: false,
@@ -103,7 +110,7 @@ async function finish() {
       admin_user: adminUser.value,
       dev_lan: form.value.dev_lan,
       dev_wan: form.value.dev_wan,
-      policy_routes: routes.length ? routes : ['10.0.0.0/8'],
+      policy_routes: routes.length ? routes : [...defaultPolicyRoutes],
       shared_ips: shared,
       hostname: form.value.hostname,
       enable_dhcp: form.value.enable_dhcp,
@@ -174,7 +181,8 @@ async function finish() {
       <div v-else-if="step === 2" class="space-y-3">
         <div>
           <label class="block text-sm mb-1">{{ t('setup.policyCidrs') }}</label>
-          <textarea v-model="form.policy_routes" class="input-field h-20" />
+          <p class="text-xs text-slate-500 mb-1">{{ t('setup.policyCidrsHint') }}</p>
+          <textarea v-model="form.policy_routes" class="input-field h-28" />
         </div>
         <div>
           <label class="block text-sm mb-1">{{ t('setup.sharedIps') }}</label>

@@ -162,6 +162,7 @@ func RenderNetplan(net store.NetworkState) (body []byte, linkDown []string, err 
 				port = 4789
 			}
 			b.WriteString(fmt.Sprintf("      port: %d\n", port))
+			b.WriteString(fmt.Sprintf("      mtu: %d\n", store.VXLANDefaultMTU))
 			if u := strings.TrimSpace(t.Underlay); u != "" {
 				b.WriteString(fmt.Sprintf("      link: %s\n", u))
 			}

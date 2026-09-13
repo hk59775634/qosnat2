@@ -18,6 +18,8 @@ const (
 	autoIDInputLVSPrefix    = "auto-input-lvs"
 	autoIDInputSNMPPrefix   = "auto-input-snmp"
 	autoIDInputWanDrop      = "auto-input-wan-drop"
+	autoIDInputVXLANPrefix  = "auto-input-vxlan"
+	autoIDFwdVXLANPrefix    = "auto-fwd-vxlan"
 )
 
 // DefaultSSHPort is the host SSH port always opened on WAN input by default
@@ -36,6 +38,8 @@ type AutoInputVPN struct {
 	SNMPAllowedNetworks []string
 	// LVS VIP 入站放行（DstAddr=VIP）。
 	LVSEndpoints []AutoInputLVSEndpoint
+	// VXLAN：已启用隧道的 underlay UDP 与 overlay 转发放行。
+	VXLAN []VXLANAutoEndpoint
 }
 
 // AutoInputLVSEndpoint WAN input 链需放行的 LVS 虚拟服务（单协议）。
@@ -186,6 +190,7 @@ func BuildAutoInputRules(wanDevs []string, adminPort string, vpn AutoInputVPN) [
 				System:  true,
 			})
 		}
+		out = append(out, buildAutoVXLANInputRulesForWAN(wan, vpn.VXLAN)...)
 		if vpn.SNMPEnabled {
 			port := vpn.SNMPPort
 			if port <= 0 {
@@ -241,6 +246,131 @@ func BuildAutoInputRules(wanDevs []string, adminPort string, vpn AutoInputVPN) [
 		out = append(out, FilterRule{
 			ID: autoIDInputWanDrop + "-" + sfx, Chain: "input", Action: "drop",
 			Iif: wan, Comment: fmt.Sprintf("WAN 入站默认丢弃 %s（自动）", wan), Enabled: true, System: true,
+		})
+	}
+	out = append(out, buildAutoVXLANInputRulesExtraUnderlay(wanDevs, vpn.VXLAN)...)
+	return out
+}
+
+func vxlanInputOnWAN(wan string, ep VXLANAutoEndpoint) bool {
+	u := strings.TrimSpace(ep.Underlay)
+	return u == "" || u == wan
+}
+
+func buildAutoVXLANInputRulesForWAN(wan string, endpoints []VXLANAutoEndpoint) []FilterRule {
+	wan = strings.TrimSpace(wan)
+	if wan == "" {
+		return nil
+	}
+	var out []FilterRule
+	seen := map[string]struct{}{}
+	for _, ep := range endpoints {
+		if !vxlanInputOnWAN(wan, ep) {
+			continue
+		}
+		if ep.Port <= 0 {
+			continue
+		}
+		src, ipVer := VXLANRemoteMatch(ep.Remote)
+		if src == "" {
+			continue
+		}
+		key := fmt.Sprintf("%s/%d/%s", wan, ep.Port, src)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		id := strings.TrimSpace(ep.ID)
+		if id == "" {
+			id = fmt.Sprintf("%d", ep.Port)
+		}
+		out = append(out, FilterRule{
+			ID:        fmt.Sprintf("%s-%s-%s", autoIDInputVXLANPrefix, id, wan),
+			Chain:     "input",
+			Action:    "accept",
+			Iif:       wan,
+			Proto:     "udp",
+			SrcAddr:   src,
+			DstPort:   ep.Port,
+			IPVersion: ipVer,
+			Comment:   fmt.Sprintf("VXLAN UDP/%d from %s %s（自动）", ep.Port, ep.Remote, wan),
+			Enabled:   true,
+			System:    true,
+		})
+	}
+	return out
+}
+
+func buildAutoVXLANInputRulesExtraUnderlay(wanDevs []string, endpoints []VXLANAutoEndpoint) []FilterRule {
+	known := map[string]struct{}{}
+	for _, d := range wanDevs {
+		d = strings.TrimSpace(d)
+		if d != "" {
+			known[d] = struct{}{}
+		}
+	}
+	var extra []string
+	seenExtra := map[string]struct{}{}
+	for _, ep := range endpoints {
+		u := strings.TrimSpace(ep.Underlay)
+		if u == "" {
+			continue
+		}
+		if _, ok := known[u]; ok {
+			continue
+		}
+		if _, ok := seenExtra[u]; ok {
+			continue
+		}
+		seenExtra[u] = struct{}{}
+		extra = append(extra, u)
+	}
+	var out []FilterRule
+	for _, wan := range extra {
+		out = append(out, buildAutoVXLANInputRulesForWAN(wan, endpoints)...)
+	}
+	return out
+}
+
+// BuildAutoVXLANForwardFilterRules LAN↔VXLAN overlay 转发放行（与隧道生命周期绑定）。
+func BuildAutoVXLANForwardFilterRules(endpoints []VXLANAutoEndpoint, devLAN string) []FilterRule {
+	devLAN = strings.TrimSpace(devLAN)
+	if devLAN == "" {
+		return nil
+	}
+	var out []FilterRule
+	seenIface := map[string]struct{}{}
+	for _, ep := range endpoints {
+		iface := strings.TrimSpace(ep.Iface)
+		if iface == "" || iface == devLAN {
+			continue
+		}
+		if _, ok := seenIface[iface]; ok {
+			continue
+		}
+		seenIface[iface] = struct{}{}
+		id := strings.TrimSpace(ep.ID)
+		if id == "" {
+			id = iface
+		}
+		out = append(out, FilterRule{
+			ID:      fmt.Sprintf("%s-%s-out", autoIDFwdVXLANPrefix, id),
+			Chain:   "forward",
+			Action:  "accept",
+			Iif:     devLAN,
+			Oif:     iface,
+			Comment: fmt.Sprintf("VXLAN %s LAN→隧道（自动）", iface),
+			Enabled: true,
+			System:  true,
+		}, FilterRule{
+			ID:      fmt.Sprintf("%s-%s-in", autoIDFwdVXLANPrefix, id),
+			Chain:   "forward",
+			Action:  "accept",
+			Iif:     iface,
+			Oif:     devLAN,
+			Comment: fmt.Sprintf("VXLAN %s 隧道→LAN（自动）", iface),
+			Enabled: true,
+			System:  true,
 		})
 	}
 	return out
@@ -408,6 +538,7 @@ func BuildAutoHairpinInputRules(wanDevs []string, adminPort string, vpn AutoInpu
 func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string, vpn AutoInputVPN, forwards []WanPortForward, lvs LVSState, devLAN, defaultWAN string, resolver HairpinAddrResolver) ([]FilterRule, bool) {
 	desiredFwd := BuildAutoForwardFilterRules(forwards, devLAN)
 	desiredLVSFwd := BuildAutoLVSForwardFilterRules(lvs, devLAN, defaultWAN)
+	desiredVXLANFwd := BuildAutoVXLANForwardFilterRules(vpn.VXLAN, devLAN)
 	desiredLVSRSInput := BuildAutoLVSRSInputRules(lvs, devLAN)
 	desiredHairpinFwd := BuildAutoHairpinForwardFilterRules(forwards, devLAN, resolver.IsLocalIP)
 	hairpinInput := BuildAutoHairpinInputRules(wanDevs, adminPort, vpn, forwards, devLAN, resolver)
@@ -423,10 +554,11 @@ func SyncAutoFilterRules(rules []FilterRule, wanDevs []string, adminPort string,
 			userFwd = append(userFwd, r)
 		}
 	}
-	merged := append(append(append(append(append(append(append(append(
+	merged := append(append(append(append(append(append(append(append(append(
 		append([]FilterRule{}, userFwd...),
 		desiredFwd...),
 		desiredLVSFwd...),
+		desiredVXLANFwd...),
 		desiredHairpinFwd...),
 		hairpinInput...),
 		autoInputAccept...),

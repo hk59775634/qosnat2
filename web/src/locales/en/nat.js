@@ -7,6 +7,7 @@ export default {
     enabled: 'Enable outbound NAT',
     pureL3Active: 'Pure L3 mode: policy CIDRs, shared IPs, and 1:1/prefix mappings are not applied to the firewall.',
     policyCidrs: 'Policy-route CIDRs',
+    policyCidrsHint: 'New installs default to 10.0.0.0/8, 100.64.0.0/10, 172.16.0.0/12, 198.18.0.0/15 (not 192.168.0.0/16). An empty list disables SNAT (L3 passthrough).',
     sharedPool: 'Shared public IP pool',
     static1to1: '1:1 static SNAT',
     prefixMap: 'Prefix SNAT mapping',

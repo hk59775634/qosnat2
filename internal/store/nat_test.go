@@ -78,11 +78,31 @@ func TestEnsureNatDefaultsAllowsEmptyPolicyRoutes(t *testing.T) {
 func TestEnsureNatDefaultsNilPolicyRoutes(t *testing.T) {
 	n := NatState{IPv4: NatIPv4State{}}
 	ensureNatDefaults(&n)
-	if n.IPv4.PolicyRoutes == nil {
-		t.Fatal("nil slice should become empty slice")
+	want := CloneDefaultOutboundPolicyCIDRs()
+	if len(n.IPv4.PolicyRoutes) != len(want) {
+		t.Fatalf("nil policy_routes should seed defaults, got %v", n.IPv4.PolicyRoutes)
 	}
-	if len(n.IPv4.PolicyRoutes) != 0 {
-		t.Fatalf("want empty, got %v", n.IPv4.PolicyRoutes)
+	for i, cidr := range want {
+		if n.IPv4.PolicyRoutes[i] != cidr {
+			t.Fatalf("index %d: want %s got %s", i, cidr, n.IPv4.PolicyRoutes[i])
+		}
+	}
+}
+
+func TestDefaultNatPolicyRoutes(t *testing.T) {
+	got := DefaultNat().IPv4.PolicyRoutes
+	want := []string{"10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "198.18.0.0/15"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("index %d: want %s got %s", i, want[i], got[i])
+		}
+	}
+	got[0] = "9.9.9.0/24"
+	if DefaultNat().IPv4.PolicyRoutes[0] != "10.0.0.0/8" {
+		t.Fatal("DefaultNat must copy DefaultOutboundPolicyCIDRs")
 	}
 }
 

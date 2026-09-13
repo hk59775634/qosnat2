@@ -284,7 +284,7 @@ export default {
   },
   vxlan: {
     title: 'VXLAN overlays',
-    description: 'L2 VXLAN tunnels',
+    description: 'L2 VXLAN tunnels. Saving auto-allows UDP from the remote VTEP and LAN↔tunnel forwarding; add remote LAN routes under Routes.',
     udpPort: 'UDP port',
     localVtep: 'Local VTEP',
     remoteVtep: 'Remote VTEP',

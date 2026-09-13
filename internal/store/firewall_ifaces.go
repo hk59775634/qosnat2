@@ -62,6 +62,13 @@ func BuildFirewallIfaceList(st State, devLAN, devWAN string, systemDevices []str
 		}
 		add(nm, "VLAN", "")
 	}
+	for _, t := range st.Network.VXLANTunnels {
+		nm := strings.TrimSpace(t.Name)
+		if nm == "" && t.VNI > 0 {
+			nm = VXLANIfaceName(t.VNI)
+		}
+		add(nm, "VXLAN", "")
+	}
 	for _, ic := range st.Network.Ifaces {
 		add(ic.Device, "OPT", "")
 	}
@@ -103,7 +110,9 @@ func ifaceSortRank(i FirewallIfaceInfo) int {
 		return 1
 	case "VLAN":
 		return 2
-	default:
+	case "VXLAN":
 		return 3
+	default:
+		return 4
 	}
 }

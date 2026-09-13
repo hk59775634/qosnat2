@@ -7,6 +7,7 @@ export default {
     enabled: '启用出站 NAT',
     pureL3Active: '当前为纯三层模式：策略网段、共享 IP、1:1/网段映射均不会写入防火墙。',
     policyCidrs: '策略路由网段',
+    policyCidrsHint: '新安装默认包含 10.0.0.0/8、100.64.0.0/10、172.16.0.0/12、198.18.0.0/15；不含 192.168.0.0/16。清空列表则不做 SNAT（三层直通）。',
     sharedPool: '共享公网 IP 池',
     static1to1: '1:1 静态 SNAT',
     prefixMap: '网段 SNAT 映射',

@@ -21,6 +21,7 @@ export default {
   hostname: '主机名',
   dhcpAfterSetup: '引导完成后启用 DHCP（需 LAN）',
   policyCidrs: '策略路由网段（每行一个 CIDR）',
+  policyCidrsHint: '默认 10.0.0.0/8、100.64.0.0/10、172.16.0.0/12、198.18.0.0/15；不含 192.168.0.0/16。清空后提交仍按上述默认写入。',
   sharedIps: '共享 SNAT 公网 IP（每行一个）',
   sharedEmpty: '留空 = WAN 口 IP',
   applyNow: '立即应用 sysctl / TC / nft（推荐）',

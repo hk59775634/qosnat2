@@ -43,7 +43,11 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		srv.auditLog(r, "network.vxlan.add", body.Name)
-		writeJSON(w, http.StatusOK, body)
+		resp := map[string]any{"ok": true, "tunnel": body}
+		if warn := srv.tryReloadNft(); warn != "" {
+			resp["nft_warning"] = warn
+		}
+		writeJSON(w, http.StatusOK, resp)
 	case http.MethodPut:
 		id := r.URL.Query().Get("id")
 		if id == "" {
@@ -84,7 +88,11 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		srv.auditLog(r, "network.vxlan.put", body.Name)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tunnel": body})
+		resp := map[string]any{"ok": true, "tunnel": body}
+		if warn := srv.tryReloadNft(); warn != "" {
+			resp["nft_warning"] = warn
+		}
+		writeJSON(w, http.StatusOK, resp)
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
 		if id == "" {
@@ -117,7 +125,11 @@ func (srv *Server) handleNetworkVXLAN(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		srv.auditLog(r, "network.vxlan.delete", id)
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		resp := map[string]any{"ok": true}
+		if warn := srv.tryReloadNft(); warn != "" {
+			resp["nft_warning"] = warn
+		}
+		writeJSON(w, http.StatusOK, resp)
 	default:
 		writeMethodNotAllowed(w)
 	}
