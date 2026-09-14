@@ -26,7 +26,7 @@ func TestSyncIfacePolicyRouting(t *testing.T) {
 	dhcp := false
 	gw := "198.51.100.1"
 	pr := true
-	UpsertIfaceConfig(st, "ens19", []string{"198.51.100.10/24", "198.51.100.11/32"}, &up, &dhcp, &gw, &pr)
+	UpsertIfaceConfig(st, "ens19", []string{"198.51.100.10/24", "198.51.100.11/32"}, &up, &dhcp, &gw, &pr, nil, nil)
 
 	SyncIfacePolicyRouting(st)
 
@@ -58,7 +58,7 @@ func TestSyncIfacePolicyRouting(t *testing.T) {
 	}
 
 	prOff := false
-	UpsertIfaceConfig(st, "ens19", nil, nil, nil, nil, &prOff)
+	UpsertIfaceConfig(st, "ens19", nil, nil, nil, nil, &prOff, nil, nil)
 	SyncIfacePolicyRouting(st)
 	for _, w := range st.Network.WanLinks {
 		if IsIfacePolicyWanLink(w) {
@@ -78,10 +78,10 @@ func TestSyncIfaceMainGatewayRoutes(t *testing.T) {
 	dhcp := false
 	gwMain := "103.127.237.21"
 	prOff := false
-	UpsertIfaceConfig(st, "ens18", []string{"103.127.237.22/30"}, &up, &dhcp, &gwMain, &prOff)
+	UpsertIfaceConfig(st, "ens18", []string{"103.127.237.22/30"}, &up, &dhcp, &gwMain, &prOff, nil, nil)
 	gwPR := "109.244.68.1"
 	prOn := true
-	UpsertIfaceConfig(st, "ens20", []string{"109.244.68.67/24"}, &up, &dhcp, &gwPR, &prOn)
+	UpsertIfaceConfig(st, "ens20", []string{"109.244.68.67/24"}, &up, &dhcp, &gwPR, &prOn, nil, nil)
 
 	SyncIfacePolicyRouting(st)
 

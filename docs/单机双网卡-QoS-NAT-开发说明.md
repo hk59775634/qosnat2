@@ -500,7 +500,19 @@ net.netfilter.nf_conntrack_max = 2097152
 
 ---
 
-## 18. 参考
+## 18. 长肥链路（LFN）
+
+跨洋专线（RTT 几十到几百 ms、带宽 ≥ 数百 Mbps）在 **网络 → 接口** 对**上联/专线口**打开「长肥链路」，不要开在已做 Per-IP 整形的客户 LAN。
+
+- **该口**：无 clsact/HTB 时根队列改为 `mq`+`fq`（单队列则 `fq`），`txqueuelen=10000`；转发 TCP SYN 做 MSS clamp（默认 1280，可改）。已有整形则**不** `tc qdisc replace` 根，只下发 MSS 并告警。
+- **整机**（任一接口开启）：`tcp_congestion_control=bbr`、`default_qdisc=fq`、64MB `tcp_rmem/wmem`、`tcp_mtu_probing=1`、加载 `tcp_bbr`。写入 `99-qosnat2.conf`，不要旁路 `99-z-lfn-bbr.conf`。
+- **最后一个口关闭**：sysctl 回到 catalog 默认（cubic / fq_codel / 内核窗口），撤该口 LFN qdisc/MSS；不拆 HTB/clsact。
+- **不是**：把过路 SSLVPN/客户端改成 BBR；不是自动建 VXLAN（VXLAN 改不了内层 RTT）；不是运营商 police。验收用 iperf 单流/多流/UDP，不要用 Ookla Speedtest 当 1G 门禁。
+- 发版后现场可删：`/etc/sysctl.d/99-z-lfn-bbr.conf`、`/etc/modules-load.d/tcp-bbr.conf`（改由 `qosnat2-tcp-bbr.conf`）、独立 `inet sslvpn_mss` / `sslvpn-mssclamp.service`。
+
+---
+
+## 19. 参考
 
 - 旧仓库：`https://github.com/hk59775634/qosnat`  
 - `reference/`：旧部署与 policer  

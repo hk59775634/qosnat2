@@ -10,11 +10,16 @@ import (
 
 // Defaults P0 内核参数（§15）
 var Defaults = map[string]string{
-	"net.ipv4.ip_forward":              "1",
-	"net.ipv4.conf.all.rp_filter":      "0",
-	"net.core.rmem_max":                "134217728",
-	"net.core.wmem_max":                "134217728",
-	"net.netfilter.nf_conntrack_max":   "2097152",
+	"net.ipv4.ip_forward":             "1",
+	"net.ipv4.conf.all.rp_filter":     "0",
+	"net.core.rmem_max":               "134217728",
+	"net.core.wmem_max":               "134217728",
+	"net.netfilter.nf_conntrack_max":  "2097152",
+	"net.ipv4.tcp_congestion_control": "cubic",
+	"net.core.default_qdisc":          "fq_codel",
+	"net.ipv4.tcp_rmem":               "4096 131072 6291456",
+	"net.ipv4.tcp_wmem":               "4096 16384 4194304",
+	"net.ipv4.tcp_mtu_probing":        "0",
 }
 
 const confPath = "/etc/sysctl.d/99-qosnat2.conf"

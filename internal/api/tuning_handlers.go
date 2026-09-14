@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/hk59775634/qosnat2/internal/audit"
+	"github.com/hk59775634/qosnat2/internal/lfn"
 	"github.com/hk59775634/qosnat2/internal/netif"
 	"github.com/hk59775634/qosnat2/internal/store"
 	"github.com/hk59775634/qosnat2/internal/sysctl"
@@ -85,7 +86,7 @@ func (srv *Server) getSystemTuning(w http.ResponseWriter, _ *http.Request) {
 		Defaults:          sysctl.Defaults,
 		Performance:       sysctl.PerformancePreset,
 		Saved:             cloneMap(st.System.Sysctl),
-		Effective:         sysctl.Merge(st.System.Sysctl, st.System.PerfPreset),
+		Effective:         sysctl.Merge(lfn.Overlay(st.System.Sysctl, store.AnyLFNEnabled(st)), st.System.PerfPreset),
 		Live:              sysctl.ReadLive(keys),
 		App:               tuning.AppValues(st),
 		Recommended:       rec,
@@ -194,9 +195,17 @@ func (srv *Server) putSystemTuning(w http.ResponseWriter, r *http.Request) {
 
 func (srv *Server) applySystemTuning(st store.State) error {
 	sys := st.System
-	sysctl.ApplyFast(sys.Sysctl, sys.PerfPreset)
-	if err := sysctl.Apply(sys.Sysctl, sys.PerfPreset); err != nil {
+	extra := lfn.Overlay(sys.Sysctl, store.AnyLFNEnabled(st))
+	sysctl.ApplyFast(extra, sys.PerfPreset)
+	if err := sysctl.Apply(extra, sys.PerfPreset); err != nil {
 		return err
+	}
+	if store.AnyLFNEnabled(st) {
+		if err := lfn.EnsureBBR(); err != nil {
+			log.Printf("tcp_bbr: %v", err)
+		}
+	} else {
+		lfn.RemoveBBRFile()
 	}
 	if srv.env.DevLAN != "" {
 		qlen := netif.EffectiveTxQLen(sys.TxQueueLenLAN)
@@ -222,6 +231,13 @@ func (srv *Server) applySystemTuning(st store.State) error {
 		if sys.RpsWAN {
 			if err := netif.ApplyRPS(srv.env.DevWAN); err != nil {
 				log.Printf("rps %s: %v", srv.env.DevWAN, err)
+			}
+		}
+	}
+	for _, ic := range st.Network.Ifaces {
+		if ic.LfnEnabled && ic.Device != "" {
+			if err := netif.SetTxQueueLen(ic.Device, store.LFNTxQueueLen); err != nil {
+				log.Printf("lfn txqueuelen %s: %v", ic.Device, err)
 			}
 		}
 	}

@@ -103,6 +103,8 @@ func Render(cfg Config, st store.State) (string, error) {
 	}
 	b.WriteString("    }\n\n")
 
+	writeLFNMSS(&b, st)
+
 	// forward filter
 	b.WriteString("    chain forward {\n")
 	b.WriteString("        type filter hook forward priority filter; policy accept;\n")

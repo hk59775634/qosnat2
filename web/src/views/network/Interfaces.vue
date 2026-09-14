@@ -27,10 +27,23 @@ const savingRoles = ref(false)
 
 const editDev = ref('')
 const netplanPath = ref('')
-const addrForm = ref({ ipv4: '', up: true, dhcp4: false, gateway: '', policy_routing: false })
+const addrForm = ref({
+  ipv4: '',
+  up: true,
+  dhcp4: false,
+  gateway: '',
+  policy_routing: false,
+  lfn_enabled: false,
+  lfn_mss_clamp: 1280,
+})
 const addrManageable = ref(false)
 const addrManaged = ref(false)
 const savingAddrs = ref(false)
+
+const editLFNStatus = computed(() => {
+  const iface = ifaces.value.find((i) => i.name === editDev.value)
+  return iface?.lfn_status || null
+})
 const eth = ref(null)
 const ringRx = ref(0)
 const ringTx = ref(0)
@@ -146,6 +159,8 @@ function fillAddrForm(iface) {
       dhcp4: !!iface.managed.dhcp4,
       gateway: iface.managed.gateway || '',
       policy_routing: !!iface.managed.policy_routing,
+      lfn_enabled: !!iface.managed.lfn_enabled,
+      lfn_mss_clamp: iface.managed.lfn_mss_clamp > 0 ? iface.managed.lfn_mss_clamp : 1280,
     }
     return
   }
@@ -155,6 +170,8 @@ function fillAddrForm(iface) {
     dhcp4: false,
     gateway: '',
     policy_routing: false,
+    lfn_enabled: false,
+    lfn_mss_clamp: 1280,
   }
 }
 
@@ -244,15 +261,20 @@ async function saveAddrs() {
   err.value = ''
   ok.value = ''
   try {
-    await api.interfaces.update({
+    const res = await api.interfaces.update({
       device: editDev.value,
       ipv4: parseIPv4(addrForm.value.ipv4),
       up: addrForm.value.up,
       dhcp4: addrForm.value.dhcp4,
       gateway: (addrForm.value.gateway || '').trim(),
       policy_routing: !!addrForm.value.policy_routing,
+      lfn_enabled: !!addrForm.value.lfn_enabled,
+      lfn_mss_clamp: addrForm.value.lfn_enabled ? Number(addrForm.value.lfn_mss_clamp) || 0 : 0,
     })
     ok.value = t('network.interfaces.addrsSaved')
+    if (res?.warnings?.length) {
+      err.value = res.warnings.join('；')
+    }
     await loadInterfaces()
   } catch (e) {
     err.value = e.message
@@ -449,6 +471,10 @@ onUnmounted(() => {
               v-if="iface.managed?.policy_routing"
               class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-sans"
             >{{ t('network.interfaces.policyRouting') }}</span>
+            <span
+              v-if="iface.managed?.lfn_enabled"
+              class="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-sans"
+            >{{ t('network.interfaces.lfn') }}</span>
           </dt>
           <dd class="font-mono text-xs break-all mt-0.5">{{ addrLines(iface) }}</dd>
           <template v-if="iface.managed?.gateway">
@@ -614,6 +640,32 @@ onUnmounted(() => {
             </label>
           </div>
           <p class="text-xs text-slate-400">{{ t('network.interfaces.policyRoutingHint') }}</p>
+          <div class="pt-2 border-t border-slate-100 space-y-2">
+            <label class="flex items-center gap-2">
+              <input v-model="addrForm.lfn_enabled" type="checkbox" />
+              {{ t('network.interfaces.lfn') }}
+            </label>
+            <p class="text-xs text-slate-500">{{ t('network.interfaces.lfnHint') }}</p>
+            <div v-if="addrForm.lfn_enabled" class="max-w-xs">
+              <label class="text-xs text-slate-500">{{ t('network.interfaces.lfnMss') }}</label>
+              <input
+                v-model.number="addrForm.lfn_mss_clamp"
+                type="number"
+                min="536"
+                max="9000"
+                class="input-field mt-1 font-mono"
+              />
+              <p class="text-xs text-slate-400 mt-1">{{ t('network.interfaces.lfnMssHint') }}</p>
+            </div>
+            <p v-if="editLFNStatus" class="text-xs font-mono text-slate-600">
+              {{ t('network.interfaces.lfnLive') }}:
+              cc={{ editLFNStatus.tcp_congestion_control || '—' }}
+              · qdisc={{ editLFNStatus.qdisc || '—' }}
+              <span v-if="editLFNStatus.mss_clamp"> · MSS={{ editLFNStatus.mss_clamp }}</span>
+              <span v-if="editLFNStatus.qdisc_protected"> · {{ t('network.interfaces.lfnProtected') }}</span>
+            </p>
+            <p v-if="editLFNStatus?.warning" class="text-xs text-amber-800">{{ editLFNStatus.warning }}</p>
+          </div>
           <div class="flex flex-wrap gap-2">
             <button
               type="button"

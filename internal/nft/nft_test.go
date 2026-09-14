@@ -146,6 +146,39 @@ func TestRenderSNATAndFilter(t *testing.T) {
 	}
 }
 
+func TestRenderLFNMSS(t *testing.T) {
+	st := store.DefaultState()
+	st.Network.Ifaces = []store.IfaceConfig{
+		{Device: "lfnwan0", Up: true, LfnEnabled: true, LfnMssClamp: 1280},
+		{Device: "lfnlan0", Up: true, LfnEnabled: false},
+	}
+	body, err := Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "flush ruleset") {
+		t.Fatal("lfn mss must not flush ruleset")
+	}
+	want := `iifname "lfnwan0" tcp flags syn tcp option maxseg size set 1280`
+	if !strings.Contains(body, want) {
+		t.Fatalf("missing iif mss:\n%s", body)
+	}
+	if !strings.Contains(body, `oifname "lfnwan0" tcp flags syn tcp option maxseg size set 1280`) {
+		t.Fatal("missing oif mss")
+	}
+	if strings.Contains(body, `iifname "lfnlan0" tcp flags syn`) {
+		t.Fatal("disabled iface must not clamp mss")
+	}
+	st.Network.Ifaces[0].LfnEnabled = false
+	body, err = Render(Config{DevLAN: "ens19", DevWAN: "ens18"}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "chain lfn_mss") {
+		t.Fatal("all off must drop lfn_mss chain")
+	}
+}
+
 func TestRenderEgressSNAT(t *testing.T) {
 	st := store.DefaultState()
 	st.Network.WanLinks = []store.WanLink{

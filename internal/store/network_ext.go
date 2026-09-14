@@ -49,6 +49,10 @@ type IfaceConfig struct {
 	Gateway string `json:"gateway,omitempty"`
 	// PolicyRouting 为 true 时，为该口托管 IPv4 安装源地址策略路由（经 Gateway 回程）。
 	PolicyRouting bool `json:"policy_routing,omitempty"`
+	// LfnEnabled 长肥链路：该口队列改 fq、转发 MSS clamp；任一接口开启则整机 BBR + 大 TCP 窗口。
+	LfnEnabled bool `json:"lfn_enabled,omitempty"`
+	// LfnMssClamp TCP MSS；0 且开关开时用默认 1280；开关关则不钳。
+	LfnMssClamp int `json:"lfn_mss_clamp,omitempty"`
 }
 
 // NetworkState VLAN / VXLAN / 多 WAN / netplan 托管接口 / 虚拟 IP
@@ -76,49 +80,45 @@ func FindIfaceConfig(st State, device string) (IfaceConfig, bool) {
 }
 
 // UpsertIfaceConfig 按设备名更新或追加托管网卡配置。
-// gateway / policyRouting 为 nil 时保留原值；传入空字符串可清空 gateway。
-func UpsertIfaceConfig(st *State, device string, ipv4 []string, up *bool, dhcp4 *bool, gateway *string, policyRouting *bool) {
+// gateway / policyRouting / lfn* 为 nil 时保留原值；传入空字符串可清空 gateway。
+func UpsertIfaceConfig(st *State, device string, ipv4 []string, up *bool, dhcp4 *bool, gateway *string, policyRouting *bool, lfnEnabled *bool, lfnMssClamp *int) {
 	device = strings.TrimSpace(device)
 	if device == "" {
 		return
 	}
 	for i := range st.Network.Ifaces {
 		if st.Network.Ifaces[i].Device == device {
-			if ipv4 != nil {
-				st.Network.Ifaces[i].IPv4 = append([]string(nil), ipv4...)
-			}
-			if up != nil {
-				st.Network.Ifaces[i].Up = *up
-			}
-			if dhcp4 != nil {
-				st.Network.Ifaces[i].DHCP4 = *dhcp4
-			}
-			if gateway != nil {
-				st.Network.Ifaces[i].Gateway = strings.TrimSpace(*gateway)
-			}
-			if policyRouting != nil {
-				st.Network.Ifaces[i].PolicyRouting = *policyRouting
-			}
+			applyIfaceConfigPatch(&st.Network.Ifaces[i], ipv4, up, dhcp4, gateway, policyRouting, lfnEnabled, lfnMssClamp)
 			return
 		}
 	}
 	entry := IfaceConfig{Device: device, Up: true}
+	applyIfaceConfigPatch(&entry, ipv4, up, dhcp4, gateway, policyRouting, lfnEnabled, lfnMssClamp)
+	st.Network.Ifaces = append(st.Network.Ifaces, entry)
+}
+
+func applyIfaceConfigPatch(ic *IfaceConfig, ipv4 []string, up *bool, dhcp4 *bool, gateway *string, policyRouting *bool, lfnEnabled *bool, lfnMssClamp *int) {
 	if ipv4 != nil {
-		entry.IPv4 = append([]string(nil), ipv4...)
+		ic.IPv4 = append([]string(nil), ipv4...)
 	}
 	if up != nil {
-		entry.Up = *up
+		ic.Up = *up
 	}
 	if dhcp4 != nil {
-		entry.DHCP4 = *dhcp4
+		ic.DHCP4 = *dhcp4
 	}
 	if gateway != nil {
-		entry.Gateway = strings.TrimSpace(*gateway)
+		ic.Gateway = strings.TrimSpace(*gateway)
 	}
 	if policyRouting != nil {
-		entry.PolicyRouting = *policyRouting
+		ic.PolicyRouting = *policyRouting
 	}
-	st.Network.Ifaces = append(st.Network.Ifaces, entry)
+	if lfnEnabled != nil {
+		ic.LfnEnabled = *lfnEnabled
+	}
+	if lfnMssClamp != nil {
+		ic.LfnMssClamp = *lfnMssClamp
+	}
 }
 
 // RemoveIfaceConfig 停止由 qosnat2/netplan 托管该物理网卡（从 state.ifaces 移除）。
@@ -138,6 +138,55 @@ func RemoveIfaceConfig(st *State, device string) bool {
 	}
 	st.Network.Ifaces = keep
 	return removed
+}
+
+// AnyLFNEnabled 是否有接口开启长肥链路（整机 BBR 由此推导）。
+func AnyLFNEnabled(st State) bool {
+	for _, ic := range st.Network.Ifaces {
+		if ic.LfnEnabled {
+			return true
+		}
+	}
+	return false
+}
+
+const (
+	DefaultLFNMSS = 1280
+	MinLFNMSS     = 536
+	MaxLFNMSS     = 9000
+	LFNTxQueueLen = 10000
+)
+
+// ValidateLFNMSSClamp 校验接口 MSS；0 表示跟随开关使用默认值。
+func ValidateLFNMSSClamp(n int) error {
+	if n == 0 {
+		return nil
+	}
+	if n < MinLFNMSS || n > MaxLFNMSS {
+		return fmt.Errorf("lfn_mss_clamp must be 0 or %d–%d", MinLFNMSS, MaxLFNMSS)
+	}
+	return nil
+}
+
+// EffectiveLFNMSS 开关开启时的钳制值；mtu>40 时不超过 MTU-40。
+func EffectiveLFNMSS(enabled bool, clamp, mtu int) int {
+	if !enabled {
+		return 0
+	}
+	mss := clamp
+	if mss <= 0 {
+		mss = DefaultLFNMSS
+	}
+	if mtu > 40 {
+		max := mtu - 40
+		if mss > max {
+			mss = max
+		}
+	}
+	if mss < MinLFNMSS {
+		mss = MinLFNMSS
+	}
+	return mss
 }
 
 func NewVLANID() string {

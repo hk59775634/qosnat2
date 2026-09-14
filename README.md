@@ -168,6 +168,7 @@ curl -s http://127.0.0.1:8080/api/v1/setup/status
 
 - 首次引导或首次打开页面时，按宿主机 **CPU 核数 + 内存** 写入推荐档位（低 / 中 / 高）。
 - 可调：`nf_conntrack_*`、TCP/backlog、邻居表、RPS、`txqueuelen`、HTB 叶子（`fq_codel` / `fq`）、Per-IP 空闲回收等。
+- **长肥链路**在 **网络 → 接口** 按口开关（`lfn_enabled`），不要在系统优化页另做一套全局 BBR。任一接口开启则整机 `bbr` + 大 TCP 窗口；专线口 `mq`/`fq` + 转发 MSS。VXLAN 只是封装，不能降低内层 TCP RTT。
 - API：`GET/PUT /api/v1/system/tuning`（`apply_recommended` 按当前硬件重算）。
 
 ## API 与测试

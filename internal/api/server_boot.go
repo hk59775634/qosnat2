@@ -48,6 +48,7 @@ func (srv *Server) applyAllCore() error {
 	} else {
 		srv.teardownShaperRuntime()
 	}
+	_ = srv.applyLFNQdiscs(srv.store.Get(), nil)
 	srv.replayWanLinksOnBoot()
 	srv.replayProxyEgressOnBoot()
 	srv.replayEgressOnBoot()

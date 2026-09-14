@@ -581,6 +581,8 @@ components:
             - $ref: '#/components/schemas/IfaceManagedConfig'
           nullable: true
           description: qosnat2 期望配置（持久化）；空表示尚未由本系统托管
+        lfn_status:
+          $ref: '#/components/schemas/IfaceLFNStatus'
     IfaceManagedConfig:
       type: object
       properties:
@@ -592,6 +594,20 @@ components:
         policy_routing:
           type: boolean
           description: 为该口静态 IPv4 安装源地址策略路由（from IP/32 → 经 gateway 回程）
+        lfn_enabled:
+          type: boolean
+          description: 长肥链路。该口队列改为 fq（无整形时），并参与整机 BBR/大窗口
+        lfn_mss_clamp:
+          type: integer
+          description: 转发 TCP SYN MSS；0=开关开时默认 1280；开关关则不钳
+    IfaceLFNStatus:
+      type: object
+      properties:
+        tcp_congestion_control: { type: string }
+        qdisc: { type: string }
+        mss_clamp: { type: integer }
+        qdisc_protected: { type: boolean }
+        warning: { type: string }
     VirtualIP:
       type: object
       properties:
@@ -3123,7 +3139,7 @@ paths:
                       $ref: '#/components/schemas/TrafficPoint'
     put:
       tags: [network]
-      summary: 修改网卡 IPv4 / up / dhcp4 / gateway / policy_routing（netplan + 可选策略路由）
+      summary: 修改网卡 IPv4 / up / dhcp4 / gateway / policy_routing / 长肥链路（netplan + 可选策略路由）
       requestBody:
         content:
           application/json:
@@ -3141,6 +3157,12 @@ paths:
                 policy_routing:
                   type: boolean
                   description: 启用后为每个静态 IPv4 安装 from/32 源策略路由（需 gateway，不可与 dhcp4 同时）
+                lfn_enabled:
+                  type: boolean
+                  description: 长肥链路开关
+                lfn_mss_clamp:
+                  type: integer
+                  description: TCP MSS clamp；0=默认 1280
       responses:
         '200':
           content:

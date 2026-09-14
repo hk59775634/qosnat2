@@ -44,7 +44,9 @@ func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 		Queues            int                `json:"rss_channels"`
 		NetplanManageable bool               `json:"netplan_manageable"`
 		Managed           *store.IfaceConfig `json:"managed,omitempty"`
+		LFN               ifaceLFNStatus     `json:"lfn_status"`
 	}
+	liveCC := liveTCPCongestion()
 	out := make([]item, 0, len(list))
 	for _, d := range list {
 		role := ""
@@ -61,10 +63,13 @@ func (srv *Server) handleInterfacesGet(w http.ResponseWriter, r *http.Request) {
 			Queues:            q.Channels,
 			NetplanManageable: ifaceNetplanManageable(d.Name, st),
 		}
+		var mcPtr *store.IfaceConfig
 		if mc, ok := managedByDev[d.Name]; ok {
 			cp := mc
 			it.Managed = &cp
+			mcPtr = &cp
 		}
+		it.LFN = srv.ifaceLFNStatus(st, d.Name, mcPtr, liveCC)
 		out = append(out, it)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -85,6 +90,8 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		DHCP4         *bool    `json:"dhcp4"`
 		Gateway       *string  `json:"gateway"`
 		PolicyRouting *bool    `json:"policy_routing"`
+		LfnEnabled    *bool    `json:"lfn_enabled"`
+		LfnMssClamp   *int     `json:"lfn_mss_clamp"`
 	}
 	if err := readJSON(r, &body); err != nil || strings.TrimSpace(body.Device) == "" {
 		writeBadRequest(w, "device required")
@@ -95,17 +102,44 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		writeBadRequest(w, err.Error())
 		return
 	}
-	if body.IPv4 == nil && body.Up == nil && body.DHCP4 == nil && body.Gateway == nil && body.PolicyRouting == nil {
-		writeBadRequest(w, "ipv4, up, dhcp4, gateway or policy_routing required")
+	netplanFields := body.IPv4 != nil || body.Up != nil || body.DHCP4 != nil || body.Gateway != nil || body.PolicyRouting != nil
+	lfnFields := body.LfnEnabled != nil || body.LfnMssClamp != nil
+	if !netplanFields && !lfnFields {
+		writeBadRequest(w, "ipv4, up, dhcp4, gateway, policy_routing or lfn_enabled required")
 		return
 	}
+	if body.LfnMssClamp != nil {
+		if err := store.ValidateLFNMSSClamp(*body.LfnMssClamp); err != nil {
+			writeBadRequest(w, err.Error())
+			return
+		}
+	}
 	st := srv.store.Get()
+	prev, hadPrev := store.FindIfaceConfig(st, dev)
+	if !netplanFields && lfnFields {
+		if !hadPrev {
+			writeBadRequest(w, "interface must be netplan-managed before enabling long-fat link (save addresses first)")
+			return
+		}
+		if err := srv.store.Update(func(st *store.State) {
+			store.UpsertIfaceConfig(st, dev, nil, nil, nil, nil, nil, body.LfnEnabled, body.LfnMssClamp)
+		}); err != nil {
+			writeInternalError(w, err.Error())
+			return
+		}
+		if err := srv.store.Save(); err != nil {
+			writeInternalError(w, err.Error())
+			return
+		}
+		srv.finishIfaceLFNPut(w, r, dev, prev, hadPrev)
+		return
+	}
 	if !ifaceNetplanManageable(dev, st) {
 		writeBadRequest(w, "interface cannot be managed via netplan")
 		return
 	}
 	if err := srv.applyNetplanWithRollback(func(st *store.State) error {
-		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, body.DHCP4, body.Gateway, body.PolicyRouting)
+		store.UpsertIfaceConfig(st, dev, body.IPv4, body.Up, body.DHCP4, body.Gateway, body.PolicyRouting, body.LfnEnabled, body.LfnMssClamp)
 		ic, ok := store.FindIfaceConfig(*st, dev)
 		if !ok {
 			return fmt.Errorf("managed iface not found after upsert")
@@ -123,6 +157,16 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, err.Error())
 		return
 	}
+	srv.finishIfaceLFNPut(w, r, dev, prev, hadPrev)
+}
+
+func (srv *Server) finishIfaceLFNPut(w http.ResponseWriter, r *http.Request, dev string, prev store.IfaceConfig, hadPrev bool) {
+	cur, _ := store.FindIfaceConfig(srv.store.Get(), dev)
+	var revert []string
+	if hadPrev && prev.LfnEnabled && !cur.LfnEnabled {
+		revert = []string{dev}
+	}
+	warns := srv.applyLFNDataplane(revert)
 	srv.auditLog(r, "iface.netplan", dev)
 	list, _ := netif.ListDetails()
 	var updated *netif.Detail
@@ -133,12 +177,16 @@ func (srv *Server) handleInterfacesPut(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	mc, _ := store.FindIfaceConfig(srv.store.Get(), dev)
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ok":        true,
 		"device":    dev,
 		"interface": updated,
 		"managed":   mc,
-	})
+	}
+	if len(warns) > 0 {
+		resp["warnings"] = warns
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (srv *Server) handleInterfacesDelete(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +200,8 @@ func (srv *Server) handleInterfacesDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 	st := srv.store.Get()
-	if _, ok := store.FindIfaceConfig(st, dev); !ok {
+	prev, ok := store.FindIfaceConfig(st, dev)
+	if !ok {
 		writeNotFound(w, "managed iface not found")
 		return
 	}
@@ -170,11 +219,20 @@ func (srv *Server) handleInterfacesDelete(w http.ResponseWriter, r *http.Request
 		writeInternalError(w, err.Error())
 		return
 	}
+	var revert []string
+	if prev.LfnEnabled {
+		revert = []string{dev}
+	}
+	warns := srv.applyLFNDataplane(revert)
 	srv.auditLog(r, "iface.netplan.clear", dev)
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"ok":     true,
 		"device": dev,
-	})
+	}
+	if len(warns) > 0 {
+		resp["warnings"] = warns
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // syncIfacePolicyDataPlane 接口策略路由变更后同步 Routes / ip rule / nft。
