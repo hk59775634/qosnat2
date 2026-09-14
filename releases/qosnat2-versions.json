@@ -3,6 +3,12 @@
   "max_keep": 5,
   "versions": [
     {
+      "id": "2026091401",
+      "tag": "v2026091401",
+      "published_at": "2026-09-14T12:16:21Z",
+      "summary": "按接口增加「长肥链路」开关：专线口 fq 队列与 MSS clamp，任一接口开启则整机 BBR 与大 TCP 窗口。"
+    },
+    {
       "id": "2026091301",
       "tag": "v2026091301",
       "published_at": "2026-09-13T09:59:45Z",
@@ -25,12 +31,6 @@
       "tag": "v2026090701",
       "published_at": "2026-09-07T05:37:12Z",
       "summary": "出站 IPv4 NAT 去掉 WAN catch-all masquerade，仅对策略网段等显式目标做 SNAT，避免三层公网源被改写出口 IP。"
-    },
-    {
-      "id": "2026083101",
-      "tag": "v2026083101",
-      "published_at": "2026-08-31T02:40:55Z",
-      "summary": "WireGuard Peer 列表支持多选批量删除。"
     }
   ]
 }
